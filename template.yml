@@ -1,35 +1,12 @@
 ---
-- name: create VM on exsi
+- name: power VM off exsi
   gather_facts: no
   hosts: localhost
   tasks:
-   - name: create new VM
+   - name: power VM off exsi
      community.vmware.vmware_guest
-	  hostname: "{{  }}"
-	  username: "{{  }}"
-	  password: "{{  }}"
-	  cluster: "{{  }}"
-	  datacenter: "{{  }}"
-	  name: "{{  }}"
-	  folder: "{{  }}"
-	  state:  poweredon
-	  hardware:
-	   memory_mb: "{{  }}"
-	   num_cpus: "{{  }}"
-	   scsi: paravirtual
-	   osid: "{{  }}"
-	   disk:
-	    - size_gb: "{{  }}"
-		  type: thin
-		  datastore: "{{  }}"
-	   cdrom:
-	    type: iso
-		datastore: "{{  }}"
-		path: "{{  }}"
-	   networks:
-	    - name: "{{  }}"
-		  type: static
-		  ipaddress: "{{  }}"
-		  gateway: "{{  }}"
-		  netmask: "{{  }}"
-		  dns_servers: "{{  }}"
+	  hostname: "{{ exsihost01 }}"
+	  username: "{{ root }}"
+	  password: "{{ root@123 }}"
+	  name: "{{ ipaserver02 }}"
+	  state:  poweredoff
