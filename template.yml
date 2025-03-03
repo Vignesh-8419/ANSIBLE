@@ -1,12 +1,12 @@
 ---
-- name: power VM off exsi
+- name: power VM off esxi
   gather_facts: no
   hosts: localhost
   tasks:
-   - name: power VM off exsi
-     community.vmware.vmware_guest
-	  hostname: "{{ exsihost01 }}"
-	  username: "{{ root }}"
-	  password: "{{ root@123 }}"
-	  name: "{{ ipaserver02 }}"
-	  state:  poweredoff
+    - name: power VM off esxi
+      community.vmware.vmware_guest:
+        hostname: "{{ exsihost01 }}"
+        username: "{{ root }}"
+        password: "{{ root@123 }}"
+        name: "{{ ipaserver02 }}"
+        state: poweredoff
