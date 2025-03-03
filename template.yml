@@ -1,0 +1,35 @@
+---
+- name: create VM on exsi
+  gather_facts: no
+  hosts: localhost
+  tasks:
+   - name: create new VM
+     community.vmware.vmware_guest
+	  hostname: "{{  }}"
+	  username: "{{  }}"
+	  password: "{{  }}"
+	  cluster: "{{  }}"
+	  datacenter: "{{  }}"
+	  name: "{{  }}"
+	  folder: "{{  }}"
+	  state:  poweredon
+	  hardware:
+	   memory_mb: "{{  }}"
+	   num_cpus: "{{  }}"
+	   scsi: paravirtual
+	   osid: "{{  }}"
+	   disk:
+	    - size_gb: "{{  }}"
+		  type: thin
+		  datastore: "{{  }}"
+	   cdrom:
+	    type: iso
+		datastore: "{{  }}"
+		path: "{{  }}"
+	   networks:
+	    - name: "{{  }}"
+		  type: static
+		  ipaddress: "{{  }}"
+		  gateway: "{{  }}"
+		  netmask: "{{  }}"
+		  dns_servers: "{{  }}"
