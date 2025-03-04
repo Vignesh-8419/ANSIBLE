@@ -1,0 +1,34 @@
+- name: create a new VM
+  hosts: localhost
+  connection: local
+  become: yes
+  gather_facts: no
+  vars:
+    vcenter_name: "192.168.253.129"
+    vcenter_username: "administrator@vsphere.local"
+    vcenter_password: "Vigneshv12$"
+    esxi_host: "192.168.253.130"
+    vm_name: "testserveransible"
+    datastore_name: "datastore1"
+    template_name: "rhel7-testunix01"
+  tasks:
+    - name: create a new RHEL VM
+      community.vmware.vmware_guest:
+        hostname: "{{ vcenter_name }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: no
+        datacenter: "Datacenter"  # Correct datacenter name
+        folder: "/Datacenter/vm"  # Correct folder path
+        name: "{{ vm_name }}"
+        state: poweredon
+        datastore: "{{ datastore_name }}"
+        template: "{{ template_name  }}"
+        networks:
+          - name: "VM Network"
+            type: static
+            ip: "192.168.253.190"
+            gateway: "192.168.253.2"
+            netmask: "255.255.255.0"
+            dns_servers:
+              - "192.168.253.160"
