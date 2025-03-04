@@ -15,7 +15,7 @@
               - "192.168.253.160"
   tasks:
     - name: create a new RHEL VM
-      community.vmware.vmware_guest:
+      vmware_guest:
         hostname: "{{ vcenter_name }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
