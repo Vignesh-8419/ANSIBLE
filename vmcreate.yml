@@ -11,9 +11,11 @@
     vm_name: "testserveransible"
     datastore_name: "datastore1"
     template_name: "rhel7-testunix01"
+    dns_servers:
+              - "192.168.253.160"
   tasks:
     - name: create a new RHEL VM
-      vmware_guest:
+      community.vmware.vmware_guest:
         hostname: "{{ vcenter_name }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
@@ -30,5 +32,8 @@
             ip: "192.168.253.190"
             gateway: "192.168.253.2"
             netmask: "255.255.255.0"
-            dns_servers:
-              - "192.168.253.160"
+            dns_servers: "{{ dns_servers }}"
+    - name: wait until VM is build
+      wait_for_connection:
+       delay: 30
+       timeout: 300
