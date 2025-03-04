@@ -1,0 +1,22 @@
+---
+- name: power on VM
+  hosts: localhost
+  connection: local
+  become: yes
+  gather_facts: no
+  vars:
+   vcenter_hostname: "192.168.253.129"
+   vcenter_username: "administrator@vsphere.local"
+   vcenter_password: "Vigneshv12$"
+   datacenter_name: "Datacenter"
+   vm_name: "rhel7-testunix01"
+  tasks:
+   - name:  power on the VM in vcenter
+     vmware_guest_powerstate:
+      hostname: "{{ vcenter_hostname }}"
+      username: "{{ vcenter_username }}"
+      password: "{{ vcenter_password }}"
+      validate_certs: no
+      datacenter: "{{ datacenter_name }}"
+      name: "{{ vm_name }}"
+      state: powered-on
