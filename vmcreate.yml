@@ -32,4 +32,11 @@
             ip: "192.168.253.190"
             gateway: "192.168.253.2"
             netmask: "255.255.255.0"
-            dns_servers: "{{ dns_servers }}"
+    - name: set the dns server
+      vmware.vmware_rest.appliance_networking_dns_servers:
+       servers:
+        - 192.168.253.160
+       mode: is_static
+       state: set
+       register: result
+
