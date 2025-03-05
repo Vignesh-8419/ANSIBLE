@@ -39,3 +39,20 @@
          domain: "vgs.com"
          dns_servers:
           - 192.168.253.160
+    - name: wait for VM to be accessible
+      wait_for:
+        host: "{{ vm_ip }}"
+        port: 22
+        delay: 10
+        timeout: 300
+        state: started  
+
+    - name: register VM with Red Hat subscription
+      ansible.builtin.shell: |
+        subscription-manager register --username={{ redhat_username }} --password={{ redhat_password }}
+        subscription-manager attach --auto
+      args:
+        executable: /bin/bash
+      delegate_to: "{{ vm_ip }}"
+      become: yes
+      become_user: root
