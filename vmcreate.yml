@@ -59,3 +59,35 @@
     redhat_password: "Vigneshv12345$"
   roles:
     - register_with_sat
+
+- name: register satellite on VM
+  hosts: testserveransible
+  become: yes
+  gather_facts: no
+  roles:
+    - path_the_server
+
+- name: reboot the server
+  hosts: testserveransible
+  become: yes
+  gather_facts: no
+  tasks:
+   - name: reboot the server
+     reboot:
+      reboot_timeout: 200
+      msg: initiated for reboot
+     register: reboot_result
+
+- name: wait for server to comeup
+  hosts: testserveransible
+  become: yes
+  gather_facts: no
+  tasks:
+   - name: waiting for server to comeup
+     wait_for_connection:
+      delay: 30
+      timeout: 300
+     when: reboot_result not failed 
+
+ 
+      
