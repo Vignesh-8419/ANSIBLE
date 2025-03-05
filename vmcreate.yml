@@ -1,4 +1,6 @@
-- name: create a new RHEL VM and update DNS
+# newvm.yml
+---
+- name: create a new RHEL VM
   hosts: localhost
   connection: local
   become: yes
@@ -12,9 +14,10 @@
     datastore_name: "datastore1"
     template_name: "rhel7-testunix01"
     vm_ip: "192.168.253.190"
-    vm_password: "admin$22"
     dns_servers:
       - "192.168.253.160"
+    redhat_username: "vigneshesmile@gmail.com"
+    redhat_password: "Vigneshv12345$"
   tasks:
     - name: create a new RHEL VM
       vmware_guest:
@@ -36,23 +39,23 @@
             netmask: "255.255.255.0"
         wait_for_ip_address: true
         customization:
-         domain: "vgs.com"
-         dns_servers:
-          - 192.168.253.160
+          domain: "vgs.com"
+          dns_servers:
+            - "192.168.253.160"
     - name: wait for VM to be accessible
       wait_for:
         host: "{{ vm_ip }}"
         port: 22
         delay: 10
         timeout: 300
-        state: started  
+        state: started
 
-    - name: register VM with Red Hat subscription
-      ansible.builtin.shell: |
-        subscription-manager register --username={{ redhat_username }} --password={{ redhat_password }}
-        subscription-manager attach --auto
-      args:
-        executable: /bin/bash
-      delegate_to: "{{ vm_ip }}"
-      become: yes
-      become_user: root
+- name: register satellite on VM
+  hosts: testserveransible
+  become: yes
+  gather_facts: no
+  vars:
+    redhat_username: "vigneshesmile@gmail.com"
+    redhat_password: "Vigneshv12345$"
+  roles:
+    - register_with_sat
