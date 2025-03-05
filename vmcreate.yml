@@ -34,9 +34,15 @@
             netmask: "255.255.255.0"
     - name: set the dns server
       vmware.vmware_rest.appliance_networking_dns_servers:
+       vcenter_hostname: "{{ vcenter_name }}"
+       vcenter_username: "{{ vcenter_username }}"
+       vcenter_password: "{{ vcenter_password }}"
+       vm_name: "testserveransible"
+       username: root
+       password: 'admin$22'
        servers:
         - 192.168.253.160
        mode: is_static
        state: set
-       register: result
+
 
