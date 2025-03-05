@@ -1,4 +1,4 @@
-- name: create a new VM
+- name: create a new RHEL VM and update DNS
   hosts: localhost
   connection: local
   become: yes
@@ -11,8 +11,10 @@
     vm_name: "testserveransible"
     datastore_name: "datastore1"
     template_name: "rhel7-testunix01"
+    vm_ip: "192.168.253.190"
+    vm_password: "admin$22"
     dns_servers:
-              - "192.168.253.160"
+      - "192.168.253.160"
   tasks:
     - name: create a new RHEL VM
       vmware_guest:
@@ -20,29 +22,20 @@
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
         validate_certs: no
-        datacenter: "Datacenter"  # Correct datacenter name
-        folder: "/Datacenter/vm"  # Correct folder path
+        datacenter: "Datacenter"
+        folder: "/Datacenter/vm"
         name: "{{ vm_name }}"
         state: poweredon
         datastore: "{{ datastore_name }}"
-        template: "{{ template_name  }}"
+        template: "{{ template_name }}"
         networks:
           - name: "VM Network"
             type: static
-            ip: "192.168.253.190"
+            ip: "{{ vm_ip }}"
             gateway: "192.168.253.2"
             netmask: "255.255.255.0"
-    - name: set the dns server
-      vmware.vmware_rest.appliance_networking_dns_servers:
-       vcenter_hostname: "{{ vcenter_name }}"
-       vcenter_username: "{{ vcenter_username }}"
-       vcenter_password: "{{ vcenter_password }}"
-       vm_name: "testserveransible"
-       username: root
-       password: 'admin$22'
-       servers:
-        - 192.168.253.160
-       mode: is_static
-       state: set
-
-
+        wait_for_ip_address: true
+        customization:
+         domain: "vgs.com"
+         dns_servers:
+          - 192.168.253.160
