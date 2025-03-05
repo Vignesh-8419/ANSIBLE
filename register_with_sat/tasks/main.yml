@@ -1,5 +1,5 @@
 - name: Register as user with password and auto-subscribe to available content.
-  community.general.redhat_subscription:
+  redhat_subscription:
     state: present
     username: "vigneshesmile@gmail.com"
     password: "Vigneshv12345$"
