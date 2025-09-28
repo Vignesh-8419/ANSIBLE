@@ -45,15 +45,6 @@
           memory_mb: 4096
           num_cpus: 4
           firmware: efi
-        networks:
-          - name: "{{ vm_network }}"
-            type: static
-            ip: "{{ item.ip }}"
-            netmask: "{{ netmask }}"
-            gateway: "{{ gateway }}"
-            dns_servers: "{{ dns_servers }}"
-            connected: true
-            start_connected: true
       loop: "{{ vm_list }}"
 
     - name: Assign static IP address
@@ -74,3 +65,4 @@
             netmask: "{{ netmask }}"
             connected: true
             start_connected: true
+      loop: "{{ vm_list }}"
