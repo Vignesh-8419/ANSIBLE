@@ -19,8 +19,8 @@
     gateway: "192.168.253.2"
     esxi_hostname: "192.168.253.128"
     vm_list:
-      - name: "{{ vm_name }}"
-        ip: "{{ vm_ip }}"
+      - name: "rhel8testserver"
+        ip: "192.168.253.166"
 
   tasks:
     - name: Create new VM with template
@@ -52,17 +52,18 @@
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
-        validate_certs: no
+        validate_certs: false
         datacenter: "{{ datacenter_name }}"
         folder: "{{ folder }}"
-        name: "{{ vm_name }}"
+        name: "{{ item.name }}"
         state: poweredon
         networks:
           - name: "{{ vm_network }}"
             type: static
-            ip: "{{ vm_ip }}"
+            ip: "{{ item.ip }}"
             gateway: "{{ gateway }}"
             netmask: "{{ netmask }}"
+            dns_servers: "{{ dns_servers }}"
             connected: true
             start_connected: true
       loop: "{{ vm_list }}"
