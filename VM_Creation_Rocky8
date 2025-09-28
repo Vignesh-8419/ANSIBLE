@@ -1,0 +1,69 @@
+---
+- name: Provision CentOS VMs and static IPs
+  hosts: localhost
+  gather_facts: yes
+
+  vars:
+    vcenter_hostname: "192.168.253.129"
+    vcenter_username: "administrator@vsphere.local"
+    vcenter_password: "Vigneshv12$"
+    datacenter_name: "Datacenter"
+    folder: "vm"
+    datastore_name: "datastore1"
+    template_name: "GOLDENTEMPLATE_ROCKYOS_08"
+    guest_id: "rhelos8_64Guest"
+    vm_network: "VM Network"
+    dns_servers:
+      - "192.168.253.155"
+    netmask: "255.255.255.0"
+    gateway: "192.168.253.2"
+    esxi_hostname: "192.168.253.128"
+    vm_list:
+     - name: "{{ vm_name }}"
+       ip: "{{ vm_ip }}"
+
+  tasks:
+    - name: Create new VM with template
+      vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        datacenter: "{{ datacenter_name }}"
+        folder: "{{ folder }}"
+        esxi_hostname: "{{ esxi_hostname }}"
+        name: "{{ item.name }}"
+        state: poweredon
+        guest_id: "{{ guest_id }}"
+        datastore: "{{ datastore_name }}"
+        template: "{{ template_name }}"
+        disk:
+          - size_gb: 100
+            type: thin
+            datastore: "{{ datastore_name }}"
+        hardware:
+          memory_mb: 4096
+          num_cpus: 4
+          firmware: efi
+        networks:
+          - name: "{{ vm_network }}"
+            type: static
+            ip: "{{ item.ip }}"
+            netmask: "{{ netmask }}"
+            gateway: "{{ gateway }}"
+            dns_servers: "{{ dns_servers }}"
+      loop: "{{ vm_list }}"
+
+    - name: Wait for VM to respond to ping
+      wait_for:
+        host: "{{ item.ip }}"
+        timeout: 300
+        state: started
+      loop: "{{ vm_list }}"
+      register: ping_result
+
+    - name: Confirm server is up
+      debug:
+        msg: "Server {{ item.item.name }} with IP {{ item.item.ip }} is up and reachable."
+      loop: "{{ ping_result.results }}"
+      when: item.failed is not defined or not item.failed
