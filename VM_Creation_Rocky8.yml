@@ -57,6 +57,14 @@
         folder: "{{ folder }}"
         name: "{{ item.name }}"
         state: poweredon
+        customization:
+          hostname: "{{ item.name }}"
+          domain: "localdomain"
+          dns_servers: "{{ dns_servers }}"
+          nic_setting:
+            - ip: "{{ item.ip }}"
+              subnet_mask: "{{ netmask }}"
+              gateway: "{{ gateway }}"
         networks:
           - name: "{{ vm_network }}"
             type: static
@@ -67,3 +75,4 @@
             connected: true
             start_connected: true
       loop: "{{ vm_list }}"
+
