@@ -19,8 +19,8 @@
     gateway: "192.168.253.2"
     esxi_hostname: "192.168.253.128"
     vm_list:
-     - name: "{{ vm_name }}"
-       ip: "{{ vm_ip }}"
+      - name: "{{ vm_name }}"
+        ip: "{{ vm_ip }}"
 
   tasks:
     - name: Create new VM with template
@@ -52,8 +52,8 @@
             netmask: "{{ netmask }}"
             gateway: "{{ gateway }}"
             dns_servers: "{{ dns_servers }}"
-			connected: true
-			start_connected: true
+            connected: true
+            start_connected: true
       loop: "{{ vm_list }}"
 
     - name: Wait for VM to respond to ping
@@ -68,4 +68,4 @@
       debug:
         msg: "Server {{ item.item.name }} with IP {{ item.item.ip }} is up and reachable."
       loop: "{{ ping_result.results }}"
-      when: item.failed is not defined or not item.failed
+      when: not item.failed | default(false)
