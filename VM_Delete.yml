@@ -27,6 +27,7 @@
         esxi_hostname: "{{ esxi_hostname }}"
         name: "{{ item.name }}"
         state: absent
+        force: true
       loop: "{{ vm_list }}"
       register: vm_deleted
 
