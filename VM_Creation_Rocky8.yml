@@ -45,8 +45,9 @@
           memory_mb: 4096
           num_cpus: 4
           firmware: efi
+      loop: "{{ vm_list }}"
 
-    - name: Create new VM with template
+    - name: Configure network
       vmware_guest:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -57,9 +58,6 @@
         esxi_hostname: "{{ esxi_hostname }}"
         name: "{{ item.name }}"
         state: poweredon
-        guest_id: "{{ guest_id }}"
-        datastore: "{{ datastore_name }}"
-        template: "{{ template_name }}"
         networks:
           - name: "{{ vm_network }}"
             type: static
@@ -70,7 +68,6 @@
             connected: true
             start_connected: true
       loop: "{{ vm_list }}"
-
 
     - name: Wait for VM to respond to ping
       wait_for:
