@@ -37,7 +37,7 @@
         state: poweredon
         guest_id: "{{ guest_id }}"
         datastore: "{{ datastore_name }}"
-		template: {{ "template_name" }}"
+		template: "{{ template_name }}"
         disk:
           - size_gb: 100
             type: thin
