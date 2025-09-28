@@ -56,16 +56,21 @@
             start_connected: true
       loop: "{{ vm_list }}"
 
-    - name: Wait for VM to respond to ping
-      wait_for:
-        host: "{{ item.ip }}"
-        timeout: 300
-        state: started
-      loop: "{{ vm_list }}"
-      register: ping_result
-
-    - name: Confirm server is up
-      debug:
-        msg: "Server {{ item.item.name }} with IP {{ item.item.ip }} is up and reachable."
-      loop: "{{ ping_result.results }}"
-      when: not item.failed | default(false)
+    - name: Assign static IP address
+      vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: no
+        datacenter: "{{ datacenter_name }}"
+        folder: "{{ folder }}"
+        name: "{{ vm_name }}"
+        state: poweredon
+        networks:
+          - name: "{{ vm_network }}"
+            type: static
+            ip: "{{ vm_ip }}"
+            gateway: "{{ gateway }}"
+            netmask: "{{ netmask }}"
+            connected: true
+            start_connected: true
