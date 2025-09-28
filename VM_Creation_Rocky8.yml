@@ -45,19 +45,6 @@
           memory_mb: 4096
           num_cpus: 4
           firmware: efi
-      loop: "{{ vm_list }}"
-
-    - name: Configure network
-      vmware_guest:
-        hostname: "{{ vcenter_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
-        validate_certs: false
-        datacenter: "{{ datacenter_name }}"
-        folder: "{{ folder }}"
-        esxi_hostname: "{{ esxi_hostname }}"
-        name: "{{ item.name }}"
-        state: poweredon
         networks:
           - name: "{{ vm_network }}"
             type: static
