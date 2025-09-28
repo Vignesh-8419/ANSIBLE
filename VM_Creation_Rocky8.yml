@@ -1,5 +1,5 @@
 ---
-- name: Provision CentOS VMs and static IPs
+- name: Provision RockyOS VMs and static IPs
   hosts: localhost
   gather_facts: yes
 
