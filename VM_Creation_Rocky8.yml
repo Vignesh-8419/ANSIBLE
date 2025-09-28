@@ -1,5 +1,5 @@
 ---
-- name: Provision RockyOS VMs and static IPs
+- name: Provision RockyOS VMs with static IPs
   hosts: localhost
   gather_facts: yes
 
@@ -19,11 +19,11 @@
     gateway: "192.168.253.2"
     esxi_hostname: "192.168.253.128"
     vm_list:
-      - name: "rhel8testserver"
-        ip: "192.168.253.166"
+      - name: "rocky-08-01"
+        ip: "192.168.253.133"
 
   tasks:
-    - name: Create new VM with template
+    - name: Create VM and assign static IP
       vmware_guest:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -45,34 +45,13 @@
           memory_mb: 4096
           num_cpus: 4
           firmware: efi
-      loop: "{{ vm_list }}"
-
-    - name: Assign static IP address
-      vmware_guest:
-        hostname: "{{ vcenter_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
-        validate_certs: false
-        datacenter: "{{ datacenter_name }}"
-        folder: "{{ folder }}"
-        name: "{{ item.name }}"
-        state: poweredon
-        customization:
-          hostname: "{{ item.name }}"
-          domain: "localdomain"
-          dns_servers: "{{ dns_servers }}"
-          nic_setting:
-            - ip: "{{ item.ip }}"
-              subnet_mask: "{{ netmask }}"
-              gateway: "{{ gateway }}"
         networks:
           - name: "{{ vm_network }}"
             type: static
             ip: "{{ item.ip }}"
-            gateway: "{{ gateway }}"
             netmask: "{{ netmask }}"
+            gateway: "{{ gateway }}"
             dns_servers: "{{ dns_servers }}"
             connected: true
             start_connected: true
       loop: "{{ vm_list }}"
-
