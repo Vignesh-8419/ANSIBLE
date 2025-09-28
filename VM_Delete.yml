@@ -1,0 +1,36 @@
+---
+- name: VM deletion
+  hosts: localhost
+  gather_facts: yes
+
+  vars:
+    vcenter_hostname: "192.168.253.129"
+    vcenter_username: "administrator@vsphere.local"
+    vcenter_password: "Vigneshv12$"
+    datacenter_name: "Datacenter"
+    folder: "vm"
+    datastore_name: "datastore1"
+    esxi_hostname: "192.168.253.128"
+    vm_list:
+      - name: "{{ vm_name }}"
+        ip: "{{ vm_ip }}"
+
+  tasks:
+    - name: Delete the VMs
+      vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        datacenter: "{{ datacenter_name }}"
+        folder: "{{ folder }}"
+        esxi_hostname: "{{ esxi_hostname }}"
+        name: "{{ item.name }}"
+        state: absent
+      loop: "{{ vm_list }}"
+      register: vm_deleted
+
+    - name: Confirmation tasks after deletion
+      debug:
+        msg: "Server {{ item.item.name }} deleted"
+      loop: "{{ vm_deleted.results }}"
