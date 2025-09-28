@@ -52,6 +52,8 @@
             netmask: "{{ netmask }}"
             gateway: "{{ gateway }}"
             dns_servers: "{{ dns_servers }}"
+			      connected: true
+            start_connected: true
       loop: "{{ vm_list }}"
 
     - name: Wait for VM to respond to ping
