@@ -23,9 +23,6 @@
        ip: "{{ vm_ip }}"
 
   tasks:
-
-  tasks:
-
     - name: Create new VM with template
       vmware_guest:
         hostname: "{{ vcenter_hostname }}"
