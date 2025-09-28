@@ -37,7 +37,7 @@
         state: poweredon
         guest_id: "{{ guest_id }}"
         datastore: "{{ datastore_name }}"
-		template: "{{ template_name }}"
+        template: "{{ template_name }}"
         disk:
           - size_gb: 100
             type: thin
@@ -53,6 +53,8 @@
             netmask: "{{ netmask }}"
             gateway: "{{ gateway }}"
             dns_servers: "{{ dns_servers }}"
+      loop: "{{ vm_list }}"
+
       loop: "{{ vm_list }}"
 
 
