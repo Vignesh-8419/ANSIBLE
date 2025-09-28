@@ -19,8 +19,8 @@
     gateway: "192.168.253.2"
     esxi_hostname: "192.168.253.128"
     vm_list:
-      - name: cent-07-01
-        ip: 192.168.253.131
+     - name: "{{ vm_name }}"
+       ip: "{{ vm_ip }}"
 
   tasks:
 
