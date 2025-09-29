@@ -276,6 +276,3 @@
         - { service: tftp }
         - { port: 8140/tcp }
 
----
-run_only: patch
-skip_patch: false
