@@ -18,13 +18,13 @@
 
   tasks:
     - name: Create mount point directory
-      ansible.builtin.file:
+      file:
         path: "{{ mount_point }}"
         state: directory
         mode: '0777'
 
     - name: Mount ISO share
-      ansible.builtin.mount:
+      mount:
         path: "{{ mount_point }}"
         src: "{{ repo_mount }}"
         fstype: cifs
@@ -33,13 +33,13 @@
       when: ansible_mounts | selectattr('mount', 'equalto', mount_point) | list | length == 0
 
     - name: Remove existing YUM repo files
-      ansible.builtin.file:
+      file:
         path: "/etc/yum.repos.d/{{ item }}"
         state: absent
       loop: "{{ query('fileglob', '/etc/yum.repos.d/*.repo') }}"
 
     - name: Create base.repo
-      ansible.builtin.copy:
+      copy:
         content: |
           [base]
           name=CentOS Base Repo
@@ -49,7 +49,7 @@
         dest: /etc/yum.repos.d/base.repo
 
     - name: Create patch.repo
-      ansible.builtin.copy:
+      copy:
         content: |
           [patch]
           name=CentOS Patch Repo
@@ -59,7 +59,7 @@
         dest: /etc/yum.repos.d/patch.repo
 
     - name: Create foreman.repo
-      ansible.builtin.copy:
+      copy:
         content: |
           [foreman]
           name=CentOS Foreman Repo
@@ -69,7 +69,7 @@
         dest: /etc/yum.repos.d/foreman.repo
 
     - name: Create puppet.repo
-      ansible.builtin.copy:
+      copy:
         content: |
           [puppet]
           name=Puppet 7 Repository
@@ -79,7 +79,7 @@
         dest: /etc/yum.repos.d/puppet.repo
 
     - name: Create vault.repo
-      ansible.builtin.copy:
+      copy:
         content: |
           [base]
           name=CentOS Vault Base
@@ -104,7 +104,7 @@
         dest: /etc/yum.repos.d/vault.repo
 
     - name: Install sshpass
-      ansible.builtin.yum:
+      yum:
         name: sshpass
         state: present
 
@@ -112,40 +112,40 @@
       when: run_only == "patch" and not skip_patch
       block:
         - name: Update all packages
-          ansible.builtin.yum:
+          yum:
             name: '*'
             state: latest
         - name: Reboot system
-          ansible.builtin.reboot:
+          reboot:
 
     - name: Exit if run-only is patch
       block:
         - name: Terminate playbook for patch-only mode
-          ansible.builtin.fail:
+          fail:
             msg: "Exiting playbook as run_only is set to 'patch'"
           when: run_only == "patch"
 
     - name: Check DNS resolution
-      ansible.builtin.command: nslookup "{{ ansible_hostname }}"
+      command: nslookup "{{ ansible_hostname }}"
       register: nslookup_result
       ignore_errors: yes
       changed_when: false
 
     - name: Configure DNS resolver
-      ansible.builtin.copy:
+      copy:
         content: "nameserver 192.168.253.151"
         dest: /etc/resolv.conf
       when: nslookup_result.rc != 0
 
     - name: Install BIND packages
-      ansible.builtin.yum:
+      yum:
         name:
           - bind
           - bind-utils
         state: present
 
     - name: Install Java and Foreman stack
-      ansible.builtin.yum:
+      yum:
         name:
           - java-1.8.0-openjdk
           - java-1.8.0-openjdk-devel
@@ -155,40 +155,40 @@
         state: present
 
     - name: Set JAVA path
-      ansible.builtin.lineinfile:
+      lineinfile:
         path: /etc/environment
         line: "PATH={{ java_path }}:{{ ansible_env.PATH }}"
         state: present
 
     - name: Remove existing java_ks module
-      ansible.builtin.file:
+      file:
         path: "{{ module_path }}"
         state: absent
       when: module_path is exists
 
     - name: Install puppetlabs-java_ks module
-      ansible.builtin.command: "/opt/puppetlabs/bin/puppet module install puppetlabs-java_ks --force"
+      shell: /opt/puppetlabs/bin/puppet module install puppetlabs-java_ks --force
 
     - name: Link java_ks module for Foreman installer
-      ansible.builtin.file:
+      file:
         src: "{{ module_path }}"
         dest: /usr/share/foreman-installer/modules/java_ks
         state: link
 
     - name: Check if Foreman is running
-      ansible.builtin.systemd:
+      systemd:
         name: foreman
         state: started
       register: foreman_status
       ignore_errors: yes
 
     - name: Run Foreman installer with Katello scenario
-      ansible.builtin.command: foreman-installer --scenario katello
+      command: foreman-installer --scenario katello
       when: foreman_status.status.ActiveState != "active"
       changed_when: true
 
     - name: Configure firewall for Foreman
-      ansible.builtin.firewalld:
+      firewalld:
         service: "{{ item }}"
         permanent: yes
         state: enabled
@@ -198,7 +198,7 @@
         - https
 
     - name: Install DHCP and TFTP services
-      ansible.builtin.yum:
+      yum:
         name:
           - dhcp-server
           - dhcp
@@ -206,7 +206,7 @@
         state: present
 
     - name: Configure Foreman TFTP proxy
-      ansible.builtin.command: >
+      command: >
         foreman-installer --scenario katello
         --foreman-proxy-tftp true
         --foreman-proxy-tftp-managed true
@@ -215,25 +215,25 @@
       changed_when: true
 
     - name: Generate DNSSEC key for Foreman proxy
-      ansible.builtin.command: dnssec-keygen -a HMAC-SHA512 -b 512 -n USER foreman-proxy
+      command: dnssec-keygen -a HMAC-SHA512 -b 512 -n USER foreman-proxy
       register: dnssec_keygen
       changed_when: true
 
     - name: Move DNSSEC private key
-      ansible.builtin.command: mv {{ item }} /etc/foreman-proxy/dns.key
+      command: mv {{ item }} /etc/foreman-proxy/dns.key
       loop: "{{ (dnssec_keygen.stdout_lines | select('match', 'Kforeman-proxy.*\\.private') | list) }}"
       when: dnssec_keygen.stdout_lines is defined
       changed_when: true
 
     - name: Set ownership and permissions for DNS key
-      ansible.builtin.file:
+      file:
         path: /etc/foreman-proxy/dns.key
         owner: foreman-proxy
         group: foreman-proxy
         mode: '0600'
 
     - name: Configure Foreman DNS proxy
-      ansible.builtin.command: >
+      command: >
         foreman-installer --scenario katello
         --foreman-proxy-dns true
         --foreman-proxy-dns-managed false
@@ -244,7 +244,7 @@
       changed_when: true
 
     - name: Configure Foreman DHCP proxy
-      ansible.builtin.command: >
+      command: >
         foreman-installer --scenario katello
         --foreman-proxy-dhcp true
         --foreman-proxy-dhcp-managed true
@@ -257,7 +257,7 @@
       changed_when: true
 
     - name: Configure firewall for DHCP, TFTP, and Puppet
-      ansible.builtin.firewalld:
+      firewalld:
         service: "{{ item.service | default(omit) }}"
         port: "{{ item.port | default(omit) }}"
         permanent: yes
