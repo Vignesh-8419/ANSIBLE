@@ -1,62 +1,53 @@
----
-- name: Provision RockyOS VMs with static IPs and Secure Boot disabled
-  hosts: localhost
-  connection: local
-  gather_facts: no
-
-  vars:
-    vcenter_hostname: "192.168.253.129"
-    vcenter_username: "administrator@vsphere.local"
-    vcenter_password: "Vigneshv12$"
-    datacenter_name: "Datacenter"
-    folder: "vm"
-    datastore_name: "datastore1"
-    template_name: "GOLDENTEMPLATE_ROCKYOS_08"
-    guest_id: "rhelos8_64Guest"
-    vm_network: "VM Network"
-    dns_servers:
-      - "192.168.253.160"
-    netmask: "255.255.255.0"
-    gateway: "192.168.253.2"
-    esxi_hostname: "192.168.253.128"
-    domain_name: "vgs.com"
-    vm_list:
-      - name: "rocky-08-01"
-        ip: "192.168.253.133"
-
-  tasks:
-    - name: Create VM with static IP, customization, and Secure Boot disabled
-      vmware_guest:
-        hostname: "{{ vcenter_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
-        validate_certs: false
-        datacenter: "{{ datacenter_name }}"
-        folder: "{{ folder }}"
-        esxi_hostname: "{{ esxi_hostname }}"
-        name: "{{ item.name }}"
-        state: poweredon
-        guest_id: "{{ guest_id }}"
+- name: Create VM with static IP, customization, and Secure Boot disabled
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    datacenter: "{{ datacenter_name }}"
+    folder: "{{ folder }}"
+    esxi_hostname: "{{ esxi_hostname }}"
+    name: "{{ item.name }}"
+    state: poweredon
+    guest_id: "{{ guest_id }}"
+    datastore: "{{ datastore_name }}"
+    template: "{{ template_name }}"
+    disk:
+      - size_gb: 100
+        type: thin
         datastore: "{{ datastore_name }}"
-        template: "{{ template_name }}"
-        disk:
-          - size_gb: 100
-            type: thin
-            datastore: "{{ datastore_name }}"
-        hardware:
-          memory_mb: 4096
-          num_cpus: 4
-          firmware: efi
-          secure_boot_enabled: false
-        networks:
-          - name: "{{ vm_network }}"
-            type: static
-            ip: "{{ item.ip }}"
-            gateway: "{{ gateway }}"
-            netmask: "{{ netmask }}"
-            dns_servers: "{{ dns_servers }}"
-            device_type: vmxnet3
-            connected: true
-            start_connected: true
-        wait_for_ip_address: true
-      loop: "{{ vm_list }}"
+    hardware:
+      memory_mb: 4096
+      num_cpus: 4
+      firmware: efi
+      secure_boot_enabled: false
+    networks:
+      - name: "{{ vm_network }}"
+        type: static
+        ip: "{{ item.ip }}"
+        gateway: "{{ gateway }}"
+        netmask: "{{ netmask }}"
+        dns_servers: "{{ dns_servers }}"
+        device_type: vmxnet3
+        connected: true
+        start_connected: true
+    wait_for_ip_address: true
+    wait_for_guest_tools: true
+  loop: "{{ vm_list }}"
+
+- name: Move IP config to ens192 inside guest
+  community.vmware.vmware_guest_exec:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    vm_id: "{{ item.name }}"
+    vm_username: root
+    vm_password: "{{ item.root_password }}"
+    command: |
+      if [ -f /etc/sysconfig/network-scripts/ifcfg-ether ]; then
+        mv /etc/sysconfig/network-scripts/ifcfg-ether /etc/sysconfig/network-scripts/ifcfg-ens192 &&
+        sed -i 's/DEVICE=ether/DEVICE=ens192/' /etc/sysconfig/network-scripts/ifcfg-ens192 &&
+        nmcli connection reload && nmcli connection up ens192
+      fi
+  loop: "{{ vm_list }}"
