@@ -22,5 +22,8 @@
       loop: "{{ users }}"
 
     - name: Providing sudo access
-      command: "echo '{{ item.name }}	ALL=(ALL)	NOPASSWD: /bin/su -' | sudo tee -a /etc/sudoers.d/{{ item.name }}"
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/{{ item.name }}"
+        content: "{{ item.name }} ALL=(ALL) NOPASSWD: '/bin/su -'"
+        mode: '0440'
       loop: "{{ users }}"
