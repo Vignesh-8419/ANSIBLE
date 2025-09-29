@@ -32,7 +32,7 @@
   tasks:
 
     - name: Create VM with static IP, customization, and Secure Boot disabled
-      community.vmware.vmware_guest:
+      vmware_guest:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
@@ -69,7 +69,7 @@
       loop: "{{ vm_list }}"
 
     - name: Move IP config to ens192 inside guest
-      community.vmware.vmware_guest_exec:
+      vmware_guest_exec:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
