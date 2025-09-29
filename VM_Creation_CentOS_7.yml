@@ -54,16 +54,18 @@
             dns_servers: "{{ dns_servers }}"
       loop: "{{ vm_list }}"
 
-    - name: Wait for VM to respond to ping
-      wait_for:
+    - name: Wait until VM responds to ping
+      ansible.builtin.wait_for:
         host: "{{ item.ip }}"
-        timeout: 300
+        port: 22                # Wait for SSH port if you also want SSH readiness
+        timeout: 120            # 2 minutes max
         state: started
       loop: "{{ vm_list }}"
-      register: ping_result
+      delegate_to: localhost
 
-    - name: Confirm server is up
-      debug:
-        msg: "Server {{ item.item.name }} with IP {{ item.item.ip }} is up and reachable."
-      loop: "{{ ping_result.results }}"
-      when: item.failed is not defined or not item.failed
+    - name: Ping the VM to verify connectivity
+      ansible.builtin.ping:
+      vars:
+        ansible_host: "{{ item.ip }}"
+      loop: "{{ vm_list }}"
+      delegate_to: localhost
