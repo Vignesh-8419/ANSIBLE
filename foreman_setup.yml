@@ -1,4 +1,3 @@
-```yaml
 ---
 - name: Configure Foreman and related services
   hosts: all
