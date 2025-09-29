@@ -1,6 +1,6 @@
 ---
 - name: Configure Foreman and related services
-  hosts: all
+  hosts: "{{ target_hosts }}"
   become: yes
   vars:
     domain: "vgs.com"
