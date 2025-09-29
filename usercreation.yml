@@ -25,6 +25,6 @@
       ansible.builtin.copy:
         dest: "/etc/sudoers.d/{{ item.name }}"
         content: |
-          {{ item.name }} ALL=(ALL) NOPASSWD: '/bin/su -'
+          {{ item.name }} ALL=(ALL) NOPASSWD: /bin/su -
         mode: '0440'
       loop: "{{ users }}"
