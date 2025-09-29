@@ -127,10 +127,12 @@
       yum:
         name: '*'
         state: latest
+      register: yum_update
 
     - name: Reboot system
       reboot:
         reboot_timeout: 600
+      when: yum_update.changed
 
     - name: Wait for hosts to come back online
       wait_for_connection:
