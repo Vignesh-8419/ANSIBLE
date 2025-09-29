@@ -3,12 +3,6 @@
   hosts: all
   become: yes
   vars:
-    repo_mount: "//192.168.31.87/ISO"
-    mount_point: "/var/www/html/repo"
-    username: "vigne"
-    password: "Vigneshv12$"
-    skip_patch: false
-    run_only: ""
     domain: "vgs.com"
     reverse_zone: "253.168.192.in-addr.arpa"
     named_conf: "/etc/named.conf"
@@ -17,6 +11,18 @@
     module_path: "/etc/puppetlabs/code/environments/production/modules/java_ks"
 
   tasks:
+    - name: Check DNS resolution
+      command: nslookup "{{ ansible_hostname }}"
+      register: nslookup_result
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Configure DNS resolver
+      copy:
+        content: "nameserver 192.168.253.151"
+        dest: /etc/resolv.conf
+      when: nslookup_result.rc != 0
+
     - name: Create mount point directory
       file:
         path: "{{ mount_point }}"
@@ -43,7 +49,6 @@
         path: "{{ item.path }}"
         state: absent
       loop: "{{ centos_repo_files.files }}"
-
 
     - name: Create base.repo
       copy:
@@ -109,40 +114,6 @@
           gpgcheck=1
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
         dest: /etc/yum.repos.d/vault.repo
-
-    - name: Install sshpass
-      yum:
-        name: sshpass
-        state: present
-
-    - name: Perform system update and reboot
-      when: run_only == "patch" and not skip_patch
-      block:
-        - name: Update all packages
-          yum:
-            name: '*'
-            state: latest
-        - name: Reboot system
-          reboot:
-
-    - name: Exit if run-only is patch
-      block:
-        - name: Terminate playbook for patch-only mode
-          fail:
-            msg: "Exiting playbook as run_only is set to 'patch'"
-          when: run_only == "patch"
-
-    - name: Check DNS resolution
-      command: nslookup "{{ ansible_hostname }}"
-      register: nslookup_result
-      ignore_errors: yes
-      changed_when: false
-
-    - name: Configure DNS resolver
-      copy:
-        content: "nameserver 192.168.253.151"
-        dest: /etc/resolv.conf
-      when: nslookup_result.rc != 0
 
     - name: Install BIND packages
       yum:
