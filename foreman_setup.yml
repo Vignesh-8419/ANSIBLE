@@ -41,7 +41,7 @@
       register: repo_removal
     
     - name: Debug remaining repo files
-      ansible.builtin.command: ls -l /etc/yum.repos.d/
+      command: ls -l /etc/yum.repos.d/
       register: repo_files
       changed_when: false
       when: repo_removal.changed or repo_removal.failed
