@@ -148,6 +148,7 @@
           - puppetserver
           - katello
           - foreman-installer
+          - foreman
         state: present
 
     - name: Set JAVA path
