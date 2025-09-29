@@ -137,6 +137,7 @@
           - bind
           - bind-utils
         state: present
+      ignore_errors: true
 
     - name: Install Java and Foreman stack
       yum:
