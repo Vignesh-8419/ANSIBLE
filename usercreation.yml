@@ -3,7 +3,7 @@
   hosts: "{{ target_hosts }}"
   become: true
   vars:
-    password: "Welcome@123"
+    password: "Welcome123"
     users:
       - name: awx
 
