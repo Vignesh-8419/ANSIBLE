@@ -133,7 +133,7 @@
 
     - name: Wait for hosts to come back online
       wait_for_connection:
-        timeout: 300
+        timeout: 180
         delay: 10
       register: ping_result
 
