@@ -167,7 +167,7 @@
       when: module_path is exists
 
     - name: Install puppetlabs-java_ks module
-      ansible.builtin.shell: "/opt/puppetlabs/bin/puppet module install puppetlabs-java_ks --force"
+      ansible.builtin.command: "/opt/puppetlabs/bin/puppet module install puppetlabs-java_ks --force"
 
     - name: Link java_ks module for Foreman installer
       ansible.builtin.file:
