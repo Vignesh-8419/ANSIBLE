@@ -80,6 +80,5 @@
           sed -i 's/DEVICE=ether/DEVICE=ens192/' /etc/sysconfig/network-scripts/ifcfg-ens192 &&
           nmcli connection reload && nmcli connection up ens192
         fi
-      become: yes
       delegate_to: "{{ item.ip }}"
       loop: "{{ vm_list }}"
