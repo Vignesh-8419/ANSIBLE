@@ -1,5 +1,5 @@
 ---
-- name: Provision RockyOS VMs with static IPs
+- name: Provision RockyOS VMs with static IPs and Secure Boot disabled
   hosts: localhost
   connection: local
   gather_facts: no
@@ -25,7 +25,7 @@
         ip: "192.168.253.133"
 
   tasks:
-    - name: Create VM with static IP and customization
+    - name: Create VM with static IP, customization, and Secure Boot disabled
       vmware_guest:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -47,7 +47,7 @@
           memory_mb: 4096
           num_cpus: 4
           firmware: efi
-		  secure_boot_enabled: false
+          secure_boot_enabled: false
         networks:
           - name: "{{ vm_network }}"
             type: static
@@ -55,6 +55,7 @@
             gateway: "{{ gateway }}"
             netmask: "{{ netmask }}"
             dns_servers: "{{ dns_servers }}"
+            device_type: vmxnet3
             connected: true
             start_connected: true
         customization:
