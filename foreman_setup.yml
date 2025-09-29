@@ -151,27 +151,32 @@
         state: present
 
     - name: Set JAVA path
+      become: true
       lineinfile:
         path: /etc/environment
         line: "PATH={{ java_path }}:{{ ansible_env.PATH }}"
         state: present
 
     - name: Remove existing java_ks module
+      become: true
       file:
         path: "{{ module_path }}"
         state: absent
       when: module_path is exists
 
     - name: Install puppetlabs-java_ks module
+      become: true
       shell: /opt/puppetlabs/bin/puppet module install puppetlabs-java_ks --force
 
     - name: Link java_ks module for Foreman installer
+      become: true
       file:
         src: "{{ module_path }}"
         dest: /usr/share/foreman-installer/modules/java_ks
         state: link
 
     - name: Check if Foreman is running
+      become: true
       systemd:
         name: foreman
         state: started
@@ -179,11 +184,13 @@
       ignore_errors: yes
 
     - name: Run Foreman installer with Katello scenario
+      become: true
       command: foreman-installer --scenario katello
       when: foreman_status.status.ActiveState != "active"
       changed_when: true
 
     - name: Configure firewall for Foreman
+      become: true
       firewalld:
         service: "{{ item }}"
         permanent: yes
@@ -203,6 +210,7 @@
         state: present
 
     - name: Configure Foreman TFTP proxy
+      become: true
       command: >
         foreman-installer --scenario katello
         --foreman-proxy-tftp true
@@ -212,17 +220,20 @@
       changed_when: true
 
     - name: Generate DNSSEC key for Foreman proxy
+      become: true
       command: dnssec-keygen -a HMAC-SHA512 -b 512 -n USER foreman-proxy
       register: dnssec_keygen
       changed_when: true
 
     - name: Move DNSSEC private key
+      become: true
       command: mv {{ item }} /etc/foreman-proxy/dns.key
       loop: "{{ (dnssec_keygen.stdout_lines | select('match', 'Kforeman-proxy.*\\.private') | list) }}"
       when: dnssec_keygen.stdout_lines is defined
       changed_when: true
 
     - name: Set ownership and permissions for DNS key
+      become: true
       file:
         path: /etc/foreman-proxy/dns.key
         owner: foreman-proxy
@@ -230,6 +241,7 @@
         mode: '0600'
 
     - name: Configure Foreman DNS proxy
+      become: true
       command: >
         foreman-installer --scenario katello
         --foreman-proxy-dns true
@@ -241,6 +253,7 @@
       changed_when: true
 
     - name: Configure Foreman DHCP proxy
+      become: true
       command: >
         foreman-installer --scenario katello
         --foreman-proxy-dhcp true
@@ -254,6 +267,7 @@
       changed_when: true
 
     - name: Configure firewall for DHCP, TFTP, and Puppet
+      become: true
       firewalld:
         service: "{{ item.service | default(omit) }}"
         port: "{{ item.port | default(omit) }}"
