@@ -21,15 +21,10 @@
     esxi_hostname: "192.168.253.128"
     domain_name: "vgs.com"
     vm_list:
-      - name: "rocky-08-01"
-        ip: "192.168.253.133"
-        root_password: "YourRootPasswordHere"
-      - name: "rocky-08-02"
-        ip: "192.168.253.134"
-        root_password: "YourRootPasswordHere"
+      - name: "{{ vm_name }}"
+        ip: "{{ vm_ip }}"
 
   tasks:
-
     - name: Create VM with static IP, customization, and Secure Boot disabled
       vmware_guest:
         hostname: "{{ vcenter_hostname }}"
@@ -63,23 +58,13 @@
             device_type: vmxnet3
             connected: true
             start_connected: true
+        customization:
+          domain: "{{ domain_name }}"
+          dns_servers: "{{ dns_servers }}"
+          hostname: "{{ item.name }}"
+          nic_setting:
+            - ip: "{{ item.ip }}"
+              subnet_mask: "{{ netmask }}"
+              gateway: "{{ gateway }}"
         wait_for_ip_address: true
       loop: "{{ vm_list }}"
-
-    - name: Wait until SSH is available on VM
-      wait_for:
-        host: "{{ item.ip }}"
-        port: 22
-        timeout: 300
-      loop: "{{ vm_list }}"
-
-    - name: Fix System ether inside guest via SSH
-      shell: |
-        if [ -f /etc/sysconfig/network-scripts/ifcfg-ether ]; then
-          mv /etc/sysconfig/network-scripts/ifcfg-ether /etc/sysconfig/network-scripts/ifcfg-ens192 &&
-          sed -i 's/DEVICE=ether/DEVICE=ens192/' /etc/sysconfig/network-scripts/ifcfg-ens192 &&
-          nmcli connection reload && nmcli connection up ens192
-        fi
-      become: yes
-      delegate_to: "{{ item.ip }}"
-      with_items: "{{ vm_list }}"
