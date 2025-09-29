@@ -24,7 +24,7 @@
     - name: Providing sudo access
       copy:
         dest: "/etc/sudoers.d/{{ item.name }}"
-        content: "{{ item.name }} ALL=(ALL) NOPASSWD: /bin/su -"
+        content: "{{ item.name }} ALL=(ALL) NOPASSWD: '/bin/su -'"
         mode: '0440'
         validate: '/usr/sbin/visudo -cf %s'
       loop: "{{ users }}"
