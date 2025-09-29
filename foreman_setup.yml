@@ -1,7 +1,7 @@
 ---
 - name: Configure Foreman and related services
   hosts: "{{ target_hosts }}"
-  become: yes
+  become: sudo
   vars:
     domain: "vgs.com"
     reverse_zone: "253.168.192.in-addr.arpa"
