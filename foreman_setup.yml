@@ -1,3 +1,4 @@
+```yaml
 ---
 - name: Configure Foreman and related services
   hosts: all
@@ -119,8 +120,11 @@
           ansible.builtin.reboot:
 
     - name: Exit if run-only is patch
-      ansible.builtin.meta: end_play
-      when: run_only == "patch"
+      block:
+        - name: Terminate playbook for patch-only mode
+          ansible.builtin.fail:
+            msg: "Exiting playbook as run_only is set to 'patch'"
+          when: run_only == "patch"
 
     - name: Check DNS resolution
       ansible.builtin.command: nslookup "{{ ansible_hostname }}"
@@ -136,11 +140,10 @@
 
     - name: Install BIND packages
       ansible.builtin.yum:
-        name: "{{ item }}"
+        name:
+          - bind
+          - bind-utils
         state: present
-      loop:
-        - bind
-        - bind-utils
 
     - name: Install Java and Foreman stack
       ansible.builtin.yum:
@@ -210,7 +213,7 @@
         --foreman-proxy-tftp true
         --foreman-proxy-tftp-managed true
         --foreman-proxy-tftp-root /var/lib/tftpboot
-        --foreman-proxy-tftp-servername cent-07-01.vgs.com
+        --foreman-proxy-tftp-servername "{{ foreman_proxy_tftp_servername | default(ansible_fqdn) }}"
       changed_when: true
 
     - name: Generate DNSSEC key for Foreman proxy
@@ -247,12 +250,12 @@
         foreman-installer --scenario katello
         --foreman-proxy-dhcp true
         --foreman-proxy-dhcp-managed true
-        --foreman-proxy-dhcp-server cent-07-01.vgs.com
+        --foreman-proxy-dhcp-server "{{ foreman_proxy_dhcp_server | default(ansible_fqdn) }}"
         --foreman-proxy-dhcp-range ""
-        --foreman-proxy-dhcp-gateway 192.168.253.2
-        --foreman-proxy-dhcp-nameservers cent-07-01.vgs.com
-        --foreman-proxy-dhcp-config /etc/dhcp/dhcpd.conf
-        --foreman-proxy-dhcp-leases /var/lib/dhcpd/dhcpd.leases
+        --foreman-proxy-dhcp-gateway "{{ foreman_proxy_dhcp_gateway | default('192.168.253.2') }}"
+        --foreman-proxy-dhcp-nameservers "{{ foreman_proxy_dhcp_nameservers | default(ansible_fqdn) }}"
+        --foreman-proxy-dhcp-config "/etc/dhcp/dhcpd.conf"
+        --foreman-proxy-dhcp-leases "/var/lib/dhcpd/dhcpd.leases"
       changed_when: true
 
     - name: Configure firewall for DHCP, TFTP, and Puppet
@@ -266,3 +269,4 @@
         - { service: dhcp }
         - { service: tftp }
         - { port: 8140/tcp }
+```
