@@ -22,5 +22,5 @@
       loop: "{{ users }}"
 
     - name: Providing sudo access
-	  command: "echo '{{ item.name }}	ALL=(ALL)	NOPASSWD: /bin/su -' | sudo tee -a /etc/sudoers.d/{{ item.name }}"
+      command: "echo '{{ item.name }}	ALL=(ALL)	NOPASSWD: /bin/su -' | sudo tee -a /etc/sudoers.d/{{ item.name }}"
       loop: "{{ users }}"
