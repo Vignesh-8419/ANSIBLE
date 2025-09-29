@@ -37,6 +37,12 @@
         state: mounted
       when: ansible_mounts | selectattr('mount', 'equalto', mount_point) | list | length == 0
 
+    - name: Find CentOS YUM repo files
+      find:
+        paths: /etc/yum.repos.d/
+        patterns: 'CentOS-*'
+      register: centos_repo_files
+    
     - name: Remove CentOS YUM repo files
       file:
         path: "{{ item.path }}"
