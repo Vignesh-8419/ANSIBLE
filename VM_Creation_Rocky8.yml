@@ -58,13 +58,5 @@
             device_type: vmxnet3
             connected: true
             start_connected: true
-        customization:
-          domain: "{{ domain_name }}"
-          dns_servers: "{{ dns_servers }}"
-          hostname: "{{ item.name }}"
-          nic_setting:
-            - ip: "{{ item.ip }}"
-              subnet_mask: "{{ netmask }}"
-              gateway: "{{ gateway }}"
         wait_for_ip_address: true
       loop: "{{ vm_list }}"
