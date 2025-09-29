@@ -140,6 +140,7 @@
       ignore_errors: true
 
     - name: Install Java and Foreman stack
+      become: true
       yum:
         name:
           - java-1.8.0-openjdk
@@ -193,6 +194,7 @@
         - https
 
     - name: Install DHCP and TFTP services
+      become: true
       yum:
         name:
           - dhcp-server
