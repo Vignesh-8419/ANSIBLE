@@ -13,4 +13,4 @@
     
     - name: Execute foreman.sh on remote host
       become: true
-      shell: "/tmp/foreman.sh"
+      shell: "bash -l /tmp/foreman.sh"
