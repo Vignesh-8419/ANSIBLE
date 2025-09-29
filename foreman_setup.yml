@@ -33,7 +33,10 @@
       when: ansible_mounts | selectattr('mount', 'equalto', mount_point) | list | length == 0
 
     - name: Remove existing YUM repo files
-      command: rm -rf /etc/yum.repos.d/*
+      ansible.builtin.file:
+        path: "/etc/yum.repos.d/{{ item }}"
+        state: absent
+      loop: "{{ query('fileglob', '/etc/yum.repos.d/*.repo') }}"
 
     - name: Create base.repo
       copy:
