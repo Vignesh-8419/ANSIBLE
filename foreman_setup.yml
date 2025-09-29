@@ -268,4 +268,3 @@
         - { service: dhcp }
         - { service: tftp }
         - { port: 8140/tcp }
-```
