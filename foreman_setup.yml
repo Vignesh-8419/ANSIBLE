@@ -9,6 +9,10 @@
     zone_dir: "/var/named"
     java_path: "/usr/lib/jvm/java-1.8.0-openjdk-1.8.0.412.b08-1.el7_9.x86_64/bin"
     module_path: "/etc/puppetlabs/code/environments/production/modules/java_ks"
+    repo_mount: "//192.168.31.87/ISO"
+    mount_point: "/var/www/html/repo"
+    username: "vigne"
+    password: "Vigneshv12$"
 
   tasks:
     - name: Check DNS resolution
