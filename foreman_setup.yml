@@ -148,7 +148,13 @@
           - puppetserver
           - katello
           - foreman-installer
-          - foreman
+        state: present
+
+    - name: Install Foreman
+      become: true
+      yum:
+        name:
+          - "foreman*"
         state: present
 
     - name: Set JAVA path
