@@ -1,11 +1,16 @@
-- name: Download foreman.sh from GitHub to remote host
+- name: Run Foreman setup script from GitHub
+  hosts: "{{ target_hosts }}"
   become: true
-  get_url:
-    url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman.sh"
-    dest: "/tmp/foreman.sh"
-    mode: '0755'
-    remote_src: yes
+  tasks:
 
-- name: Execute foreman.sh on remote host
-  become: true
-  shell: "/tmp/foreman.sh"
+    - name: Download foreman.sh from GitHub to remote host
+      become: true
+      get_url:
+        url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman.sh"
+        dest: "/tmp/foreman.sh"
+        mode: '0755'
+        remote_src: yes
+    
+    - name: Execute foreman.sh on remote host
+      become: true
+      shell: "/tmp/foreman.sh"
