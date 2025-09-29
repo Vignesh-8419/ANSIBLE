@@ -150,12 +150,13 @@
           - foreman-installer
         state: present
 
-    - name: Install Foreman
+    - name: Install all Foreman-related packages
       become: true
-      yum:
-        name:
-          - "foreman*"
-        state: present
+      shell: "yum install -y foreman*"
+      args:
+        warn: false
+      register: foreman_install
+      changed_when: "'Nothing to do' not in foreman_install.stdout"
 
     - name: Set JAVA path
       become: true
