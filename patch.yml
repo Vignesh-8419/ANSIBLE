@@ -1,0 +1,139 @@
+---
+- name: Patch CentOS systems
+  hosts: all
+  become: yes
+  vars:
+    repo_mount: "//192.168.31.87/ISO"
+    mount_point: "/var/www/html/repo"
+    username: "vigne"
+    password: "Vigneshv12$"
+
+  tasks:
+
+    - name: Check DNS resolution
+      command: nslookup "{{ ansible_hostname }}"
+      register: nslookup_result
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Configure DNS resolver
+      copy:
+        content: "nameserver 192.168.253.151"
+        dest: /etc/resolv.conf
+      when: nslookup_result.rc != 0
+
+    - name: Create mount point directory
+      file:
+        path: "{{ mount_point }}"
+        state: directory
+        mode: '0777'
+
+    - name: Mount ISO share
+      mount:
+        path: "{{ mount_point }}"
+        src: "{{ repo_mount }}"
+        fstype: cifs
+        opts: "username={{ username }},password={{ password }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
+        state: mounted
+      when: ansible_mounts | selectattr('mount', 'equalto', mount_point) | list | length == 0
+
+    - name: Remove CentOS YUM repo files
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ centos_repo_files.files }}"
+
+    - name: Create base.repo
+      copy:
+        content: |
+          [base]
+          name=CentOS Base Repo
+          baseurl=file://{{ mount_point }}/centos
+          enabled=1
+          gpgcheck=0
+        dest: /etc/yum.repos.d/base.repo
+
+    - name: Create patch.repo
+      copy:
+        content: |
+          [patch]
+          name=CentOS Patch Repo
+          baseurl=file://{{ mount_point }}/installed_rhel7
+          enabled=1
+          gpgcheck=0
+        dest: /etc/yum.repos.d/patch.repo
+
+    - name: Create foreman.repo
+      copy:
+        content: |
+          [foreman]
+          name=CentOS Foreman Repo
+          baseurl=file://{{ mount_point }}/installed_rhel7
+          enabled=1
+          gpgcheck=0
+        dest: /etc/yum.repos.d/foreman.repo
+
+    - name: Create puppet.repo
+      copy:
+        content: |
+          [puppet]
+          name=Puppet 7 Repository
+          baseurl=file://{{ mount_point }}/puppet7
+          enabled=1
+          gpgcheck=0
+        dest: /etc/yum.repos.d/puppet.repo
+
+    - name: Create vault.repo
+      copy:
+        content: |
+          [base]
+          name=CentOS Vault Base
+          baseurl=http://vault.centos.org/7.9.2009/os/$basearch/
+          enabled=1
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+
+          [updates]
+          name=CentOS Vault Updates
+          baseurl=http://vault.centos.org/7.9.2009/updates/$basearch/
+          enabled=1
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+
+          [extras]
+          [extras]
+          name=CentOS Vault Extras
+          baseurl=http://vault.centos.org/7.9.2009/extras/$basearch/
+          enabled=1
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+        dest: /etc/yum.repos.d/vault.repo
+
+    - name: Install sshpass
+      yum:
+        name: sshpass
+        state: present
+
+    - name: Update all packages
+      yum:
+        name: '*'
+        state: latest
+
+    - name: Reboot system
+      reboot:
+        reboot_timeout: 600
+
+    - name: Wait for hosts to come back online
+      wait_for_connection:
+        timeout: 300
+        delay: 10
+      register: ping_result
+
+    - name: Check kernel version
+      command: uname -r
+      register: kernel_version
+      changed_when: false
+
+    - name: Debug kernel version
+      debug:
+        msg: "Kernel version on {{ inventory_hostname }} is {{ kernel_version.stdout }}"
