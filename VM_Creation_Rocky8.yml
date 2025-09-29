@@ -68,3 +68,19 @@
               gateway: "{{ gateway }}"
         wait_for_ip_address: true
       loop: "{{ vm_list }}"
+
+    - name: Wait until VM responds to ping
+      ansible.builtin.wait_for:
+        host: "{{ item.ip }}"
+        port: 22                # Wait for SSH port if you also want SSH readiness
+        timeout: 120            # 2 minutes max
+        state: started
+      loop: "{{ vm_list }}"
+      delegate_to: localhost
+
+    - name: Ping the VM to verify connectivity
+      ansible.builtin.ping:
+      vars:
+        ansible_host: "{{ item.ip }}"
+      loop: "{{ vm_list }}"
+      delegate_to: localhost
