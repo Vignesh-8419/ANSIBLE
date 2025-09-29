@@ -17,9 +17,13 @@
         create_home: yes
       loop: "{{ users }}"
 
-    - name: Setting password
-      command: "echo '{{ item.name }}:{{ password }}' | chpasswd"
-      loop: "{{ users }}"
+    - name: Setting the Password
+      user:
+        name: "{{ item.name }}"
+        password: "{{ new_password | password_hash('sha512') }}"
+        state: present
+        update_password: always
+      no_log: true
 
     - name: Providing sudo access
       ansible.builtin.copy:
