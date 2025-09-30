@@ -8,7 +8,13 @@
         url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman_proxy.sh"
         dest: "/tmp/foreman_proxy.sh"
         mode: '0755'
+  
+    - name: Create a file in tmp
+      become: true
+      file:
+       path: /tmp/log.txt
 
     - name: Execute foreman_proxy.sh on remote host and store output
       become: true
-      shell: "bash -l /tmp/foreman_proxy.sh | tee /tmp/foreman.log"
+      shell: /tmp/foreman_proxy.sh > /tmp/log.txt
+
