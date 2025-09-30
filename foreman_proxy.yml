@@ -12,9 +12,19 @@
     - name: Create a file in tmp
       become: true
       file:
-       path: /tmp/log.txt
+       path: /tmp/proxy_log.txt
+       state: touch
+       mode: '0644'
 
     - name: Execute foreman_proxy.sh on remote host and store output
       become: true
-      shell: /tmp/foreman_proxy.sh > /tmp/log.txt
+      shell: "/tmp/foreman_proxy.sh > /tmp/proxy_log.txt 2>&1"
+
+    - name: Show Foreman proxy setup log
+      command: cat /tmp/proxy_log.txt
+      register: proxy_log
+
+    - name: Print log contents
+      debug:
+        var: proxy_log.stdout_lines
 
