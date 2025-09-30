@@ -110,6 +110,7 @@ gpgcheck=0
 REPO
 
 yum install -y foreman foreman-proxy puppetserver --skip-broken
+yum install -y foreman-installer*
 
 echo "📂 Extracting Smart Proxy certificates..."
 mkdir -p /etc/foreman-proxy
