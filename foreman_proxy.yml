@@ -1,0 +1,16 @@
+- name: Run Foreman proxy setup script from GitHub
+  hosts: "{{ target_hosts }}"
+  become: true
+  tasks:
+
+    - name: Download foreman_proxy.sh from GitHub to remote host
+      get_url:
+        url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman_proxy.sh"
+        dest: "/tmp/foreman_proxy.sh"
+        mode: '0755'
+
+    - name: Execute foreman_proxy.sh on remote host (with logging)
+      shell: "bash -l /tmp/foreman_proxy.sh | tee /tmp/foreman_proxy.log"
+      args:
+        executable: /bin/bash
+        creates: /etc/foreman-proxy/settings.yml
