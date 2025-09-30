@@ -52,6 +52,10 @@
             netmask: "{{ netmask }}"
             gateway: "{{ gateway }}"
             dns_servers: "{{ dns_servers }}"
+        customization:
+          domain: "{{ guest_domain }}"
+          dns_servers: "{{ dns_servers }}"
+            - 
       loop: "{{ vm_list }}"
 
     - name: Wait until VM responds to ping
