@@ -10,6 +10,13 @@
         dest: "/tmp/foreman.sh"
         mode: '0755'
         remote_src: yes
+
+    - name: Create a file in tmp
+      become: true
+      file:
+       path: /tmp/foreman_log.txt
+       state: touch
+       mode: '0644'
     
     - name: Execute foreman.sh on remote host and store output
       become: true
