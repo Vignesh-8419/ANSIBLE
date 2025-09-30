@@ -39,7 +39,7 @@ rm -f /etc/yum.repos.d/*.repo
 
 echo "📝 Creating base.repo..."
 cat <<EOF > /etc/yum.repos.d/base.repo
-[base]
+[baseos]
 name=CentOS Base Repo
 baseurl=file://$MOUNT_POINT/centos
 enabled=1
