@@ -1,0 +1,29 @@
+- name: Run Foreman frontend & backend setup script from GitHub
+  hosts: "{{ target_hosts }}"
+  become: true
+  tasks:
+
+    - name: Download foreman_proxy.sh from GitHub to remote host
+      get_url:
+        url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/frontbackend.sh"
+        dest: "/tmp/frontbackend.sh"
+        mode: '0755'
+  
+    - name: Create a file in tmp
+      become: true
+      file:
+       path: /tmp/frontbackend.txt
+       state: touch
+       mode: '0644'
+
+    - name: Execute foreman_proxy.sh on remote host and store output
+      become: true
+      shell: "/tmp/foreman_proxy.sh > /tmp/frontbackend.txt 2>&1"
+
+    - name: Show Foreman frontend & backend setup log
+      command: cat /tmp/frontbackend.txt
+      register: frontbackend_log
+
+    - name: Print log contents
+      debug:
+        var: frontbackend_log.stdout_lines
