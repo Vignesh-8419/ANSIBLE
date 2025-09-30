@@ -20,4 +20,4 @@
     
     - name: Execute foreman.sh on remote host and store output
       become: true
-      shell: "bash -l /tmp/foreman.sh | tee /tmp/foreman.log"
+      shell: "/tmp/foreman.sh > /tmp/foreman_log.txt 2>&1"
