@@ -975,5 +975,3 @@ echo "🚀 Executing remote script..."
 sshpass -p 'Root@123' ssh -o StrictHostKeyChecking=no root@rocky-08-01.vgs.com "bash /root/foreman_frontend.sh"
 
 systemctl restart httpd
-npm install axios
-systemctl restart foreman_frontend.service
