@@ -124,6 +124,10 @@ yum install -y bind*
 echo "☕ Installing Java and Foreman stack..."
 yum install -y java-1.8.0-openjdk java-1.8.0-openjdk-devel
 yum install -y puppetserver katello foreman-installer
+yum install -y rh-redis5-redis
+sudo systemctl enable rh-redis5-redis
+sudo systemctl start rh-redis5-redis
+
 
 echo "🔧 Setting JAVA path..."
 export PATH="$JAVA_PATH:$PATH"
