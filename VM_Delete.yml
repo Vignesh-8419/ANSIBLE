@@ -1,6 +1,6 @@
 ---
 - name: VM deletion
-  hosts: all
+  hosts: localhost
   gather_facts: yes
 
   vars:
