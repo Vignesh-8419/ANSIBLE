@@ -3,7 +3,7 @@
   become: true
   tasks:
 
-    - name: Download foreman_proxy.sh from GitHub to remote host
+    - name: Download frontbackend.sh from GitHub to remote host
       get_url:
         url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/frontbackend.sh"
         dest: "/tmp/frontbackend.sh"
@@ -18,7 +18,7 @@
 
     - name: Execute foreman_proxy.sh on remote host and store output
       become: true
-      shell: "/tmp/foreman_proxy.sh > /tmp/frontbackend.txt 2>&1"
+      shell: "/tmp/frontbackend.sh > /tmp/frontbackend.txt 2>&1"
 
     - name: Show Foreman frontend & backend setup log
       command: cat /tmp/frontbackend.txt
