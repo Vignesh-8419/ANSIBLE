@@ -128,7 +128,8 @@ firewall-cmd --add-service=dhcp --permanent
 firewall-cmd --add-service=tftp --permanent
 firewall-cmd --add-service=https --permanent
 firewall-cmd --add-service=http --permanent
-
+firewall-cmd --add-port=9090/tcp --permanent
+firewall-cmd --add-port=443/tcp --permanent
 firewall-cmd --reload
 
 echo "🚀 Running Foreman Proxy installer..."
