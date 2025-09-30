@@ -143,7 +143,17 @@ echo "📦 Installing puppetlabs-java_ks module..."
 echo "🔗 Linking module for Foreman installer..."
 mkdir -p /usr/share/foreman-installer/modules
 ln -sf "$MODULE_PATH" /usr/share/foreman-installer/modules/java_ks
-
+# -------------------------------
+# STEP 4.5: Make your script resilient, add a check before running the installer
+# -------------------------------
+if yum history list &>/dev/null; then
+  echo "✅ Yum history is healthy."
+else
+  echo "⚠️ Yum history is corrupted. Resetting..."
+  mv /var/lib/yum/history /var/lib/yum/history.bak
+  yum clean all
+  rpm --rebuilddb
+fi
 # -------------------------------
 # STEP 6: Run Foreman Installer
 # -------------------------------
