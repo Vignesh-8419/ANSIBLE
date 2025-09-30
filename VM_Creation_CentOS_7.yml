@@ -54,7 +54,7 @@
             gateway: "{{ gateway }}"
             dns_servers: "{{ dns_servers }}"
         customization:
-          domain: "{{ domain_name }}"
+          domain: "{{ guest_domain }}"
           dns_servers: "{{ dns_servers }}"
           hostname: "{{ item.name }}"
     loop: "{{ vm_list }}"
