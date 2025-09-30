@@ -4,7 +4,7 @@
 # -------------------------------
 
 set +e 
-
+setenforce 0
 cp -rp /etc/httpd/conf.d /etc/httpd/conf.d-bkp
 
 cat <<'FOREMANCONF' > /etc/httpd/conf.d/05-foreman.conf
