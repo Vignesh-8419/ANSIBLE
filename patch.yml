@@ -11,12 +11,14 @@
   tasks:
 
     - name: Check DNS resolution
+      become: true
       command: nslookup "{{ ansible_hostname }}"
       register: nslookup_result
       ignore_errors: yes
       changed_when: false
 
     - name: Configure DNS resolver
+      become: true
       copy:
         content: |
           nameserver 192.168.253.151
@@ -26,12 +28,14 @@
 
 
     - name: Create mount point directory
+      become: true
       file:
         path: "{{ mount_point }}"
         state: directory
         mode: '0777'
 
     - name: Mount ISO share
+      become: true
       mount:
         path: "{{ mount_point }}"
         src: "{{ repo_mount }}"
@@ -41,18 +45,21 @@
       when: ansible_mounts | selectattr('mount', 'equalto', mount_point) | list | length == 0
 
     - name: Find CentOS YUM repo files
+      become: true
       find:
         paths: /etc/yum.repos.d/
         patterns: 'CentOS-*'
       register: centos_repo_files
     
     - name: Remove CentOS YUM repo files
+      become: true
       file:
         path: "{{ item.path }}"
         state: absent
       loop: "{{ centos_repo_files.files }}"
 
     - name: Create base.repo
+      become: true
       copy:
         content: |
           [base]
@@ -63,6 +70,7 @@
         dest: /etc/yum.repos.d/base.repo
 
     - name: Create patch.repo
+      become: true
       copy:
         content: |
           [patch]
@@ -73,6 +81,7 @@
         dest: /etc/yum.repos.d/patch.repo
 
     - name: Create foreman.repo
+      become: true
       copy:
         content: |
           [foreman]
@@ -83,6 +92,7 @@
         dest: /etc/yum.repos.d/foreman.repo
 
     - name: Create puppet.repo
+      become: true
       copy:
         content: |
           [puppet]
@@ -93,6 +103,7 @@
         dest: /etc/yum.repos.d/puppet.repo
 
     - name: Create vault.repo
+      become: true
       copy:
         content: |
           [base]
@@ -119,28 +130,33 @@
         dest: /etc/yum.repos.d/vault.repo
 
     - name: Install sshpass
+      become: true
       yum:
         name: sshpass
         state: present
 
     - name: Update all packages
+      become: true
       yum:
         name: '*'
         state: latest
       register: yum_update
 
     - name: Reboot system
+      become: true
       reboot:
         reboot_timeout: 600
       when: yum_update.changed
 
     - name: Wait for hosts to come back online
+      become: true
       wait_for_connection:
         timeout: 300
         delay: 10
       register: ping_result
 
     - name: Check kernel version
+      become: true
       command: uname -r
       register: kernel_version
       changed_when: false
