@@ -15,7 +15,7 @@
     vm_network: "VM Network"
     guest_domain: "vgs.com"
     dns_servers:
-      - "192.168.253.155"
+      - "192.168.253.151"
     netmask: "255.255.255.0"
     gateway: "192.168.253.2"
     esxi_hostname: "192.168.253.128"
