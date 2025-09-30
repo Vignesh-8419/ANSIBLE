@@ -123,13 +123,11 @@ fi
 echo "🌐 Using network interface: \$INTERFACE"
 
 # Firewall setup
-firewall-cmd --permanent \
-  --add-port=9090/tcp \
-  --add-port=443/tcp \
-  --add-service=dhcp \
-  --add-service=tftp \
-  --add-service=https \
-  --add-service=http
+firewall-cmd --add-service=dhcp --permanent
+firewall-cmd --add-service=tftp --permanent
+firewall-cmd --add-service=https --permanent
+firewall-cmd --add-service=http --permanent
+
 firewall-cmd --reload
 
 echo "🚀 Running Foreman Proxy installer..."
