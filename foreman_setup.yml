@@ -21,3 +21,11 @@
     - name: Execute foreman.sh on remote host and store output
       become: true
       shell: "/tmp/foreman.sh > /tmp/foreman_log.txt 2>&1"
+
+    - name: Show Foreman setup log
+      command: cat /tmp/foreman_log.txt
+      register: foreman_log
+
+    - name: Print log contents
+      debug:
+        var: foreman_log.stdout_lines
