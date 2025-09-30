@@ -19,7 +19,7 @@
     netmask: "255.255.255.0"
     gateway: "192.168.253.2"
     esxi_hostname: "192.168.253.128"
-    domain_name: "vgs.com"
+    guest_domain: "vgs.com"
     vm_list:
       - name: "{{ vm_name }}"
         ip: "{{ vm_ip }}"
@@ -59,7 +59,7 @@
             connected: true
             start_connected: true
         customization:
-          domain: "{{ domain_name }}"
+          domain: "{{ guest_domain }}"
           dns_servers: "{{ dns_servers }}"
           hostname: "{{ item.name }}"
         wait_for_ip_address: true
