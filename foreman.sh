@@ -213,6 +213,8 @@ foreman-installer --scenario katello \
   
 firewall-cmd --add-service=dhcp --permanent
 firewall-cmd --add-service=tftp --permanent
+firewall-cmd --add-service=http --permanent
+firewall-cmd --add-service=https --permanent
 firewall-cmd --add-port=8140/tcp --permanent
 firewall-cmd --reload
 
