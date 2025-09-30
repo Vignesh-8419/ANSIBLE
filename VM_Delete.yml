@@ -1,6 +1,6 @@
 ---
 - name: VM deletion
-  hosts: "{{ target_hosts }}"
+  hosts: all
   gather_facts: yes
 
   vars:
