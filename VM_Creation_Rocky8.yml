@@ -15,7 +15,7 @@
     guest_id: "rhel8_64Guest"
     vm_network: "VM Network"
     dns_servers:
-      - "192.168.253.160"
+      - "192.168.253.151"
     netmask: "255.255.255.0"
     gateway: "192.168.253.2"
     esxi_hostname: "192.168.253.128"
