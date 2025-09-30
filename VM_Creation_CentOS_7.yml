@@ -43,8 +43,8 @@
             type: thin
             datastore: "{{ datastore_name }}"
         hardware:
-          memory_mb: 4096
-          num_cpus: 4
+          memory_mb: 8192
+          num_cpus: 8
           firmware: efi
         networks:
           - name: "{{ vm_network }}"
