@@ -59,7 +59,7 @@
         content: |
           [patch]
           name=patch-repo
-          baseurl=http://192.168.253.130/repo/patch
+          baseurl=http://http-server-01/repo/patch
           enabled=1
           gpgcheck=0
 
@@ -101,13 +101,13 @@
         content: |
           [elevate]
           name=ELevate-repo
-          baseurl=http://192.168.253.130/repo/elevate
+          baseurl=http://http-server-01/repo/elevate
           enabled=1
           gpgcheck=0
  
           [base]
           name=base-repo
-          baseurl=http://192.168.253.130/centos
+          baseurl=http://http-server-01/centos
           enabled=1
           gpgcheck=0
 
@@ -133,13 +133,13 @@
         content: |
           [rocky8-baseos]
           name=Rocky Linux 8 - BaseOS
-          baseurl=http://192.168.253.130/rocky8/BaseOS/
+          baseurl=http://http-server-01/rocky8/BaseOS/
           gpgcheck=0
           enabled=1
 
           [rocky8-appstream]
           name=Rocky Linux 8 - AppStream
-          baseurl=http://192.168.253.130/rocky8/AppStream/
+          baseurl=http://http-server-01/rocky8/AppStream/
           gpgcheck=0
           enabled=1
 
