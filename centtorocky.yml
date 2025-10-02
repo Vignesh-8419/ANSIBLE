@@ -159,13 +159,45 @@
           gpgcheck=1
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 
-    - name: Install elevate and leapp packages
+    - name: Check if yum-complete-transaction is pending
+      shell: yum-complete-transaction --cleanup-only --quiet --skip-broken; echo $?
+      register: yum_pending
+      changed_when: false
+
+    - name: Run yum-complete-transaction if pending
+      command: yum-complete-transaction -y
+      when: yum_pending.stdout != "0"
+
+    - name: Try to install elevate and leapp packages
       yum:
         name:
-          - leapp
+          - elevate
           - leapp-upgrade
           - leapp-data-rocky
         state: present
+      register: leapp_install
+      ignore_errors: true
+
+    - name: Handle libcomps conflict (remove tfm packages + downgrade libcomps)
+      block:
+        - name: Remove conflicting tfm packages
+          yum:
+            name:
+              - tfm-pulpcore-python3-libcomps
+              - tfm-pulpcore-python3-solv
+            state: absent
+
+        - name: Downgrade libcomps to 0.1.8-14.el7
+          command: yum downgrade -y libcomps-0.1.8-14.el7
+
+        - name: Reinstall elevate and leapp packages after libcomps fix
+          yum:
+            name:
+              - elevate
+              - leapp-upgrade
+              - leapp-data-rocky
+            state: present
+      when: leapp_install is failed
 
     # ---- Create and lock leapp upgrade repo BEFORE preupgrade ----
     - name: Backup existing leapp upgrade repo file
