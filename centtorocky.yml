@@ -13,6 +13,20 @@
     password: "Vigneshv12$"
     ansible_hostname: "ansible-server-01.vgs.com"
 
+  pre_tasks:
+    - name: Check current kernel version
+      shell: uname -r
+      register: kernel_version
+      changed_when: false
+
+    - name: Skip play if already Rocky Linux 8
+      meta: end_play
+      when: kernel_version.stdout is search("4.18.")
+
+    - name: Show message if already Rocky
+      debug:
+        msg: "✅ Server is already Rocky Linux 8 (kernel {{ kernel_version.stdout }})"
+
   tasks:
     - name: Check DNS resolution
       command: nslookup "{{ ansible_hostname }}"
