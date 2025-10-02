@@ -119,7 +119,7 @@
  
           [base]
           name=base-repo
-          baseurl=http://http-server-01/repo/centos
+          baseurl=http://http-server-01/repo/centos/
           enabled=1
           gpgcheck=0
 
