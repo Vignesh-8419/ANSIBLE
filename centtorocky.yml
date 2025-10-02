@@ -10,6 +10,7 @@
     mount_point: "/var/www/html/repo"
     username: "vigne"
     password: "Vigneshv12$"
+    ansible_hostname: "ansible-server-01.vgs.com"
 
   tasks:
     - name: Check DNS resolution
