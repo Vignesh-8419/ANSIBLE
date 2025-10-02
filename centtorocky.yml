@@ -69,7 +69,7 @@
         content: |
           [base]
           name=CentOS Vault Base
-          baseurl=http://vault.centos.org/7.9.2009/os/$basearch/
+          baseurl=http://vault.centos.org/7.9.2009/os/
           enabled=1
           gpgcheck=1
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
@@ -140,7 +140,7 @@
 
           [base]
           name=CentOS Vault Base
-          baseurl=http://vault.centos.org/7.9.2009/os/$basearch/
+          baseurl=http://vault.centos.org/7.9.2009/os/
           enabled=1
           gpgcheck=1
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
@@ -192,7 +192,6 @@
         - name: Reinstall elevate and leapp packages after libcomps fix
           yum:
             name:
-              - elevate
               - leapp-upgrade
               - leapp-data-rocky
             state: present
