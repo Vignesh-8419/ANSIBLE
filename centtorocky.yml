@@ -6,6 +6,7 @@
     centos_vault_repo_file: /etc/yum.repos.d/CentOS-Base.repo
     elevate_repo_file: /etc/yum.repos.d/elevate.repo
     rocky_repo_file: /etc/leapp/files/leapp_upgrade_repositories.repo
+    centos_patch_repo_file: /etc/yum.repos.d/centos-patch.repo
     repo_mount: "//192.168.31.87/ISO"
     mount_point: "/var/www/html/repo"
     username: "vigne"
@@ -91,9 +92,8 @@
       when: patch_needed
 
     - name: Move existing .repo files to backup (second time, before elevate repo)
-      shell: mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/
+      shell: mkdir -p /etc/yum.repos.d/backup && mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/
       ignore_errors: yes
-
 
     - name: Create elevate.repo
       copy:
@@ -111,7 +111,7 @@
           enabled=1
           gpgcheck=0
 
-     - name: Install elevate and leapp packages
+    - name: Install elevate and leapp packages
       yum:
         name:
           - leapp
