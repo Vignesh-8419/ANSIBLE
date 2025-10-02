@@ -113,7 +113,7 @@
         content: |
           [elevate]
           name=ELevate-repo
-          baseurl=http://http-server-01/repo/elevate
+          baseurl=http://http-server-01/repo/elevate/
           enabled=1
           gpgcheck=0
  
