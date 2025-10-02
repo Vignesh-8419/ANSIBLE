@@ -44,7 +44,7 @@
         content: |
           [patch]
           name=patch-repo
-          baseurl=http://http-server-01/repo/patch
+          baseurl=http://http-server-01/repo/installed_rhel7
           enabled=1
           gpgcheck=0
 
