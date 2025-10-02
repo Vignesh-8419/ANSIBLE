@@ -1,0 +1,216 @@
+---
+- name: 🚀 Migrate CentOS 7 to Rocky Linux 8 using ELevate
+  hosts: testserver02
+  become: yes
+  vars:
+    centos_vault_repo_file: /etc/yum.repos.d/CentOS-Base.repo
+    elevate_repo_file: /etc/yum.repos.d/elevate.repo
+    rocky_repo_file: /etc/leapp/files/leapp_upgrade_repositories.repo
+    repo_mount: "//192.168.31.87/ISO"
+    mount_point: "/var/www/html/repo"
+    username: "vigne"
+    password: "Vigneshv12$"
+
+  tasks:
+    - name: Check DNS resolution
+      command: nslookup "{{ ansible_hostname }}"
+      register: nslookup_result
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Configure DNS resolver
+      copy:
+        content: "nameserver 192.168.253.151"
+        dest: /etc/resolv.conf
+      when: nslookup_result.rc != 0
+
+    - name: Create mount point directory
+      file:
+        path: "{{ mount_point }}"
+        state: directory
+        mode: '0777'
+
+    - name: Mount ISO share
+      mount:
+        path: "{{ mount_point }}"
+        src: "{{ repo_mount }}"
+        fstype: cifs
+        opts: "username={{ username }},password={{ password }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
+        state: mounted
+      when: ansible_mounts | selectattr('mount', 'equalto', mount_point) | list | length == 0
+
+    - name: Find CentOS YUM repo files
+      find:
+        paths: /etc/yum.repos.d/
+        patterns: 'CentOS-*'
+      register: centos_repo_files
+    
+    - name: Remove CentOS YUM repo files
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ centos_repo_files.files }}"
+
+    - name: Create base.repo
+      copy:
+        content: |
+          [base]
+          name=CentOS Base Repo
+          baseurl=file://{{ mount_point }}/centos
+          enabled=1
+          gpgcheck=0
+        dest: /etc/yum.repos.d/base.repo
+
+
+    - name: 📁 Create CentOS 7 vault repo
+      copy:
+        dest: "{{ centos_vault_repo_file }}"
+        content: |
+          [base]
+          name=CentOS-7-Base
+          baseurl=http://vault.centos.org/7.9.2009/os/x86_64/
+          enabled=1
+          gpgcheck=0
+
+          [updates]
+          name=CentOS-7-Updates
+          baseurl=http://vault.centos.org/7.9.2009/updates/x86_64/
+          enabled=1
+          gpgcheck=0
+
+          [extras]
+          name=CentOS-7-extras
+          baseurl=https://vault.centos.org/7.9.2009/extras/x86_64/
+          enabled=1
+          gpgcheck=0
+
+    - name: 🔍 Get current kernel version
+      shell: uname -r
+      register: current_kernel
+      changed_when: false
+
+    - name: 🧠 Set patch_needed based on kernel version
+      set_fact:
+       patch_needed: "{{ current_kernel.stdout.strip() != '3.10.0-1160.119.1.el7.x86_64' }}"
+
+    - name: 🧾 Show current kernel and patch need
+      debug:
+       msg: "Current kernel: {{ current_kernel.stdout.strip() }} | Patch needed: {{ patch_needed }}"
+
+    - name: 🔄 Update all CentOS 7 packages
+      yum:
+       name: "*"
+       state: latest
+      when: patch_needed
+
+    - name: 🔁 Reboot to reflect updates
+      reboot:
+       msg: "Reboot after applying CentOS 7 patches"
+       connect_timeout: 5
+       reboot_timeout: 600
+       pre_reboot_delay: 5
+       post_reboot_delay: 30
+      when: patch_needed
+
+
+    - name: 📝 Create elevate.repo
+      copy:
+        dest: "{{ elevate_repo_file }}"
+        content: |
+          [elevate]
+          name=ELevate-repo
+          baseurl=https://repo.almalinux.org/elevate/el7/x86_64/
+          enabled=1
+          gpgcheck=0
+
+    - name: 📦 Install elevate and leapp packages
+      yum:
+        name:
+          - leapp
+          - leapp-upgrade
+          - leapp-data-rocky
+        state: present
+
+    - name: Backup existing leapp upgrade repo file
+      copy:
+        src: /etc/leapp/files/leapp_upgrade_repositories.repo
+        dest: /etc/leapp/files/leapp_upgrade_repositories.repo.bak
+        remote_src: yes
+        backup: yes
+
+    - name: Update leapp upgrade repo file with local Rocky repos
+      copy:
+        dest: /etc/leapp/files/leapp_upgrade_repositories.repo
+        content: |
+          [rocky8-baseos]
+          name=Rocky Linux 8 - BaseOS
+          baseurl=http://192.168.253.136/rocky8/BaseOS/
+          gpgcheck=0
+          enabled=1
+
+          [rocky8-appstream]
+          name=Rocky Linux 8 - AppStream
+          baseurl=http://192.168.253.136/rocky8/AppStream/
+          gpgcheck=0
+          enabled=1
+    # --- END FIX ---
+
+    - name: ❌ Remove incompatible kernel modules
+      shell: |
+        modprobe -r floppy || true
+        modprobe -r pata_acpi || true
+
+    - name: 🧠 Answer leapp questions (authselect, PAM)
+      shell: |
+        leapp answer --section authselect_check.confirm=True
+        leapp answer --section remove_pam_pkcs11_module_check.confirm=True
+
+    - name: 📝 Create Rocky Linux 8 repo
+      copy:
+        dest: "{{ rocky_repo_file }}"
+        content: |
+          [rocky8-baseos]
+          name=Rocky Linux 8 - BaseOS
+          baseurl=http://192.168.253.136/rocky8/BaseOS/
+          gpgcheck=0
+          enabled=1
+
+          [rocky8-appstream]
+          name=Rocky Linux 8 - AppStream
+          baseurl=http://192.168.253.136/rocky8/AppStream/
+          gpgcheck=0
+          enabled=1
+
+    - name: 🧪 Run leapp preupgrade
+      command: leapp preupgrade
+      register: preupgrade_result
+      ignore_errors: true
+
+    - name: 🔍 Show preupgrade result
+      debug:
+        var: preupgrade_result.stdout_lines
+
+    - name: 🚀 Run leapp upgrade
+      command: leapp upgrade
+      register: upgrade_result
+      ignore_errors: true
+
+    - name: 🧾 Show upgrade result
+      debug:
+        var: upgrade_result.stdout_lines
+
+    - name: 🔁 Final Reboot into Rocky Linux
+      reboot:
+        msg: "Rebooting into upgraded Rocky Linux 8"
+        connect_timeout: 5
+        reboot_timeout: 600
+        pre_reboot_delay: 10
+        post_reboot_delay: 30
+
+    - name: ✅ Verify migration
+      shell: cat /etc/os-release
+      register: os_release
+
+    - name: 📋 Show OS release info
+      debug:
+        var: os_release.stdout_lines
