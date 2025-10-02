@@ -63,7 +63,7 @@
       ansible.builtin.wait_for:
         host: "{{ item.ip }}"
         port: 22                # Wait for SSH port if you also want SSH readiness
-        timeout: 300            # 2 minutes max
+        timeout: 600            # 2 minutes max
         state: started
       loop: "{{ vm_list }}"
       delegate_to: localhost
