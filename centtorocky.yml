@@ -52,6 +52,49 @@
         state: absent
       loop: "{{ centos_repo_files.files }}"
 
+    - name: Create CentOS 7 patch repo
+      copy:
+        dest: "{{ centos_patch_repo_file }}"
+        content: |
+          [patch]
+          name=patch-repo
+          baseurl=http://192.168.253.130/repo/patch
+          enabled=1
+          gpgcheck=0
+
+    - name: Get current kernel version
+      shell: uname -r
+      register: current_kernel
+      changed_when: false
+
+    - name: Set patch_needed based on kernel version
+      set_fact:
+        patch_needed: "{{ current_kernel.stdout.strip() != '3.10.0-1160.119.1.el7.x86_64' }}"
+
+    - name: Show current kernel and patch need
+      debug:
+        msg: "Current kernel: {{ current_kernel.stdout.strip() }} | Patch needed: {{ patch_needed }}"
+
+    - name: Update all CentOS 7 packages
+      yum:
+        name: "*"
+        state: latest
+      when: patch_needed
+
+    - name: Reboot to reflect updates
+      reboot:
+        msg: "Reboot after applying CentOS 7 patches"
+        connect_timeout: 5
+        reboot_timeout: 600
+        pre_reboot_delay: 5
+        post_reboot_delay: 30
+      when: patch_needed
+
+    - name: Move existing .repo files to backup (second time, before elevate repo)
+      shell: mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/
+      ignore_errors: yes
+
+
     - name: Create elevate.repo
       copy:
         dest: "{{ elevate_repo_file }}"
