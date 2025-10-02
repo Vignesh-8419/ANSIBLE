@@ -117,11 +117,32 @@
           enabled=1
           gpgcheck=0
  
-          [base]
+          [baseos]
           name=base-repo
           baseurl=http://http-server-01/repo/centos/
           enabled=1
           gpgcheck=0
+          [base]
+          name=CentOS Vault Base
+          baseurl=http://vault.centos.org/7.9.2009/os/$basearch/
+          enabled=1
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+
+          [updates]
+          name=CentOS Vault Updates
+          baseurl=http://vault.centos.org/7.9.2009/updates/$basearch/
+          enabled=1
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+
+          [extras]
+          [extras]
+          name=CentOS Vault Extras
+          baseurl=http://vault.centos.org/7.9.2009/extras/$basearch/
+          enabled=1
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 
     - name: Install elevate and leapp packages
       yum:
