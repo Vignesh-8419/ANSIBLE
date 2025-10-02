@@ -171,7 +171,6 @@
     - name: Try to install elevate and leapp packages
       yum:
         name:
-          - elevate
           - leapp-upgrade
           - leapp-data-rocky
         state: present
