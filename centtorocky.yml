@@ -82,7 +82,6 @@
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 
           [extras]
-          [extras]
           name=CentOS Vault Extras
           baseurl=https://vault.centos.org/7.9.2009/extras/x86_64/
           enabled=1
@@ -180,7 +179,6 @@
       args:
         creates: /usr/bin/applydeltarpm
 
-
     - name: Try to install elevate and leapp packages
       yum:
         name:
@@ -272,106 +270,111 @@
 
     - name: Final Reboot into Rocky Linux
       reboot:
-        msg: "Rebooting into upgraded Rocky Linux 8"
+        msg: "Rebooting into upgraded Rocky Linux"
         connect_timeout: 5
         reboot_timeout: 600
         pre_reboot_delay: 10
         post_reboot_delay: 30
+      when: upgrade_result.rc == 0
 
     - name: Wait for SSH to become available
       wait_for_connection:
         timeout: 900
         delay: 10
+      when: upgrade_result.rc == 0
 
     - name: Verify migration
       shell: cat /etc/os-release
       register: os_release
+      when: upgrade_result.rc == 0
 
-    # ------------------- Cleanup old CentOS 7 kernels and packages -------------------
-    - name: List old el7 kernel directories
-      shell: ls -d /lib/modules/*.el7* || true
-      register: old_kernels
-      changed_when: false
+    - block:
+        - name: List old el7 kernel directories
+          shell: ls -d /lib/modules/*.el7* || true
+          register: old_kernels
+          changed_when: false
 
-    - name: Remove weak-modules for old el7 kernels
-      shell: |
-        for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
-          /usr/sbin/weak-modules --remove-kernel $k || true
-        done
+        - name: Remove weak-modules for old el7 kernels
+          shell: |
+            for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
+              /usr/sbin/weak-modules --remove-kernel $k || true
+            done
 
-    - name: Remove old kernels via kernel-install
-      shell: |
-        for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
-          /bin/kernel-install remove $k /lib/modules/$k/vmlinuz || true
-        done
+        - name: Remove old kernels via kernel-install
+          shell: |
+            for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
+              /bin/kernel-install remove $k /lib/modules/$k/vmlinuz || true
+            done
 
-    - name: Find leftover el7 RPMs
-      shell: |
-        rpm -qa | grep -e '\.el[67]' | grep -vE '^(gpg-pubkey|libmoduled|katello-ca-consumer)' | sort
-      register: el7_rpms
-      changed_when: false
+        - name: Find leftover el7 RPMs
+          shell: |
+            rpm -qa | grep -e '\.el[67]' | grep -vE '^(gpg-pubkey|libmoduled|katello-ca-consumer)' | sort
+          register: el7_rpms
+          changed_when: false
 
-    - name: Save el7 package list
-      copy:
-        dest: /tmp/rhel7.txt
-        content: "{{ el7_rpms.stdout }}"
+        - name: Save el7 package list
+          copy:
+            dest: /tmp/rhel7.txt
+            content: "{{ el7_rpms.stdout }}"
 
-    - name: Remove leftover el7 RPMs
-      shell: |
-        for i in $(cat /tmp/rhel7.txt); do
-          echo "Removing $i"
-          rpm -e $i --nodeps || true
-        done
+        - name: Remove leftover el7 RPMs
+          shell: |
+            for i in $(cat /tmp/rhel7.txt); do
+              echo "Removing $i"
+              rpm -e $i --nodeps || true
+            done
 
-    - name: Cleanup leapp packages
-      yum:
-        name:
-          - leapp-pp
-          - leapp-deps-el8
-          - leapp-repository-deps-el8
-        state: absent
+        - name: Cleanup leapp packages
+          yum:
+            name:
+              - leapp-pp
+              - leapp-deps-el8
+              - leapp-repository-deps-el8
+            state: absent
 
-    - name: Remove leapp logs and old kernel dirs
-      file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /lib/modules/*el7*
-        - /var/log/leapp/
-        - /root/tmp_leapp_py3
-        - /var/lib/leapp/
-        - /boot/vmlinuz-*rescue*
-        - /boot/initramfs-*rescue*
+        - name: Remove leapp logs and old kernel dirs
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /lib/modules/*el7*
+            - /var/log/leapp/
+            - /root/tmp_leapp_py3
+            - /var/lib/leapp/
+            - /boot/vmlinuz-*rescue*
+            - /boot/initramfs-*rescue*
 
-    - name: Reinstall current kernel-core
-      shell: dnf reinstall -y kernel-core-$(uname -r)
+        - name: Reinstall current kernel-core
+          shell: dnf reinstall -y kernel-core-$(uname -r)
 
-    - name: Verify old kernels are not in grub
-      shell: grubby --info=ALL | grep :"\el7" || echo "Old Kernels are not present in the bootloader."
-      register: grub_check
-      changed_when: false
+        - name: Verify old kernels are not in grub
+          shell: grubby --info=ALL | grep :"\el7" || echo "Old Kernels are not present in the bootloader."
+          register: grub_check
+          changed_when: false
 
-    - name: Show grub verification result
-      debug:
-        var: grub_check.stdout_lines
+        - name: Show grub verification result
+          debug:
+            var: grub_check.stdout_lines
 
-    - name: Verify rescue image contains current kernel
-      shell: |
-        lsinitrd /boot/initramfs-*rescue*.img | grep -qm1 "$(uname -r)/kernel/" && echo "OK" || echo "FAIL"
-      register: rescue_check
-      changed_when: false
+        - name: Verify rescue image contains current kernel
+          shell: |
+            lsinitrd /boot/initramfs-*rescue*.img | grep -qm1 "$(uname -r)/kernel/" && echo "OK" || echo "FAIL"
+          register: rescue_check
+          changed_when: false
 
-    - name: Show rescue verification
-      debug:
-        var: rescue_check.stdout_lines
+        - name: Show rescue verification
+          debug:
+            var: rescue_check.stdout_lines
 
-    - name: Final reboot after cleanup
-      reboot:
-        msg: "Final reboot after cleanup"
-        connect_timeout: 5
-        reboot_timeout: 600
-        pre_reboot_delay: 10
-        post_reboot_delay: 30
+        - name: Final reboot after cleanup
+          reboot:
+            msg: "Final reboot after cleanup"
+            connect_timeout: 5
+            reboot_timeout: 600
+            pre_reboot_delay: 10
+            post_reboot_delay: 30
+
+      when: upgrade_result.rc == 0
 
     - name: Show OS release info
       debug:
