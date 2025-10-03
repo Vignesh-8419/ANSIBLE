@@ -306,7 +306,7 @@
 
     - name: Wait for SSH to become available
       wait_for_connection:
-        timeout: 900
+        timeout: 600
         delay: 10
       when: upgrade_result.rc == 0
 
