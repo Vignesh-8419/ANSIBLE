@@ -300,13 +300,10 @@
         reboot_timeout: 1500
       when: upgrade_result.rc == 0
     
-    - name: Wait and verify migration
-      hosts: "{{ target_hosts }}"
-      gather_facts: no
-      tasks:
-        - wait_for_connection:
-            timeout: 1200
-            delay: 30
+    - name: Wait for target host to come back after reboot
+      wait_for_connection:
+        timeout: 1200
+        delay: 30
 
     - name: Verify migration
       shell: cat /etc/os-release
