@@ -72,26 +72,6 @@
           gpgcheck=0
         dest: /etc/yum.repos.d/patch.repo
 
-    - name: Create foreman.repo
-      copy:
-        content: |
-          [foreman]
-          name=CentOS Foreman Repo
-          baseurl=file://{{ mount_point }}/installed_rhel7
-          enabled=1
-          gpgcheck=0
-        dest: /etc/yum.repos.d/foreman.repo
-
-    - name: Create puppet.repo
-      copy:
-        content: |
-          [puppet]
-          name=Puppet 7 Repository
-          baseurl=file://{{ mount_point }}/puppet7
-          enabled=1
-          gpgcheck=0
-        dest: /etc/yum.repos.d/puppet.repo
-
     - name: Create vault.repo
       copy:
         content: |
