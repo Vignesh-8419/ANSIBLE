@@ -178,6 +178,11 @@
       command: rpm -ivh /tmp/deltarpm-3.6-3.el7.x86_64.rpm
       args:
         creates: /usr/bin/applydeltarpm
+  
+    - name: Remove libsolv if installed
+      yum:
+        name: libsolv
+        state: absent
 
     - name: Try to install elevate and leapp packages
       yum:
