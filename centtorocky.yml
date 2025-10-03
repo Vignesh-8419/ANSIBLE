@@ -183,6 +183,15 @@
       yum:
         name: libsolv
         state: absent
+        
+    - name: Remove Foreman and Katello related packages
+      yum:
+       name:
+        - foreman-installer
+        - foreman-installer-katello
+        - katello
+        - rubygem-foreman_maintain
+       state: absent
 
     - name: Try to install elevate and leapp packages
       yum:
