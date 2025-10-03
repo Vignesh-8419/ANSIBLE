@@ -264,7 +264,7 @@
       reboot:
         msg: "Rebooting into upgraded Rocky Linux"
         connect_timeout: 5
-        reboot_timeout: 600
+        reboot_timeout: 1200
         pre_reboot_delay: 10
         post_reboot_delay: 30
       when: upgrade_result.rc == 0
@@ -362,7 +362,7 @@
           reboot:
             msg: "Final reboot after cleanup"
             connect_timeout: 5
-            reboot_timeout: 1200
+            reboot_timeout: 600
             pre_reboot_delay: 10
             post_reboot_delay: 30
 
