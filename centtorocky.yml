@@ -295,20 +295,18 @@
       debug:
         var: upgrade_result.stdout_lines
 
-    - name: Final Reboot into Rocky Linux
+    - name: Reboot into Rocky Linux
       reboot:
-        msg: "Rebooting into upgraded Rocky Linux"
-        connect_timeout: 5
         reboot_timeout: 1500
-        pre_reboot_delay: 10
-        post_reboot_delay: 30
       when: upgrade_result.rc == 0
-
-    - name: Wait for SSH to become available
-      wait_for_connection:
-        timeout: 600
-        delay: 10
-      when: upgrade_result.rc == 0
+    
+    - name: Wait and verify migration
+      hosts: "{{ target_hosts }}"
+      gather_facts: no
+      tasks:
+        - wait_for_connection:
+            timeout: 1200
+            delay: 30
 
     - name: Verify migration
       shell: cat /etc/os-release
