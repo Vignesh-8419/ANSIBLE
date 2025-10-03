@@ -235,6 +235,19 @@
     - name: Make leapp_upgrade_repositories.repo immutable to avoid changes
       command: chattr +i {{ rocky_repo_file }}
 
+    # ---- Unmount repo mount before preupgrade ----
+    - name: Unmount repo mount if mounted
+      mount:
+        path: "{{ mount_point }}"
+        state: unmounted
+      ignore_errors: yes
+
+    - name: Remove repo mount entry from /etc/fstab
+      lineinfile:
+        path: /etc/fstab
+        regexp: "{{ repo_mount | regex_escape() }}"
+        state: absent
+
     # ---- Run leapp preupgrade after repo is locked ----
     - name: Run leapp preupgrade
       command: leapp preupgrade
