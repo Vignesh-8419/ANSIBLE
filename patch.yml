@@ -96,10 +96,6 @@
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
         dest: /etc/yum.repos.d/vault.repo
 
-    - name: Wait for 2 minute
-      pause:
-        minutes: 2
-
     - name: Install sshpass
       yum:
         name: sshpass
