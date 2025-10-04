@@ -191,12 +191,12 @@
         creates: /usr/bin/applydeltarpm
 
 
-     - name: Reinstall elevate and leapp packages after libcomps fix
-       yum:
-         name:
-           - leapp-upgrade
-           - leapp-data-rocky
-         state: present
+    - name: Reinstall elevate and leapp packages after libcomps fix
+      yum:
+        name:
+         - leapp-upgrade
+         - leapp-data-rocky
+        state: present
 
     # ---- Create and lock leapp upgrade repo BEFORE preupgrade ----
     - name: Backup existing leapp upgrade repo file
