@@ -48,19 +48,21 @@
         patterns: 'CentOS-*'
       register: centos_repo_files
     
-    - name: Remove CentOS YUM repo files
-      file:
-        path: "{{ item.path }}"
-        state: absent
-      loop: "{{ centos_repo_files.files }}"
-
-    - name: Ensure SELinux python bindings are installed
+    # For CentOS 7 (Python 2 bindings)
+    - name: Install SELinux python bindings for CentOS 7
       yum:
-        name:
-          - libselinux-python
-          - python3-libselinux
+        name: libselinux-python
         state: present
-      ignore_errors: yes
+      vars:
+        ansible_python_interpreter: /usr/bin/python2
+      when: ansible_distribution_major_version == "7"
+
+    # For Rocky 8 (Python 3 bindings)
+    - name: Install SELinux python bindings for Rocky 8
+      dnf:
+        name: python3-libselinux
+        state: present
+      when: ansible_distribution_major_version == "8"
 
     - name: Create CentOS 7 patch repo
       copy:
@@ -188,13 +190,13 @@
       args:
         creates: /usr/bin/applydeltarpm
 
-    - name: Try to install elevate and leapp packages
-      yum:
-        name:
-          - leapp-upgrade
-          - leapp-data-rocky
-        state: present
-      register: leapp_install
+
+     - name: Reinstall elevate and leapp packages after libcomps fix
+       yum:
+         name:
+           - leapp-upgrade
+           - leapp-data-rocky
+         state: present
 
     # ---- Create and lock leapp upgrade repo BEFORE preupgrade ----
     - name: Backup existing leapp upgrade repo file
@@ -271,20 +273,8 @@
 
     - name: Reboot into Rocky Linux
       reboot:
-        reboot_timeout: 1500
+        reboot_timeout: 1800
       when: upgrade_result.rc == 0
-    
-    - name: Wait for SSH to be available
-      wait_for:
-        host: "{{ inventory_hostname }}"
-        port: 22
-        delay: 30
-        timeout: 900
-      delegate_to: localhost
-
-    - name: Set Python 3 as interpreter for Rocky
-      set_fact:
-        ansible_python_interpreter: /usr/bin/python3
 
     - name: Verify OS after reboot
       shell: cat /etc/os-release
@@ -330,7 +320,7 @@
             done
 
         - name: Cleanup leapp packages
-          yum:
+          dnf:
             name:
               - leapp-pp
               - leapp-deps-el8
