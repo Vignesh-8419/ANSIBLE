@@ -19,9 +19,7 @@
     netmask: "255.255.255.0"
     gateway: "192.168.253.2"
     esxi_hostname: "192.168.253.128"
-    vm_list:
-     - name: "{{ vm_name }}"
-       ip: "{{ vm_ip }}"
+    vm_list: "{{ vm_list }}"
 
   tasks:
     - name: Create new VM with template
