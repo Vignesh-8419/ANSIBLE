@@ -297,20 +297,8 @@
 
     - name: Reboot into Rocky Linux
       reboot:
-        reboot_timeout: 1500
+        reboot_timeout: 1800
       when: upgrade_result.rc == 0
-    
-    - name: Wait for SSH to be available
-      wait_for:
-        host: "{{ inventory_hostname }}"
-        port: 22
-        delay: 30
-        timeout: 900
-      delegate_to: localhost
-
-    - name: Set Python 3 as interpreter for Rocky
-      set_fact:
-        ansible_python_interpreter: /usr/bin/python3
 
     - name: Verify OS after reboot
       shell: cat /etc/os-release
