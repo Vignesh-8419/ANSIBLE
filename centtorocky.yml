@@ -53,6 +53,8 @@
       yum:
         name: libselinux-python
         state: present
+      vars:
+        ansible_python_interpreter: /usr/bin/python2
       when: ansible_distribution_major_version == "7"
 
     # For Rocky 8 (Python 3 bindings)
