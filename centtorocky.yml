@@ -48,10 +48,19 @@
         patterns: 'CentOS-*'
       register: centos_repo_files
     
-    - name: Ensure SELinux python bindings are installed
+    # For CentOS 7 (Python 2 bindings)
+    - name: Install SELinux python bindings for CentOS 7
       yum:
+        name: libselinux-python
+        state: present
+      when: ansible_distribution_major_version == "7"
+
+    # For Rocky 8 (Python 3 bindings)
+    - name: Install SELinux python bindings for Rocky 8
+      dnf:
         name: python3-libselinux
         state: present
+      when: ansible_distribution_major_version == "8"
 
     - name: Create CentOS 7 patch repo
       copy:
