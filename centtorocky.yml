@@ -359,7 +359,7 @@
             done
 
         - name: Cleanup leapp packages
-          yum:
+          dnf:
             name:
               - leapp-pp
               - leapp-deps-el8
