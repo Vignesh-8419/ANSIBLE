@@ -68,6 +68,13 @@
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
+    - name: Wait for 2 minute before pinging the VM
+      pause:
+        minutes: 2
+      loop: "{{ vm_list }}"
+      loop_control:
+        loop_var: item
+
     - name: Ping the VM to verify connectivity
       ansible.builtin.ping:
       vars:
