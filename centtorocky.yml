@@ -315,9 +315,22 @@
         reboot_timeout: 1800
       when: upgrade_result.rc == 0
 
+    - name: Ensure Python 3 is installed on Rocky after reboot
+      raw: |
+        if [ ! -x /usr/bin/python3 ]; then
+          dnf install -y python3
+        fi
+      changed_when: false
+
+    - name: Switch interpreter to Python 3
+      set_fact:
+        ansible_python_interpreter: /usr/bin/python3
+
     - name: Verify OS after reboot
       shell: cat /etc/os-release
       register: os_release
+      vars:
+       ansible_python_interpreter: /usr/bin/python3
 
     - debug:
         var: os_release.stdout_lines
