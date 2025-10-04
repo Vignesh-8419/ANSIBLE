@@ -300,21 +300,24 @@
         reboot_timeout: 1500
       when: upgrade_result.rc == 0
     
-    - name: Wait until SSH is available
+    - name: Wait for SSH to be available
       wait_for:
         host: "{{ inventory_hostname }}"
         port: 22
         delay: 30
         timeout: 900
+      delegate_to: localhost
 
-    - name: Ensure Python is ready
-      raw: test -e /usr/bin/python3 || (dnf install -y python3)
-      changed_when: false
+    - name: Set Python 3 as interpreter for Rocky
+      set_fact:
+        ansible_python_interpreter: /usr/bin/python3
 
-    - name: Verify migration
+    - name: Verify OS after reboot
       shell: cat /etc/os-release
       register: os_release
-      when: upgrade_result.rc == 0
+
+    - debug:
+        var: os_release.stdout_lines
 
     - block:
         - name: List old el7 kernel directories
