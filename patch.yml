@@ -1,4 +1,3 @@
-```yaml
 ---
 - name: Patch CentOS systems
   hosts: "{{ target_hosts }}"
@@ -97,6 +96,10 @@
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
         dest: /etc/yum.repos.d/vault.repo
 
+    - name: Wait for 3 minute
+      pause:
+        minutes: 2
+
     - name: Install sshpass
       yum:
         name: sshpass
@@ -143,4 +146,3 @@
     - name: Debug kernel version
       debug:
         msg: "Kernel version on {{ inventory_hostname }} is {{ kernel_version.stdout }}"
-```
