@@ -300,10 +300,16 @@
         reboot_timeout: 1500
       when: upgrade_result.rc == 0
     
-    - name: Wait for target host to come back after reboot
-      wait_for_connection:
-        timeout: 1200
+    - name: Wait until SSH is available
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: 22
         delay: 30
+        timeout: 900
+
+    - name: Ensure Python is ready
+      raw: test -e /usr/bin/python3 || (dnf install -y python3)
+      changed_when: false
 
     - name: Verify migration
       shell: cat /etc/os-release
