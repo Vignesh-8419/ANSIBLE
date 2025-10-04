@@ -12,8 +12,7 @@
     username: "vigne"
     password: "Vigneshv12$"
     ansible_hostname: "ansible-server-01.vgs.com"
-    ansible_python_interpreter: >-
-      {{ '/usr/bin/python3' if ansible_distribution_major_version|int >= 8 else '/usr/bin/python2.7' }}
+    ansible_python_interpreter: /usr/bin/python2.7
 
   pre_tasks:
    - name: Check current kernel version
