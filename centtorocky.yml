@@ -190,28 +190,32 @@
       args:
         creates: /usr/bin/applydeltarpm
   
-    - name: Remove libsolv if installed
-      yum:
-        name: libsolv
-        state: absent
-        
-    - name: Remove Foreman and Katello related packages
-      yum:
-       name:
-        - foreman-installer
-        - foreman-installer-katello
-        - katello
-        - rubygem-foreman_maintain
-       state: absent
-
-    - name: Try to install elevate and leapp packages
-      yum:
-        name:
-          - leapp-upgrade
-          - leapp-data-rocky
-        state: present
-      register: leapp_install
-      ignore_errors: true
+    - block:
+        - name: Remove libsolv if installed
+          yum:
+            name: libsolv
+            state: absent
+    
+        - name: Remove Foreman/Katello packages
+          yum:
+            name:
+              - foreman-installer
+              - foreman-installer-katello
+              - katello
+              - rubygem-foreman_maintain
+            state: absent
+    
+        - name: Try to install elevate and leapp packages
+          yum:
+            name:
+              - leapp-upgrade
+              - leapp-data-rocky
+            state: present
+          register: leapp_install
+          ignore_errors: true
+      vars:
+        ansible_python_interpreter: /usr/bin/python2
+      when: ansible_distribution_major_version == "7"
 
     - name: Handle libcomps conflict (remove tfm packages + downgrade libcomps)
       block:
