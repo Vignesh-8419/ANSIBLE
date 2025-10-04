@@ -54,6 +54,14 @@
         state: absent
       loop: "{{ centos_repo_files.files }}"
 
+    - name: Ensure SELinux python bindings are installed
+      yum:
+        name:
+          - libselinux-python
+          - python3-libselinux
+        state: present
+      ignore_errors: yes
+
     - name: Create CentOS 7 patch repo
       copy:
         dest: "{{ centos_patch_repo_file }}"
