@@ -35,6 +35,7 @@ fi
 # STEP 2: Clean and Configure YUM Repositories (Always)
 # -------------------------------
 echo "🧹 Clearing existing YUM repo files..."
+setenforce 0
 rm -f /etc/yum.repos.d/*.repo
 
 echo "📝 Creating base.repo..."
