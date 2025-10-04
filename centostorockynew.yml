@@ -278,6 +278,8 @@
     - name: Verify OS after reboot
       shell: cat /etc/os-release
       register: os_release
+      vars:
+       ansible_python_interpreter: /usr/bin/python3
 
     - debug:
         var: os_release.stdout_lines
