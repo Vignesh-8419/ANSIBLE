@@ -49,7 +49,7 @@
       register: centos_repo_files
     
     - name: Ensure SELinux python bindings are installed
-      dnf:
+      yum:
         name: python3-libselinux
         state: present
 
