@@ -3,18 +3,27 @@
   hosts: "{{ target_hosts }}"
   become: true
   tasks:
-    - name: Set static DNS using nmcli
-      shell: |
-        nmcli -t -f NAME con show | grep -i ethernet | while read -r con; do
-          nmcli con mod "$con" ipv4.dns "192.168.253.151"
-          nmcli con mod "$con" ipv4.ignore-auto-dns yes
-          nmcli con up "$con"
-        done
-
-    - name: Verify DNS in /etc/resolv.conf
-      shell: cat /etc/resolv.conf
-      register: resolv_output
-
-    - name: Show DNS config
-      debug:
-        var: resolv_output.stdout_lines
+    - name: Configure DNS on provisioned VMs
+      hosts: "{{ target_hosts }}"
+      become: true
+      tasks:
+        - name: Set static DNS using nmcli
+          shell: |
+            nmcli con mod "System ens192" ipv4.dns "192.168.253.151"
+            nmcli con mod "System ens192" ipv4.ignore-auto-dns yes
+            nmcli con up "System ens192"
+          args:
+            warn: false
+    
+        - name: Restart NetworkManager to apply DNS
+          service:
+            name: NetworkManager
+            state: restarted
+    
+        - name: Verify DNS in /etc/resolv.conf
+          shell: cat /etc/resolv.conf
+          register: resolv_output
+    
+        - name: Show DNS config
+          debug:
+            var: resolv_output.stdout_lines
