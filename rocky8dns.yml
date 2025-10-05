@@ -4,6 +4,8 @@
   vars:
     new_connection_name: "ens192"
     dns_server: "192.168.253.151"
+    interface_name: "ens192"
+
   tasks:
     - name: Get current connection name for {{ interface_name }}
       shell: nmcli -t -f NAME,DEVICE con show | awk '{print $1}' | cut -d: -f1
