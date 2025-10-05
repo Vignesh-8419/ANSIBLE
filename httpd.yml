@@ -53,6 +53,16 @@
           </Directory>
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
 
+    - name: Enable HTTP & HTTPS firewall
+      firewalld: 
+ 	     service: "{{ item }}"
+ 	     permanent: true
+ 	     state: enabled
+ 	     immediate: true
+      loop:
+ 		  - http
+ 		  - https
+
     - name: Start and enable httpd
       service:
         name: httpd
