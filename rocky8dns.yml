@@ -6,7 +6,7 @@
     dns_server: "192.168.253.151"
   tasks:
     - name: Get current connection name for {{ interface_name }}
-      shell: "nmcli -t -f NAME,DEVICE con show | awk "{print $1}" | cut -d: -f1"
+      shell: nmcli -t -f NAME,DEVICE con show | awk '{print $1}' | cut -d: -f1
       register: connection_name
 
     - name: Rename connection to {{ new_connection_name }}
