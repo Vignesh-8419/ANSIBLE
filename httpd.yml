@@ -1,0 +1,60 @@
+- name: Configure HTTP server
+  hosts: "{{ target_hosts }}"
+  become: yes
+  vars:
+    repo_mount: "//192.168.31.87/ISO"
+    mount_point: "/var/www/html/repo"
+    username: "vigne"
+    password: "Vigneshv12$"
+  tasks:
+
+    - name: Check DNS resolution
+      command: nslookup "{{ ansible_hostname }}"
+      register: nslookup_result
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Configure DNS resolver
+      copy:
+        content: |
+          nameserver 192.168.253.151
+          domain vgs.com
+        dest: /etc/resolv.conf
+      when: nslookup_result.rc != 0
+
+    - name: Create mount point directory
+      file:
+        path: "{{ mount_point }}"
+        state: directory
+        mode: '0777'
+
+    - name: Mount ISO share
+      mount:
+        path: "{{ mount_point }}"
+        src: "{{ repo_mount }}"
+        fstype: cifs
+        opts: "username={{ username }},password={{ password }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
+        state: mounted
+      when: ansible_mounts | selectattr('mount', 'equalto', mount_point) | list | length == 0
+
+    - name: Install HTTPD
+      yum:
+        name: httpd
+        state: latest
+
+    - name: Configure HTTPD directory permissions
+      blockinfile:
+        path: /etc/httpd/conf/httpd.conf
+        block: |
+          <Directory "/var/www/html">
+              Options Indexes FollowSymLinks
+              AllowOverride None
+              Require all granted
+          </Directory>
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+
+    - name: Start and enable httpd
+      service:
+        name: httpd
+        state: started
+        enabled: true
