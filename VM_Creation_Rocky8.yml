@@ -19,10 +19,8 @@
     esxi_hostname: "192.168.253.128"
     guest_domain: "vgs.com"
     vm_list:
-      - name: rocky-08-01
-        ip: 192.168.253.101
-      - name: rocky-08-02
-        ip: 192.168.253.102
+      - name: "{{ vm_name }}"
+        ip: "{{ vm_ip }}"
 
   tasks:
     - name: Create VM with static IP, customization, and Secure Boot disabled
@@ -80,13 +78,13 @@
         ansible_host: "{{ item.ip }}"
         ansible_user: root
         ansible_password: "Root@123"
-        groups: provisioned_vms
+        groups: VGS CLUSTER
       loop: "{{ vm_list }}"
 
 
 # Second Play: Configure DNS
 - name: Configure DNS on provisioned VMs
-  hosts: provisioned_vms
+  hosts: VGS CLUSTER
   become: true
   tasks:
     - name: Set static DNS using nmcli
