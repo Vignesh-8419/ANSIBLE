@@ -5,9 +5,11 @@
   tasks:
     - name: Set static DNS using nmcli
       shell: |
-        nmcli con show | grep -i ethernet | awk '{print $1}' | xargs -I {} nmcli con mod "{}" ipv4.dns "192.168.253.151"
-        nmcli con show | grep -i ethernet | awk '{print $1}' | xargs -I {} nmcli con mod "{}" ipv4.ignore-auto-dns yes
-        nmcli con show | grep -i ethernet | awk '{print $1}' | xargs -I {} nmcli con up "{}"
+        nmcli -t -f NAME con show | grep -i ethernet | while read -r con; do
+          nmcli con mod "$con" ipv4.dns "192.168.253.151"
+          nmcli con mod "$con" ipv4.ignore-auto-dns yes
+          nmcli con up "$con"
+        done
 
     - name: Verify DNS in /etc/resolv.conf
       shell: cat /etc/resolv.conf
