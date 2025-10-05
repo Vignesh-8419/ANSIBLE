@@ -52,8 +52,6 @@
             ip: "{{ item.ip }}"
             gateway: "{{ gateway }}"
             netmask: "{{ netmask }}"
-            dns_servers:
-              - "192.168.253.151"
             device_type: vmxnet3
             connected: true
             start_connected: true
