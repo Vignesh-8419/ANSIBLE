@@ -1,20 +1,28 @@
-- name: Configure DNS on provisioned VMs
+- name: Rename connection and configure DNS
   hosts: "{{ target_hosts }}"
   become: true
+  vars:
+    new_connection_name: "ens192"
+    dns_server: "192.168.253.151"
   tasks:
-    - name: Get connection name for ens192
-      shell: "nmcli -t -f NAME,DEVICE con show | grep ':ens192' | cut -d: -f1"
+    - name: Get current connection name for {{ interface_name }}
+      shell: "nmcli -t -f NAME,DEVICE con show | awk "{print $1}" | cut -d: -f1"
       register: connection_name
 
-    - name: Set static DNS using nmcli
-      shell: |
-        nmcli con mod "{{ connection_name.stdout }}" ipv4.dns "192.168.253.151"
-        nmcli con mod "{{ connection_name.stdout }}" ipv4.ignore-auto-dns yes
-        nmcli con up "{{ connection_name.stdout }}"
+    - name: Rename connection to {{ new_connection_name }}
+      shell: "nmcli con mod '{{ connection_name.stdout }}' connection.id '{{ new_connection_name }}'"
       args:
         warn: false
 
-    - name: Restart NetworkManager to apply DNS
+    - name: Configure static DNS and disable auto-DNS
+      shell: |
+        nmcli con mod "{{ new_connection_name }}" ipv4.dns "{{ dns_server }}"
+        nmcli con mod "{{ new_connection_name }}" ipv4.ignore-auto-dns yes
+        nmcli con up "{{ new_connection_name }}"
+      args:
+        warn: false
+
+    - name: Restart NetworkManager to apply changes
       service:
         name: NetworkManager
         state: restarted
