@@ -14,8 +14,6 @@
     template_name: "GOLDENTEMPLATE_ROCKYOS_08"
     guest_id: "rhel8_64Guest"
     vm_network: "VM Network"
-    dns_servers:
-      - "192.168.253.151"
     netmask: "255.255.255.0"
     gateway: "192.168.253.2"
     esxi_hostname: "192.168.253.128"
@@ -54,13 +52,15 @@
             ip: "{{ item.ip }}"
             gateway: "{{ gateway }}"
             netmask: "{{ netmask }}"
-            dns_servers: "{{ dns_servers }}"
+            dns_servers:
+              - "192.168.253.151"
             device_type: vmxnet3
             connected: true
             start_connected: true
         customization:
           domain: "{{ guest_domain }}"
-          dns_servers: "{{ dns_servers }}"
+          dns_servers:
+            - "192.168.253.151"
           hostname: "{{ item.name }}"
         wait_for_ip_address: true
       loop: "{{ vm_list }}"
