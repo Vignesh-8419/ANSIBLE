@@ -1,20 +1,27 @@
+---
 - name: Rename connection and configure DNS
   hosts: "{{ target_hosts }}"
   become: true
   vars:
-    new_connection_name: "ens192"
-    dns_server: "192.168.253.151"
-    interface_name: "ens192"
+    interface_name: "ens192"            # physical interface name
+    new_connection_name: "ens192"       # desired connection name
+    dns_server: "192.168.253.151"       # DNS server to set
 
   tasks:
     - name: Get current connection name for {{ interface_name }}
-      shell: "nmcli -t -f NAME,DEVICE con show | awk '{print $1}' | cut -d: -f1"
+      shell: "nmcli -t -f NAME,DEVICE con show | grep '{{ interface_name }}' | cut -d: -f1"
       register: connection_name
+      changed_when: false
+
+    - name: Show detected connection name
+      debug:
+        var: connection_name.stdout
 
     - name: Rename connection to {{ new_connection_name }}
-      shell: "nmcli con mod '{{ connection_name.stdout }}' connection.id '{{ new_connection_name }}'"
+      shell: "nmcli con mod \"{{ connection_name.stdout }}\" connection.id '{{ new_connection_name }}'"
       args:
         warn: false
+      when: connection_name.stdout != new_connection_name
 
     - name: Configure static DNS and disable auto-DNS
       shell: |
@@ -32,6 +39,7 @@
     - name: Verify DNS in /etc/resolv.conf
       shell: cat /etc/resolv.conf
       register: resolv_output
+      changed_when: false
 
     - name: Show DNS config
       debug:
