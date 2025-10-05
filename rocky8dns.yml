@@ -1,6 +1,6 @@
 # Second Play: Configure DNS
 - name: Configure DNS on provisioned VMs
-  hosts: "{{ target_hosts }}
+  hosts: "{{ target_hosts }}"
   become: true
   tasks:
     - name: Set static DNS using nmcli
