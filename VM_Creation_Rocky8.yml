@@ -84,7 +84,7 @@
 
 # Second Play: Configure DNS
 - name: Configure DNS on provisioned VMs
-  hosts: VGS CLUSTER
+  hosts: VGS-CLUSTER
   become: true
   tasks:
     - name: Set static DNS using nmcli
