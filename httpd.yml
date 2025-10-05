@@ -54,14 +54,15 @@
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
 
     - name: Enable HTTP & HTTPS firewall
-      firewalld: 
- 	     service: "{{ item }}"
- 	     permanent: true
- 	     state: enabled
- 	     immediate: true
+      firewalld:
+        service: "{{ item }}"
+        permanent: true
+        state: enabled
+        immediate: true
       loop:
- 		  - http
- 		  - https
+        - http
+        - https
+
 
     - name: Start and enable httpd
       service:
