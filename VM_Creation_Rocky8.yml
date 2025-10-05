@@ -1,4 +1,4 @@
----
+# First Play: Provision VMs
 - name: Provision RockyOS VMs with static IPs and Secure Boot disabled
   hosts: localhost
   connection: local
@@ -19,8 +19,10 @@
     esxi_hostname: "192.168.253.128"
     guest_domain: "vgs.com"
     vm_list:
-      - name: "{{ vm_name }}"
-        ip: "{{ vm_ip }}"
+      - name: rocky-08-01
+        ip: 192.168.253.101
+      - name: rocky-08-02
+        ip: 192.168.253.102
 
   tasks:
     - name: Create VM with static IP, customization, and Secure Boot disabled
@@ -63,27 +65,40 @@
         wait_for_ip_address: true
       loop: "{{ vm_list }}"
 
-    - name: Wait until VM responds to ping
-      ansible.builtin.wait_for:
+    - name: Wait until VM responds to SSH
+      wait_for:
         host: "{{ item.ip }}"
-        port: 22                # Wait for SSH port if you also want SSH readiness
-        timeout: 120            # 2 minutes max
+        port: 22
+        timeout: 120
         state: started
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
-    - name: Ping the VM to verify connectivity
-      ansible.builtin.ping:
-      vars:
+    - name: Add provisioned VMs to inventory
+      add_host:
+        name: "{{ item.name }}"
         ansible_host: "{{ item.ip }}"
+        ansible_user: root
+        ansible_password: "Root@123"
+        groups: provisioned_vms
       loop: "{{ vm_list }}"
-      delegate_to: localhost
 
+
+# Second Play: Configure DNS
+- name: Configure DNS on provisioned VMs
+  hosts: provisioned_vms
+  become: true
+  tasks:
     - name: Set static DNS using nmcli
-      ansible.builtin.shell: |
+      shell: |
         nmcli con show | grep -i ethernet | awk '{print $1}' | xargs -I {} nmcli con mod "{}" ipv4.dns "192.168.253.151"
         nmcli con show | grep -i ethernet | awk '{print $1}' | xargs -I {} nmcli con mod "{}" ipv4.ignore-auto-dns yes
         nmcli con show | grep -i ethernet | awk '{print $1}' | xargs -I {} nmcli con up "{}"
-      become: true
-      delegate_to: "{{ item.ip }}"
-      loop: "{{ vm_list }}"
+
+    - name: Verify DNS in /etc/resolv.conf
+      shell: cat /etc/resolv.conf
+      register: resolv_output
+
+    - name: Show DNS config
+      debug:
+        var: resolv_output.stdout_lines
