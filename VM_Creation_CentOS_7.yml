@@ -14,8 +14,6 @@
     guest_id: "centos7_64Guest"
     vm_network: "VM Network"
     guest_domain: "vgs.com"
-    dns_servers:
-      - "192.168.253.151"
     netmask: "255.255.255.0"
     gateway: "192.168.253.2"
     esxi_hostname: "192.168.253.128"
@@ -52,10 +50,12 @@
             ip: "{{ item.ip }}"
             netmask: "{{ netmask }}"
             gateway: "{{ gateway }}"
-            dns_servers: "{{ dns_servers }}"
+            dns_servers:
+              - "192.168.253.151"
         customization:
           domain: "{{ guest_domain }}"
-          dns_servers: "{{ dns_servers }}"
+          dns_servers: 
+            - "192.168.253.151"
           hostname: "{{ item.name }}"
       loop: "{{ vm_list }}"
 
