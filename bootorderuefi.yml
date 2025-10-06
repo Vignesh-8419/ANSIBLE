@@ -33,9 +33,10 @@
         password: "{{ vcenter_password }}"
         validate_certs: "{{ validate_certs }}"
         name: "{{ vm_name }}"
-        state: present
+        state: poweredon
         hardware:
-         boot_firmware: "efi"
+          firmware: efi
+          secure_boot_enabled: false
 
     - name: Set boot order to network first
       vmware_guest_boot_manager:
