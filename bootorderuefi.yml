@@ -35,7 +35,7 @@
         validate_certs: "{{ validate_certs }}"
         name: "{{ vm_name }}"
         boot_order:
-          - network
+          - ethernet
           - disk
         enter_bios_setup: false
         boot_retry_enabled: false
