@@ -34,9 +34,8 @@
         validate_certs: "{{ validate_certs }}"
         name: "{{ vm_name }}"
         state: present
-        advanced_settings:
-          - name: "firmware"
-            value: "efi"
+        hardware:
+         firmware: "efi"
 
     - name: Set boot order to network first
       vmware_guest_boot_manager:
