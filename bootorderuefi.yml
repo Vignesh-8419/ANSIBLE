@@ -16,7 +16,7 @@
 
   tasks:
     - name: Set VM firmware to UEFI
-      community.vmware.vmware_guest:
+      vmware_guest:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
@@ -28,7 +28,7 @@
           firmware: efi
 
     - name: Set boot order to network first
-      community.vmware.vmware_guest_boot_manager:
+      vmware_guest_boot_manager:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
@@ -42,7 +42,7 @@
         boot_delay: 0
 
     - name: Power on the VM
-      community.vmware.vmware_guest_powerstate:
+      vmware_guest_powerstate:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
