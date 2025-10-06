@@ -21,7 +21,7 @@
   tasks:
     - name: Create a host in Foreman
       theforeman.foreman.host:
-        server_url: "{{ foreman_url }}"
+        server_url: "{{ foreman_server_url }}"
         username: "{{ foreman_user }}"
         password: "{{ foreman_password }}"
         validate_certs: false
