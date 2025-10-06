@@ -4,10 +4,14 @@
   connection: local
   gather_facts: no
 
+  collections:
+    - theforeman.foreman
+
   vars:
     foreman_url: "https://rocky-08-01.vgs.com"
     foreman_user: "admin"
     foreman_password: "Your_Foreman_Admin_Password"
+
 
     host_name: "cent-07-03.vgs.com"
     host_ip: "192.168.253.133"
