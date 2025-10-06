@@ -35,7 +35,7 @@
         name: "{{ vm_name }}"
         state: present
         hardware:
-         firmware: "efi"
+         boot_firmware: "efi"
 
     - name: Set boot order to network first
       vmware_guest_boot_manager:
