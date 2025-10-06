@@ -40,9 +40,9 @@
 
     - name: Set boot order to network first
       vmware_guest_boot_manager:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
         validate_certs: "{{ validate_certs }}"
         name: "{{ vm_name }}"
         boot_order:
