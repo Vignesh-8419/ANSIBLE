@@ -15,7 +15,7 @@
     vm_name: "{{ vm_name }}"  # Use Tower survey to pass this
 
   tasks:
-    - name: Set VM firmware to UEFI and configure boot
+    - name: Set VM firmware to UEFI
       vmware_guest:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
@@ -26,11 +26,18 @@
         esxi_hostname: "{{ esxi_hostname }}"
         hardware:
           firmware: efi
-        boot:
-          boot_order:
-            - network
-            - disk
-          enter_bios_setup: false
-          boot_retry_enabled: false
-          boot_delay: 0
-          boot_once: true
+
+    - name: Set one-time boot to network
+      vmware_guest_boot_manager:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ vm_name }}"
+        boot_order:
+          - network
+          - disk
+        boot_once: true
+        enter_bios_setup: false
+        boot_retry_enabled: false
+        boot_delay: 0
