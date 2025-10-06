@@ -7,26 +7,25 @@
     - community.vmware
 
   vars:
-    esxi_hostname: "192.168.253.128"
-    esxi_username: "root"
-    esxi_password: "admin$22"
+    vcenter_hostname: "192.168.253.129"
+    vcenter_username: "administrator@vsphere.local"
+    vcenter_password: "Vigneshv12$"
+    datacenter_name: "Datacenter"
     validate_certs: false
     vm_name: "{{ vm_name }}"  # Use Tower survey to pass this
 
   tasks:
     - name: Set VM to use UEFI firmware
       vmware_guest:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
         validate_certs: "{{ validate_certs }}"
         name: "{{ vm_name }}"
         state: poweredoff
-        esxi_hostname: "{{ esxi_hostname }}"
-        hardware:
-          boot_firmware: "efi"
-      register: vm_firmware_result
-      failed_when: vm_firmware_result.failed
+        advanced_settings:
+          - name: "firmware"
+            value: "efi"
 
     - name: Set boot order to network first
       vmware_guest_boot_manager:
