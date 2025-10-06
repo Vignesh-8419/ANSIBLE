@@ -9,7 +9,7 @@
   vars:
     esxi_hostname: "192.168.253.128"
     esxi_username: "root"
-    esxi_password: "Root@123"
+    esxi_password: "admin$22"
     validate_certs: false
 
     vm_name: "{{ vm_name }}"  # Use Tower survey to pass this
