@@ -7,7 +7,7 @@
     - community.vmware
 
   vars:
-    esxi_hostname: "192.68.253.128"
+    esxi_hostname: "192.168.253.128"
     esxi_username: "root"
     esxi_password: "Root@123"
     validate_certs: false
