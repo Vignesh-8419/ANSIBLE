@@ -16,7 +16,7 @@
 
   tasks:
     - name: Set VM firmware to UEFI and configure boot
-      community.vmware.vmware_guest:
+      vmware_guest:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
