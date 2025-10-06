@@ -11,11 +11,10 @@
     esxi_username: "root"
     esxi_password: "admin$22"
     validate_certs: false
-
     vm_name: "{{ vm_name }}"  # Use Tower survey to pass this
 
   tasks:
-    - name: Changing to UEFI firmware
+    - name: Set VM to use UEFI firmware
       vmware_guest:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
@@ -24,9 +23,10 @@
         name: "{{ vm_name }}"
         state: poweredoff
         esxi_hostname: "{{ esxi_hostname }}"
-        advanced_settings: 
-         - name: "firmware" 
-           value: "efi"
+        hardware:
+          boot_firmware: "efi"
+      register: vm_firmware_result
+      failed_when: vm_firmware_result.failed
 
     - name: Set boot order to network first
       vmware_guest_boot_manager:
@@ -41,6 +41,8 @@
         enter_bios_setup: false
         boot_retry_enabled: false
         boot_delay: 0
+      register: boot_order_result
+      failed_when: boot_order_result.failed
 
     - name: Power on the VM
       vmware_guest_powerstate:
@@ -50,3 +52,5 @@
         validate_certs: "{{ validate_certs }}"
         name: "{{ vm_name }}"
         state: powered-on
+      register: power_on_result
+      failed_when: power_on_result.failed
