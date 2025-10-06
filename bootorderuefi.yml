@@ -1,0 +1,41 @@
+- name: Enable UEFI and one-time network boot on ESXi VM
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  collections:
+    - community.vmware
+
+  vars:
+    esxi_hostname: "192.68.253.128"
+    esxi_username: "root"
+    esxi_password: "Root@123"
+    validate_certs: false
+
+    vm_name: "{{ vm_server_name }}"
+
+  tasks:
+    - name: Set VM firmware to UEFI
+      community.vmware.vm_hardware:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ vm_name }}"
+        firmware: "efi"
+        state: "present"
+
+    - name: Set one-time boot to network
+      community.vmware.vm_boot_options:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ vm_name }}"
+        boot_order:
+          - network
+          - disk
+        boot_once: true
+        enter_bios_setup: false
+        boot_retry_enabled: false
+        boot_delay: 0
