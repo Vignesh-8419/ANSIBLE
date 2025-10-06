@@ -8,7 +8,7 @@
     - theforeman.foreman
 
   vars:
-    foreman_server_url: https://rocky-08-01.vgs.com/api
+    foreman_server_url: https://rocky-08-01.vgs.com:3000
     foreman_user: "admin"
     foreman_password: "vnjy38WVJLjLpvuP"
 
