@@ -48,4 +48,4 @@
         password: "{{ esxi_password }}"
         validate_certs: "{{ validate_certs }}"
         name: "{{ vm_name }}"
-        state: powered_on
+        state: powered-on
