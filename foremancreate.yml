@@ -10,7 +10,7 @@
   vars:
     foreman_url: "https://rocky-08-01.vgs.com"
     foreman_user: "admin"
-    foreman_password: "Your_Foreman_Admin_Password"
+    foreman_password: "vnjy38WVJLjLpvuP"
 
 
     host_name: "cent-07-03.vgs.com"
