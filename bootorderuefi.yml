@@ -12,7 +12,7 @@
     esxi_password: "Root@123"
     validate_certs: false
 
-    vm_name: "{{ vm_server_name }}"
+    host_name: "{{ vm_server_name }}"
 
   tasks:
     - name: Set VM firmware to UEFI
@@ -31,7 +31,7 @@
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: "{{ validate_certs }}"
-        name: "{{ vm_name }}"
+        name: "{{ vm_server_name }}"
         boot_order:
           - network
           - disk
