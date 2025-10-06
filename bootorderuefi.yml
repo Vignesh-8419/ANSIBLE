@@ -15,14 +15,14 @@
     vm_name: "{{ vm_name }}"  # Use Tower survey to pass this
 
   tasks:
-    - name: Set VM firmware to UEFI
-      vmware_guest:
+    - name: Create VM with UEFI firmware
+      community.vmware.vmware_guest:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: "{{ validate_certs }}"
         name: "{{ vm_name }}"
-        state: present
+        state: powered_off
         esxi_hostname: "{{ esxi_hostname }}"
         hardware:
           firmware: efi
