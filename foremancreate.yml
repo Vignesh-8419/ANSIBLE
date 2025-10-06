@@ -1,0 +1,39 @@
+---
+- name: Create CentOS host in Foreman
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars:
+    foreman_url: "https://rocky-08-01.vgs.com"
+    foreman_user: "admin"
+    foreman_password: "Your_Foreman_Admin_Password"
+
+    host_name: "cent-07-03.vgs.com"
+    host_ip: "192.168.253.133"
+    host_mac: "00:50:56:aa:bb:dd"
+    host_root_pass: "$6$rounds=4096$somehash$QzXKjbvOYu28x6mPdMQrE2b4P7KZCKwQw1fD1zMiIVcI0ulbBq1hx4QGlwvmbTlvqPL.Lcb/KgRxNUvTKhfa4."
+
+  tasks:
+    - name: Create a host in Foreman
+      theforeman.foreman.host:
+        server_url: "{{ foreman_url }}"
+        username: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        validate_certs: false
+
+        name: "{{ host_name }}"
+        organization: "Default Organization"
+        location: "Default Location"
+        architecture: "x86_64"
+        domain: "vgs.com"
+        operatingsystem: "CentOS Linux 7.9.2009"
+        medium: "CentOS 7 Remote"
+        ptable: "Kickstart default"
+        subnet: "vgs-subnet-centos"
+        hostgroup: "VGS HOSTS CENTOS 7"
+        ip: "{{ host_ip }}"
+        mac: "{{ host_mac }}"
+        root_pass: "{{ host_root_pass }}"
+        build: true
+        enabled: true
