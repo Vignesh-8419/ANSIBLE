@@ -1,4 +1,4 @@
-- name: Enable UEFI and one-time network boot on ESXi VM
+- name: Enable UEFI and network boot on ESXi VM
   hosts: localhost
   connection: local
   gather_facts: no
@@ -7,16 +7,16 @@
     - community.vmware
 
   vars:
-    esxi_hostname: "192.168.253.128"
+    esxi_hostname: "192.68.253.128"
     esxi_username: "root"
-    esxi_password: "admin$22"
+    esxi_password: "Root@123"
     validate_certs: false
 
     vm_name: "{{ vm_name }}"  # Use Tower survey to pass this
 
   tasks:
     - name: Set VM firmware to UEFI
-      vmware_guest:
+      community.vmware.vmware_guest:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
@@ -27,8 +27,8 @@
         hardware:
           firmware: efi
 
-    - name: Set one-time boot to network
-      vmware_guest_boot_manager:
+    - name: Set boot order to network first
+      community.vmware.vmware_guest_boot_manager:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
@@ -37,7 +37,15 @@
         boot_order:
           - network
           - disk
-        boot_once: true
         enter_bios_setup: false
         boot_retry_enabled: false
         boot_delay: 0
+
+    - name: Power on the VM
+      community.vmware.vmware_guest_powerstate:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ vm_name }}"
+        state: powered_on
