@@ -51,16 +51,3 @@
         enter_bios_setup: false
         boot_retry_enabled: false
         boot_delay: 0
-      register: boot_order_result
-      failed_when: boot_order_result.failed
-
-    - name: Power on the VM
-      vmware_guest_powerstate:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: "{{ validate_certs }}"
-        name: "{{ vm_name }}"
-        state: powered-on
-      register: power_on_result
-      failed_when: power_on_result.failed
