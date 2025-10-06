@@ -23,8 +23,6 @@
         validate_certs: false # Set to true if you have valid SSL certs
         name: "{{ vm_name }}"
         boot_firmware: "efi" # Set to 'bios' to revert
-        state: present
-      delegate_to: localhost
 
     - name: Set boot order to network first
       vmware_guest_boot_manager:
