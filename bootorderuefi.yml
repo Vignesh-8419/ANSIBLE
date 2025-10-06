@@ -22,7 +22,7 @@
         password: "{{ esxi_password }}"
         validate_certs: "{{ validate_certs }}"
         name: "{{ vm_name }}"
-        state: powered_off
+        state: poweredoff
         esxi_hostname: "{{ esxi_hostname }}"
         hardware:
           firmware: efi
