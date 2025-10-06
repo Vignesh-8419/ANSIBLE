@@ -12,7 +12,7 @@
     host_name: "cent-07-03.vgs.com"
     host_ip: "192.168.253.133"
     host_mac: "00:50:56:aa:bb:dd"
-    host_root_pass: "$6$rounds=4096$somehash$QzXKjbvOYu28x6mPdMQrE2b4P7KZCKwQw1fD1zMiIVcI0ulbBq1hx4QGlwvmbTlvqPL.Lcb/KgRxNUvTKhfa4."
+    host_root_pass: "Root@123"
 
   tasks:
     - name: Create a host in Foreman
