@@ -25,7 +25,6 @@
         username: "{{ foreman_user }}"
         password: "{{ foreman_password }}"
         validate_certs: false
-
         name: "{{ host_name }}"
         organization: "Default Organization"
         location: "Default Location"
