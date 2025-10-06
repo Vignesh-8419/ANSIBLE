@@ -33,7 +33,7 @@
         password: "{{ vcenter_password }}"
         validate_certs: "{{ validate_certs }}"
         name: "{{ vm_name }}"
-        state: poweredoff
+        state: present
         advanced_settings:
           - name: "firmware"
             value: "efi"
