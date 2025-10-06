@@ -24,8 +24,9 @@
         name: "{{ vm_name }}"
         state: poweredoff
         esxi_hostname: "{{ esxi_hostname }}"
-        hardware:
-          firmware: efi
+        advanced_settings: 
+         - name: "firmware" 
+           value: "efi"
 
     - name: Set boot order to network first
       vmware_guest_boot_manager:
