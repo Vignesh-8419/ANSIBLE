@@ -14,7 +14,7 @@
 
   tasks:
     - name: Set VM firmware to UEFI
-      community.vmware.vm_hardware:
+      vmware_guest:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
@@ -24,7 +24,7 @@
         state: "present"
 
     - name: Set one-time boot to network
-      community.vmware.vm_boot_options:
+      vmware_guest_boot_manager:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
