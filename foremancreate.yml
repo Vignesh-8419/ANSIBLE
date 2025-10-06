@@ -12,9 +12,9 @@
     foreman_user: "admin"
     foreman_password: "vnjy38WVJLjLpvuP"
 
-    host_name: "cent-07-03.vgs.com"
-    host_ip: "192.168.253.133"
-    host_mac: "00:50:56:aa:bb:dd"
+    host_name: "{{ vm_server_name }}"
+    host_ip: "{{ host_server_ip }}"
+    host_mac: "{{ host_server_mac }}"
     host_root_pass: "Root@123"
 
   tasks:
