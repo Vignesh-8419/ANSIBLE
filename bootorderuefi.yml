@@ -15,6 +15,17 @@
     vm_name: "{{ vm_name }}"  # Use Tower survey to pass this
 
   tasks:
+
+    - name: Power off VM before changing firmware
+      vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: no
+        datacenter: "{{ datacenter_name }}"
+        name: "{{ vm_name }}"
+        state: poweredoff
+
     - name: Set VM to use UEFI firmware
       vmware_guest:
         hostname: "{{ vcenter_hostname }}"
