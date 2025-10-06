@@ -15,28 +15,16 @@
     vm_name: "{{ vm_name }}"  # Use Tower survey to pass this
 
   tasks:
-
-    - name: Power off VM before changing firmware
-      vmware_guest:
+    - name: Set VM firmware to EFI (UEFI)
+      vmware_guest_boot_manager:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
-        validate_certs: no
-        datacenter: "{{ datacenter_name }}"
+        validate_certs: false # Set to true if you have valid SSL certs
         name: "{{ vm_name }}"
-        state: poweredoff
-
-    - name: Set VM to use UEFI firmware
-      vmware_guest:
-        hostname: "{{ vcenter_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
-        validate_certs: "{{ validate_certs }}"
-        name: "{{ vm_name }}"
-        state: poweredon
-        hardware:
-          firmware: efi
-          secure_boot_enabled: false
+        firmware: "efi" # Set to 'bios' to revert
+        state: present
+      delegate_to: localhost
 
     - name: Set boot order to network first
       vmware_guest_boot_manager:
