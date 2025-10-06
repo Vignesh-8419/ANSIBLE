@@ -9,6 +9,7 @@
 
   vars:
     foreman_server_url: "http://rocky-08-01.vgs.com/api"
+    foreman_url: "http://rocky-08-01.vgs.com/api"
     foreman_user: "admin"
     foreman_password: "vnjy38WVJLjLpvuP"
 
@@ -21,7 +22,7 @@
   tasks:
     - name: Create a host in Foreman
       theforeman.foreman.host:
-        server_url: "{{ foreman_server_url }}"
+        server_url: "{{ foreman_url }}"
         username: "{{ foreman_user }}"
         password: "{{ foreman_password }}"
         validate_certs: false
