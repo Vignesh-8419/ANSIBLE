@@ -29,7 +29,7 @@
         location: "Default Location"
         architecture: "x86_64"
         domain: "vgs.com"
-        operatingsystem: "CentOS Linux 7.9.2009"
+        operatingsystem: "CentOSLinux"
         medium: "CentOS 7 Remote"
         ptable: "Kickstart default"
         subnet: "vgs-subnet-centos"
