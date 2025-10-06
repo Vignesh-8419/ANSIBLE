@@ -21,7 +21,7 @@
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: "{{ validate_certs }}"
-        name: "{{ vm_name }}"
+        name: "{{ vm_server_name }}"
         firmware: "efi"
         state: "present"
 
