@@ -92,7 +92,9 @@
 
     - name: Remove libsolv if installed
       yum:
-       name: libsolv
+       name: 
+        - libsolv-0.6.34-4.el7.x86_64
+        - libcomps.x86_64
        state: absent
     # For CentOS 7 (Python 2 bindings)
     - name: Install SELinux python bindings for CentOS 7
