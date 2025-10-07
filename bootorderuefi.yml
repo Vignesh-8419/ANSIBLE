@@ -30,9 +30,9 @@
         password: "{{ exsi_password }}"
         validate_certs: "{{ validate_certs }}"
         name: "{{ vm_name }}"
-        boot_order:
-          - disk
+        boot_devices:
           - ethernet
+        state: once
         enter_bios_setup: false
         boot_retry_enabled: false
         boot_delay: 0
