@@ -47,6 +47,12 @@
         paths: /etc/yum.repos.d/
         patterns: 'CentOS-*'
       register: centos_repo_files
+
+    - name: Remove CentOS YUM repo files
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ centos_repo_files.files }}"
     
     # For CentOS 7 (Python 2 bindings)
     - name: Install SELinux python bindings for CentOS 7
