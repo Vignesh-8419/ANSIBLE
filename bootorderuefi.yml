@@ -12,7 +12,6 @@
     exsi_password: "admin$22"
     validate_certs: false
     vm_name: "{{ vm_name }}"
-    os_installed: "{{ os_installed | default('No') }}"
 
   tasks:
 
@@ -38,7 +37,15 @@
         enter_bios_setup: false
         boot_retry_enabled: false
         boot_delay: 0
-      when: os_installed == "No"
+
+    - name: power on server
+      vmware_guest:
+        hostname: "{{ exsi_hostname }}"
+        username: "{{ exsi_username }}"
+        password: "{{ exsi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ vm_name }}"
+        state: poweredon
 
     - name: Set boot order to disk first (after OS installation)
       vmware_guest_boot_manager:
@@ -53,4 +60,3 @@
         enter_bios_setup: false
         boot_retry_enabled: false
         boot_delay: 0
-      when: os_installed == "Yes"
