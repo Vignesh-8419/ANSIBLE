@@ -1,4 +1,4 @@
-- name: Enable UEFI and network boot on ESXi VM
+- name: Manage VM Boot Firmware and Boot Order on ESXi
   hosts: localhost
   connection: local
   gather_facts: no
@@ -11,9 +11,11 @@
     exsi_username: "root"
     exsi_password: "admin$22"
     validate_certs: false
-    vm_name: "{{ vm_name }}"  # Use Tower survey to pass this
+    vm_name: "{{ vm_name }}"
+    os_installed: "{{ os_installed | default('No') }}"
 
   tasks:
+
     - name: Set VM firmware to EFI (UEFI)
       vmware_guest_boot_manager:
         hostname: "{{ exsi_hostname }}"
@@ -23,7 +25,7 @@
         name: "{{ vm_name }}"
         boot_firmware: "efi"
 
-    - name: Set boot order to disk first, then network
+    - name: Set boot order to PXE first (for OS installation)
       vmware_guest_boot_manager:
         hostname: "{{ exsi_hostname }}"
         username: "{{ exsi_username }}"
@@ -36,3 +38,19 @@
         enter_bios_setup: false
         boot_retry_enabled: false
         boot_delay: 0
+      when: os_installed == "No"
+
+    - name: Set boot order to disk first (after OS installation)
+      vmware_guest_boot_manager:
+        hostname: "{{ exsi_hostname }}"
+        username: "{{ exsi_username }}"
+        password: "{{ exsi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ vm_name }}"
+        boot_order:
+          - disk
+          - ethernet
+        enter_bios_setup: false
+        boot_retry_enabled: false
+        boot_delay: 0
+      when: os_installed == "Yes"
