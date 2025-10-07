@@ -201,6 +201,14 @@
         url: http://vault.centos.org/7.9.2009/os/x86_64/Packages/deltarpm-3.6-3.el7.x86_64.rpm
         dest: /tmp/deltarpm-3.6-3.el7.x86_64.rpm
         mode: '0644'
+      ignore_errors: yes
+
+    - name: Retry - Download deltarpm package from CentOS Vault
+      get_url:
+        url: http://vault.centos.org/7.9.2009/os/x86_64/Packages/deltarpm-3.6-3.el7.x86_64.rpm
+        dest: /tmp/deltarpm-3.6-3.el7.x86_64.rpm
+        mode: '0644'
+      ignore_errors: yes
 
     - name: Install deltarpm package
       command: rpm -ivh /tmp/deltarpm-3.6-3.el7.x86_64.rpm
