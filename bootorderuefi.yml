@@ -7,28 +7,27 @@
     - community.vmware
 
   vars:
-    vcenter_hostname: "192.168.253.129"
-    vcenter_username: "administrator@vsphere.local"
-    vcenter_password: "Vigneshv12$"
-    datacenter_name: "Datacenter"
+    exsi_hostname: "192.168.253.128"
+    exsi_username: "root"
+    exsi_password: "admin$22"
     validate_certs: false
     vm_name: "{{ vm_name }}"  # Use Tower survey to pass this
 
   tasks:
     - name: Set VM firmware to EFI (UEFI)
       vmware_guest_boot_manager:
-        hostname: "{{ vcenter_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
+        hostname: "{{ exsi_hostname }}"
+        username: "{{ exsi_username }}"
+        password: "{{ exsi_password }}"
         validate_certs: false # Set to true if you have valid SSL certs
         name: "{{ vm_name }}"
         boot_firmware: "efi" # Set to 'bios' to revert
 
     - name: Set boot order to network first
       vmware_guest_boot_manager:
-        hostname: "{{ vcenter_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
+        hostname: "{{ exsi_hostname }}"
+        username: "{{ exsi_username }}"
+        password: "{{ exsi_password }}"
         validate_certs: "{{ validate_certs }}"
         name: "{{ vm_name }}"
         boot_order:
