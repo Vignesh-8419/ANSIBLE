@@ -74,6 +74,9 @@
         ansible_python_interpreter: /usr/bin/python2
       when: ansible_distribution_major_version == "7"
 
+    - name: Make leapp_upgrade_repositories.repo mutable before upgrade
+      command: chattr -i /etc/resolv.conf
+
     # For Rocky 8 (Python 3 bindings)
     - name: Install SELinux python bindings for Rocky 8
       dnf:
