@@ -19,9 +19,9 @@
         hostname: "{{ exsi_hostname }}"
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
-        validate_certs: false # Set to true if you have valid SSL certs
+        validate_certs: "{{ validate_certs }}"
         name: "{{ vm_name }}"
-        boot_firmware: "efi" # Set to 'bios' to revert
+        boot_firmware: "efi"
 
     - name: Set boot order to disk first, then network
       vmware_guest_boot_manager:
@@ -30,11 +30,9 @@
         password: "{{ exsi_password }}"
         validate_certs: "{{ validate_certs }}"
         name: "{{ vm_name }}"
-        boot:
-          boot_order:
-            - ethernet
-          boot_delay: 0
-          enter_bios_setup: false
-          retry: false
-          type: "efi"
-        delegate_to: localhost
+        boot_order:
+          - ethernet
+          - disk
+        enter_bios_setup: false
+        boot_retry_enabled: false
+        boot_delay: 0
