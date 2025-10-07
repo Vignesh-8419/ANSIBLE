@@ -53,36 +53,6 @@
         path: "{{ item.path }}"
         state: absent
       loop: "{{ centos_repo_files.files }}"
-    
-    # For CentOS 7 (Python 2 bindings)
-    - name: Install SELinux python bindings for CentOS 7
-      yum:
-        name: libselinux-python
-        state: present
-      vars:
-        ansible_python_interpreter: /usr/bin/python2
-      when: ansible_distribution_major_version == "7"
-
-    - name: Install required packages for Leapp upgrade on CentOS 7
-      yum:
-        name:
-          - dnf
-          - util-linux
-          - dnf-plugins-core
-        state: present
-      vars:
-        ansible_python_interpreter: /usr/bin/python2
-      when: ansible_distribution_major_version == "7"
-
-    - name: Make resolv.conf mutable before upgrade
-      command: chattr -i /etc/resolv.conf
-
-    # For Rocky 8 (Python 3 bindings)
-    - name: Install SELinux python bindings for Rocky 8
-      dnf:
-        name: python3-libselinux
-        state: present
-      when: ansible_distribution_major_version == "8"
 
     - name: Create CentOS 7 patch repo
       copy:
@@ -119,6 +89,36 @@
           gpgcheck=1
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
         dest: /etc/yum.repos.d/vault.repo
+
+    # For CentOS 7 (Python 2 bindings)
+    - name: Install SELinux python bindings for CentOS 7
+      yum:
+        name: libselinux-python
+        state: present
+      vars:
+        ansible_python_interpreter: /usr/bin/python2
+      when: ansible_distribution_major_version == "7"
+
+    - name: Install required packages for Leapp upgrade on CentOS 7
+      yum:
+        name:
+          - dnf
+          - util-linux
+          - dnf-plugins-core
+        state: present
+      vars:
+        ansible_python_interpreter: /usr/bin/python2
+      when: ansible_distribution_major_version == "7"
+
+    - name: Make resolv.conf mutable before upgrade
+      command: chattr -i /etc/resolv.conf
+
+    # For Rocky 8 (Python 3 bindings)
+    - name: Install SELinux python bindings for Rocky 8
+      dnf:
+        name: python3-libselinux
+        state: present
+      when: ansible_distribution_major_version == "8"
 
     - name: Get current kernel version
       shell: uname -r
