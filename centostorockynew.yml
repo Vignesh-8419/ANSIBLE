@@ -97,24 +97,6 @@
         - libcomps.x86_64
        state: absent
     # For CentOS 7 (Python 2 bindings)
-    - name: Install SELinux python bindings for CentOS 7
-      yum:
-        name: libselinux-python
-        state: present
-      vars:
-        ansible_python_interpreter: /usr/bin/python2
-      when: ansible_distribution_major_version == "7"
-
-    - name: Install required packages for Leapp upgrade on CentOS 7
-      yum:
-        name:
-          - dnf
-          - util-linux
-          - dnf-plugins-core
-        state: present
-      vars:
-        ansible_python_interpreter: /usr/bin/python2
-      when: ansible_distribution_major_version == "7"
 
     - name: Make resolv.conf mutable before upgrade
       command: chattr -i /etc/resolv.conf
