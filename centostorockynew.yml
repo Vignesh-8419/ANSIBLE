@@ -198,7 +198,7 @@
     # ------------------- Ensure deltarpm is installed before leapp -------------------
     - name: Download deltarpm package from CentOS Vault
       get_url:
-        url: https://vault.centos.org/7.9.2009/os/x86_64/Packages/deltarpm-3.6-3.el7.x86_64.rpm
+        url: http://vault.centos.org/7.9.2009/os/x86_64/Packages/deltarpm-3.6-3.el7.x86_64.rpm
         dest: /tmp/deltarpm-3.6-3.el7.x86_64.rpm
         mode: '0644'
 
