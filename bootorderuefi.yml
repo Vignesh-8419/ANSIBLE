@@ -12,6 +12,7 @@
     exsi_password: "admin$22"
     validate_certs: false
     vm_name: "{{ vm_name }}"
+    vm_ip: "{{ vm_ip }}"  # Pass via Tower survey
 
   tasks:
 
@@ -24,7 +25,7 @@
         name: "{{ vm_name }}"
         boot_firmware: "efi"
 
-    - name: Set boot order to PXE first (for OS installation)
+    - name: Set boot order to PXE first (ethernet → disk)
       vmware_guest_boot_manager:
         hostname: "{{ exsi_hostname }}"
         username: "{{ exsi_username }}"
@@ -38,7 +39,7 @@
         boot_retry_enabled: false
         boot_delay: 0
 
-    - name: power on server
+    - name: Power on VM
       vmware_guest:
         hostname: "{{ exsi_hostname }}"
         username: "{{ exsi_username }}"
@@ -47,7 +48,7 @@
         name: "{{ vm_name }}"
         state: poweredon
 
-    - name: Set boot order to disk first (after OS installation)
+    - name: Switch boot order to disk first (disk → ethernet)
       vmware_guest_boot_manager:
         hostname: "{{ exsi_hostname }}"
         username: "{{ exsi_username }}"
