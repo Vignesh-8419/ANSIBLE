@@ -90,6 +90,10 @@
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
         dest: /etc/yum.repos.d/vault.repo
 
+    - name: Remove libsolv if installed
+      yum:
+       name: libsolv
+       state: absent
     # For CentOS 7 (Python 2 bindings)
     - name: Install SELinux python bindings for CentOS 7
       yum:
