@@ -23,7 +23,7 @@
         name: "{{ vm_name }}"
         boot_firmware: "efi" # Set to 'bios' to revert
 
-    - name: Set boot order to network first
+    - name: Set boot order to disk first, then network
       vmware_guest_boot_manager:
         hostname: "{{ exsi_hostname }}"
         username: "{{ exsi_username }}"
@@ -31,8 +31,8 @@
         validate_certs: "{{ validate_certs }}"
         name: "{{ vm_name }}"
         boot_order:
-          - ethernet
           - disk
+          - ethernet
         enter_bios_setup: false
         boot_retry_enabled: false
         boot_delay: 0
