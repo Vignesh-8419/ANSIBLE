@@ -3,6 +3,17 @@
   become: true
   tasks:
 
+    - name: Remove old SSH key for server from known_hosts
+      ansible.builtin.shell: ssh-keygen -R "{{ ansible_host }}"
+      args:
+        executable: /bin/bash
+      delegate_to: localhost
+      register: ssh_key_cleanup
+    
+    - name: Show result of SSH key removal
+      ansible.builtin.debug:
+        var: ssh_key_cleanup.stdout
+
     - name: Disable SELinux immediately
       command: setenforce 0
       ignore_errors: yes
