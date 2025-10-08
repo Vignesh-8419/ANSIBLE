@@ -1,19 +1,14 @@
 - name: Disable SELinux and reboot
   hosts: "{{ target_hosts }}"
   become: true
-  tasks:
 
-    - name: Remove old SSH key for server from known_hosts
-      ansible.builtin.shell: ssh-keygen -R "{{ ansible_host }}"
-      args:
-        executable: /bin/bash
+  pre_tasks:
+    - name: Remove old SSH key from known_hosts before connecting
+      ansible.builtin.shell: ssh-keygen -R "{{ inventory_hostname }}"
       delegate_to: localhost
-      register: ssh_key_cleanup
-    
-    - name: Show result of SSH key removal
-      ansible.builtin.debug:
-        var: ssh_key_cleanup.stdout
+      run_once: true
 
+  tasks:
     - name: Disable SELinux immediately
       command: setenforce 0
       ignore_errors: yes
