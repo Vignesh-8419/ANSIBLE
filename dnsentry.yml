@@ -1,6 +1,6 @@
 ---
 - name: Add multiple DNS entries to Pi-hole via API
-  hosts: pihole
+  hosts: cent-dns-01
   become: true
   vars:
     pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
