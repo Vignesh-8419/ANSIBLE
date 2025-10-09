@@ -69,6 +69,7 @@
 - name: Check kernel version of new OS
   hosts: "{{ vm_name }}"
   gather_facts: no
+  tasks:
 
     - name: Check kernel version
       command: uname -r
