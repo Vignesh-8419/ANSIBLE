@@ -58,7 +58,7 @@
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: "{{ validate_certs }}"
-        name: "{{ vm_name }}"
+        name: "{{ item.vm_name }}"
         boot_order:
           - disk
           - ethernet
