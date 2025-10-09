@@ -11,6 +11,10 @@
    foreman_user: "admin"
    foreman_password: "vnjy38WVJLjLpvuP"
    host_root_pass: "Root@123"
+   foreman_hosts:
+    - name: "{{ vm_name }}"
+      ip: "{{ vm_ip }}"
+      mac: "{{ vm_mac }}"
 
 
   tasks:
