@@ -25,7 +25,7 @@ vars:
         username: "{{ foreman_user }}"
         password: "{{ foreman_password }}"
         validate_certs: false
-        name: "{{ host_name }}"
+        name: "{{ item.name }}"
         organization: "Default Organization"
         location: "Default Location"
         architecture: "x86_64"
@@ -35,8 +35,8 @@ vars:
         ptable: "Kickstart default"
         subnet: "vgs-subnet-centos"
         hostgroup: "VGS HOSTS CENTOS 7"
-        ip: "{{ host_ip }}"
-        mac: "{{ host_mac }}"
+        ip: "{{ item.ip }}"
+        mac: "{{ item.mac }}"
         root_pass: "{{ host_root_pass }}"
         build: true
         enabled: true
