@@ -1,0 +1,19 @@
+---
+- name: Add multiple DNS entries to Pi-hole via API
+  hosts: pihole
+  become: true
+  vars:
+    pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
+
+  tasks:
+    - name: Add DNS entry using Pi-hole API script
+      shell: >
+        {{ pihole_api_script_path }} --add {{ item.dns_hostname }} {{ item.dns_ip }}
+      args:
+        chdir: "{{ pihole_api_script_path | dirname }}"
+      loop: "{{ dns_entries }}"
+      register: result
+
+    - name: Show result
+      debug:
+        var: result.results
