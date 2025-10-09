@@ -10,10 +10,6 @@ vars:
   foreman_server_url: "http://rocky-08-01.vgs.com"
   foreman_user: "admin"
   foreman_password: "vnjy38WVJLjLpvuP"
-
-  host_name: "{{ host_name }}"
-  host_ip: "{{ host_ip }}"
-  host_mac: "{{ host_mac }}"
   host_root_pass: "Root@123"
 
 
@@ -39,3 +35,4 @@ vars:
         root_pass: "{{ host_root_pass }}"
         build: true
         enabled: true
+      loop: "{{ foreman_hosts }}"
