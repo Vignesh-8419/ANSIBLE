@@ -66,11 +66,11 @@
       wait_for_connection:
         timeout: 900
         delay: 10
-      delegate_to: "{{ vm_ip }}"
+      delegate_to: "{{ vm_name }}"
 
     - name: Check kernel version
       command: uname -r
-      delegate_to: "{{ vm_ip }}"
+      delegate_to: "{{ vm_name }}"
       register: kernel_version
 
     - name: Display kernel version
