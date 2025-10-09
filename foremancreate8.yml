@@ -24,7 +24,7 @@
         username: "{{ foreman_user }}"
         password: "{{ foreman_password }}"
         validate_certs: false
-        name: "{{ host_name }}"
+        name: "{{ item.name }}"
         organization: "Default Organization"
         location: "Default Location"
         architecture: "x86_64"
@@ -34,8 +34,8 @@
         ptable: "Kickstart default"
         subnet: "vgs-subnet-rocky"
         hostgroup: "VGS HOSTS ROCKY 8"
-        ip: "{{ host_ip }}"
-        mac: "{{ host_mac }}"
+        ip: "{{ item.ip }}"
+        mac: "{{ item.mac }}"
         root_pass: "{{ host_root_pass }}"
         build: true
         enabled: true
