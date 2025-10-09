@@ -67,9 +67,9 @@
         boot_delay: 0
       loop: "{{ vm_list }}"
 
-    - name: Pause for 20 minutes to allow VM to boot
+    - name: Pause for 30 minutes to allow VM to boot
       pause:
-       minutes: 20
+       minutes: 30
 
     - name: Remove old SSH host key from known_hosts
       shell: ssh-keygen -R {{ vm_ip }} || true
