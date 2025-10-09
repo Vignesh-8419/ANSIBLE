@@ -66,9 +66,12 @@
       pause:
        minutes: 8
 
+- name: Check kernel version of new OS
+  hosts: "{{ vm_name }}"
+  gather_facts: no
+
     - name: Check kernel version
       command: uname -r
-      delegate_to: "{{ vm_name }}"
       register: kernel_version
 
     - name: Display kernel version
