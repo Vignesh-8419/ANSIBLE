@@ -13,6 +13,7 @@
     validate_certs: false
     vm_name: "{{ vm_name }}"
     vm_ip: "{{ vm_ip }}"  # Pass via Tower survey
+    ansible_ssh_common_args: "-o UserKnownHostsFile=/tmp/known_hosts -o StrictHostKeyChecking=no"
 
   tasks:
 
@@ -72,6 +73,8 @@
 
     - name: Accept new SSH host key
       shell: ssh-keyscan -H {{ vm_name }} >> ~/.ssh/known_hosts
+      args:
+       executable: /bin/bash
       delegate_to: localhost
 
 - name: Check kernel version of new OS
