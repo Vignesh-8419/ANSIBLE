@@ -61,3 +61,18 @@
         enter_bios_setup: false
         boot_retry_enabled: false
         boot_delay: 0
+
+    - name: Wait for the host to come back online
+      wait_for_connection:
+        timeout: 900
+        delay: 10
+      delegate_to: "{{ vm_ip }}"
+
+    - name: Check kernel version
+      command: uname -r
+      delegate_to: "{{ vm_ip }}"
+      register: kernel_version
+
+    - name: Display kernel version
+      debug:
+        msg: "Kernel version on {{ inventory_hostname }} is {{ kernel_version.stdout }}"
