@@ -67,11 +67,11 @@
 #       minutes: 8
 
     - name: Remove old SSH host key from known_hosts
-      shell: ssh-keygen -R {{ vm_ip }}
+      shell: ssh-keygen -R {{ vm_name }}
       delegate_to: localhost
 
     - name: Accept new SSH host key
-      shell: ssh-keyscan -H {{ vm_ip }} >> ~/.ssh/known_hosts
+      shell: ssh-keyscan -H {{ vm_name }} >> ~/.ssh/known_hosts
       delegate_to: localhost
 
 - name: Check kernel version of new OS
