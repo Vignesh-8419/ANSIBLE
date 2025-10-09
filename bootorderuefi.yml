@@ -62,9 +62,9 @@
         boot_retry_enabled: false
         boot_delay: 0
 
-#    - name: Pause for 8 minutes to allow VM to boot
-#      pause:
-#       minutes: 8
+    - name: Pause for 8 minutes to allow VM to boot
+      pause:
+       minutes: 8
 
     - name: Remove old SSH host key from known_hosts
       shell: ssh-keygen -R {{ vm_ip }} || true
