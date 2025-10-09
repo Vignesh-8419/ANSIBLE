@@ -1,0 +1,41 @@
+---
+- name: Create RockyOS host in Foreman
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  collections:
+    - theforeman.foreman
+vars:
+  foreman_server_url: "http://rocky-08-01.vgs.com"
+  foreman_user: "admin"
+  foreman_password: "vnjy38WVJLjLpvuP"
+
+  host_name: "{{ host_name }}"
+  host_ip: "{{ host_ip }}"
+  host_mac: "{{ host_mac }}"
+  host_root_pass: "Root@123"
+
+
+  tasks:
+    - name: Create a host in Foreman
+      theforeman.foreman.host:
+        server_url: "{{ foreman_server_url }}"
+        username: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        validate_certs: false
+        name: "{{ host_name }}"
+        organization: "Default Organization"
+        location: "Default Location"
+        architecture: "x86_64"
+        domain: "vgs.com"
+        operatingsystem: "RockyLinux"
+        medium: "Rocky 8 Remote"
+        ptable: "Kickstart default"
+        subnet: "vgs-subnet-rocky"
+        hostgroup: "VGS HOSTS ROCKY 8"
+        ip: "{{ host_ip }}"
+        mac: "{{ host_mac }}"
+        root_pass: "{{ host_root_pass }}"
+        build: true
+        enabled: true
