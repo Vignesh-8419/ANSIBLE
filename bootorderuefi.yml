@@ -13,7 +13,6 @@
     validate_certs: false
     vm_name: "{{ vm_name }}"
     vm_ip: "{{ vm_ip }}"  # Pass via Tower survey
-    ansible_ssh_common_args: "-o UserKnownHostsFile=/tmp/known_hosts -o StrictHostKeyChecking=no"
 
   tasks:
 
@@ -80,6 +79,8 @@
 - name: Check kernel version of new OS
   hosts: "{{ vm_name }}"
   gather_facts: no
+  vars:
+   ansible_ssh_common_args: "-o UserKnownHostsFile=/tmp/known_hosts -o StrictHostKeyChecking=no"
   tasks:
 
     - name: Check kernel version
