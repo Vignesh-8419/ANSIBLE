@@ -11,8 +11,9 @@
     exsi_username: "root"
     exsi_password: "admin$22"
     validate_certs: false
-    vm_name: "{{ vm_name }}"
-    vm_ip: "{{ vm_ip }}"  # Pass via Tower survey
+    vm_list:
+     vm_name: "{{ vm_name }}"
+     vm_ip: "{{ vm_ip }}"  # Pass via Tower survey
 
   tasks:
 
@@ -22,8 +23,9 @@
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: "{{ validate_certs }}"
-        name: "{{ vm_name }}"
+        name: "{{ item.vm_name }}"
         boot_firmware: "efi"
+      loop: "{{ vm_list }}"
 
     - name: Set boot order to PXE first (ethernet → disk)
       vmware_guest_boot_manager:
@@ -31,13 +33,14 @@
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: "{{ validate_certs }}"
-        name: "{{ vm_name }}"
+        name: "{{ item.vm_name }}"
         boot_order:
           - ethernet
           - disk
         enter_bios_setup: false
         boot_retry_enabled: false
         boot_delay: 0
+      loop: "{{ vm_list }}"
 
     - name: Power on VM
       vmware_guest:
@@ -45,8 +48,9 @@
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: "{{ validate_certs }}"
-        name: "{{ vm_name }}"
+        name: "{{ item.vm_name }}"
         state: poweredon
+      loop: "{{ vm_list }}"
 
     - name: Switch boot order to disk first (disk → ethernet)
       vmware_guest_boot_manager:
@@ -61,6 +65,7 @@
         enter_bios_setup: false
         boot_retry_enabled: false
         boot_delay: 0
+      loop: "{{ vm_list }}"
 
     - name: Pause for 20 minutes to allow VM to boot
       pause:
