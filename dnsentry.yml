@@ -22,12 +22,11 @@
         dns_entries: >-
           {{
             selected_vms.json | map(
-              'combine',
-              {
-                'dns_hostname': attribute='vm_name',
-                'dns_ip': attribute='vm_ip'
+              lambda x: {
+                'dns_hostname': x.vm_name,
+                'dns_ip': x.vm_ip
               }
-            )
+            ) | list
           }}
 
     - name: Add DNS entry using Pi-hole API script
