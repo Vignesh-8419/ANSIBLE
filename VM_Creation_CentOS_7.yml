@@ -57,11 +57,12 @@
           firmware: efi
         networks:
           - name: "{{ vm_network }}"
+          - connected: true
+            mac: "{{ item.vm_mac }}"
             type: static
             ip: "{{ item.vm_ip }}"
             netmask: "{{ netmask }}"
             gateway: "{{ gateway }}"
-            mac: "{{ item.vm_mac }}"
             device_type: vmxnet3
             dns_servers:
               - "192.168.253.151"
