@@ -72,7 +72,7 @@
         host: "{{ item.vm_ip }}"
         port: 22
         delay: 10
-        timeout: 1800  # 30 minutes max
+        timeout: 3600  # 30 minutes max
         state: started
       loop: "{{ vm_list }}"
       delegate_to: localhost
