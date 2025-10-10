@@ -111,11 +111,9 @@
       loop: "{{ vm_list }}"
       register: vm_info
 
-    - name: Display MAC and IP per interface
+    - name: Display MAC address from hw_eth0
       debug:
         msg: >-
-          VM {{ item.invocation.module_args.name }}:
-          {% for iface in item.instance.interfaces %}
-            Interface {{ iface.name }} → IP: {{ iface.ip_address }}, MAC: {{ iface.mac_address }}
-          {% endfor %}
+          VM {{ item.invocation.module_args.name }} has MAC:
+          {{ item.instance.hw_eth0.mac_address | default('MAC not found') }}
       loop: "{{ vm_info.results }}"
