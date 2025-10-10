@@ -1,0 +1,306 @@
+[root@rocky-08-02 vm-api]# ll
+total 12
+-rw-r--r-- 1 root root 2868 Oct 10 22:05 app.py
+-rw-r--r-- 1 root root    2 Oct 10 22:10 selected.json
+drwxr-xr-x 2 root root   24 Oct 10 22:06 templates
+-rw-r--r-- 1 root root  341 Oct 10 21:58 vm_data.json
+[root@rocky-08-02 vm-api]# pwd
+/root/vm-api
+[root@rocky-08-02 vm-api]# cat vm_data.json
+[
+  {
+    "vm_name": "rocky-08-05.vgs.com",
+    "vm_ip": "192.168.253.197",
+    "vm_mac": "00:50:56:3A:15:BH"
+  },
+  {
+    "vm_name": "rocky-08-04.vgs.com",
+    "vm_ip": "192.168.253.196",
+    "vm_mac": "00:50:56:3A:15:BG"
+  },
+  {
+    "vm_name": "rocky-08-03.vgs.com",
+    "vm_ip": "192.168.253.195",
+    "vm_mac": "00:50:56:3A:15:BF"
+  }
+][root@rocky-08-02 vm-api]# clear
+[root@rocky-08-02 vm-api]# ll
+total 12
+-rw-r--r-- 1 root root 2868 Oct 10 22:05 app.py
+-rw-r--r-- 1 root root    2 Oct 10 22:10 selected.json
+drwxr-xr-x 2 root root   24 Oct 10 22:06 templates
+-rw-r--r-- 1 root root  341 Oct 10 21:58 vm_data.json
+[root@rocky-08-02 vm-api]# pwd
+/root/vm-api
+[root@rocky-08-02 vm-api]# cat app.py
+from flask import Flask, request, jsonify, render_template
+import json
+import os
+
+app = Flask(__name__)
+DATA_FILE = 'vm_data.json'
+SELECTED_FILE = 'selected.json'
+
+def load_data():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE) as f:
+            try:
+                return json.load(f)
+            except:
+                return []
+    return []
+
+def save_data(data):
+    with open(DATA_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def save_selected(indexes):
+    data = load_data()
+    selected = [data[i] for i in indexes if i < len(data)]
+    with open(SELECTED_FILE, 'w') as f:
+        json.dump(selected, f, indent=2)
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/vms', methods=['GET'])
+def get_vms():
+    return jsonify(load_data())
+
+@app.route('/vms', methods=['POST'])
+def add_vm():
+    new_vm = request.json
+    if not all(k in new_vm for k in ('vm_name', 'vm_ip', 'vm_mac')):
+        return jsonify({'error': 'Missing fields'}), 400
+    data = load_data()
+    data.append(new_vm)
+    save_data(data)
+    return jsonify({'message': 'VM added'}), 201
+
+@app.route('/vms/<int:index>', methods=['DELETE'])
+def delete_vm(index):
+    data = load_data()
+    if 0 <= index < len(data):
+        data.pop(index)
+        save_data(data)
+        return jsonify({'message': 'VM deleted'}), 200
+    return jsonify({'error': 'Invalid index'}), 400
+
+@app.route('/vms/delete_selected', methods=['POST'])
+def delete_selected_vms():
+    indexes = request.json.get('selected', [])
+    data = load_data()
+    data = [vm for i, vm in enumerate(data) if i not in indexes]
+    save_data(data)
+    return jsonify({'message': 'Selected VMs deleted'}), 200
+
+@app.route('/selected', methods=['POST'])
+def set_selected():
+    indexes = request.json.get('selected', [])
+    save_selected(indexes)
+    return jsonify({'message': 'Selection saved' if indexes else 'No VMs selected'})
+
+@app.route('/selected', methods=['GET'])
+def get_selected():
+    if os.path.exists(SELECTED_FILE):
+        with open(SELECTED_FILE) as f:
+            try:
+                return jsonify(json.load(f))
+            except:
+                return jsonify([])
+    return jsonify([])
+
+@app.route('/selected/<int:index>', methods=['DELETE'])
+def remove_selected_vm(index):
+    if os.path.exists(SELECTED_FILE):
+        with open(SELECTED_FILE) as f:
+            try:
+                selected = json.load(f)
+            except:
+                selected = []
+        if 0 <= index < len(selected):
+            selected.pop(index)
+            with open(SELECTED_FILE, 'w') as f:
+                json.dump(selected, f, indent=2)
+            return jsonify({'message': 'VM removed from selection'}), 200
+    return jsonify({'error': 'Invalid index or file missing'}), 400
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
+
+[root@rocky-08-02 vm-api]# cat templates/index.html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>VM Provisioning Dashboard</title>
+  <style>
+    table, th, td { border: 1px solid black; border-collapse: collapse; padding: 8px; }
+    th { background-color: #f2f2f2; }
+    button { margin-right: 10px; }
+  </style>
+</head>
+<body>
+  <h2>Add VM Details</h2>
+  <form id="addForm">
+    <label>Hostname:</label><br>
+    <input type="text" id="vm_name" required><br>
+    <label>IP Address:</label><br>
+    <input type="text" id="vm_ip" required><br>
+    <label>MAC Address:</label><br>
+    <input type="text" id="vm_mac" required><br><br>
+    <button type="submit">Add VM</button>
+  </form>
+
+  <h2>VMs Available for Provisioning</h2>
+  <form id="selectForm">
+    <button type="button" onclick="toggleSelect(true)">Select All</button>
+    <button type="button" onclick="toggleSelect(false)">Unselect All</button>
+    <button type="button" onclick="deleteSelected()">Delete Selected</button>
+    <br><br>
+    <table id="vmTable">
+      <thead>
+        <tr>
+          <th>Select</th>
+          <th>Hostname</th>
+          <th>IP Address</th>
+          <th>MAC Address</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <br>
+    <button type="submit">Submit Selection</button>
+  </form>
+
+  <h2>Currently Selected VMs</h2>
+  <table id="selectedTable">
+    <thead>
+      <tr>
+        <th>Hostname</th>
+        <th>IP Address</th>
+        <th>MAC Address</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <script>
+    function loadVMs() {
+      fetch('/vms')
+        .then(res => res.json())
+        .then(data => {
+          const tbody = document.querySelector('#vmTable tbody');
+          tbody.innerHTML = '';
+          data.forEach((vm, index) => {
+            tbody.innerHTML += `
+              <tr>
+                <td><input type="checkbox" name="vm" value="${index}"></td>
+                <td>${vm.vm_name}</td>
+                <td>${vm.vm_ip}</td>
+                <td>${vm.vm_mac}</td>
+                <td><button type="button" onclick="deleteVM(${index})">Delete</button></td>
+              </tr>
+            `;
+          });
+        });
+    }
+
+    function loadSelectedVMs() {
+      fetch('/selected')
+        .then(res => res.json())
+        .then(data => {
+          const tbody = document.querySelector('#selectedTable tbody');
+          tbody.innerHTML = '';
+          data.forEach((vm, index) => {
+            tbody.innerHTML += `
+              <tr>
+                <td>${vm.vm_name}</td>
+                <td>${vm.vm_ip}</td>
+                <td>${vm.vm_mac}</td>
+                <td><button type="button" onclick="removeSelected(${index})">Remove</button></td>
+              </tr>
+            `;
+          });
+        });
+    }
+
+    function toggleSelect(state) {
+      document.querySelectorAll('input[name="vm"]').forEach(cb => cb.checked = state);
+    }
+
+    function deleteVM(index) {
+      fetch(`/vms/${index}`, {
+        method: 'DELETE'
+      }).then(() => {
+        loadVMs();
+        loadSelectedVMs();
+      });
+    }
+
+    function deleteSelected() {
+      const selected = Array.from(document.querySelectorAll('input[name="vm"]:checked'))
+        .map(cb => parseInt(cb.value));
+      if (selected.length === 0) {
+        alert("No VMs selected for deletion.");
+        return;
+      }
+      fetch('/vms/delete_selected', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selected })
+      }).then(() => {
+        loadVMs();
+        loadSelectedVMs();
+      });
+    }
+
+    function removeSelected(index) {
+      fetch(`/selected/${index}`, {
+        method: 'DELETE'
+      }).then(() => loadSelectedVMs());
+    }
+
+    document.getElementById('addForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      fetch('/vms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vm_name: document.getElementById('vm_name').value,
+          vm_ip: document.getElementById('vm_ip').value,
+          vm_mac: document.getElementById('vm_mac').value
+        })
+      }).then(() => {
+        loadVMs();
+        document.getElementById('addForm').reset();
+      });
+    });
+
+    document.getElementById('selectForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const selected = Array.from(document.querySelectorAll('input[name="vm"]:checked'))
+        .map(cb => parseInt(cb.value));
+      fetch('/selected', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selected })
+      })
+      .then(res => res.json())
+      .then(data => {
+        alert(data.message || data.error);
+        loadSelectedVMs();
+      })
+      .catch(error => {
+        console.error('Error submitting selection:', error);
+        alert('Failed to submit selection.');
+      });
+    });
+
+    loadVMs();
+    loadSelectedVMs();
+  </script>
+</body>
+</html>
+[root@rocky-08-02 vm-api]#
