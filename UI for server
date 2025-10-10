@@ -1,3 +1,7 @@
+pip install flask
+mkdir vm-api
+cd vm-api
+touch app.py vm_data.json
 [root@rocky-08-02 vm-api]# ll
 total 12
 -rw-r--r-- 1 root root 2868 Oct 10 22:05 app.py
