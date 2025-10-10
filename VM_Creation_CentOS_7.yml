@@ -57,7 +57,7 @@
           firmware: efi
         networks:
           - name: "{{ vm_network }}"
-          - connected: true
+            connected: true
             mac: "{{ item.vm_mac }}"
             type: static
             ip: "{{ item.vm_ip }}"
