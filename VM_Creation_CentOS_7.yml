@@ -33,7 +33,7 @@
       set_fact:
         vm_list: "{{ selected_vms.json }}"
 
-    - name: Create new VM with template
+    - name: Create VM powered off with static MAC
       vmware_guest:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -43,7 +43,7 @@
         folder: "{{ folder }}"
         esxi_hostname: "{{ esxi_hostname }}"
         name: "{{ item.vm_name }}"
-        state: poweredon
+        state: poweredoff
         guest_id: "{{ guest_id }}"
         datastore: "{{ datastore_name }}"
         template: "{{ template_name }}"
@@ -69,6 +69,18 @@
           dns_servers: 
             - "192.168.253.151"
           hostname: "{{ item.vm_name }}"
+      loop: "{{ vm_list }}"
+
+    - name: Power on VM
+      vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        datacenter: "{{ datacenter_name }}"
+        folder: "{{ folder }}"
+        name: "{{ item.vm_name }}"
+        state: poweredon
       loop: "{{ vm_list }}"
 
     - name: Wait until VM responds to ping
