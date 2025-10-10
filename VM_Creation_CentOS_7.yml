@@ -62,6 +62,7 @@
             netmask: "{{ netmask }}"
             gateway: "{{ gateway }}"
             mac: "{{ item.vm_mac }}"
+            device_type: vmxnet3
             dns_servers:
               - "192.168.253.151"
         customization:
@@ -83,7 +84,7 @@
         state: poweredon
       loop: "{{ vm_list }}"
 
-    - name: Wait until VM responds to ping
+    - name: Wait until VM responds to SSH
       ansible.builtin.wait_for:
         host: "{{ item.vm_ip }}"
         port: 22
@@ -98,3 +99,19 @@
         ansible_host: "{{ item.vm_ip }}"
       loop: "{{ vm_list }}"
       delegate_to: localhost
+
+    - name: Show actual MAC assigned (optional debug)
+      vmware_guest_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        name: "{{ item.vm_name }}"
+        datacenter: "{{ datacenter_name }}"
+      loop: "{{ vm_list }}"
+      register: vm_info
+
+    - name: Display MAC address from vSphere
+      debug:
+        msg: "VM {{ item.invocation.module_args.name }} has MAC: {{ item.instance.hw_eth0.mac_address }}"
+      loop: "{{ vm_info.results }}"
