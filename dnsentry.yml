@@ -2,10 +2,34 @@
 - name: Add multiple DNS entries to Pi-hole via API
   hosts: cent-dns-01
   become: true
+
   vars:
     pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
+    flask_server_ip: "192.168.253.134"
+    selected_endpoint: "http://{{ flask_server_ip }}:5000/selected"
 
   tasks:
+
+    - name: Fetch selected.json from Flask server
+      uri:
+        url: "{{ selected_endpoint }}"
+        method: GET
+        return_content: yes
+      register: selected_vms
+
+    - name: Convert selected VMs to DNS entries
+      set_fact:
+        dns_entries: >-
+          {{
+            selected_vms.json | map(
+              'combine',
+              {
+                'dns_hostname': attribute='vm_name',
+                'dns_ip': attribute='vm_ip'
+              }
+            )
+          }}
+
     - name: Add DNS entry using Pi-hole API script
       shell: >
         {{ pihole_api_script_path }} --add {{ item.dns_hostname }} {{ item.dns_ip }}
