@@ -17,17 +17,14 @@
         return_content: yes
       register: selected_vms
 
-    - name: Convert selected VMs to DNS entries
+    - name: Initialize dns_entries list
       set_fact:
-        dns_entries: >-
-          {{
-            selected_vms.json | map(
-              lambda x: {
-                'dns_hostname': x.vm_name,
-                'dns_ip': x.vm_ip
-              }
-            ) | list
-          }}
+        dns_entries: []
+
+    - name: Build dns_entries from selected VMs
+      set_fact:
+        dns_entries: "{{ dns_entries + [ { 'dns_hostname': item.vm_name, 'dns_ip': item.vm_ip } ] }}"
+      loop: "{{ selected_vms.json }}"
 
     - name: Add DNS entry using Pi-hole API script
       shell: >
