@@ -93,7 +93,7 @@
   hosts: localhost
   gather_facts: no
   vars:
-   ansible_ssh_common_args: "-o UserKnownHostsFile=/tmp/known_hosts -o StrictHostKeyChecking=no"
+    ansible_ssh_common_args: "-o UserKnownHostsFile=/tmp/known_hosts -o StrictHostKeyChecking=no"
   tasks:
 
     - name: Check kernel version via SSH
@@ -101,10 +101,12 @@
       register: kernel_version
       delegate_to: "{{ item.vm_ip }}"
       loop: "{{ vm_list }}"
+      loop_control:
+        index_var: loop_index
 
     - name: Display kernel version
       debug:
-        msg: "Kernel version on {{ item.vm_name }} ({{ item.vm_ip }}) is {{ kernel_version.results[loop.index0].stdout }}"
+        msg: "Kernel version on {{ item.vm_name }} ({{ item.vm_ip }}) is {{ kernel_version.results[loop_index].stdout }}"
       loop: "{{ vm_list }}"
       loop_control:
-       index_var: loop_index
+        index_var: loop_index
