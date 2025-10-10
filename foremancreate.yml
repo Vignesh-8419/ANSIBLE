@@ -6,26 +6,35 @@
 
   collections:
     - theforeman.foreman
-vars:
-  foreman_server_url: "http://rocky-08-01.vgs.com"
-  foreman_user: "admin"
-  foreman_password: "vnjy38WVJLjLpvuP"
-  host_root_pass: "Root@123"
-  foreman_hosts:
-    - name: "{{ vm_name }}"
-      ip: "{{ vm_ip }}"
-      mac: "{{ vm_mac }}"
 
-
+  vars:
+    flask_server_ip: "192.168.253.134"
+    selected_endpoint: "http://{{ flask_server_ip }}:5000/selected"
+    foreman_server_url: "http://rocky-08-01.vgs.com"
+    foreman_user: "admin"
+    foreman_password: "vnjy38WVJLjLpvuP"
+    host_root_pass: "Root@123"
 
   tasks:
+
+    - name: Fetch selected.json from Flask server
+      uri:
+        url: "{{ selected_endpoint }}"
+        method: GET
+        return_content: yes
+      register: selected_vms
+
+    - name: Set foreman_hosts from selected.json
+      set_fact:
+        foreman_hosts: "{{ selected_vms.json }}"
+
     - name: Create a host in Foreman
       theforeman.foreman.host:
         server_url: "{{ foreman_server_url }}"
         username: "{{ foreman_user }}"
         password: "{{ foreman_password }}"
         validate_certs: false
-        name: "{{ item.name }}"
+        name: "{{ item.vm_name }}"
         organization: "Default Organization"
         location: "Default Location"
         architecture: "x86_64"
@@ -35,8 +44,8 @@ vars:
         ptable: "Kickstart default"
         subnet: "vgs-subnet-centos"
         hostgroup: "VGS HOSTS CENTOS 7"
-        ip: "{{ item.ip }}"
-        mac: "{{ item.mac }}"
+        ip: "{{ item.vm_ip }}"
+        mac: "{{ item.vm_mac }}"
         root_pass: "{{ host_root_pass }}"
         build: true
         enabled: true
