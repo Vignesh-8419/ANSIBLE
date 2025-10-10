@@ -4,6 +4,8 @@
   gather_facts: yes
 
   vars:
+    flask_server_ip: "192.168.253.134"
+    selected_endpoint: "http://{{ flask_server_ip }}:5000/selected"
     vcenter_hostname: "192.168.253.129"
     vcenter_username: "administrator@vsphere.local"
     vcenter_password: "Vigneshv12$"
@@ -17,11 +19,20 @@
     netmask: "255.255.255.0"
     gateway: "192.168.253.2"
     esxi_hostname: "192.168.253.128"
-    vm_list:
-      - name: "{{ vm_name }}"
-        ip: "{{ vm_ip }}"
 
   tasks:
+
+    - name: Fetch selected.json from Flask server
+      uri:
+        url: "{{ selected_endpoint }}"
+        method: GET
+        return_content: yes
+      register: selected_vms
+
+    - name: Set vm_list from selected.json
+      set_fact:
+        vm_list: "{{ selected_vms.json }}"
+
     - name: Create new VM with template
       vmware_guest:
         hostname: "{{ vcenter_hostname }}"
@@ -31,7 +42,7 @@
         datacenter: "{{ datacenter_name }}"
         folder: "{{ folder }}"
         esxi_hostname: "{{ esxi_hostname }}"
-        name: "{{ item.name }}"
+        name: "{{ item.vm_name }}"
         state: poweredon
         guest_id: "{{ guest_id }}"
         datastore: "{{ datastore_name }}"
@@ -47,7 +58,7 @@
         networks:
           - name: "{{ vm_network }}"
             type: static
-            ip: "{{ item.ip }}"
+            ip: "{{ item.vm_ip }}"
             netmask: "{{ netmask }}"
             gateway: "{{ gateway }}"
             dns_servers:
@@ -56,22 +67,21 @@
           domain: "{{ guest_domain }}"
           dns_servers: 
             - "192.168.253.151"
-          hostname: "{{ item.name }}"
+          hostname: "{{ item.vm_name }}"
       loop: "{{ vm_list }}"
 
     - name: Wait until VM responds to ping
       ansible.builtin.wait_for:
-        host: "{{ item.ip }}"
-        port: 22                # Wait for SSH port if you also want SSH readiness
-        timeout: 600            # 2 minutes max
+        host: "{{ item.vm_ip }}"
+        port: 22
+        timeout: 600
         state: started
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
-
     - name: Ping the VM to verify connectivity
       ansible.builtin.ping:
       vars:
-        ansible_host: "{{ item.ip }}"
+        ansible_host: "{{ item.vm_ip }}"
       loop: "{{ vm_list }}"
       delegate_to: localhost
