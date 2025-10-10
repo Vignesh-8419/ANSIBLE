@@ -107,4 +107,4 @@
         msg: "Kernel version on {{ item.vm_name }} ({{ item.vm_ip }}) is {{ kernel_version.results[loop.index0].stdout }}"
       loop: "{{ vm_list }}"
       loop_control:
-      index_var: loop_index
+       index_var: loop_index
