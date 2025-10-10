@@ -63,7 +63,6 @@
             ip: "{{ item.vm_ip }}"
             netmask: "{{ netmask }}"
             gateway: "{{ gateway }}"
-            device_type: vmxnet3
             dns_servers:
               - "192.168.253.151"
         customization:
