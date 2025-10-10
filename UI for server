@@ -36,6 +36,7 @@ drwxr-xr-x 2 root root   24 Oct 10 22:06 templates
 -rw-r--r-- 1 root root  341 Oct 10 21:58 vm_data.json
 [root@rocky-08-02 vm-api]# pwd
 /root/vm-api
+[root@rocky-08-02 vm-api]# clear
 [root@rocky-08-02 vm-api]# cat app.py
 from flask import Flask, request, jsonify, render_template
 import json
@@ -81,6 +82,18 @@ def add_vm():
     data.append(new_vm)
     save_data(data)
     return jsonify({'message': 'VM added'}), 201
+
+@app.route('/vms/<int:index>', methods=['PUT'])
+def update_vm(index):
+    data = load_data()
+    if 0 <= index < len(data):
+        updated_vm = request.json
+        for field in ['vm_name', 'vm_ip', 'vm_mac']:
+            if field in updated_vm:
+                data[index][field] = updated_vm[field]
+        save_data(data)
+        return jsonify({'message': 'VM updated'}), 200
+    return jsonify({'error': 'Invalid index'}), 400
 
 @app.route('/vms/<int:index>', methods=['DELETE'])
 def delete_vm(index):
@@ -132,7 +145,6 @@ def remove_selected_vm(index):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
-
 [root@rocky-08-02 vm-api]# cat templates/index.html
 <!DOCTYPE html>
 <html>
@@ -155,6 +167,19 @@ if __name__ == '__main__':
     <input type="text" id="vm_mac" required><br><br>
     <button type="submit">Add VM</button>
   </form>
+
+  <h2>Edit VM</h2>
+  <div id="editForm" style="display:none;">
+    <input type="hidden" id="editIndex">
+    <label>Hostname:</label><br>
+    <input type="text" id="edit_vm_name"><br>
+    <label>IP Address:</label><br>
+    <input type="text" id="edit_vm_ip"><br>
+    <label>MAC Address:</label><br>
+    <input type="text" id="edit_vm_mac"><br><br>
+    <button onclick="submitEdit()">Save Changes</button>
+    <button onclick="cancelEdit()">Cancel</button>
+  </div>
 
   <h2>VMs Available for Provisioning</h2>
   <form id="selectForm">
@@ -204,7 +229,10 @@ if __name__ == '__main__':
                 <td>${vm.vm_name}</td>
                 <td>${vm.vm_ip}</td>
                 <td>${vm.vm_mac}</td>
-                <td><button type="button" onclick="deleteVM(${index})">Delete</button></td>
+                <td>
+                  <button type="button" onclick="deleteVM(${index})">Delete</button>
+                  <button type="button" onclick="editVM(${index}, '${vm.vm_name}', '${vm.vm_ip}', '${vm.vm_mac}')">Edit</button>
+                </td>
               </tr>
             `;
           });
@@ -235,11 +263,40 @@ if __name__ == '__main__':
     }
 
     function deleteVM(index) {
+      fetch(`/vms/${index}`, { method: 'DELETE' })
+        .then(() => {
+          loadVMs();
+          loadSelectedVMs();
+        });
+    }
+
+    function editVM(index, name, ip, mac) {
+      document.getElementById('editIndex').value = index;
+      document.getElementById('edit_vm_name').value = name;
+      document.getElementById('edit_vm_ip').value = ip;
+      document.getElementById('edit_vm_mac').value = mac;
+      document.getElementById('editForm').style.display = 'block';
+    }
+
+    function cancelEdit() {
+      document.getElementById('editForm').style.display = 'none';
+    }
+
+    function submitEdit() {
+      const index = document.getElementById('editIndex').value;
+      const updatedVM = {
+        vm_name: document.getElementById('edit_vm_name').value,
+        vm_ip: document.getElementById('edit_vm_ip').value,
+        vm_mac: document.getElementById('edit_vm_mac').value
+      };
       fetch(`/vms/${index}`, {
-        method: 'DELETE'
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedVM)
       }).then(() => {
         loadVMs();
         loadSelectedVMs();
+        cancelEdit();
       });
     }
 
@@ -261,9 +318,8 @@ if __name__ == '__main__':
     }
 
     function removeSelected(index) {
-      fetch(`/selected/${index}`, {
-        method: 'DELETE'
-      }).then(() => loadSelectedVMs());
+      fetch(`/selected/${index}`, { method: 'DELETE' })
+        .then(() => loadSelectedVMs());
     }
 
     document.getElementById('addForm').addEventListener('submit', function(e) {
@@ -308,3 +364,4 @@ if __name__ == '__main__':
 </body>
 </html>
 [root@rocky-08-02 vm-api]#
+
