@@ -61,6 +61,7 @@
             ip: "{{ item.vm_ip }}"
             netmask: "{{ netmask }}"
             gateway: "{{ gateway }}"
+            mac: "{{ item.vm_mac }}"
             dns_servers:
               - "192.168.253.151"
         customization:
