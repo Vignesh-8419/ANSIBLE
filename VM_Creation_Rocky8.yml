@@ -1,10 +1,11 @@
-# First Play: Provision VMs
 - name: Provision RockyOS VMs with static IPs and Secure Boot disabled
   hosts: localhost
   connection: local
   gather_facts: no
 
   vars:
+    flask_server_ip: "192.168.253.134"
+    selected_endpoint: "http://{{ flask_server_ip }}:5000/selected"
     vcenter_hostname: "192.168.253.129"
     vcenter_username: "administrator@vsphere.local"
     vcenter_password: "Vigneshv12$"
@@ -18,11 +19,20 @@
     gateway: "192.168.253.2"
     esxi_hostname: "192.168.253.128"
     guest_domain: "vgs.com"
-    vm_list:
-      - name: "{{ vm_name }}"
-        ip: "{{ vm_ip }}"
 
   tasks:
+
+    - name: Fetch selected.json from Flask server
+      uri:
+        url: "{{ selected_endpoint }}"
+        method: GET
+        return_content: yes
+      register: selected_vms
+
+    - name: Set vm_list from selected.json
+      set_fact:
+        vm_list: "{{ selected_vms.json }}"
+
     - name: Create VM with static IP, customization, and Secure Boot disabled
       vmware_guest:
         hostname: "{{ vcenter_hostname }}"
@@ -32,7 +42,7 @@
         datacenter: "{{ datacenter_name }}"
         folder: "{{ folder }}"
         esxi_hostname: "{{ esxi_hostname }}"
-        name: "{{ item.name }}"
+        name: "{{ item.vm_name }}"
         state: poweredon
         guest_id: "{{ guest_id }}"
         datastore: "{{ datastore_name }}"
@@ -49,7 +59,7 @@
         networks:
           - name: "{{ vm_network }}"
             type: static
-            ip: "{{ item.ip }}"
+            ip: "{{ item.vm_ip }}"
             gateway: "{{ gateway }}"
             netmask: "{{ netmask }}"
             device_type: vmxnet3
@@ -59,15 +69,39 @@
           domain: "{{ guest_domain }}"
           dns_servers:
             - "192.168.253.151"
-          hostname: "{{ item.name }}"
+          hostname: "{{ item.vm_name }}"
         wait_for_ip_address: true
       loop: "{{ vm_list }}"
 
     - name: Wait until VM responds to SSH
       wait_for:
-        host: "{{ item.ip }}"
+        host: "{{ item.vm_ip }}"
         port: 22
         timeout: 120
         state: started
       loop: "{{ vm_list }}"
       delegate_to: localhost
+    - name: Ping the VM to verify connectivity
+      ansible.builtin.ping:
+      vars:
+        ansible_host: "{{ item.vm_ip }}"
+      loop: "{{ vm_list }}"
+      delegate_to: localhost
+
+    - name: Show actual MAC assigned (optional debug)
+      vmware_guest_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        name: "{{ item.vm_name }}"
+        datacenter: "{{ datacenter_name }}"
+      loop: "{{ vm_list }}"
+      register: vm_info
+
+    - name: Display MAC address from hw_eth0
+      debug:
+        msg: >-
+          VM {{ item.invocation.module_args.name }} has MAC:
+          {{ item.instance.hw_eth0.mac_address | default('MAC not found') }}
+      loop: "{{ vm_info.results }}"
