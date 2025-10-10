@@ -1,3 +1,25 @@
+---
+- name: Load selected VMs from Flask API
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars:
+    flask_server_ip: "192.168.253.134"
+    selected_endpoint: "http://{{ flask_server_ip }}:5000/selected"
+
+  tasks:
+    - name: Fetch selected.json from Flask server
+      uri:
+        url: "{{ selected_endpoint }}"
+        method: GET
+        return_content: yes
+      register: selected_vms
+
+    - name: Set vm_list from selected.json
+      set_fact:
+        vm_list: "{{ selected_vms.json }}"
+
 - name: Manage VM Boot Firmware and Boot Order on ESXi
   hosts: localhost
   connection: local
@@ -11,9 +33,6 @@
     exsi_username: "root"
     exsi_password: "admin$22"
     validate_certs: false
-    vm_list:
-     - vm_name: "{{ vm_name }}"
-       vm_ip: "{{ vm_ip }}"  # Pass via Tower survey
 
   tasks:
 
@@ -72,7 +91,7 @@
         host: "{{ item.vm_ip }}"
         port: 22
         delay: 10
-        timeout: 3600  # 30 minutes max
+        timeout: 3600
         state: started
       loop: "{{ vm_list }}"
       delegate_to: localhost
@@ -85,15 +104,17 @@
     - name: Accept new SSH host key
       shell: ssh-keyscan -H {{ item.vm_ip }} >> /tmp/known_hosts
       args:
-       executable: /bin/bash
+        executable: /bin/bash
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
 - name: Check kernel version of new OS
   hosts: localhost
   gather_facts: no
+
   vars:
     ansible_ssh_common_args: "-o UserKnownHostsFile=/tmp/known_hosts -o StrictHostKeyChecking=no"
+
   tasks:
 
     - name: Check kernel version via SSH
