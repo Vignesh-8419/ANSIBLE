@@ -90,16 +90,19 @@
       delegate_to: localhost
 
 - name: Check kernel version of new OS
-  hosts: "{{ vm_name }}"
+  hosts: localhost
   gather_facts: no
   vars:
    ansible_ssh_common_args: "-o UserKnownHostsFile=/tmp/known_hosts -o StrictHostKeyChecking=no"
   tasks:
 
-    - name: Check kernel version
+    - name: Check kernel version via SSH
       command: uname -r
       register: kernel_version
+      delegate_to: "{{ item.vm_ip }}"
+      loop: "{{ vm_list }}"
 
     - name: Display kernel version
       debug:
-        msg: "Kernel version on {{ inventory_hostname }} is {{ kernel_version.stdout }}"
+        msg: "Kernel version on {{ item.vm_name }} ({{ item.vm_ip }}) is {{ kernel_version.results[loop.index0].stdout }}"
+      loop: "{{ vm_list }}"
