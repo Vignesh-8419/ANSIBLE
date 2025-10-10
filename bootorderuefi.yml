@@ -67,9 +67,15 @@
         boot_delay: 0
       loop: "{{ vm_list }}"
 
-    - name: Pause for 30 minutes to allow VM to boot
-      pause:
-       minutes: 30
+    - name: Wait for VM to respond to SSH (port 22)
+      wait_for:
+        host: "{{ item.vm_ip }}"
+        port: 22
+        delay: 10
+        timeout: 1800  # 30 minutes max
+        state: started
+      loop: "{{ vm_list }}"
+      delegate_to: localhost
 
     - name: Remove old SSH host key from known_hosts
       shell: ssh-keygen -R {{ vm_ip }} || true
