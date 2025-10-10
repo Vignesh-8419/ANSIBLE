@@ -79,12 +79,14 @@
 
     - name: Remove old SSH host key from known_hosts
       shell: ssh-keygen -R {{ vm_ip }} || true
+      loop: "{{ vm_list }}"
       delegate_to: localhost
 
     - name: Accept new SSH host key
       shell: ssh-keyscan -H {{ vm_ip }} >> /tmp/known_hosts
       args:
        executable: /bin/bash
+      loop: "{{ vm_list }}"
       delegate_to: localhost
 
 - name: Check kernel version of new OS
