@@ -37,15 +37,26 @@ drwxr-xr-x 2 root root   24 Oct 10 22:06 templates
 [root@rocky-08-02 vm-api]# pwd
 /root/vm-api
 [root@rocky-08-02 vm-api]# clear
+[root@rocky-08-02 vm-api]# clear
 [root@rocky-08-02 vm-api]# cat app.py
 from flask import Flask, request, jsonify, render_template
+from werkzeug.utils import secure_filename
 import json
 import os
+import openpyxl
 
 app = Flask(__name__)
+
+# File paths
 DATA_FILE = 'vm_data.json'
 SELECTED_FILE = 'selected.json'
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'xlsx'}
 
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Utility functions
 def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE) as f:
@@ -59,12 +70,25 @@ def save_data(data):
     with open(DATA_FILE, 'w') as f:
         json.dump(data, f, indent=2)
 
+def load_selected():
+    if os.path.exists(SELECTED_FILE):
+        with open(SELECTED_FILE) as f:
+            try:
+                return json.load(f)
+            except:
+                return []
+    return []
+
 def save_selected(indexes):
     data = load_data()
     selected = [data[i] for i in indexes if i < len(data)]
     with open(SELECTED_FILE, 'w') as f:
         json.dump(selected, f, indent=2)
 
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Routes
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -76,8 +100,12 @@ def get_vms():
 @app.route('/vms', methods=['POST'])
 def add_vm():
     new_vm = request.json
-    if not all(k in new_vm for k in ('vm_name', 'vm_ip', 'vm_mac')):
-        return jsonify({'error': 'Missing fields'}), 400
+    if not all(k in new_vm for k in ('vm_name', 'vm_ip')):
+        return jsonify({'error': 'Missing vm_name or vm_ip'}), 400
+
+    if 'vm_mac' not in new_vm or not new_vm['vm_mac']:
+        new_vm['vm_mac'] = "00:00:00:00:00:00"
+
     data = load_data()
     data.append(new_vm)
     save_data(data)
@@ -92,6 +120,15 @@ def update_vm(index):
             if field in updated_vm:
                 data[index][field] = updated_vm[field]
         save_data(data)
+
+        # Sync changes to selected.json
+        selected = load_selected()
+        for i, vm in enumerate(selected):
+            if vm['vm_name'] == data[index]['vm_name']:
+                selected[i] = data[index]
+        with open(SELECTED_FILE, 'w') as f:
+            json.dump(selected, f, indent=2)
+
         return jsonify({'message': 'VM updated'}), 200
     return jsonify({'error': 'Invalid index'}), 400
 
@@ -99,8 +136,14 @@ def update_vm(index):
 def delete_vm(index):
     data = load_data()
     if 0 <= index < len(data):
-        data.pop(index)
+        deleted_vm = data.pop(index)
         save_data(data)
+
+        selected = load_selected()
+        selected = [vm for vm in selected if vm['vm_name'] != deleted_vm['vm_name']]
+        with open(SELECTED_FILE, 'w') as f:
+            json.dump(selected, f, indent=2)
+
         return jsonify({'message': 'VM deleted'}), 200
     return jsonify({'error': 'Invalid index'}), 400
 
@@ -108,8 +151,15 @@ def delete_vm(index):
 def delete_selected_vms():
     indexes = request.json.get('selected', [])
     data = load_data()
+    deleted_names = [data[i]['vm_name'] for i in indexes if i < len(data)]
     data = [vm for i, vm in enumerate(data) if i not in indexes]
     save_data(data)
+
+    selected = load_selected()
+    selected = [vm for vm in selected if vm['vm_name'] not in deleted_names]
+    with open(SELECTED_FILE, 'w') as f:
+        json.dump(selected, f, indent=2)
+
     return jsonify({'message': 'Selected VMs deleted'}), 200
 
 @app.route('/selected', methods=['POST'])
@@ -120,73 +170,189 @@ def set_selected():
 
 @app.route('/selected', methods=['GET'])
 def get_selected():
-    if os.path.exists(SELECTED_FILE):
-        with open(SELECTED_FILE) as f:
-            try:
-                return jsonify(json.load(f))
-            except:
-                return jsonify([])
-    return jsonify([])
+    return jsonify(load_selected())
 
 @app.route('/selected/<int:index>', methods=['DELETE'])
 def remove_selected_vm(index):
-    if os.path.exists(SELECTED_FILE):
-        with open(SELECTED_FILE) as f:
-            try:
-                selected = json.load(f)
-            except:
-                selected = []
-        if 0 <= index < len(selected):
-            selected.pop(index)
-            with open(SELECTED_FILE, 'w') as f:
-                json.dump(selected, f, indent=2)
-            return jsonify({'message': 'VM removed from selection'}), 200
-    return jsonify({'error': 'Invalid index or file missing'}), 400
+    selected = load_selected()
+    if 0 <= index < len(selected):
+        selected.pop(index)
+        with open(SELECTED_FILE, 'w') as f:
+            json.dump(selected, f, indent=2)
+        return jsonify({'message': 'VM removed from selection'}), 200
+    return jsonify({'error': 'Invalid index'}), 400
+
+@app.route('/upload_excel', methods=['POST'])
+def upload_excel():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+
+        wb = openpyxl.load_workbook(filepath)
+        sheet = wb.active
+        data = load_data()
+
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            vm_name, vm_ip, vm_mac = row[:3]
+            if vm_name and vm_ip:
+                vm_mac = vm_mac if vm_mac else "00:00:00:00:00:00"
+                data.append({
+                    "vm_name": vm_name,
+                    "vm_ip": vm_ip,
+                    "vm_mac": vm_mac
+                })
+
+        save_data(data)
+        return jsonify({'message': 'VMs imported from Excel'}), 200
+
+    return jsonify({'error': 'Invalid file type'}), 400
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 [root@rocky-08-02 vm-api]# cat templates/index.html
 <!DOCTYPE html>
 <html>
 <head>
   <title>VM Provisioning Dashboard</title>
   <style>
-    table, th, td { border: 1px solid black; border-collapse: collapse; padding: 8px; }
-    th { background-color: #f2f2f2; }
-    button { margin-right: 10px; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f4f6f8;
+      margin: 0;
+      padding: 20px;
+      color: #333;
+    }
+
+    h1, h2 {
+      color: #2c3e50;
+      margin-top: 40px;
+    }
+
+    form, .table-container {
+      background-color: #fff;
+      padding: 20px;
+      margin-top: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    label {
+      font-weight: 600;
+      display: block;
+      margin-top: 10px;
+    }
+
+    input[type="text"], input[type="file"] {
+      width: 100%;
+      padding: 8px;
+      margin-top: 5px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
+    button {
+      background-color: #0078d4;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      margin-top: 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button:hover {
+      background-color: #005fa3;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid #ddd;
+      text-align: left;
+    }
+
+    th {
+      background-color: #f0f0f0;
+      font-weight: 600;
+    }
+
+    .action-buttons button {
+      margin-right: 8px;
+      padding: 6px 12px;
+      font-size: 14px;
+    }
+
+    .flex-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .flex-row button {
+      flex: 1;
+    }
+
+    #editForm {
+      display: none;
+      margin-top: 20px;
+    }
   </style>
 </head>
 <body>
+  <h1>VM Provisioning Dashboard</h1>
+
+  <h2>Import VMs from Excel</h2>
+  <form id="excelForm" enctype="multipart/form-data">
+    <input type="file" id="excelFile" accept=".xlsx">
+    <button type="submit">Upload</button>
+  </form>
+
   <h2>Add VM Details</h2>
   <form id="addForm">
-    <label>Hostname:</label><br>
-    <input type="text" id="vm_name" required><br>
-    <label>IP Address:</label><br>
-    <input type="text" id="vm_ip" required><br>
-    <label>MAC Address:</label><br>
-    <input type="text" id="vm_mac" required><br><br>
+    <label>Hostname:</label>
+    <input type="text" id="vm_name" required>
+    <label>IP Address:</label>
+    <input type="text" id="vm_ip" required>
+    <label>MAC Address:</label>
+    <input type="text" id="vm_mac" placeholder="Optional">
     <button type="submit">Add VM</button>
   </form>
 
   <h2>Edit VM</h2>
-  <div id="editForm" style="display:none;">
+  <form id="editForm">
     <input type="hidden" id="editIndex">
-    <label>Hostname:</label><br>
-    <input type="text" id="edit_vm_name"><br>
-    <label>IP Address:</label><br>
-    <input type="text" id="edit_vm_ip"><br>
-    <label>MAC Address:</label><br>
-    <input type="text" id="edit_vm_mac"><br><br>
-    <button onclick="submitEdit()">Save Changes</button>
-    <button onclick="cancelEdit()">Cancel</button>
-  </div>
+    <label>Hostname:</label>
+    <input type="text" id="edit_vm_name">
+    <label>IP Address:</label>
+    <input type="text" id="edit_vm_ip">
+    <label>MAC Address:</label>
+    <input type="text" id="edit_vm_mac">
+    <div class="flex-row">
+      <button type="button" onclick="submitEdit()">Save Changes</button>
+      <button type="button" onclick="cancelEdit()">Cancel</button>
+    </div>
+  </form>
 
   <h2>VMs Available for Provisioning</h2>
-  <form id="selectForm">
-    <button type="button" onclick="toggleSelect(true)">Select All</button>
-    <button type="button" onclick="toggleSelect(false)">Unselect All</button>
-    <button type="button" onclick="deleteSelected()">Delete Selected</button>
-    <br><br>
+  <form id="selectForm" class="table-container">
+    <div class="flex-row">
+      <button type="button" onclick="toggleSelect(true)">Select All</button>
+      <button type="button" onclick="toggleSelect(false)">Unselect All</button>
+      <button type="button" onclick="deleteSelected()">Delete Selected</button>
+    </div>
     <table id="vmTable">
       <thead>
         <tr>
@@ -199,22 +365,23 @@ if __name__ == '__main__':
       </thead>
       <tbody></tbody>
     </table>
-    <br>
     <button type="submit">Submit Selection</button>
   </form>
 
   <h2>Currently Selected VMs</h2>
-  <table id="selectedTable">
-    <thead>
-      <tr>
-        <th>Hostname</th>
-        <th>IP Address</th>
-        <th>MAC Address</th>
-        <th>Action</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+  <div class="table-container">
+    <table id="selectedTable">
+      <thead>
+        <tr>
+          <th>Hostname</th>
+          <th>IP Address</th>
+          <th>MAC Address</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
   <script>
     function loadVMs() {
       fetch('/vms')
@@ -229,9 +396,9 @@ if __name__ == '__main__':
                 <td>${vm.vm_name}</td>
                 <td>${vm.vm_ip}</td>
                 <td>${vm.vm_mac}</td>
-                <td>
-                  <button type="button" onclick="deleteVM(${index})">Delete</button>
-                  <button type="button" onclick="editVM(${index}, '${vm.vm_name}', '${vm.vm_ip}', '${vm.vm_mac}')">Edit</button>
+                <td class="action-buttons">
+                  <button onclick="editVM(${index}, '${vm.vm_name}', '${vm.vm_ip}', '${vm.vm_mac}')">Edit</button>
+                  <button onclick="deleteVM(${index})">Delete</button>
                 </td>
               </tr>
             `;
@@ -251,7 +418,7 @@ if __name__ == '__main__':
                 <td>${vm.vm_name}</td>
                 <td>${vm.vm_ip}</td>
                 <td>${vm.vm_mac}</td>
-                <td><button type="button" onclick="removeSelected(${index})">Remove</button></td>
+                <td><button onclick="removeSelected(${index})">Remove</button></td>
               </tr>
             `;
           });
@@ -276,6 +443,7 @@ if __name__ == '__main__':
       document.getElementById('edit_vm_ip').value = ip;
       document.getElementById('edit_vm_mac').value = mac;
       document.getElementById('editForm').style.display = 'block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     function cancelEdit() {
@@ -287,7 +455,7 @@ if __name__ == '__main__':
       const updatedVM = {
         vm_name: document.getElementById('edit_vm_name').value,
         vm_ip: document.getElementById('edit_vm_ip').value,
-        vm_mac: document.getElementById('edit_vm_mac').value
+        vm_mac: document.getElementById('edit_vm_mac').value || "00:00:00:00:00:00"
       };
       fetch(`/vms/${index}`, {
         method: 'PUT',
@@ -324,13 +492,14 @@ if __name__ == '__main__':
 
     document.getElementById('addForm').addEventListener('submit', function(e) {
       e.preventDefault();
+      const mac = document.getElementById('vm_mac').value || "00:00:00:00:00:00";
       fetch('/vms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           vm_name: document.getElementById('vm_name').value,
           vm_ip: document.getElementById('vm_ip').value,
-          vm_mac: document.getElementById('vm_mac').value
+          vm_mac: mac
         })
       }).then(() => {
         loadVMs();
@@ -358,10 +527,41 @@ if __name__ == '__main__':
       });
     });
 
+    document.getElementById('excelForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const fileInput = document.getElementById('excelFile');
+      const file = fileInput.files[0];
+      if (!file) {
+        alert("Please select an Excel file.");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      fetch('/upload_excel', {
+        method: 'POST',
+        body: formData
+      })
+      .then(res => res.json())
+      .then(data => {
+        alert(data.message || data.error);
+        loadVMs();
+        loadSelectedVMs();
+        fileInput.value = '';
+      })
+      .catch(err => {
+        console.error(err);
+        alert("Upload failed.");
+      });
+    });
+
     loadVMs();
     loadSelectedVMs();
   </script>
 </body>
 </html>
+
 [root@rocky-08-02 vm-api]#
+
 
