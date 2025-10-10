@@ -1,0 +1,87 @@
+---
+- name: Provision CentOS VMs and static IPs
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    remote_host: "192.168.253.134"
+    remote_path: "/root/vm-api/selected.json"
+    vcenter_hostname: "192.168.253.129"
+    vcenter_username: "administrator@vsphere.local"
+    vcenter_password: "Vigneshv12$"
+    datacenter_name: "Datacenter"
+    folder: "vm"
+    datastore_name: "datastore1"
+    template_name: "GOLDENTEMPLATE_CENTOS_07"
+    guest_id: "centos7_64Guest"
+    vm_network: "VM Network"
+    guest_domain: "vgs.com"
+    netmask: "255.255.255.0"
+    gateway: "192.168.253.2"
+    esxi_hostname: "192.168.253.128"
+
+  tasks:
+
+    - name: Fetch selected.json from remote server
+      ansible.builtin.uri:
+        url: "http://{{ remote_host }}:5000/selected"
+        method: GET
+        return_content: yes
+      register: selected_vms
+
+    - name: Set vm_list from remote JSON
+      set_fact:
+        vm_list: "{{ selected_vms.json }}"
+
+    - name: Create new VM with template
+      vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        datacenter: "{{ datacenter_name }}"
+        folder: "{{ folder }}"
+        esxi_hostname: "{{ esxi_hostname }}"
+        name: "{{ item.vm_name }}"
+        state: poweredon
+        guest_id: "{{ guest_id }}"
+        datastore: "{{ datastore_name }}"
+        template: "{{ template_name }}"
+        disk:
+          - size_gb: 100
+            type: thin
+            datastore: "{{ datastore_name }}"
+        hardware:
+          memory_mb: 8192
+          num_cpus: 8
+          firmware: efi
+        networks:
+          - name: "{{ vm_network }}"
+            type: static
+            ip: "{{ item.vm_ip }}"
+            netmask: "{{ netmask }}"
+            gateway: "{{ gateway }}"
+            dns_servers:
+              - "192.168.253.151"
+        customization:
+          domain: "{{ guest_domain }}"
+          dns_servers: 
+            - "192.168.253.151"
+          hostname: "{{ item.vm_name }}"
+      loop: "{{ vm_list }}"
+
+    - name: Wait until VM responds to SSH
+      ansible.builtin.wait_for:
+        host: "{{ item.vm_ip }}"
+        port: 22
+        timeout: 600
+        state: started
+      loop: "{{ vm_list }}"
+      delegate_to: localhost
+
+    - name: Ping the VM to verify connectivity
+      ansible.builtin.ping:
+      vars:
+        ansible_host: "{{ item.vm_ip }}"
+      loop: "{{ vm_list }}"
+      delegate_to: localhost
