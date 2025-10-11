@@ -219,3 +219,20 @@ sudo systemctl restart nginx
 cd /opt/netbox/netbox
 source /opt/netbox/venv/bin/activate
 gunicorn --workers 3 --bind 127.0.0.1:8001 netbox.wsgi
+
+
+
+curl -X POST http://192.168.253.196/api/extras/tags/ \
+  -H "Authorization: Token c4382cd4dcce700700b4a1d73ca5f64c53e475c9" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "selected",
+    "slug": "selected",
+    "color": "ffcc00",
+    "content_types": ["dcim.device"]
+  }'
+
+
+
+curl -H "Authorization: Token c4382cd4dcce700700b4a1d73ca5f64c53e475c9"      http://192.168.253.196/api/dcim/devices/?tag=selected
+
