@@ -181,7 +181,7 @@ sudo vi /etc/nginx/conf.d/netbox.conf
 nginx
 server {
     listen 80;
-    server_name _;
+    server_name netbox.local;
 
     # Serve NetBox static files
     location /static/ {
@@ -198,7 +198,13 @@ server {
     }
 }
 
+
+
 sudo systemctl restart nginx
 cd /opt/netbox/netbox
 source /opt/netbox/venv/bin/activate
 python manage.py runserver 127.0.0.1:8000
+python manage.py runserver 0.0.0.0:8000
+pip install gunicorn
+cd /opt/netbox/netbox
+gunicorn --workers 3 --bind 127.0.0.1:8001 netbox.wsgi
