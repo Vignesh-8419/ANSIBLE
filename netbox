@@ -170,3 +170,35 @@ cd /opt/netbox/netbox
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver 0.0.0.0:8000
+
+
+cd /opt/netbox/netbox
+source /opt/netbox/venv/bin/activate
+python manage.py collectstatic --no-input
+sudo systemctl restart nginx
+sudo vi /etc/nginx/conf.d/netbox.conf
+
+nginx
+server {
+    listen 80;
+    server_name _;
+
+    # Serve NetBox static files
+    location /static/ {
+        alias /opt/netbox/netbox/static/;
+    }
+
+    # Proxy requests to NetBox backend
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+sudo systemctl restart nginx
+cd /opt/netbox/netbox
+source /opt/netbox/venv/bin/activate
+python manage.py runserver 127.0.0.1:8000
