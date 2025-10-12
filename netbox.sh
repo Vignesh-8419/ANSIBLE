@@ -187,8 +187,9 @@ echo "[14/14] Restarting Nginx to apply all changes..."
 nginx -t && systemctl restart nginx
 
 sed -i -E 's/listen[[:space:]]+80[[:space:]]+default_server;/listen 80;/; s/listen[[:space:]]+ \[::\] :80[[:space:]]+default_server;/listen [::]:80;/' /etc/nginx/nginx.conf
+systemctl start nginx
 nginx -t && systemctl reload nginx
-systemctl restart nginx
+
 
 # ✅ Done
 echo "=== ✅ NetBox installation completed successfully! ==="
