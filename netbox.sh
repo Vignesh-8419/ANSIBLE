@@ -148,9 +148,6 @@ sed -i 's/listen 80 default_server;/listen 80;/' /etc/nginx/nginx.conf
 echo "[10.2/14] Removing default Nginx site..."
 rm -f /etc/nginx/conf.d/default.conf || true
 
-# 🔁 Reload Nginx
-nginx -t && systemctl enable --now nginx
-
 # 11️⃣ Disable SELinux temporarily
 echo "[11/14] Disabling SELinux enforcement..."
 setenforce 0 || true
@@ -185,7 +182,11 @@ if command -v firewall-cmd >/dev/null 2>&1; then
     firewall-cmd --reload || true
 fi
 
-# 14️⃣ Final message
+# 14️⃣ Final Nginx restart
+echo "[14/14] Restarting Nginx to apply all changes..."
+nginx -t && systemctl restart nginx
+
+# ✅ Done
 echo "=== ✅ NetBox installation completed successfully! ==="
 echo "Access NetBox via: http://<your_server_ip>/"
 echo "If this is a fresh install, login with: username=admin, password=adminpass"
