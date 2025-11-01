@@ -2,6 +2,7 @@ docker exec -it awx_task bash
 docker ps
 docker cp /root/hosts.ini awx_task:/tmp/hosts.ini
 docker exec -it awx_task bash
+awx inventory create --name "VGS-CLUSTER" --organization "Default"
 awx-manage inventory_import   --inventory-name "VGS-CLUSTER"   --source "/tmp/hosts.ini"   --overwrite
 
 [centos7]
