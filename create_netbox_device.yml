@@ -1,24 +1,18 @@
-- name: Prompt and create NetBox device
+---
+- name: Create a device in NetBox with IP and MAC
   hosts: localhost
   gather_facts: no
-  vars_prompt:
-    - name: device_name
-      prompt: "Enter device name"
-    - name: ip_address
-      prompt: "Enter IP address (CIDR format)"
-    - name: mac_address
-      prompt: "Enter MAC address"
-    - name: tag_name
-      prompt: "Enter tag name"
-    - name: interface_name
-      prompt: "Enter interface name"
 
   vars:
     netbox_url: "http://192.168.253.134"
     netbox_token: "ee63f94d72c6c10a5b4e2cab4edbea9af0f18ac0"
+    device_type_id: 1     # Replace with actual device type ID
+    role_id: 1            # Replace with actual role ID
+    site_id: 1            # Replace with actual site ID
 
   tasks:
-    - name: Create tag in NetBox
+
+    - name: Create tag if not exists
       uri:
         url: "{{ netbox_url }}/api/extras/tags/"
         method: POST
@@ -30,7 +24,20 @@
           slug: "{{ tag_name }}"
         status_code: [200, 201, 400]
 
-    - name: Create device in NetBox
+    - name: Get tag ID
+      uri:
+        url: "{{ netbox_url }}/api/extras/tags/?name={{ tag_name }}"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+      register: tag_response
+
+    - name: Set tag_id
+      set_fact:
+        tag_id: "{{ tag_response.json.results[0].id }}"
+
+    - name: Create device
       uri:
         url: "{{ netbox_url }}/api/dcim/devices/"
         method: POST
@@ -39,18 +46,19 @@
         body_format: json
         body:
           name: "{{ device_name }}"
-          device_type: 1
-          device_role: 1
-          site: 1
+          device_type: "{{ device_type_id }}"
+          role: "{{ role_id }}"
+          site: "{{ site_id }}"
           status: "active"
-          tags: ["{{ tag_name }}"]
-        register: device_response
+          tags: [{{ tag_id }}]
+        return_content: yes
+      register: device_response
 
     - name: Set device_id
       set_fact:
         device_id: "{{ device_response.json.id }}"
 
-    - name: Create interface in NetBox
+    - name: Create interface
       uri:
         url: "{{ netbox_url }}/api/dcim/interfaces/"
         method: POST
@@ -62,13 +70,14 @@
           name: "{{ interface_name }}"
           type: "1000base-t"
           mac_address: "{{ mac_address }}"
-        register: interface_response
+        return_content: yes
+      register: interface_response
 
     - name: Set interface_id
       set_fact:
         interface_id: "{{ interface_response.json.id }}"
 
-    - name: Assign IP address to interface
+    - name: Assign IP address
       uri:
         url: "{{ netbox_url }}/api/ipam/ip-addresses/"
         method: POST
