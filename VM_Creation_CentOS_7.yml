@@ -4,8 +4,6 @@
   gather_facts: yes
 
   vars:
-    flask_server_ip: "192.168.253.134"
-    selected_endpoint: "http://{{ flask_server_ip }}:5000/selected"
     vcenter_hostname: "192.168.253.129"
     vcenter_username: "administrator@vsphere.local"
     vcenter_password: "Vigneshv12$"
@@ -19,19 +17,11 @@
     netmask: "255.255.255.0"
     gateway: "192.168.253.2"
     esxi_hostname: "192.168.253.128"
+    vm_list:
+      - name: "{{ vm_name }}"
+        ip: "{{ vm_ip }}"
 
   tasks:
-
-    - name: Fetch selected.json from Flask server
-      uri:
-        url: "{{ selected_endpoint }}"
-        method: GET
-        return_content: yes
-      register: selected_vms
-
-    - name: Set vm_list from selected.json
-      set_fact:
-        vm_list: "{{ selected_vms.json }}"
 
     - name: Create VM powered off with static MAC
       vmware_guest:
