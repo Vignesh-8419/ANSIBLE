@@ -12,6 +12,10 @@
 
   tasks:
 
+    - name: Debug servers variable
+     debug:
+      var: servers
+
     - name: Loop through servers and include device creation tasks
       include_tasks: create_netbox_device.yml
       loop: "{{ servers }}"
