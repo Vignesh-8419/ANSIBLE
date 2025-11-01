@@ -8,8 +8,8 @@
     - theforeman.foreman
 
   vars:
-    flask_server_ip: "192.168.253.134"
-    selected_endpoint: "http://{{ flask_server_ip }}:5000/selected"
+    netbox_url: "http://192.168.253.134"
+    netbox_token: "ee63f94d72c6c10a5b4e2cab4edbea9af0f18ac0"
     foreman_server_url: "http://rocky-08-01.vgs.com"
     foreman_user: "admin"
     foreman_password: "vnjy38WVJLjLpvuP"
@@ -17,16 +17,44 @@
 
   tasks:
 
-    - name: Fetch selected.json from Flask server
+    - name: Get devices tagged 'new-build-centos' from NetBox
       uri:
-        url: "{{ selected_endpoint }}"
+        url: "{{ netbox_url }}/api/dcim/devices/?tag=new-build-centos"
         method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
         return_content: yes
-      register: selected_vms
+      register: netbox_devices
 
-    - name: Set foreman_hosts from selected.json
+    - name: Get interfaces from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/dcim/interfaces/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+      register: netbox_interfaces
+
+    - name: Get IP addresses from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+      register: netbox_ips
+
+    - name: Build foreman_hosts list from NetBox data
       set_fact:
-        foreman_hosts: "{{ selected_vms.json }}"
+        foreman_hosts: >-
+          {{
+            netbox_devices.json.results | map('extract', {
+              'vm_name': 'name',
+              'vm_ip': netbox_ips.json.results | selectattr('assigned_object.device.name', 'equalto', item.name) | map(attribute='address') | list | first | default(''),
+              'vm_mac': netbox_interfaces.json.results | selectattr('device.name', 'equalto', item.name) | map(attribute='mac_address') | list | first | default('')
+            }) | list
+          }}
+
 
     - name: Create a host in Foreman
       theforeman.foreman.host:
