@@ -90,7 +90,9 @@ echo "created DNS config"
 
 echo "installing GIT"
 
-yum install git -y
+sudo yum install -y https://opensource.wandisco.com/centos/7/git/x86_64/wandisco-git-release-7-2.noarch.rpm
+sudo yum clean all
+sudo yum install -y git
 
 echo "installed GIT"
 
