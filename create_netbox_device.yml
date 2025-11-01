@@ -1,5 +1,5 @@
 ---
-- name: Create devices in NetBox
+- name: Create multiple devices in NetBox
   hosts: rocky-08-02
   become: yes
 
@@ -10,28 +10,10 @@
     role_id: 1
     site_id: 1
 
-  # Define this in AWX survey or inventory
-  # Example:
-  # servers:
-  #   - name: test-pxe01.vgs.com
-  #     ip: 192.168.253.191/24
-  #     mac: 00:50:56:BE:EA:47
-  #     tag: new-build-centos
-  #     interface: ens32
-  #   - name: test-pxe02.vgs.com
-  #     ip: 192.168.253.192/24
-  #     mac: 00:50:56:BE:EA:48
-  #     tag: new-build-centos
-  #     interface: ens32
-
   tasks:
 
-    - name: Loop through servers
-      vars:
-        server: "{{ item }}"
-      loop: "{{ servers }}"
+    - name: Create each device from server list
       block:
-
         - name: Create tag if not exists
           uri:
             url: "{{ netbox_url }}/api/extras/tags/"
@@ -40,13 +22,13 @@
               Authorization: "Token {{ netbox_token }}"
             body_format: json
             body:
-              name: "{{ server.tag }}"
-              slug: "{{ server.tag }}"
+              name: "{{ item.tag }}"
+              slug: "{{ item.tag }}"
             status_code: [200, 201, 400]
 
         - name: Get tag ID
           uri:
-            url: "{{ netbox_url }}/api/extras/tags/?name={{ server.tag }}"
+            url: "{{ netbox_url }}/api/extras/tags/?name={{ item.tag }}"
             method: GET
             headers:
               Authorization: "Token {{ netbox_token }}"
@@ -65,7 +47,7 @@
               Authorization: "Token {{ netbox_token }}"
             body_format: json
             body:
-              name: "{{ server.name }}"
+              name: "{{ item.name }}"
               device_type: "{{ device_type_id }}"
               role: "{{ role_id }}"
               site: "{{ site_id }}"
@@ -88,9 +70,9 @@
             body_format: json
             body:
               device: "{{ device_id }}"
-              name: "{{ server.interface }}"
+              name: "{{ item.interface }}"
               type: "1000base-t"
-              mac_address: "{{ server.mac }}"
+              mac_address: "{{ item.mac }}"
             status_code: [200, 201]
             return_content: yes
           register: interface_response
@@ -107,8 +89,10 @@
               Authorization: "Token {{ netbox_token }}"
             body_format: json
             body:
-              address: "{{ server.ip }}"
+              address: "{{ item.ip }}"
               status: "active"
               assigned_object_type: "dcim.interface"
               assigned_object_id: "{{ interface_id }}"
             status_code: [200, 201]
+
+      loop: "{{ servers }}"
