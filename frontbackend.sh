@@ -950,6 +950,8 @@ WantedBy=multi-user.target
 SYSTEMD
 
 firewall-cmd --add-port=3000/tcp --permanent
+firewall-cmd --add-service=http --permanent
+firewall-cmd --add-service=https --permanent
 firewall-cmd --reload
 
 systemctl daemon-reexec
