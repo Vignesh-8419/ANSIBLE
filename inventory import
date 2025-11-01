@@ -3,3 +3,14 @@ docker ps
 docker cp /root/hosts.ini awx_task:/tmp/hosts.ini
 docker exec -it awx_task bash
 awx-manage inventory_import   --inventory-name "VGS-CLUSTER"   --source "/tmp/hosts.ini"   --overwrite
+
+[centos7]
+cent-07-01
+cent-07-02
+
+[rocky8]
+rocky-08-01
+rocky-08-02
+
+[pxe]
+test-pxe01 ansible_host=192.168.253.135
