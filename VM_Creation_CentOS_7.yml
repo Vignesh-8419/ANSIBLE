@@ -58,7 +58,7 @@
           domain: "{{ guest_domain }}"
           dns_servers: 
             - "192.168.253.151"
-          hostname: "{{ item.vm_name }}"
+          hostname: "{{ item.name }}"
       loop: "{{ vm_list }}"
 
     - name: Power on VM
