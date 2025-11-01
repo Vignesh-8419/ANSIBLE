@@ -49,7 +49,7 @@
         networks:
           - name: "{{ vm_network }}"
             type: static
-            ip: "{{ item.vm_ip }}"
+            ip: "{{ item.ip }}"
             gateway: "{{ gateway }}"
             netmask: "{{ netmask }}"
             device_type: vmxnet3
@@ -65,7 +65,7 @@
 
     - name: Wait until VM responds to SSH
       wait_for:
-        host: "{{ item.vm_ip }}"
+        host: "{{ item.ip }}"
         port: 22
         timeout: 120
         state: started
@@ -74,7 +74,7 @@
     - name: Ping the VM to verify connectivity
       ansible.builtin.ping:
       vars:
-        ansible_host: "{{ item.vm_ip }}"
+        ansible_host: "{{ item.ip }}"
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
