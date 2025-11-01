@@ -49,7 +49,7 @@
           - name: "{{ vm_network }}"
             connected: true
             type: static
-            ip: "{{ item.vm_ip }}"
+            ip: "{{ item.ip }}"
             netmask: "{{ netmask }}"
             gateway: "{{ gateway }}"
             dns_servers:
@@ -75,7 +75,7 @@
 
     - name: Wait until VM responds to SSH
       ansible.builtin.wait_for:
-        host: "{{ item.vm_ip }}"
+        host: "{{ item.ip }}"
         port: 22
         timeout: 600
         state: started
@@ -85,7 +85,7 @@
     - name: Ping the VM to verify connectivity
       ansible.builtin.ping:
       vars:
-        ansible_host: "{{ item.vm_ip }}"
+        ansible_host: "{{ item.ip }}"
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
