@@ -49,7 +49,7 @@
           role: "{{ role_id }}"
           site: "{{ site_id }}"
           status: "active"
-          tags: [{{ tag_id }}]
+          tags: ["{{ tag_id }}"]
         return_content: yes
       register: device_response
 
