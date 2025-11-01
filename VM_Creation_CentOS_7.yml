@@ -32,7 +32,7 @@
         datacenter: "{{ datacenter_name }}"
         folder: "{{ folder }}"
         esxi_hostname: "{{ esxi_hostname }}"
-        name: "{{ item.vm_name }}"
+        name: "{{ item.name }}"
         state: poweredoff
         guest_id: "{{ guest_id }}"
         datastore: "{{ datastore_name }}"
@@ -69,7 +69,7 @@
         validate_certs: false
         datacenter: "{{ datacenter_name }}"
         folder: "{{ folder }}"
-        name: "{{ item.vm_name }}"
+        name: "{{ item.name }}"
         state: poweredon
       loop: "{{ vm_list }}"
 
@@ -95,7 +95,7 @@
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
         validate_certs: false
-        name: "{{ item.vm_name }}"
+        name: "{{ item.name }}"
         datacenter: "{{ datacenter_name }}"
       loop: "{{ vm_list }}"
       register: vm_info
