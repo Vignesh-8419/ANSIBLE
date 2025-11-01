@@ -1,0 +1,25 @@
+- name: Auto-register servers in NetBox
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Ensure python3-pip is installed
+      yum:
+        name: python3-pip
+        state: present
+
+    - name: Install required Python packages
+      pip:
+        name:
+          - pynetbox
+          - netifaces
+        executable: pip3
+
+    - name: Copy NetBox registration script
+      copy:
+        src: netbox_register.py
+        dest: /usr/local/bin/netbox_register.py
+        mode: '0755'
+
+    - name: Run NetBox registration script
+      command: python3 /usr/local/bin/netbox_register.py
