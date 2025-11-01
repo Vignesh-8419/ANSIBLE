@@ -1,7 +1,6 @@
 - name: Auto-register servers in NetBox
-  hosts: all
-  become: yes
-
+  hosts: "{{ target_hosts }}"
+  become: true
   tasks:
     - name: Ensure python3-pip is installed
       yum:
