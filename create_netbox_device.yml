@@ -1,6 +1,6 @@
 ---
 - name: Create a device in NetBox with IP and MAC
-  hosts: "{{ target_hosts }}"
+  hosts: rocky-08-02
   become: yes
   vars:
     netbox_url: "http://192.168.253.134"
