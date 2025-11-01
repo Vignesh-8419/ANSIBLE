@@ -68,4 +68,9 @@ firewall-cmd --reload
 docker exec -it awx_task awx-manage migrate
 docker restart awx_web awx_task
 
+pip install ansible-tower-cli --user
+# or for newer versions:
+pip install awxkit --user
+
+
 echo "✅ AWX installation complete. Access it via http://localhost or your server IP."
