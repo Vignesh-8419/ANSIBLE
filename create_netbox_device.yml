@@ -1,8 +1,7 @@
 ---
 - name: Create a device in NetBox with IP and MAC
-  hosts: localhost
-  gather_facts: no
-
+  hosts: "{{ target_hosts }}"
+  become: yes
   vars:
     netbox_url: "http://192.168.253.134"
     netbox_token: "ee63f94d72c6c10a5b4e2cab4edbea9af0f18ac0"
