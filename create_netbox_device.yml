@@ -1,5 +1,5 @@
 ---
-- name: Create multiple devices in NetBox
+- name: Create devices in NetBox
   hosts: rocky-08-02
   become: yes
 
