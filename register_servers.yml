@@ -15,9 +15,9 @@
           - netifaces
         executable: pip3
 
-    - name: Copy NetBox registration script
-      copy:
-        src: netbox_register.py
+    - name: Download netbox_register.py from GitHub
+      get_url:
+        url: https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/netbox_register.py
         dest: /usr/local/bin/netbox_register.py
         mode: '0755'
 
