@@ -13,7 +13,11 @@
   tasks:
 
     - name: Create each device from server list
+      vars:
+        server: "{{ item }}"
+      loop: "{{ servers }}"
       block:
+
         - name: Create tag if not exists
           uri:
             url: "{{ netbox_url }}/api/extras/tags/"
@@ -22,13 +26,13 @@
               Authorization: "Token {{ netbox_token }}"
             body_format: json
             body:
-              name: "{{ item.tag }}"
-              slug: "{{ item.tag }}"
+              name: "{{ server.tag }}"
+              slug: "{{ server.tag }}"
             status_code: [200, 201, 400]
 
         - name: Get tag ID
           uri:
-            url: "{{ netbox_url }}/api/extras/tags/?name={{ item.tag }}"
+            url: "{{ netbox_url }}/api/extras/tags/?name={{ server.tag }}"
             method: GET
             headers:
               Authorization: "Token {{ netbox_token }}"
@@ -47,7 +51,7 @@
               Authorization: "Token {{ netbox_token }}"
             body_format: json
             body:
-              name: "{{ item.name }}"
+              name: "{{ server.name }}"
               device_type: "{{ device_type_id }}"
               role: "{{ role_id }}"
               site: "{{ site_id }}"
@@ -70,9 +74,9 @@
             body_format: json
             body:
               device: "{{ device_id }}"
-              name: "{{ item.interface }}"
+              name: "{{ server.interface }}"
               type: "1000base-t"
-              mac_address: "{{ item.mac }}"
+              mac_address: "{{ server.mac }}"
             status_code: [200, 201]
             return_content: yes
           register: interface_response
@@ -89,10 +93,8 @@
               Authorization: "Token {{ netbox_token }}"
             body_format: json
             body:
-              address: "{{ item.ip }}"
+              address: "{{ server.ip }}"
               status: "active"
               assigned_object_type: "dcim.interface"
               assigned_object_id: "{{ interface_id }}"
             status_code: [200, 201]
-
-      loop: "{{ servers }}"
