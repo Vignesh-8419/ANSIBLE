@@ -7,8 +7,8 @@ import subprocess
 # ============================
 # 🔧 NETBOX CONFIGURATION
 # ============================
-NETBOX_URL = "http://192.168.253.196"
-NETBOX_TOKEN = "c4382cd4dcce700700b4a1d73ca5f64c53e475c9"
+NETBOX_URL = "http://192.168.253.134"
+NETBOX_TOKEN = "ee63f94d72c6c10a5b4e2cab4edbea9af0f18ac0"
 
 SITE_ID = 1             # Predefined in NetBox
 ROLE_ID = 1             # e.g., Server
