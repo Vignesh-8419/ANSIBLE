@@ -1,0 +1,82 @@
+- name: Prompt and create NetBox device
+  hosts: localhost
+  gather_facts: no
+  vars_prompt:
+    - name: device_name
+      prompt: "Enter device name"
+    - name: ip_address
+      prompt: "Enter IP address (CIDR format)"
+    - name: mac_address
+      prompt: "Enter MAC address"
+    - name: tag_name
+      prompt: "Enter tag name"
+    - name: interface_name
+      prompt: "Enter interface name"
+
+  vars:
+    netbox_url: "http://192.168.253.134"
+    netbox_token: "ee63f94d72c6c10a5b4e2cab4edbea9af0f18ac0"
+
+  tasks:
+    - name: Create tag in NetBox
+      uri:
+        url: "{{ netbox_url }}/api/extras/tags/"
+        method: POST
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        body_format: json
+        body:
+          name: "{{ tag_name }}"
+          slug: "{{ tag_name }}"
+        status_code: [200, 201, 400]
+
+    - name: Create device in NetBox
+      uri:
+        url: "{{ netbox_url }}/api/dcim/devices/"
+        method: POST
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        body_format: json
+        body:
+          name: "{{ device_name }}"
+          device_type: 1
+          device_role: 1
+          site: 1
+          status: "active"
+          tags: ["{{ tag_name }}"]
+        register: device_response
+
+    - name: Set device_id
+      set_fact:
+        device_id: "{{ device_response.json.id }}"
+
+    - name: Create interface in NetBox
+      uri:
+        url: "{{ netbox_url }}/api/dcim/interfaces/"
+        method: POST
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        body_format: json
+        body:
+          device: "{{ device_id }}"
+          name: "{{ interface_name }}"
+          type: "1000base-t"
+          mac_address: "{{ mac_address }}"
+        register: interface_response
+
+    - name: Set interface_id
+      set_fact:
+        interface_id: "{{ interface_response.json.id }}"
+
+    - name: Assign IP address to interface
+      uri:
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+        method: POST
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        body_format: json
+        body:
+          address: "{{ ip_address }}"
+          status: "active"
+          assigned_object_type: "dcim.interface"
+          assigned_object_id: "{{ interface_id }}"
