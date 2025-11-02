@@ -14,12 +14,13 @@
     foreman_user: "admin"
     foreman_password: "vnjy38WVJLjLpvuP"
     host_root_pass: "Root@123"
+    tag_name: "new-build-centos"  # <-- This will be overridden by the survey input
 
   tasks:
 
-    - name: Get devices tagged 'new-build-centos' from NetBox
+    - name: Get devices tagged from NetBox
       uri:
-        url: "{{ netbox_url }}/api/dcim/devices/?tag=new-build-centos"
+        url: "{{ netbox_url }}/api/dcim/devices/?tag={{ tag_name }}"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
@@ -54,7 +55,6 @@
               'vm_mac': netbox_interfaces.json.results | selectattr('device.name', 'equalto', item.name) | map(attribute='mac_address') | list | first | default('')
             }) | list
           }}
-
 
     - name: Create a host in Foreman
       theforeman.foreman.host:
