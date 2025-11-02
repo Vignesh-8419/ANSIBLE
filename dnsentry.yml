@@ -5,26 +5,50 @@
 
   vars:
     pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
-    flask_server_ip: "192.168.253.134"
-    selected_endpoint: "http://{{ flask_server_ip }}:5000/selected"
+    netbox_url: "http://192.168.253.134"
+    netbox_token: "ee63f94d72c6c10a5b4e2cab4edbea9af0f18ac0"
+    tag_name: "new-build-centos"  # Can be overridden via AWX survey
 
   tasks:
 
-    - name: Fetch selected.json from Flask server
+    - name: Get devices tagged from NetBox
       uri:
-        url: "{{ selected_endpoint }}"
+        url: "{{ netbox_url }}/api/dcim/devices/?tag={{ tag_name }}"
         method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
         return_content: yes
-      register: selected_vms
+      register: netbox_devices
+
+    - name: Get interfaces from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/dcim/interfaces/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+      register: netbox_interfaces
+
+    - name: Get IP addresses from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+      register: netbox_ips
 
     - name: Initialize dns_entries list
       set_fact:
         dns_entries: []
 
-    - name: Build dns_entries from selected VMs
+    - name: Build dns_entries from NetBox data
       set_fact:
-        dns_entries: "{{ dns_entries + [ { 'dns_hostname': item.vm_name, 'dns_ip': item.vm_ip } ] }}"
-      loop: "{{ selected_vms.json }}"
+        dns_entries: "{{ dns_entries + [ {
+          'dns_hostname': item.name | regex_replace('\\.vgs\\.com$', ''),
+          'dns_ip': (netbox_ips.json.results | selectattr('assigned_object.device.name', 'equalto', item.name) | map(attribute='address') | map('regex_replace', '/.*$', '') | list | first | default(''))
+        } ] }}"
+      loop: "{{ netbox_devices.json.results }}"
 
     - name: Add DNS entry using Pi-hole API script
       shell: >
