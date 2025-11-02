@@ -44,7 +44,7 @@
     - name: Build vm_list from NetBox data
       set_fact:
         vm_list: "{{ vm_list + [ {
-          'vm_name': item.name,
+          'vm_name': item.name | regex_replace('\\.vgs\\.com$', ''),
           'vm_ip': (netbox_ips.json.results | selectattr('assigned_object.device.name', 'equalto', item.name) | map(attribute='address') | map('regex_replace', '/.*$', '') | list | first | default(''))
         } ] }}"
       loop: "{{ netbox_devices.json.results }}"
