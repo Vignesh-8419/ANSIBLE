@@ -8,7 +8,7 @@
     - theforeman.foreman
 
   vars:
-    netbox_url: "http://192.168.253.134"
+    netbox_url: "https://192.168.253.134"
     netbox_token: "ee63f94d72c6c10a5b4e2cab4edbea9af0f18ac0"
     foreman_server_url: "http://cent-07-01.vgs.com"
     foreman_user: "admin"
