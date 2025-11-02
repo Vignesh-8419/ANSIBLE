@@ -14,12 +14,13 @@
     foreman_user: "admin"
     foreman_password: "vnjy38WVJLjLpvuP"
     host_root_pass: "Root@123"
+    tag_name: "new-build-rockyos"  # <-- This will be overridden by survey input
 
   tasks:
 
-    - name: Get devices tagged 'new-build-rockyos' from NetBox
+    - name: Get devices tagged from NetBox
       uri:
-        url: "{{ netbox_url }}/api/dcim/devices/?tag=new-build-rockyos"
+        url: "{{ netbox_url }}/api/dcim/devices/?tag={{ tag_name }}"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
