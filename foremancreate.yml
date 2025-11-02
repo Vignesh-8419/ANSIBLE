@@ -14,7 +14,7 @@
     foreman_user: "admin"
     foreman_password: "vnjy38WVJLjLpvuP"
     host_root_pass: "Root@123"
-    tag_name: "new-build-centos"  # <-- This will be overridden by the survey input
+    tag_name: "new-build-centos"  # This can be overridden via AWX survey
 
   tasks:
 
@@ -45,16 +45,18 @@
         return_content: yes
       register: netbox_ips
 
+    - name: Initialize foreman_hosts list
+      set_fact:
+        foreman_hosts: []
+
     - name: Build foreman_hosts list from NetBox data
       set_fact:
-        foreman_hosts: >-
-          {{
-            netbox_devices.json.results | map('extract', {
-              'vm_name': 'name',
-              'vm_ip': netbox_ips.json.results | selectattr('assigned_object.device.name', 'equalto', item.name) | map(attribute='address') | list | first | default(''),
-              'vm_mac': netbox_interfaces.json.results | selectattr('device.name', 'equalto', item.name) | map(attribute='mac_address') | list | first | default('')
-            }) | list
-          }}
+        foreman_hosts: "{{ foreman_hosts + [ {
+          'vm_name': item.name,
+          'vm_ip': (netbox_ips.json.results | selectattr('assigned_object.device.name', 'equalto', item.name) | map(attribute='address') | list | first | default('')),
+          'vm_mac': (netbox_interfaces.json.results | selectattr('device.name', 'equalto', item.name) | map(attribute='mac_address') | list | first | default(''))
+        } ] }}"
+      loop: "{{ netbox_devices.json.results }}"
 
     - name: Create a host in Foreman
       theforeman.foreman.host:
