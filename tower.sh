@@ -72,5 +72,7 @@ pip install ansible-tower-cli --user
 # or for newer versions:
 pip install awxkit --user
 
+docker exec -it awx_task bash
+ansible-galaxy collection install theforeman.foreman -p /usr/share/ansible/collections
 
 echo "✅ AWX installation complete. Access it via http://localhost or your server IP."
