@@ -190,9 +190,6 @@ sed -i -E 's/listen[[:space:]]+80[[:space:]]+default_server;/listen 80;/; s/list
 systemctl start nginx
 nginx -t && systemctl reload nginx
 
-docker exec -it awx_task bash
-ansible-galaxy collection install theforeman.foreman -p /usr/share/ansible/collections
-
 # ✅ Done
 echo "=== ✅ NetBox installation completed successfully! ==="
 echo "Access NetBox via: http://<your_server_ip>/"
