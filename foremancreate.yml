@@ -12,7 +12,7 @@
     netbox_token: "ee63f94d72c6c10a5b4e2cab4edbea9af0f18ac0"
     foreman_server_url: "http://rocky-08-01.vgs.com"
     foreman_user: "admin"
-    foreman_password: "vnjy38WVJLjLpvuP"
+    foreman_password: "r7DYDRyRQyVVnuwQ"
     host_root_pass: "Root@123"
     tag_name: "new-build-centos"  # This can be overridden via AWX survey
 
