@@ -1,24 +1,53 @@
 ---
-- name: Load selected VMs from Flask API
+- name: Load selected VMs from NetBox
   hosts: localhost
   connection: local
   gather_facts: no
 
   vars:
-    flask_server_ip: "192.168.253.134"
-    selected_endpoint: "http://{{ flask_server_ip }}:5000/selected"
+    netbox_url: "http://192.168.253.134"
+    netbox_token: "ee63f94d72c6c10a5b4e2cab4edbea9af0f18ac0"
+    tag_name: "new-build-centos"  # Can be overridden via AWX survey
 
   tasks:
-    - name: Fetch selected.json from Flask server
+    - name: Get devices tagged from NetBox
       uri:
-        url: "{{ selected_endpoint }}"
+        url: "{{ netbox_url }}/api/dcim/devices/?tag={{ tag_name }}"
         method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
         return_content: yes
-      register: selected_vms
+      register: netbox_devices
 
-    - name: Set vm_list from selected.json
+    - name: Get interfaces from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/dcim/interfaces/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+      register: netbox_interfaces
+
+    - name: Get IP addresses from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+      register: netbox_ips
+
+    - name: Initialize vm_list
       set_fact:
-        vm_list: "{{ selected_vms.json }}"
+        vm_list: []
+
+    - name: Build vm_list from NetBox data
+      set_fact:
+        vm_list: "{{ vm_list + [ {
+          'vm_name': item.name,
+          'vm_ip': (netbox_ips.json.results | selectattr('assigned_object.device.name', 'equalto', item.name) | map(attribute='address') | map('regex_replace', '/.*$', '') | list | first | default(''))
+        } ] }}"
+      loop: "{{ netbox_devices.json.results }}"
 
 - name: Manage VM Boot Firmware and Boot Order on ESXi
   hosts: localhost
