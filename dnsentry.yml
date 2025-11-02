@@ -1,6 +1,6 @@
 ---
 - name: Add multiple DNS entries to Pi-hole via API
-  hosts: cent-dns-01
+  hosts: dns-server-01
   become: true
 
   vars:
