@@ -10,11 +10,11 @@
   vars:
     netbox_url: "http://192.168.253.134"
     netbox_token: "ee63f94d72c6c10a5b4e2cab4edbea9af0f18ac0"
-    foreman_server_url: http://cent-07-01.vgs.com
+    foreman_server_url: "https://cent-07-01.vgs.com"
     foreman_user: "admin"
     foreman_password: "r7DYDRyRQyVVnuwQ"
     host_root_pass: "Root@123"
-    tag_name: "new-build-rockyos"  # <-- This will be overridden by survey input
+    tag_name: "new-build-centos"  # Overridden by AWX survey input
 
   tasks:
 
@@ -45,17 +45,19 @@
         return_content: yes
       register: netbox_ips
 
+    - name: Initialize foreman_hosts list
+      set_fact:
+        foreman_hosts: []
+
     - name: Build foreman_hosts list from NetBox data
       set_fact:
-        foreman_hosts: >-
-          {{
-            netbox_devices.json.results | map('extract', {
-              'vm_name': 'name',
-              'vm_ip': netbox_ips.json.results | selectattr('assigned_object.device.name', 'equalto', item.name) | map(attribute='address') | list | first | default(''),
-              'vm_mac': netbox_interfaces.json.results | selectattr('device.name', 'equalto', item.name) | map(attribute='mac_address') | list | first | default('')
-            }) | list
-          }}
-
+        foreman_hosts: "{{ foreman_hosts + [ {
+          'vm_name': item.name,
+          'vm_ip': (netbox_ips.json.results | selectattr('assigned_object.device.name', 'equalto', item.name) | map(attribute='address') | map('regex_replace', '/.*$', '') | list | first | default('')),
+          'vm_mac': (netbox_interfaces.json.results | selectattr('device.name', 'equalto', item.name) | map(attribute='mac_address') | list | first | default(''))
+        } ] }}"
+      loop: "{{ netbox_devices.json.results }}"
+      
     - name: Create hosts in Foreman
       theforeman.foreman.host:
         server_url: "{{ foreman_server_url }}"
