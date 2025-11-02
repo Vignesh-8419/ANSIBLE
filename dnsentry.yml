@@ -45,7 +45,7 @@
     - name: Build dns_entries from NetBox data
       set_fact:
         dns_entries: "{{ dns_entries + [ {
-          'dns_hostname': item.name | regex_replace('\\.vgs\\.com$', ''),
+          'dns_hostname': item.name,
           'dns_ip': (netbox_ips.json.results | selectattr('assigned_object.device.name', 'equalto', item.name) | map(attribute='address') | map('regex_replace', '/.*$', '') | list | first | default(''))
         } ] }}"
       loop: "{{ netbox_devices.json.results }}"
