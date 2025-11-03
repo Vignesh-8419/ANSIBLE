@@ -1,0 +1,6 @@
+mkdir -p /srv/repo
+cp -a /var/www/html/repo/* /srv/repo/
+umount /var/www/html/repo
+ln -s /srv/repo /var/www/html/repo
+createrepo --update /srv/repo/BaseOS/
+createrepo --update /srv/repo/AppStream/
