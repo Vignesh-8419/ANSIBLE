@@ -81,7 +81,7 @@
         mode: '0755'
 
     - name: Copy Rocky 8 repo content to local repo
-      command: cp -a {{ mount_point }}/rocky8/* {{ local_repo_path }}/
+      command: cp -a {{ mount_point }}/rocky8/. {{ local_repo_path }}/
       args:
         creates: "{{ local_repo_path }}/BaseOS"
 
@@ -90,3 +90,9 @@
 
     - name: Rebuild AppStream metadata
       command: createrepo --update {{ local_repo_path }}/AppStream/
+
+    - name: Verify HTTP access to BaseOS repodata
+      uri:
+        url: "http://{{ ansible_default_ipv4.address }}/srv/BaseOS/repodata/repomd.xml"
+        return_content: no
+        status_code: 200
