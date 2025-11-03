@@ -1,11 +1,14 @@
 - name: Configure HTTP server
   hosts: "{{ target_hosts }}"
   become: yes
+
   vars:
     repo_mount: "//192.168.31.87/ISO"
     mount_point: "/var/www/html/repo"
     username: "vigne"
     password: "Vigneshv12$"
+    local_repo_path: "/var/www/html/srv"
+
   tasks:
 
     - name: Check DNS resolution
@@ -63,9 +66,27 @@
         - http
         - https
 
-
     - name: Start and enable httpd
       service:
         name: httpd
         state: started
         enabled: true
+
+    # === NEW TASKS: Copy repo and rebuild metadata ===
+
+    - name: Create local repo directory
+      file:
+        path: "{{ local_repo_path }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy Rocky 8 repo content to local repo
+      command: cp -a {{ mount_point }}/rocky8/* {{ local_repo_path }}/
+      args:
+        creates: "{{ local_repo_path }}/BaseOS"
+
+    - name: Rebuild BaseOS metadata
+      command: createrepo --update {{ local_repo_path }}/BaseOS/
+
+    - name: Rebuild AppStream metadata
+      command: createrepo --update {{ local_repo_path }}/AppStream/
