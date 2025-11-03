@@ -251,13 +251,13 @@
         content: |
           [rocky8-baseos]
           name=Rocky Linux 8 - BaseOS
-          baseurl=http://http-server-01/repo/rocky8/BaseOS/
+          baseurl=http://http-server-01/srv/BaseOS/
           gpgcheck=0
           enabled=1
-
+          
           [rocky8-appstream]
           name=Rocky Linux 8 - AppStream
-          baseurl=http://http-server-01/repo/rocky8/AppStream/
+          baseurl=http://http-server-01/srv/AppStream/
           gpgcheck=0
           enabled=1
 
