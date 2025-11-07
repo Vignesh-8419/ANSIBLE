@@ -289,7 +289,7 @@
 
     - name: Reboot into Rocky Linux
       reboot:
-        reboot_timeout: 18000
+        reboot_timeout: 180000
       when: upgrade_result.rc == 0
 
     - name: Ensure Python 3 is installed on Rocky after reboot
