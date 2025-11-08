@@ -1,6 +1,6 @@
-awx login --conf.host http://192.168.253.137/ --conf.username admin --conf.password 'redhat123' -k
+/root/.local/bin/awx login --conf.host http://192.168.253.137/ --conf.username admin --conf.password 'redhat123' -k
 
-awx inventory create \
+/root/.local/bin/awx inventory create \
   --name "VGS-CLUSTER" \
   --organization "Default" \
   --conf.host http://192.168.253.137/ \
