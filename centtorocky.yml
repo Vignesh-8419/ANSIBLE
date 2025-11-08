@@ -263,7 +263,7 @@
 
     - name: Reboot into Rocky Linux
       reboot:
-        reboot_timeout: 1800
+        reboot_timeout: 18000
         pre_reboot_delay: 15
       when: upgrade_result.rc == 0
 
