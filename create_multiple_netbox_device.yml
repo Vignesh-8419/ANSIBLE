@@ -1,6 +1,6 @@
 ---
 - name: Create multiple devices in NetBox
-  hosts: rocky-08-02
+  hosts: rocky-08-03
   become: yes
 
   vars:
