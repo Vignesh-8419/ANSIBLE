@@ -20,7 +20,6 @@
     - name: Collect server_info into a list
       set_fact:
         collected_servers: "{{ collected_servers | default([]) + [ server_info ] }}"
-      run_once: true
       delegate_to: rocky-08-03
       delegate_facts: true
 
