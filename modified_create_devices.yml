@@ -17,6 +17,13 @@
           interface: "{{ ansible_default_ipv4.interface }}"
           tag: "{{ tag }}"
 
+    - name: Collect server_info into a list
+      set_fact:
+        collected_servers: "{{ collected_servers | default([]) + [ server_info ] }}"
+      run_once: true
+      delegate_to: rocky-08-03
+      delegate_facts: true
+
 - name: Push collected servers into NetBox
   hosts: rocky-08-03
   gather_facts: no
@@ -29,16 +36,12 @@
     site_id: 1
 
   tasks:
-    - name: Aggregate servers_list from hostvars
-      set_fact:
-        servers_list: "{{ groups[target_hosts] | map('extract', hostvars, 'server_info') | list }}"
-
-    - name: Debug servers_list
+    - name: Debug collected_servers
       debug:
-        var: servers_list
+        var: collected_servers
 
     - name: Loop through servers and include device creation tasks
       include_tasks: create_netbox_device.yml
-      loop: "{{ servers_list }}"
+      loop: "{{ collected_servers }}"
       loop_control:
         loop_var: item
