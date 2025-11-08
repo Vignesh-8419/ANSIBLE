@@ -1,5 +1,5 @@
 ---
-- name: 🚀 Migrate CentOS 7 to Rocky Linux 8 using ELevate
+- name: Migrate CentOS 7 to Rocky Linux 8 using ELevate
   hosts: "{{ target_hosts }}"
   become: yes
   vars:
@@ -15,19 +15,19 @@
     ansible_python_interpreter: /usr/bin/python2.7
 
   pre_tasks:
-   - name: Check current kernel version
-     shell: uname -r
-     register: kernel_version
-     changed_when: false
+    - name: Check current kernel version
+      shell: uname -r
+      register: kernel_version
+      changed_when: false
 
-   - name: Show message if already Rocky
-     debug:
-       msg: "✅ Server is already Rocky Linux 8 (kernel {{ kernel_version.stdout }})"
-     when: kernel_version.stdout is search("4.18.")
+    - name: Show message if already Rocky
+      debug:
+        msg: "Server is already Rocky Linux 8 (kernel {{ kernel_version.stdout }})"
+      when: kernel_version.stdout is search("4.18.")
 
-   - name: Stop play if already Rocky
-     meta: end_play
-     when: kernel_version.stdout is search("4.18.")
+    - name: Stop play if already Rocky
+      meta: end_play
+      when: kernel_version.stdout is search("4.18.")
 
   tasks:
     - name: Check DNS resolution
@@ -47,22 +47,12 @@
         paths: /etc/yum.repos.d/
         patterns: 'CentOS-*'
       register: centos_repo_files
-    
-    # For CentOS 7 (Python 2 bindings)
-    - name: Install SELinux python bindings for CentOS 7
-      yum:
-        name: libselinux-python
-        state: present
-      vars:
-        ansible_python_interpreter: /usr/bin/python2
-      when: ansible_distribution_major_version == "7"
 
-    # For Rocky 8 (Python 3 bindings)
-    - name: Install SELinux python bindings for Rocky 8
-      dnf:
-        name: python3-libselinux
-        state: present
-      when: ansible_distribution_major_version == "8"
+    - name: Remove CentOS YUM repo files
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ centos_repo_files.files }}"
 
     - name: Create CentOS 7 patch repo
       copy:
@@ -75,7 +65,6 @@
           gpgcheck=0
 
     - name: Create vault.repo
-      become: true
       copy:
         content: |
           [base]
@@ -84,14 +73,12 @@
           enabled=1
           gpgcheck=1
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
-
           [updates]
           name=CentOS Vault Updates
           baseurl=https://vault.centos.org/7.9.2009/updates/x86_64/
           enabled=1
           gpgcheck=1
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
-
           [extras]
           name=CentOS Vault Extras
           baseurl=https://vault.centos.org/7.9.2009/extras/x86_64/
@@ -100,12 +87,24 @@
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
         dest: /etc/yum.repos.d/vault.repo
 
+    - name: Remove libsolv if installed
+      yum:
+        name:
+          - libsolv-0.6.34-4.el7.x86_64
+          - libcomps.x86_64
+        state: absent
+      ignore_errors: yes
+
+    - name: Make resolv.conf mutable
+      command: chattr -i /etc/resolv.conf
+      ignore_errors: yes
+
     - name: Get current kernel version
       shell: uname -r
       register: current_kernel
       changed_when: false
 
-    - name: Set patch_needed based on kernel version
+    - name: Set patch_needed
       set_fact:
         patch_needed: "{{ current_kernel.stdout.strip() != '3.10.0-1160.119.1.el7.x86_64' }}"
 
@@ -122,14 +121,13 @@
     - name: Reboot to reflect updates
       reboot:
         msg: "Reboot after applying CentOS 7 patches"
-        connect_timeout: 5
         reboot_timeout: 600
         pre_reboot_delay: 5
         post_reboot_delay: 30
       when: patch_needed
 
-    - name: Move existing .repo files to backup (second time, before elevate repo)
-      shell: mkdir -p /etc/yum.repos.d/backup && mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/
+    - name: Backup existing .repo files
+      shell: mkdir -p /etc/yum.repos.d/backup && mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/ 2>/dev/null || true
       ignore_errors: yes
 
     - name: Create elevate.repo
@@ -141,109 +139,59 @@
           baseurl=http://http-server-01/repo/elevate/
           enabled=1
           gpgcheck=0
- 
           [baseos]
           name=base-repo
           baseurl=http://http-server-01/repo/centos/
           enabled=1
           gpgcheck=0
-
-          [base]
+          [basevault]
           name=CentOS Vault Base
           baseurl=https://vault.centos.org/7.9.2009/os/x86_64/
           enabled=1
           gpgcheck=1
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
-
-          [updates]
+          [updatesvault]
           name=CentOS Vault Updates
           baseurl=https://vault.centos.org/7.9.2009/updates/x86_64/
           enabled=1
           gpgcheck=1
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
-          
-          [extras]
+          [extrasvault]
           name=CentOS Vault Extras
           baseurl=https://vault.centos.org/7.9.2009/extras/x86_64/
           enabled=1
           gpgcheck=1
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 
-    - name: Check if yum-complete-transaction is pending
-      shell: yum-complete-transaction --cleanup-only --quiet --skip-broken; echo $?
-      register: yum_pending
+    - name: Install deltarpm
+      yum:
+        name: deltarpm
+        state: present
+      ignore_errors: yes
+
+    - name: Install leapp and data
+      yum:
+        name:
+          - leapp-upgrade
+          - leapp-data-rocky
+        state: present
+
+    # --- CRITICAL FIX: Verify leapp-data-rocky integrity ---
+    - name: Verify leapp-data-rocky is not corrupted
+      shell: rpm -V leapp-data-rocky 2>/dev/null || yum reinstall -y leapp-data-rocky
       changed_when: false
 
-    - name: Run yum-complete-transaction if pending
-      command: yum-complete-transaction -y
-      when: yum_pending.stdout != "0"
+    - name: Wait for RPM DB
+      pause:
+        seconds: 5
 
-    # ------------------- Ensure deltarpm is installed before leapp -------------------
-    - name: Download deltarpm package from CentOS Vault
-      get_url:
-        url: https://vault.centos.org/7.9.2009/os/x86_64/Packages/deltarpm-3.6-3.el7.x86_64.rpm
-        dest: /tmp/deltarpm-3.6-3.el7.x86_64.rpm
-        mode: '0644'
-
-    - name: Install deltarpm package
-      command: rpm -ivh /tmp/deltarpm-3.6-3.el7.x86_64.rpm
-      args:
-        creates: /usr/bin/applydeltarpm
-  
-    - block:
-        - name: Remove libsolv if installed
-          yum:
-            name: libsolv
-            state: absent
-    
-        - name: Remove Foreman/Katello packages
-          yum:
-            name:
-              - foreman-installer
-              - foreman-installer-katello
-              - katello
-              - rubygem-foreman_maintain
-            state: absent
-    
-        - name: Try to install elevate and leapp packages
-          yum:
-            name:
-              - leapp-upgrade
-              - leapp-data-rocky
-            state: present
-          register: leapp_install
-          ignore_errors: true
-      vars:
-        ansible_python_interpreter: /usr/bin/python2
-      when: ansible_distribution_major_version == "7"
-
-    - name: Handle libcomps conflict (remove tfm packages + downgrade libcomps)
-      block:
-        - name: Remove conflicting tfm packages
-          yum:
-            name:
-              - tfm-pulpcore-python3-libcomps
-              - tfm-pulpcore-python3-solv
-            state: absent
-
-        - name: Downgrade libcomps to 0.1.8-14.el7
-          command: yum downgrade -y libcomps-0.1.8-14.el7
-
-        - name: Reinstall elevate and leapp packages after libcomps fix
-          yum:
-            name:
-              - leapp-upgrade
-              - leapp-data-rocky
-            state: present
-      when: leapp_install is failed
-
-    # ---- Create and lock leapp upgrade repo BEFORE preupgrade ----
-    - name: Backup existing leapp upgrade repo file
+    # --- CRITICAL: Create and lock repo BEFORE preupgrade ---
+    - name: Backup existing leapp repo file
       copy:
-        src: /etc/leapp/files/leapp_upgrade_repositories.repo
-        dest: /etc/leapp/files/leapp_upgrade_repositories.repo.bak
+        src: "{{ rocky_repo_file }}"
+        dest: "{{ rocky_repo_file }}.bak"
         remote_src: yes
-        backup: yes
+      ignore_errors: yes
 
     - name: Create Rocky Linux 8 repo for leapp upgrade
       copy:
@@ -254,30 +202,28 @@
           baseurl=http://http-server-01/srv/BaseOS/
           gpgcheck=0
           enabled=1
-          
+         
           [rocky8-appstream]
           name=Rocky Linux 8 - AppStream
           baseurl=http://http-server-01/srv/AppStream/
           gpgcheck=0
           enabled=1
 
-    - name: Make leapp_upgrade_repositories.repo immutable to avoid changes
+    - name: Make repo file immutable
       command: chattr +i {{ rocky_repo_file }}
 
-    # ---- Unmount repo mount before preupgrade ----
-    - name: Unmount repo mount if mounted
+    - name: Unmount repo if mounted
       mount:
         path: "{{ mount_point }}"
         state: unmounted
       ignore_errors: yes
 
-    - name: Remove repo mount entry from /etc/fstab
+    - name: Remove repo from fstab
       lineinfile:
         path: /etc/fstab
         regexp: "{{ repo_mount | regex_escape() }}"
         state: absent
 
-    # ---- Run leapp preupgrade after repo is locked ----
     - name: Run leapp preupgrade
       command: leapp preupgrade
       register: preupgrade_result
@@ -292,14 +238,14 @@
         modprobe -r floppy || true
         modprobe -r pata_acpi || true
 
-    - name: Answer leapp questions (authselect, PAM)
+    - name: Answer leapp questions
       shell: |
-        leapp answer --section authselect_check.confirm=True
-        leapp answer --section remove_pam_pkcs11_module_check.confirm=True
+        leapp answer --section authselect_check.confirm=True --add || true
+        leapp answer --section remove_pam_pkcs11_module_check.confirm=True --add || true
 
-    # Optionally unlock repo before upgrade if needed
-    - name: Make leapp_upgrade_repositories.repo mutable before upgrade
+    - name: Make repo mutable for upgrade
       command: chattr -i {{ rocky_repo_file }}
+      ignore_errors: yes
 
     - name: Run leapp upgrade
       command: leapp upgrade
@@ -310,19 +256,25 @@
       debug:
         var: upgrade_result.stdout_lines
 
+    - name: Wait before reboot
+      pause:
+        seconds: 10
+      when: upgrade_result.rc == 0
+
     - name: Reboot into Rocky Linux
       reboot:
         reboot_timeout: 1800
+        pre_reboot_delay: 15
       when: upgrade_result.rc == 0
 
-    - name: Ensure Python 3 is installed on Rocky after reboot
+    - name: Ensure Python 3
       raw: |
         if [ ! -x /usr/bin/python3 ]; then
           dnf install -y python3
         fi
       changed_when: false
 
-    - name: Switch interpreter to Python 3
+    - name: Switch to Python 3
       set_fact:
         ansible_python_interpreter: /usr/bin/python3
 
@@ -330,18 +282,14 @@
       shell: cat /etc/os-release
       register: os_release
       vars:
-       ansible_python_interpreter: /usr/bin/python3
+        ansible_python_interpreter: /usr/bin/python3
 
-    - debug:
+    - name: Show final OS
+      debug:
         var: os_release.stdout_lines
 
     - block:
-        - name: List old el7 kernel directories
-          shell: ls -d /lib/modules/*.el7* || true
-          register: old_kernels
-          changed_when: false
-
-        - name: Remove weak-modules for old el7 kernels
+        - name: Remove old el7 kernels from weak-modules
           shell: |
             for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
               /usr/sbin/weak-modules --remove-kernel $k || true
@@ -355,9 +303,8 @@
 
         - name: Find leftover el7 RPMs
           shell: |
-            rpm -qa | grep -e '\.el[67]' | grep -vE '^(gpg-pubkey|libmoduled|katello-ca-consumer)' | sort
+            rpm -qa | grep -E '\.el[67]' | grep -vE '^(gpg-pubkey|libmoduled|katello-ca-consumer)' | sort
           register: el7_rpms
-          changed_when: false
 
         - name: Save el7 package list
           copy:
@@ -370,59 +317,58 @@
               echo "Removing $i"
               rpm -e $i --nodeps || true
             done
+          when: el7_rpms.stdout != ""
 
-        - name: Cleanup leapp packages
+        - name: Cleanup leapp and elevate
           dnf:
-            name:
-              - leapp-pp
-              - leapp-deps-el8
-              - leapp-repository-deps-el8
+            name: 
+              - leapp*
+              - elevate*
             state: absent
+          ignore_errors: yes
 
-        - name: Remove leapp logs and old kernel dirs
+        - name: Remove leapp artifacts
           file:
             path: "{{ item }}"
             state: absent
           loop:
             - /lib/modules/*el7*
             - /var/log/leapp/
-            - /root/tmp_leapp_py3
             - /var/lib/leapp/
+            - /etc/leapp/
+            - /root/tmp_leapp_py3
             - /boot/vmlinuz-*rescue*
             - /boot/initramfs-*rescue*
 
-        - name: Reinstall current kernel-core
+        - name: Reinstall current kernel
           shell: dnf reinstall -y kernel-core-$(uname -r)
 
-        - name: Verify old kernels are not in grub
-          shell: grubby --info=ALL | grep :"\el7" || echo "Old Kernels are not present in the bootloader."
+        - name: Verify no el7 in grub
+          shell: grubby --info=ALL | grep :"\el7" || echo "No old kernels in bootloader"
           register: grub_check
-          changed_when: false
 
-        - name: Show grub verification result
+        - name: Show grub status
           debug:
             var: grub_check.stdout_lines
 
-        - name: Verify rescue image contains current kernel
+        - name: Verify normal initramfs contains kernel
           shell: |
-            lsinitrd /boot/initramfs-*rescue*.img | grep -qm1 "$(uname -r)/kernel/" && echo "OK" || echo "FAIL"
-          register: rescue_check
-          changed_when: false
+            lsinitrd /boot/initramfs-$(uname -r).img | grep -q "kernel" && echo "OK" || echo "FAIL"
+          register: initramfs_check
 
-        - name: Show rescue verification
+        - name: Show initramfs status
           debug:
-            var: rescue_check.stdout_lines
+            msg: "Initramfs for $(uname -r): {{ initramfs_check.stdout }}"
 
-        - name: Final reboot after cleanup
+        - name: Final reboot
           reboot:
             msg: "Final reboot after cleanup"
-            connect_timeout: 5
             reboot_timeout: 600
             pre_reboot_delay: 10
             post_reboot_delay: 30
 
       when: upgrade_result.rc == 0
 
-    - name: Show OS release info
+    - name: Final OS confirmation
       debug:
-        var: os_release.stdout_lines
+        msg: "Migration complete: {{ os_release.stdout_lines | join(' ') }}"
