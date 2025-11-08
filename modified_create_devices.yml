@@ -1,8 +1,31 @@
 ---
-- name: Collect and create devices in NetBox
-  hosts: rocky-08-03
+- name: Collect facts from all servers
+  hosts: "{{ target_hosts }}"         # group of all target servers in your inventory
   gather_facts: yes
   become: yes
+
+  vars:
+    tag: "new-build-rockyos"   # overridden by survey in Tower
+
+  tasks:
+    - name: Build server_info from facts
+      set_fact:
+        server_info:
+          name: "{{ ansible_hostname }}.vgs.com"
+          ip: "{{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.netmask | ipaddr('prefix') }}"
+          mac: "{{ ansible_default_ipv4.macaddress }}"
+          interface: "{{ ansible_default_ipv4.interface }}"
+          tag: "{{ tag }}"
+
+    - name: Aggregate servers_list on NetBox server
+      set_fact:
+        servers_list: "{{ servers_list | default([]) + [ server_info ] }}"
+      delegate_to: rocky-08-03
+      run_once: false
+
+- name: Push collected servers into NetBox
+  hosts: rocky-08-03
+  gather_facts: no
 
   vars:
     netbox_url: "http://192.168.253.135"
@@ -10,21 +33,9 @@
     device_type_id: 1     # replace with actual ID or query dynamically
     role_id: 1            # replace with actual ID or query dynamically
     site_id: 1            # your VGS site ID
-    tag: "new-build-rockyos"   # will be overridden by survey
 
   tasks:
-
-    - name: Build servers_list dynamically from facts
-      set_fact:
-        servers_list: "{{ servers_list | default([]) + [ {
-          'name': ansible_hostname + '.vgs.com',
-          'ip': ansible_default_ipv4.address + '/' + (ansible_default_ipv4.netmask | ipaddr('prefix')),
-          'mac': ansible_default_ipv4.macaddress,
-          'interface': ansible_default_ipv4.interface,
-          'tag': tag
-        } ] }}"
-
-    - name: Debug collected server list
+    - name: Debug servers_list
       debug:
         var: servers_list
 
