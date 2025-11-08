@@ -7,7 +7,6 @@
     pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
     netbox_url: "http://192.168.253.135"
     netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
-    tag_name: "new-build-centos"  # Can be overridden via AWX survey
 
   tasks:
 
