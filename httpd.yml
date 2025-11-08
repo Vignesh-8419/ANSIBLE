@@ -5,9 +5,26 @@
   vars:
     iso_path: "/var/www/html/repo/updated_rockyos.iso"
     mount_point: "/mnt"
+    repo_mount: "//192.168.31.87/ISO"
+	  mount_point_1: "/var/www/html/repo"
     local_repo_path: "/var/www/html/srv"
 
   tasks:
+
+    - name: Create mount point directory
+      file:
+        path: "{{ mount_point_1 }}"
+        state: directory
+        mode: '0777'
+
+    - name: Mount ISO share
+      mount:
+        path: "{{ mount_point_1 }}"
+        src: "{{ repo_mount }}"
+        fstype: cifs
+        opts: "username={{ username }},password={{ password }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
+        state: mounted
+      when: ansible_mounts | selectattr('mount', 'equalto', mount_point_1) | list | length == 0
 
     - name: Install required packages
       yum:
