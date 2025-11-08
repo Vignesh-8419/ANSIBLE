@@ -1,8 +1,8 @@
-curl -H "Authorization: Token ee63f94d72c6c10a5b4e2cab4edbea9af0f18ac0" \
-     http://192.168.253.134/api/dcim/interfaces/?device_id=2
+curl -H "Authorization: Token f68492e4231a818bc477b65295c660b2409cddde" \
+     http://192.168.253.135/api/dcim/interfaces/?device_id=2
 	 
 # Create tag (if not already created)
-curl -X POST http://192.168.253.134/api/extras/tags/ \
-  -H "Authorization: Token ee63f94d72c6c10a5b4e2cab4edbea9af0f18ac0" \
+curl -X POST http://192.168.253.135/api/extras/tags/ \
+  -H "Authorization: Token f68492e4231a818bc477b65295c660b2409cddde" \
   -H "Content-Type: application/json" \
   -d '{"name": "new-build-rockyos", "slug": "new-build-rockyos"}'
