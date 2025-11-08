@@ -163,6 +163,4 @@ IP_PAYLOAD=$(jq -n \
   }')
 netbox_post "$NETBOX_URL/ipam/ip-addresses/" "$IP_PAYLOAD"
 
-echo -e "\n✅ VM '$HOSTNAME' created or updated with interface '$IFACE_NAME' and IP assigned."
-
-[root@rocky-host-01 ~]#
+echo -e "\n✅ VM '$HOSTNAME' created or updated with interface '$IFACE_NAME' and IP assigned.
