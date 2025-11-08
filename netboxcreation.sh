@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # === Configuration ===
-NETBOX_URL="http://192.168.253.191/api"
+NETBOX_URL="http://192.168.253.135/api"
 NETBOX_TOKEN="a4b61902bf90fb7e8aa727782881d5aa5cef7030"
 
 # === Helper: URL encode function ===
