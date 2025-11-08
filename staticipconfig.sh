@@ -1,9 +1,14 @@
 #!/bin/bash
 
-# Detect primary interface
+# Detect primary interface (the one with default route)
 iface=$(ip route | awk '/default/ {print $5}' | head -n1)
 
-# Detect current IP, netmask, and gateway
+if [ -z "$iface" ]; then
+  echo "Error: No default interface detected"
+  exit 1
+fi
+
+# Detect current IP, CIDR, and gateway
 ip_addr=$(ip -4 addr show "$iface" | awk '/inet / {print $2}' | cut -d/ -f1)
 cidr=$(ip -4 addr show "$iface" | awk '/inet / {print $2}' | cut -d/ -f2)
 gateway=$(ip route | awk '/default/ {print $3}' | head -n1)
@@ -27,9 +32,11 @@ cidr2mask() {
 }
 netmask=$(cidr2mask "$cidr")
 
-# Backup original config
+# Backup original config if present
 cfg_file="/etc/sysconfig/network-scripts/ifcfg-${iface}"
-cp "$cfg_file" "${cfg_file}.bak"
+if [ -f "$cfg_file" ]; then
+  cp "$cfg_file" "${cfg_file}.bak"
+fi
 
 # Write static config
 cat > "$cfg_file" <<EOF
@@ -44,12 +51,20 @@ DOMAIN=vgs.com
 IPV6INIT=yes
 EOF
 
-# Make resolv.conf writable and update
+# Update resolv.conf
 chattr -i /etc/resolv.conf 2>/dev/null
 cat > /etc/resolv.conf <<EOF
 search vgs.com
 nameserver 192.168.253.151
 EOF
 
-# Restart network
-nmcli connection up ifcfg-${iface}
+# Detect the NetworkManager connection bound to this interface
+con_name=$(nmcli -t -f NAME,DEVICE con show | grep ":${iface}" | cut -d: -f1)
+
+if [ -n "$con_name" ] && [ "$con_name" != "$iface" ]; then
+  # Normalize connection name to match interface name
+  nmcli con modify "$con_name" connection.id "$iface"
+fi
+
+# Bring up the connection using interface name
+nmcli connection up "$iface"
