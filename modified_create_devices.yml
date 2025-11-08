@@ -1,6 +1,6 @@
 ---
 - name: Collect facts from all servers
-  hosts: "{{ target_hosts }}"         # group of all target servers in your inventory
+  hosts: "{{ target_hosts }}"   # group of all target servers
   gather_facts: yes
   become: yes
 
@@ -17,12 +17,6 @@
           interface: "{{ ansible_default_ipv4.interface }}"
           tag: "{{ tag }}"
 
-    - name: Aggregate servers_list on NetBox server
-      set_fact:
-        servers_list: "{{ servers_list | default([]) + [ server_info ] }}"
-      delegate_to: rocky-08-03
-      run_once: false
-
 - name: Push collected servers into NetBox
   hosts: rocky-08-03
   gather_facts: no
@@ -30,11 +24,15 @@
   vars:
     netbox_url: "http://192.168.253.135"
     netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
-    device_type_id: 1     # replace with actual ID or query dynamically
-    role_id: 1            # replace with actual ID or query dynamically
-    site_id: 1            # your VGS site ID
+    device_type_id: 1
+    role_id: 1
+    site_id: 1
 
   tasks:
+    - name: Aggregate servers_list from hostvars
+      set_fact:
+        servers_list: "{{ groups[target_hosts] | map('extract', hostvars, 'server_info') | list }}"
+
     - name: Debug servers_list
       debug:
         var: servers_list
