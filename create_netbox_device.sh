@@ -2,7 +2,7 @@
 
 # NetBox API details
 NETBOX_URL="http://192.168.253.135"
-TOKEN="ee63f94d72c6c10a5b4e2cab4edbea9af0f18ac0"
+TOKEN="f68492e4231a818bc477b65295c660b2409cddde"
 
 # Prompt for input
 read -p "Enter device name: " DEVICE_NAME
