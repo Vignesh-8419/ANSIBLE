@@ -6,32 +6,38 @@
     iso_path: "/var/www/html/repo/updated_rockyos.iso"
     mount_point: "/mnt"
     repo_mount: "//192.168.31.87/ISO"
-	mount_point_1: "/var/www/html/repo"
+    mount_point_1: "/var/www/html/repo"
     local_repo_path: "/var/www/html/srv"
 
   tasks:
 
-    - name: Create mount point directory
+    - name: Create mount point directory for CIFS share
       file:
         path: "{{ mount_point_1 }}"
         state: directory
         mode: '0777'
 
-    - name: Mount ISO share
+    - name: Mount ISO share via CIFS
       mount:
         path: "{{ mount_point_1 }}"
         src: "{{ repo_mount }}"
         fstype: cifs
         opts: "username={{ username }},password={{ password }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
         state: mounted
-      when: ansible_mounts | selectattr('mount', 'equalto', mount_point_1) | list | length == 0
 
     - name: Install required packages
       yum:
         name:
           - httpd
           - createrepo
+          - firewalld
         state: present
+
+    - name: Ensure firewalld is running
+      service:
+        name: firewalld
+        state: started
+        enabled: true
 
     - name: Create local repo directory
       file:
@@ -39,7 +45,7 @@
         state: directory
         mode: '0755'
 
-    - name: Create mount point
+    - name: Create ISO mount point
       file:
         path: "{{ mount_point }}"
         state: directory
@@ -75,7 +81,7 @@
           </Directory>
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
 
-    - name: Enable HTTP & HTTPS firewall
+    - name: Enable HTTP & HTTPS firewall services
       firewalld:
         service: "{{ item }}"
         permanent: true
