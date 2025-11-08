@@ -52,4 +52,4 @@ nameserver 192.168.253.151
 EOF
 
 # Restart network
-systemctl restart network
+nmcli connection up ifcfg-${iface}
