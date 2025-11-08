@@ -1,11 +1,11 @@
 ---
 - name: Collect facts from all servers
-  hosts: "{{ target_hosts }}"
+  hosts: "{{ target_hosts.split(',') | map('trim') | list }}"
   gather_facts: yes
   become: yes
 
   vars:
-    tag: "new-build-rockyos"
+    tag: "new-build-rockyos"   # overridden by survey in Tower
 
   tasks:
     - name: Build server_info from facts
@@ -31,7 +31,7 @@
   tasks:
     - name: Aggregate servers_list from hostvars
       set_fact:
-        servers_list: "{{ groups[target_hosts] | map('extract', hostvars, 'server_info') | list }}"
+        servers_list: "{{ target_hosts.split(',') | map('trim') | map('extract', hostvars, 'server_info') | list }}"
 
     - name: Debug servers_list
       debug:
