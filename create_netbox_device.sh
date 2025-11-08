@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # NetBox API details
-NETBOX_URL="http://192.168.253.134"
+NETBOX_URL="http://192.168.253.135"
 TOKEN="ee63f94d72c6c10a5b4e2cab4edbea9af0f18ac0"
 
 # Prompt for input
