@@ -1,0 +1,35 @@
+---
+- name: Collect and create devices in NetBox
+  hosts: all
+  gather_facts: yes
+  become: yes
+
+  vars:
+    netbox_url: "http://192.168.253.135"
+    netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
+    device_type_id: 1     # replace with actual ID or query dynamically
+    role_id: 1            # replace with actual ID or query dynamically
+    site_id: 1            # your VGS site ID
+    tag: "new-build-rockyos"   # will be overridden by survey
+
+  tasks:
+
+    - name: Build servers_list dynamically from facts
+      set_fact:
+        servers_list: "{{ servers_list | default([]) + [ {
+          'name': ansible_hostname + '.vgs.com',
+          'ip': ansible_default_ipv4.address + '/' + (ansible_default_ipv4.netmask | ipaddr('prefix')),
+          'mac': ansible_default_ipv4.macaddress,
+          'interface': ansible_default_ipv4.interface,
+          'tag': tag
+        } ] }}"
+
+    - name: Debug collected server list
+      debug:
+        var: servers_list
+
+    - name: Loop through servers and include device creation tasks
+      include_tasks: create_netbox_device.yml
+      loop: "{{ servers_list }}"
+      loop_control:
+        loop_var: item
