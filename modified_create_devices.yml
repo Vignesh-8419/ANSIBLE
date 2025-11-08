@@ -1,6 +1,6 @@
 ---
 - name: Collect and create devices in NetBox
-  hosts: all
+  hosts: rocky-08-03
   gather_facts: yes
   become: yes
 
