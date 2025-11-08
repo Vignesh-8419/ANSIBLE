@@ -8,6 +8,8 @@
     repo_mount: "//192.168.31.87/ISO"
     mount_point_1: "/var/www/html/repo"
     local_repo_path: "/var/www/html/srv"
+    username: "vigne"
+    password: "Vigneshv12$"
 
   tasks:
 
