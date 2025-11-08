@@ -1,9 +1,7 @@
 ---
 - name: Collect host details
-  hosts: all
-  gather_facts: yes
+  hosts: "{{ target_hosts }}"
   become: yes
-
   tasks:
 
     - name: Build structured host info
