@@ -6,7 +6,7 @@
 
   vars:
     netbox_url: "http://192.168.253.135"
-    netbox_token: "0123456789abcdef0123456789abcdef01234567"
+    netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
     netbox_tag: "existing-centos"
     pihole_url: "http://192.168.253.151/admin/api.php"
     pihole_token: "your_pihole_api_token_here"
