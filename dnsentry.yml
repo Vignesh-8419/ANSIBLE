@@ -45,7 +45,7 @@
 
     - name: Fetch existing Pi-hole DNS records
       uri:
-        url: "{{ pihole_base_url }}/admin/api.php?list_customdns"
+        url: "{{ pihole_base_url }}/api/config/dns/hosts"
         method: GET
         return_content: yes
       register: existing_dns_raw
