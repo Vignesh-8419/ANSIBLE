@@ -1,16 +1,15 @@
 ---
-- name: Add multiple DNS entries to Pi-hole via API (skip existing)
+- name: Add multiple DNS entries to Pi-hole via API
   hosts: dns-server-01
-  gather_facts: false
+  become: true
+
   vars:
+    pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
     netbox_url: "http://192.168.253.135"
     netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
-    pihole_host: "192.168.253.151"
-    pihole_dns_domain: "vgs.com"
-    netbox_tag: "{{ tag_name }}"   # AWX Tower survey variable
 
   tasks:
-  
+
     - name: Get devices tagged from NetBox
       uri:
         url: "{{ netbox_url }}/api/dcim/devices/?tag={{ tag_name }}"
@@ -20,36 +19,59 @@
         return_content: yes
       register: netbox_devices
 
+    - name: Get interfaces from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/dcim/interfaces/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+      register: netbox_interfaces
+
+    - name: Get IP addresses from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+      register: netbox_ips
+
     - name: Initialize dns_entries list
       set_fact:
         dns_entries: []
 
     - name: Build dns_entries from NetBox data
       set_fact:
-        dns_entries: "{{ dns_entries + [{'hostname': item.device.name.split('.')[0], 'ip': item.primary_ip4.address.split('/')[0] }] }}"
-      loop: "{{ netbox_devices.json.results | map(attribute='interfaces') | list | flatten(levels=1) }}"
-      when: item.primary_ip4 is defined and item.primary_ip4.address is defined
+        dns_entries: "{{ dns_entries + [ {
+          'dns_hostname': item.name,
+          'dns_ip': (netbox_ips.json.results | selectattr('assigned_object.device.name', 'equalto', item.name) | map(attribute='address') | map('regex_replace', '/.*$', '') | list | first | default(''))
+        } ] }}"
+      loop: "{{ netbox_devices.json.results }}"
 
-    - name: Get existing DNS entries from Pi-hole
-      uri:
-        url: "http://{{ pihole_host }}/admin/api.php?list=forwarding"
-        method: GET
-        return_content: yes
-      register: pihole_existing
-
-    - name: Parse existing DNS hostnames
-      set_fact:
-        existing_hosts: "{{ pihole_existing.json.forwarding | map(attribute='name') | list }}"
-      when: pihole_existing.json.forwarding is defined
-
-    - name: Add missing DNS entries to Pi-hole
-      uri:
-        url: "http://{{ pihole_host }}/admin/api.php?list=forwarding"
-        method: POST
-        body_format: json
-        body:
-          name: "{{ item.hostname }}"
-          ip: "{{ item.ip }}"
-          domain: "{{ pihole_dns_domain }}"
+    - name: Add DNS entry using Pi-hole API script
+      shell: >
+        {{ pihole_api_script_path }} --add {{ item.dns_hostname }} {{ item.dns_ip }}
+      args:
+        chdir: "{{ pihole_api_script_path | dirname }}"
       loop: "{{ dns_entries }}"
-      when: item.hostname not in existing_hosts
+      register: result
+
+    - name: Show result
+      debug:
+        var: result.results
+
+
+
+
+    - name: Build dns_entries from NetBox data
+      set_fact:
+        dns_entries: "{{ dns_entries + [ {'hostname': device.name, 'ip': (interface.json.results[0].ip | default('') | regex_replace('/\\d+$','')) } ] }}"
+      loop: "{{ devices_response.json.results | zip(interfaces_response.results) | list }}"
+      loop_control:
+        loop_var: item
+      vars:
+        device: "{{ item[0] }}"
+        interface: "{{ item[1] }}"
+      when: item[1].json.results | length > 0
+
