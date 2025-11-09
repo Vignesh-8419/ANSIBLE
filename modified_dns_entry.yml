@@ -4,7 +4,7 @@
   become: true
 
   vars:
-    pihole_url: "https://pi.hole"   # or use "https://192.168.253.151"
+    pihole_url: "https://192.168.253.151"   # or use "https://192.168.253.151"
     pihole_password: "Root@123"
     netbox_url: "http://192.168.253.135"
     netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
