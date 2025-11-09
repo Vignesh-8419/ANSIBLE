@@ -2,14 +2,13 @@
 - name: Add multiple DNS entries to Pi-hole via API (skip existing)
   hosts: dns-server-01
   become: true
-  gather_facts: no
 
   vars:
+    pihole_url: "http://192.168.253.151"
+    pihole_password: "Root@123"
     pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
-    pihole_base_url: "http://192.168.253.151"   # Pi-hole API base
     netbox_url: "http://192.168.253.135"
     netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
-    tag_name: "existing-centos"
 
   tasks:
 
@@ -43,36 +42,57 @@
         } ] }}"
       loop: "{{ netbox_devices.json.results }}"
 
+    # === Pi-hole Login (fetch SID and CSRF) ===
+    - name: Authenticate with Pi-hole
+      uri:
+        url: "{{ pihole_url }}/api/auth"
+        method: POST
+        body_format: json
+        body:
+          password: "{{ pihole_password }}"
+        return_content: yes
+        validate_certs: no
+      register: pihole_auth
+
+    - name: Extract session data
+      set_fact:
+        pihole_sid: "{{ pihole_auth.json.session.sid }}"
+        pihole_csrf: "{{ pihole_auth.json.session.csrf }}"
+
+    # === Fetch existing DNS entries ===
     - name: Fetch existing Pi-hole DNS records
       uri:
-        url: "{{ pihole_base_url }}/api/config/dns/hosts"
+        url: "{{ pihole_url }}/api/config/dns/hosts"
         method: GET
+        headers:
+          Cookie: "sid={{ pihole_sid }}"
+          x-csrf-token: "{{ pihole_csrf }}"
+        validate_certs: no
         return_content: yes
-      register: existing_dns_raw
+      register: pihole_dns
 
-    - name: Parse existing Pi-hole DNS records
+    - name: Extract existing hostnames
       set_fact:
-        existing_dns_records: "{{ existing_dns_raw.json.data | map(attribute=0) | list | default([]) }}"
-        # Pi-hole returns list like [["hostname", "IP"], ...]
+        existing_hosts: "{{ (pihole_dns.json.data | map(attribute='host') | list) | default([]) }}"
 
-    - name: Filter only new DNS entries (skip existing)
+    - name: Filter dns_entries (only those not already present)
       set_fact:
-        new_dns_entries: >-
-          {{ dns_entries | rejectattr('dns_hostname', 'in', existing_dns_records) | list }}
+        dns_to_add: "{{ dns_entries | rejectattr('dns_hostname', 'in', existing_hosts) | list }}"
 
-    - name: Show which DNS entries will be added
+    - name: Show filtered list (to confirm skipping)
       debug:
-        msg: "Will add: {{ new_dns_entries | map(attribute='dns_hostname') | list }}"
+        msg: "Will add {{ item.dns_hostname }} ({{ item.dns_ip }})"
+      loop: "{{ dns_to_add }}"
 
+    # === Add only missing DNS entries ===
     - name: Add DNS entry using Pi-hole API script
       shell: >
         {{ pihole_api_script_path }} --add {{ item.dns_hostname }} {{ item.dns_ip }}
       args:
         chdir: "{{ pihole_api_script_path | dirname }}"
-      loop: "{{ new_dns_entries }}"
-      when: item.dns_ip | length > 0
+      loop: "{{ dns_to_add }}"
       register: result
 
-    - name: Show result summary
+    - name: Show result
       debug:
         var: result.results
