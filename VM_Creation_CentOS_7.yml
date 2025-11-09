@@ -100,9 +100,10 @@
       loop: "{{ vm_list }}"
       register: vm_info
 
-    - name: Display MAC address from hw_eth0
+    - name: Display VM name, IP, and MAC
       debug:
         msg: >-
-          VM {{ item.invocation.module_args.name }} has MAC:
-          {{ item.instance.hw_eth0.mac_address | default('MAC not found') }}
+          {{ item.instance.hw_name }}:
+          IP={{ item.instance.ipv4 | default('N/A') }},
+          MAC={{ item.instance.hw_eth0.macaddress | default('N/A') }}
       loop: "{{ vm_info.results }}"
