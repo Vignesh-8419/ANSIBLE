@@ -4,14 +4,14 @@
   become: true
 
   vars:
-    pihole_url: "https://pi.hole"   # or "https://192.168.253.151"
+    pihole_url: "https://192.168.253.151"
     pihole_password: "Root@123"
     netbox_url: "http://192.168.253.135"
     netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
     tag_name: "existing-centos"
 
   tasks:
-    # --- 1. Get devices tagged from NetBox ---
+
     - name: Get devices tagged from NetBox
       uri:
         url: "{{ netbox_url }}/api/dcim/devices/?tag={{ tag_name }}"
@@ -21,7 +21,6 @@
         return_content: yes
       register: netbox_devices
 
-    # --- 2. Get IP addresses from NetBox ---
     - name: Get IP addresses from NetBox
       uri:
         url: "{{ netbox_url }}/api/ipam/ip-addresses/"
@@ -31,12 +30,10 @@
         return_content: yes
       register: netbox_ips
 
-    # --- 3. Initialize DNS list ---
     - name: Initialize dns_entries list
       set_fact:
         dns_entries: []
 
-    # --- 4. Build DNS entries from NetBox data ---
     - name: Build dns_entries from NetBox data
       set_fact:
         dns_entries: "{{ dns_entries + [ {
@@ -45,24 +42,19 @@
                       | selectattr('assigned_object.device.name', 'equalto', item.name)
                       | map(attribute='address')
                       | map('regex_replace', '/.*$', '')
-                      | list
-                      | first
-                      | default(''))
+                      | list | first | default(''))
         } ] }}"
       loop: "{{ netbox_devices.json.results }}"
 
-    # --- 5. Authenticate with Pi-hole ---
     - name: Authenticate with Pi-hole
       uri:
         url: "{{ pihole_url }}/api/auth"
         method: POST
-        headers:
-          Content-Type: "application/json"
         body_format: json
         body:
           password: "{{ pihole_password }}"
-        validate_certs: no
         return_content: yes
+        validate_certs: no
       register: pihole_auth
 
     - name: Extract session data
@@ -70,7 +62,6 @@
         pihole_sid: "{{ pihole_auth.json.session.sid }}"
         pihole_csrf: "{{ pihole_auth.json.session.csrf }}"
 
-    # --- 6. Fetch existing Pi-hole DNS records ---
     - name: Fetch existing Pi-hole DNS records
       uri:
         url: "{{ pihole_url }}/api/config/dns/hosts"
@@ -82,30 +73,32 @@
         return_content: yes
       register: pihole_dns
 
-    # --- 7. Extract existing hostnames correctly ---
-    - name: Extract existing hostnames (parse from Pi-hole host list)
+    - name: Extract existing hostnames (parse clean host list)
       set_fact:
-        existing_hosts: >-
+        existing_hostnames: >-
           {{
-            (pihole_dns.json.config.dns.hosts
-              | map('regex_replace', '^.*\\s+', '')
-              | list)
+            (pihole_dns.json.config.dns.hosts | map('regex_replace', '^\\S+\\s+', '') | list)
+            if (pihole_dns.json.config.dns.hosts is defined)
+            else []
           }}
 
     - name: Debug existing hostnames
       debug:
-        var: existing_hosts
+        var: existing_hostnames
 
-    # --- 8. Filter only new entries ---
     - name: Filter DNS entries not already present
       set_fact:
-        new_dns_entries: "{{ dns_entries | rejectattr('dns_hostname', 'in', existing_hosts) | list }}"
+        new_dns_entries: >-
+          {{
+            dns_entries
+            | rejectattr('dns_hostname', 'in', existing_hostnames)
+            | list
+          }}
 
     - name: Debug new entries to be added
       debug:
         var: new_dns_entries
 
-    # --- 9. Add DNS entry using Pi-hole API ---
     - name: Add DNS entry using Pi-hole API
       uri:
         url: "{{ pihole_url }}/api/config/dns/hosts/{{ item.dns_ip }}%20{{ item.dns_hostname }}"
@@ -113,13 +106,11 @@
         headers:
           Cookie: "sid={{ pihole_sid }}"
           x-csrf-token: "{{ pihole_csrf }}"
-          Content-Type: "application/json"
         validate_certs: no
-        status_code: [200, 201, 400]  # 400 = already exists (skip fail)
+        status_code: [200, 201, 400]
       loop: "{{ new_dns_entries }}"
-      when: item.dns_ip != ""
-      register: add_results
+      register: result
 
     - name: Show result summary
       debug:
-        msg: "{{ add_results.results | map(attribute='json') | list }}"
+        msg: "{{ result.results | map(attribute='json') | list }}"
