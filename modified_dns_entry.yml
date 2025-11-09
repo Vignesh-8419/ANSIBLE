@@ -5,7 +5,7 @@
 
   vars:
     pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
-    pihole_url: "https://pi.hole"         # or use https://192.168.253.151
+    pihole_url: "https://pi.hole"        # or use https://192.168.253.151
     pihole_password: "Root@123"
 
     netbox_url: "http://192.168.253.135"
@@ -13,9 +13,8 @@
     tag_name: "existing-centos"
 
   tasks:
-
     # ------------------------------------------------------------
-    # 1. Get device info from NetBox
+    # 1. Fetch NetBox devices and IPs
     # ------------------------------------------------------------
     - name: Get devices tagged from NetBox
       uri:
@@ -78,7 +77,7 @@
         pihole_csrf: "{{ pihole_auth.json.session.csrf }}"
 
     # ------------------------------------------------------------
-    # 3. Fetch existing DNS records from Pi-hole
+    # 3. Fetch existing Pi-hole DNS records
     # ------------------------------------------------------------
     - name: Fetch existing Pi-hole DNS records
       uri:
@@ -91,32 +90,41 @@
         validate_certs: no
       register: existing_pihole_dns
 
-    # (optional debug to inspect)
-    # - name: Debug Pi-hole DNS response
+    # - name: Debug Pi-hole DNS structure
     #   debug:
     #     var: existing_pihole_dns.json
 
-    - name: Extract existing DNS hostnames
+    - name: Extract existing DNS hostnames safely
       set_fact:
         existing_hostnames: >-
           {{
             (
-              (existing_pihole_dns.json.hosts | default([]))
-              + (existing_pihole_dns.json.data | default([]))
-              + (
+              (
+                existing_pihole_dns.json.hosts
+                if existing_pihole_dns.json.hosts is iterable
+                else []
+              )
+              +
+              (
+                existing_pihole_dns.json.data
+                if existing_pihole_dns.json.data is iterable
+                else []
+              )
+              +
+              (
                 existing_pihole_dns.json
-                if existing_pihole_dns.json is iterable and
-                   existing_pihole_dns.json is sequence
+                if existing_pihole_dns.json is iterable and existing_pihole_dns.json is sequence
                 else []
               )
             )
+            | selectattr('hostname', 'defined')
             | map(attribute='hostname')
             | list
             | unique
           }}
 
     # ------------------------------------------------------------
-    # 4. Add DNS entries only if not existing
+    # 4. Add DNS entries (skip existing)
     # ------------------------------------------------------------
     - name: Add DNS entry using Pi-hole API script (skip existing)
       shell: >
@@ -133,7 +141,7 @@
     - name: Show skipped or added entries
       debug:
         msg: |
-          Skipped/Added Results:
+          === Pi-hole DNS Summary ===
           {% for entry in dns_entries %}
             {% if entry.dns_hostname in existing_hostnames %}
               Skipped: {{ entry.dns_hostname }} (already exists)
