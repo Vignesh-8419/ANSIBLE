@@ -1,11 +1,9 @@
 ---
-- name: Add multiple DNS entries to Pi-hole via API (skip existing)
+- name: Add multiple DNS entries to Pi-hole via API
   hosts: dns-server-01
   become: true
 
   vars:
-    pihole_url: "http://192.168.253.151"
-    pihole_password: "Root@123"
     pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
     netbox_url: "http://192.168.253.135"
     netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
@@ -20,6 +18,15 @@
           Authorization: "Token {{ netbox_token }}"
         return_content: yes
       register: netbox_devices
+
+    - name: Get interfaces from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/dcim/interfaces/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+      register: netbox_interfaces
 
     - name: Get IP addresses from NetBox
       uri:
@@ -42,56 +49,12 @@
         } ] }}"
       loop: "{{ netbox_devices.json.results }}"
 
-    # === Pi-hole Login (fetch SID and CSRF) ===
-    - name: Authenticate with Pi-hole
-      uri:
-        url: "{{ pihole_url }}/api/auth"
-        method: POST
-        body_format: json
-        body:
-          password: "{{ pihole_password }}"
-        return_content: yes
-        validate_certs: no
-      register: pihole_auth
-
-    - name: Extract session data
-      set_fact:
-        pihole_sid: "{{ pihole_auth.json.session.sid }}"
-        pihole_csrf: "{{ pihole_auth.json.session.csrf }}"
-
-    # === Fetch existing DNS entries ===
-    - name: Fetch existing Pi-hole DNS records
-      uri:
-        url: "{{ pihole_url }}/api/config/dns/hosts"
-        method: GET
-        headers:
-          Cookie: "sid={{ pihole_sid }}"
-          x-csrf-token: "{{ pihole_csrf }}"
-        validate_certs: no
-        return_content: yes
-      register: pihole_dns
-
-    - name: Extract existing hostnames (handle both old/new Pi-hole formats)
-      set_fact:
-        existing_hosts: >-
-          {{ (pihole_dns.json.data | default(pihole_dns.json) | map(attribute='host') | list) | default([]) }}
-
-    - name: Filter dns_entries (only those not already present)
-      set_fact:
-        dns_to_add: "{{ dns_entries | rejectattr('dns_hostname', 'in', existing_hosts) | list }}"
-
-    - name: Show filtered list (to confirm skipping)
-      debug:
-        msg: "Will add {{ item.dns_hostname }} ({{ item.dns_ip }})"
-      loop: "{{ dns_to_add }}"
-
-    # === Add only missing DNS entries ===
     - name: Add DNS entry using Pi-hole API script
       shell: >
         {{ pihole_api_script_path }} --add {{ item.dns_hostname }} {{ item.dns_ip }}
       args:
         chdir: "{{ pihole_api_script_path | dirname }}"
-      loop: "{{ dns_to_add }}"
+      loop: "{{ dns_entries }}"
       register: result
 
     - name: Show result
