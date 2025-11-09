@@ -1,34 +1,31 @@
 ---
 - name: Add multiple DNS entries to Pi-hole via API (skip existing)
   hosts: dns-server-01
-  become: false
-  gather_facts: true
+  become: true
 
   vars:
-    pihole_url: "http://192.168.253.151"
-    pihole_password: "Root@123"
+    pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
     netbox_url: "http://192.168.253.135"
-    netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"  # update yours
-    netbox_tag: "existing-centos"
+    netbox_token: "YOUR_VALID_NETBOX_TOKEN"
+    tag_name: "existing-centos"
 
   tasks:
     - name: Get devices tagged from NetBox
       uri:
-        url: "{{ netbox_url }}/api/dcim/devices/?tag={{ netbox_tag }}"
+        url: "{{ netbox_url }}/api/dcim/devices/?tag={{ tag_name }}"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
-        return_content: true
+        return_content: yes
       register: netbox_devices
 
     - name: Get IP addresses from NetBox
       uri:
-        url: "{{ netbox_url }}/api/ipam/ip-addresses/?device_id={{ item.id }}"
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
-        return_content: true
-      loop: "{{ netbox_devices.json.results }}"
+        return_content: yes
       register: netbox_ips
 
     - name: Initialize dns_entries list
@@ -37,61 +34,38 @@
 
     - name: Build dns_entries from NetBox data
       set_fact:
-        dns_entries: "{{ dns_entries + [ {'hostname': item.name, 'ip': (netbox_ips.results | selectattr('item.id','equalto', item.id) | map(attribute='json.results.0.address') | map('regex_replace','/.*','') | list | first) | default('') } ] }}"
+        dns_entries: "{{ dns_entries + [ {
+          'hostname': item.name,
+          'ip': (netbox_ips.json.results
+            | selectattr('assigned_object.device.name', 'equalto', item.name)
+            | map(attribute='address')
+            | map('regex_replace', '/.*$', '')
+            | list | first | default(''))
+        } ] }}"
       loop: "{{ netbox_devices.json.results }}"
 
     - name: Show prepared DNS entries
       debug:
         var: dns_entries
 
-    - name: Authenticate with Pi-hole
-      uri:
-        url: "{{ pihole_url }}/api/auth"
-        method: POST
-        body_format: json
-        body:
-          password: "{{ pihole_password }}"
-        return_content: true
-      register: pihole_auth
+    - name: Get existing DNS entries from Pi-hole
+      shell: "curl -sk http://192.168.253.151/admin/api.php?list=localdns"
+      register: existing_dns_raw
 
-    - name: Extract session data
+    - name: Parse existing Pi-hole DNS entries
       set_fact:
-        sid: "{{ pihole_auth.json.session.sid }}"
-        csrf: "{{ pihole_auth.json.session.csrf }}"
+        existing_dns: "{{ (existing_dns_raw.stdout | from_json).data | map(attribute='name') | list }}"
+      when: existing_dns_raw.stdout | length > 0
 
-    - name: Fetch existing Pi-hole DNS records
-      uri:
-        url: "{{ pihole_url }}/api/config/dns/hosts"
-        method: GET
-        headers:
-          Cookie: "sid={{ sid }}"
-        return_content: true
-      register: existing_pihole_hosts
-
-    - name: Extract existing DNS hostnames safely
-      set_fact:
-        existing_hostnames: "{{ existing_pihole_hosts.json | default([]) | json_query('[*].name') | default([]) }}"
-      when: existing_pihole_hosts.json is defined
-
-    - name: Show found hostnames
-      debug:
-        msg: "Existing hostnames found in Pi-hole: {{ existing_hostnames | default([]) }}"
-
-    - name: Add DNS entry to Pi-hole if missing
-      uri:
-        url: "{{ pihole_url }}/api/config/dns/hosts/{{ item.ip }}%20{{ item.hostname }}"
-        method: PUT
-        headers:
-          Cookie: "sid={{ sid }}"
-          x-csrf-token: "{{ csrf }}"
-          Content-Type: "application/json"
-        status_code: [200, 201, 400]  # ✅ accept success or 'already exists'
-        return_content: true
+    - name: Add DNS entries only if not present
+      shell: >
+        {{ pihole_api_script_path }} --add {{ item.hostname }} {{ item.ip }}
+      args:
+        chdir: "{{ pihole_api_script_path | dirname }}"
       loop: "{{ dns_entries }}"
-      when: item.hostname not in existing_hostnames | default([])
-      register: add_dns
-      failed_when: false  # ✅ prevents failure exit on harmless errors
+      when: item.hostname not in existing_dns
+      register: dns_add_results
 
-    - name: Show result summary
+    - name: Show result
       debug:
-        msg: "{{ add_dns.results | map(attribute='json') | list }}"
+        var: dns_add_results.results
