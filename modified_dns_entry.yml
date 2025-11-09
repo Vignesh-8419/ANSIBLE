@@ -4,7 +4,7 @@
   become: true
 
   vars:
-    pihole_url: "https://192.168.253.151"   # or use "https://192.168.253.151"
+    pihole_url: "https://pi.hole"   # or "https://192.168.253.151"
     pihole_password: "Root@123"
     netbox_url: "http://192.168.253.135"
     netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
@@ -36,7 +36,7 @@
       set_fact:
         dns_entries: []
 
-    # --- 4. Build DNS entries from NetBox ---
+    # --- 4. Build DNS entries from NetBox data ---
     - name: Build dns_entries from NetBox data
       set_fact:
         dns_entries: "{{ dns_entries + [ {
@@ -82,16 +82,15 @@
         return_content: yes
       register: pihole_dns
 
-    # --- (Optional) Debug the Pi-hole DNS response ---
-    - name: Debug Pi-hole DNS response
-      debug:
-        var: pihole_dns.json
-
-    # --- 7. Extract existing hostnames (Fixed for new Pi-hole format) ---
-    - name: Extract existing hostnames (handle both old/new Pi-hole formats)
+    # --- 7. Extract existing hostnames correctly ---
+    - name: Extract existing hostnames (parse from Pi-hole host list)
       set_fact:
         existing_hosts: >-
-          {{ (pihole_dns.json.data | default(pihole_dns.json) | map(attribute='host') | list) | default([]) }}
+          {{
+            (pihole_dns.json.config.dns.hosts
+              | map('regex_replace', '^.*\\s+', '')
+              | list)
+          }}
 
     - name: Debug existing hostnames
       debug:
@@ -106,7 +105,7 @@
       debug:
         var: new_dns_entries
 
-    # --- 9. Add DNS entries to Pi-hole ---
+    # --- 9. Add DNS entry using Pi-hole API ---
     - name: Add DNS entry using Pi-hole API
       uri:
         url: "{{ pihole_url }}/api/config/dns/hosts/{{ item.dns_ip }}%20{{ item.dns_hostname }}"
@@ -116,11 +115,11 @@
           x-csrf-token: "{{ pihole_csrf }}"
           Content-Type: "application/json"
         validate_certs: no
+        status_code: [200, 201, 400]  # 400 = already exists (skip fail)
       loop: "{{ new_dns_entries }}"
       when: item.dns_ip != ""
-      register: result
+      register: add_results
 
-    # --- 10. Show result ---
     - name: Show result summary
       debug:
-        var: result.results
+        msg: "{{ add_results.results | map(attribute='json') | list }}"
