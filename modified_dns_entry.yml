@@ -3,13 +3,16 @@
   hosts: dns-server-01
   gather_facts: yes
   vars:
+    # ===== NetBox configuration =====
     netbox_url: "http://192.168.253.135"
     netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
-    pihole_url: "http://192.168.253.151"
-    pihole_user: "admin"
-    pihole_pass: "admin"
-    dns_domain: "vgs.com"
     dns_tag: "existing-centos"
+    dns_domain: "vgs.com"
+
+    # ===== Pi-hole configuration =====
+    pihole_url: "http://dns-server-01.vgs.com/admin"
+    pihole_user: "admin"
+    pihole_pass: "Root@123"
 
   tasks:
     - name: Get devices tagged from NetBox
@@ -24,7 +27,7 @@
       delay: 3
       until: netbox_devices.status == 200
 
-    - name: Get IP addresses for devices
+    - name: Get IP addresses for each device
       uri:
         url: "{{ item.url }}interfaces/"
         method: GET
@@ -34,7 +37,7 @@
       loop: "{{ netbox_devices.json.results }}"
       register: netbox_interfaces
 
-    - name: Build list of DNS entries from NetBox
+    - name: Build list of DNS entries from NetBox data
       set_fact:
         dns_entries: >-
           {{
@@ -92,6 +95,6 @@
       when: item.hostname not in existing_dns_list
       register: add_results
 
-    - name: Show results
+    - name: Show final results
       debug:
         var: add_results.results
