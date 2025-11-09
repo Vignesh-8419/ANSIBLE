@@ -8,7 +8,7 @@
     pihole_url: "http://192.168.253.151"
     pihole_password: "Root@123"
     netbox_url: "http://192.168.253.135"
-    netbox_token: "9b4a50deab2e75a51c90f2efb74d2893c9f4e8e7"  # update yours
+    netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"  # update yours
     netbox_tag: "existing-centos"
 
   tasks:
