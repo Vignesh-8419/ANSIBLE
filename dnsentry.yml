@@ -1,12 +1,15 @@
 ---
-- name: Add multiple DNS entries to Pi-hole via API
+- name: Add multiple DNS entries to Pi-hole via API (skip existing)
   hosts: dns-server-01
   become: true
+  gather_facts: no
 
   vars:
     pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
+    pihole_base_url: "http://192.168.253.151"   # Pi-hole API base
     netbox_url: "http://192.168.253.135"
     netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
+    tag_name: "existing-centos"
 
   tasks:
 
@@ -18,15 +21,6 @@
           Authorization: "Token {{ netbox_token }}"
         return_content: yes
       register: netbox_devices
-
-    - name: Get interfaces from NetBox
-      uri:
-        url: "{{ netbox_url }}/api/dcim/interfaces/"
-        method: GET
-        headers:
-          Authorization: "Token {{ netbox_token }}"
-        return_content: yes
-      register: netbox_interfaces
 
     - name: Get IP addresses from NetBox
       uri:
@@ -49,14 +43,36 @@
         } ] }}"
       loop: "{{ netbox_devices.json.results }}"
 
+    - name: Fetch existing Pi-hole DNS records
+      uri:
+        url: "{{ pihole_base_url }}/admin/api.php?list_customdns"
+        method: GET
+        return_content: yes
+      register: existing_dns_raw
+
+    - name: Parse existing Pi-hole DNS records
+      set_fact:
+        existing_dns_records: "{{ existing_dns_raw.json.data | map(attribute=0) | list | default([]) }}"
+        # Pi-hole returns list like [["hostname", "IP"], ...]
+
+    - name: Filter only new DNS entries (skip existing)
+      set_fact:
+        new_dns_entries: >-
+          {{ dns_entries | rejectattr('dns_hostname', 'in', existing_dns_records) | list }}
+
+    - name: Show which DNS entries will be added
+      debug:
+        msg: "Will add: {{ new_dns_entries | map(attribute='dns_hostname') | list }}"
+
     - name: Add DNS entry using Pi-hole API script
       shell: >
         {{ pihole_api_script_path }} --add {{ item.dns_hostname }} {{ item.dns_ip }}
       args:
         chdir: "{{ pihole_api_script_path | dirname }}"
-      loop: "{{ dns_entries }}"
+      loop: "{{ new_dns_entries }}"
+      when: item.dns_ip | length > 0
       register: result
 
-    - name: Show result
+    - name: Show result summary
       debug:
         var: result.results
