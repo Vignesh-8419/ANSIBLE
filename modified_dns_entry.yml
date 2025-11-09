@@ -61,17 +61,3 @@
       debug:
         var: result.results
 
-
-
-
-    - name: Build dns_entries from NetBox data
-      set_fact:
-        dns_entries: "{{ dns_entries + [ {'hostname': device.name, 'ip': (interface.json.results[0].ip | default('') | regex_replace('/\\d+$','')) } ] }}"
-      loop: "{{ devices_response.json.results | zip(interfaces_response.results) | list }}"
-      loop_control:
-        loop_var: item
-      vars:
-        device: "{{ item[0] }}"
-        interface: "{{ item[1] }}"
-      when: item[1].json.results | length > 0
-
