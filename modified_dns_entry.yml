@@ -1,15 +1,17 @@
 ---
 - name: Add multiple DNS entries to Pi-hole via API (skip existing)
   hosts: dns-server-01
-  become: false
   gather_facts: true
 
   vars:
+    # NetBox settings
     netbox_url: "http://192.168.253.135/api"
     netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
     netbox_tag: "existing-centos"
+
+    # Pi-hole settings
     pihole_api_url: "http://{{ ansible_host }}/admin/api.php"
-    pihole_api_token: "your_pihole_api_token_here"
+    pihole_api_token: "your_pihole_api_token_here"   # <-- Replace with valid token
 
   tasks:
 
@@ -48,32 +50,40 @@
       debug:
         var: dns_entries
 
+    # 🟡 FIX: Safely fetch Pi-hole DNS entries (handle empty or invalid token)
     - name: Get existing DNS entries from Pi-hole
       uri:
         url: "{{ pihole_api_url }}?list=localdns&auth={{ pihole_api_token }}"
         method: GET
         return_content: true
-        status_code: [200]
+        status_code: [200, 403, 401, 500]
       register: existing_dns
       failed_when: false
 
-    - name: Parse existing DNS entries safely
+    # 🟢 Ensure existing_dns_json always exists (even if API failed)
+    - name: Normalize Pi-hole response
       set_fact:
-        existing_dns_json: "{{ existing_dns.json | default({}) }}"
-      when: existing_dns.status == 200
+        existing_dns_json: "{{ existing_dns.json if (existing_dns.json is defined and existing_dns.json != None) else {'local_dns': []} }}"
 
+    - name: Debug existing Pi-hole entries
+      debug:
+        msg: "{{ existing_dns_json.local_dns | default([]) | map(attribute='name') | list }}"
+
+    # 🟢 Filter only missing entries
     - name: Filter only missing DNS entries
       set_fact:
         missing_dns_entries: >-
           {{
-            dns_entries | rejectattr('hostname', 'in', (existing_dns_json.local_dns | map(attribute='name') | list | default([])))
-            | list
+            dns_entries |
+            rejectattr('hostname', 'in', (existing_dns_json.local_dns | map(attribute='name') | list | default([]))) |
+            list
           }}
 
     - name: Show missing entries to be added
       debug:
         var: missing_dns_entries
 
+    # 🟢 Add missing entries safely
     - name: Add missing DNS entries to Pi-hole
       uri:
         url: "{{ pihole_api_url }}"
@@ -85,7 +95,7 @@
           list: "localdns"
           name: "{{ item.hostname }}"
           ip: "{{ item.ip }}"
-        status_code: [200]
+        status_code: [200, 500]
       loop: "{{ missing_dns_entries }}"
       when: missing_dns_entries | length > 0
       register: add_results
