@@ -71,9 +71,10 @@
         return_content: yes
       register: pihole_dns
 
-    - name: Extract existing hostnames
+    - name: Extract existing hostnames (handle both old/new Pi-hole formats)
       set_fact:
-        existing_hosts: "{{ (pihole_dns.json.data | map(attribute='host') | list) | default([]) }}"
+        existing_hosts: >-
+          {{ (pihole_dns.json.data | default(pihole_dns.json) | map(attribute='host') | list) | default([]) }}
 
     - name: Filter dns_entries (only those not already present)
       set_fact:
