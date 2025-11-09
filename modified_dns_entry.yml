@@ -8,6 +8,7 @@
     netbox_url: "http://192.168.253.135"
     netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
     tag_name: "existing-centos"
+    pihole_api_url: "https://pi.hole/api/config/dns/hosts"
 
   tasks:
 
@@ -51,12 +52,11 @@
       when: item.name is defined
 
     # ---------------------------
-    # Get Existing DNS Entries
+    # Get existing DNS entries
     # ---------------------------
     - name: Get existing DNS entries from Pi-hole
       shell: >
-        curl -sk -X GET "{{ 'https://pi.hole' }}/api/config/dns/hosts" |
-        jq .
+        curl -sk -X GET "{{ pihole_api_url }}" || echo '{}'
       register: existing_pihole_dns
       changed_when: false
       failed_when: false
@@ -66,28 +66,35 @@
         var: existing_pihole_dns.stdout
 
     # ---------------------------
-    # Normalize DNS response safely
+    # Normalize Pi-hole response safely
     # ---------------------------
     - name: Normalize Pi-hole response safely
       set_fact:
         existing_dns_names: >-
+          {% set parsed = (existing_pihole_dns.stdout | from_json | default({}, true)) %}
+          {% if parsed is mapping and 'error' in parsed %}
+          []
+          {% elif parsed is mapping %}
           {{
-            (
-              (existing_pihole_dns.stdout | from_json | json_query('hosts') | default([], true))
-              +
-              (existing_pihole_dns.stdout | from_json | json_query('data') | default([], true))
-              +
-              (
-                existing_pihole_dns.stdout | from_json
-                if (existing_pihole_dns.stdout | from_json) is iterable
-                else []
-              )
-            )
+            (parsed.get('hosts', [])
+             + parsed.get('data', [])
+             + ([] if not parsed else []))
             | selectattr('hostname', 'defined')
             | map(attribute='hostname')
             | list
             | unique
           }}
+          {% elif parsed is iterable %}
+          {{
+            parsed
+            | selectattr('hostname', 'defined')
+            | map(attribute='hostname')
+            | list
+            | unique
+          }}
+          {% else %}
+          []
+          {% endif %}
 
     - name: Debug normalized DNS list
       debug:
