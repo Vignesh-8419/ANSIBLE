@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # === CONFIGURATION ===
-PIHOLE_URL="https://pi.hole"  # or use IP like https://192.168.253.151
+PIHOLE_URL="https://192.168.253.151"  # or use IP like https://192.168.253.151
 PIHOLE_PASSWORD="Root@123"
 
 # === Authenticate with Pi-hole ===
