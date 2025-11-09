@@ -1,6 +1,6 @@
 ---
 - name: Add multiple DNS entries to Pi-hole via API (skip existing)
-  hosts: localhost
+  hosts: dns-server-01
   gather_facts: false
   vars:
     netbox_url: "http://192.168.253.135"
