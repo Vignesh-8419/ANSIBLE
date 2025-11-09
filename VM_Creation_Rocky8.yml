@@ -1,3 +1,4 @@
+---
 - name: Provision RockyOS VMs with static IPs and Secure Boot disabled
   hosts: localhost
   connection: local
@@ -23,7 +24,7 @@
 
   tasks:
 
-    - name: Create VM with static IP, customization, and Secure Boot disabled
+    - name: Create and power on VM with static IP and Secure Boot disabled
       vmware_guest:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -62,15 +63,17 @@
           hostname: "{{ item.name }}"
         wait_for_ip_address: true
       loop: "{{ vm_list }}"
+      register: rocky_vms
 
     - name: Wait until VM responds to SSH
-      wait_for:
+      ansible.builtin.wait_for:
         host: "{{ item.ip }}"
         port: 22
-        timeout: 120
+        timeout: 300
         state: started
       loop: "{{ vm_list }}"
       delegate_to: localhost
+
     - name: Ping the VM to verify connectivity
       ansible.builtin.ping:
       vars:
@@ -78,7 +81,7 @@
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
-    - name: Show actual MAC assigned (optional debug)
+    - name: Gather VM information from vCenter
       vmware_guest_info:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -89,9 +92,10 @@
       loop: "{{ vm_list }}"
       register: vm_info
 
-    - name: Display MAC address from hw_eth0
+    - name: Display VM Name, IP, and MAC Address
       debug:
         msg: >-
-          VM {{ item.invocation.module_args.name }} has MAC:
-          {{ item.instance.hw_eth0.mac_address | default('MAC not found') }}
+          VM: {{ item.instance.hw_name }}
+          IP: {{ (item.instance.hw_eth0.ipaddresses | first) | default(item.instance.ipv4, true) | default('N/A') }}
+          MAC: {{ item.instance.hw_eth0.macaddress | default('MAC not found') }}
       loop: "{{ vm_info.results }}"
