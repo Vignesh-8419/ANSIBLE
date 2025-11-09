@@ -1,35 +1,38 @@
 ---
 - name: Add multiple DNS entries to Pi-hole via API (skip existing)
   hosts: dns-server-01
-  gather_facts: yes
+  become: false
+  gather_facts: true
+
   vars:
-    netbox_url: "http://192.168.253.135"
+    netbox_url: "http://192.168.253.135/api"
     netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
+    netbox_tag: "existing-centos"
+    pihole_api_url: "http://{{ ansible_host }}/admin/api.php"
     pihole_api_token: "your_pihole_api_token_here"
-    pihole_url: "http://192.168.253.151/api"
 
   tasks:
 
     - name: Get devices tagged from NetBox
       uri:
-        url: "{{ netbox_url }}/api/dcim/devices/?tag=existing-centos"
+        url: "{{ netbox_url }}/dcim/devices/?tag={{ netbox_tag }}"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
           Content-Type: "application/json"
-        return_content: yes
-      register: netbox_devices
+        return_content: true
+      register: devices
 
     - name: Get IP addresses for each device from NetBox
       uri:
-        url: "{{ netbox_url }}/api/ipam/ip-addresses/?device_id={{ item.id }}"
+        url: "{{ netbox_url }}/ipam/ip-addresses/?device_id={{ item.id }}"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
           Content-Type: "application/json"
-        return_content: yes
-      loop: "{{ netbox_devices.json.results }}"
-      register: netbox_ips
+        return_content: true
+      loop: "{{ devices.json.results }}"
+      register: ip_data
 
     - name: Initialize dns_entries list
       set_fact:
@@ -37,8 +40,8 @@
 
     - name: Build dns_entries from NetBox data
       set_fact:
-        dns_entries: "{{ dns_entries + [{'hostname': item.json.results[0].assigned_object.device.name, 'ip': (item.json.results[0].address | regex_replace('/32', ''))}] }}"
-      loop: "{{ netbox_ips.results }}"
+        dns_entries: "{{ dns_entries + [ { 'hostname': item.json.results[0].assigned_object.device.name, 'ip': item.json.results[0].address.split('/')[0] } ] }}"
+      loop: "{{ ip_data.results }}"
       when: item.json.results | length > 0
 
     - name: Show prepared DNS entries
@@ -47,31 +50,47 @@
 
     - name: Get existing DNS entries from Pi-hole
       uri:
-        url: "{{ pihole_url }}?list=local_dns&auth={{ pihole_api_token }}"
+        url: "{{ pihole_api_url }}?list=localdns&auth={{ pihole_api_token }}"
         method: GET
-        return_content: yes
+        return_content: true
+        status_code: [200]
       register: existing_dns
-      failed_when: existing_dns.status not in [200]
+      failed_when: false
 
-    - name: Parse existing DNS entries
+    - name: Parse existing DNS entries safely
       set_fact:
-        existing_dns_list: "{{ existing_dns.json.data | map(attribute='name') | list | default([]) }}"
+        existing_dns_json: "{{ existing_dns.json | default({}) }}"
+      when: existing_dns.status == 200
 
-    - name: Add DNS entries to Pi-hole if not existing
+    - name: Filter only missing DNS entries
+      set_fact:
+        missing_dns_entries: >-
+          {{
+            dns_entries | rejectattr('hostname', 'in', (existing_dns_json.local_dns | map(attribute='name') | list | default([])))
+            | list
+          }}
+
+    - name: Show missing entries to be added
+      debug:
+        var: missing_dns_entries
+
+    - name: Add missing DNS entries to Pi-hole
       uri:
-        url: "{{ pihole_url }}"
+        url: "{{ pihole_api_url }}"
         method: POST
         body_format: form-urlencoded
         body:
           auth: "{{ pihole_api_token }}"
-          action: "add_dns_record"
-          domain: "{{ item.hostname }}"
+          action: "add"
+          list: "localdns"
+          name: "{{ item.hostname }}"
           ip: "{{ item.ip }}"
         status_code: [200]
-      loop: "{{ dns_entries }}"
-      when: item.hostname not in existing_dns_list
+      loop: "{{ missing_dns_entries }}"
+      when: missing_dns_entries | length > 0
       register: add_results
 
-    - name: Show DNS add results
+    - name: Show Pi-hole addition results
       debug:
         var: add_results
+      when: missing_dns_entries | length > 0
