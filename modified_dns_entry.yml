@@ -1,51 +1,47 @@
 ---
 - name: Add multiple DNS entries to Pi-hole via API (skip existing)
   hosts: dns-server-01
-  become: true
+  gather_facts: yes
 
   vars:
-    pihole_url: "https://192.168.253.151"
-    pihole_password: "Root@123"
     netbox_url: "http://192.168.253.135"
-    netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
-    tag_name: "existing-centos"
+    netbox_token: "0123456789abcdef0123456789abcdef01234567"
+    pihole_url: "http://192.168.253.151"
+    pihole_password: "Root@123"
 
   tasks:
-
+    # 1️⃣ Get devices from NetBox tagged "existing-centos"
     - name: Get devices tagged from NetBox
       uri:
-        url: "{{ netbox_url }}/api/dcim/devices/?tag={{ tag_name }}"
+        url: "{{ netbox_url }}/api/dcim/devices/?tag=existing-centos"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
-        return_content: yes
+        validate_certs: no
       register: netbox_devices
 
+    # 2️⃣ Get IP addresses for those devices
     - name: Get IP addresses from NetBox
       uri:
-        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/?limit=2000"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
-        return_content: yes
+        validate_certs: no
       register: netbox_ips
 
+    # 3️⃣ Initialize DNS entries list
     - name: Initialize dns_entries list
       set_fact:
         dns_entries: []
 
+    # 4️⃣ Build dns_entries list dynamically
     - name: Build dns_entries from NetBox data
       set_fact:
-        dns_entries: "{{ dns_entries + [ {
-          'dns_hostname': item.name,
-          'dns_ip': (netbox_ips.json.results
-                      | selectattr('assigned_object.device.name', 'equalto', item.name)
-                      | map(attribute='address')
-                      | map('regex_replace', '/.*$', '')
-                      | list | first | default(''))
-        } ] }}"
+        dns_entries: "{{ dns_entries + [{'dns_hostname': item.name, 'dns_ip': (netbox_ips.json.results | selectattr('assigned_object.device.name', 'equalto', item.name) | map(attribute='address') | list | first | regex_replace('/.*','')) | default('') }] }}"
       loop: "{{ netbox_devices.json.results }}"
 
+    # 5️⃣ Authenticate with Pi-hole (get session cookie)
     - name: Authenticate with Pi-hole
       uri:
         url: "{{ pihole_url }}/api/auth"
@@ -53,64 +49,67 @@
         body_format: json
         body:
           password: "{{ pihole_password }}"
-        return_content: yes
         validate_certs: no
-      register: pihole_auth
+      register: auth_response
 
     - name: Extract session data
       set_fact:
-        pihole_sid: "{{ pihole_auth.json.session.sid }}"
-        pihole_csrf: "{{ pihole_auth.json.session.csrf }}"
+        sid: "{{ auth_response.cookies.sid }}"
+        csrf: "{{ auth_response.json.session.csrf | default('') }}"
 
+    # 6️⃣ Fetch existing DNS host records from Pi-hole
     - name: Fetch existing Pi-hole DNS records
       uri:
-        url: "{{ pihole_url }}/api/config/dns/hosts"
+        url: "{{ pihole_url }}/admin/scripts/pi-hole/php/customdns.php"
         method: GET
         headers:
-          Cookie: "sid={{ pihole_sid }}"
-          x-csrf-token: "{{ pihole_csrf }}"
-        validate_certs: no
+          Cookie: "sid={{ sid }}"
         return_content: yes
-      register: pihole_dns
+        validate_certs: no
+      register: existing_pihole_hosts
 
+    # 7️⃣ Extract and clean existing hostnames
     - name: Extract existing hostnames (parse clean host list)
       set_fact:
         existing_hostnames: >-
-          {{
-            (pihole_dns.json.config.dns.hosts | map('regex_replace', '^\\S+\\s+', '') | list)
-            if (pihole_dns.json.config.dns.hosts is defined)
-            else []
-          }}
+          {{ existing_pihole_hosts.content.splitlines()
+             | select('match', '^[0-9]')                   # Only lines starting with IP
+             | map('regex_replace', '^\\S+\\s+', '')       # Remove IP part
+             | map('trim')                                 # Remove extra spaces
+             | map('lower')                                # Lowercase for comparison
+             | list }}
 
     - name: Debug existing hostnames
       debug:
         var: existing_hostnames
 
-    - name: Filter DNS entries not already present
+    # 8️⃣ Filter DNS entries that are NOT already present
+    - name: Filter DNS entries not already present (case-insensitive)
       set_fact:
         new_dns_entries: >-
-          {{
-            dns_entries
-            | rejectattr('dns_hostname', 'in', existing_hostnames)
-            | list
-          }}
+          {{ dns_entries
+             | selectattr('dns_hostname', 'defined')
+             | selectattr('dns_hostname', '!=', '')
+             | rejectattr('dns_hostname', 'lower', 'in', existing_hostnames)
+             | list }}
 
     - name: Debug new entries to be added
       debug:
         var: new_dns_entries
 
+    # 9️⃣ Add only new DNS entries via Pi-hole API
     - name: Add DNS entry using Pi-hole API
       uri:
         url: "{{ pihole_url }}/api/config/dns/hosts/{{ item.dns_ip }}%20{{ item.dns_hostname }}"
         method: PUT
         headers:
-          Cookie: "sid={{ pihole_sid }}"
-          x-csrf-token: "{{ pihole_csrf }}"
+          Cookie: "sid={{ sid }}"
+          Content-Type: "application/json"
         validate_certs: no
-        status_code: [200, 201, 400]
       loop: "{{ new_dns_entries }}"
-      register: result
+      register: add_results
 
+    # 🔟 Show final summary
     - name: Show result summary
       debug:
-        msg: "{{ result.results | map(attribute='json') | list }}"
+        msg: "{{ add_results.results | map(attribute='json') | list }}"
