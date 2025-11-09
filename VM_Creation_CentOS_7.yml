@@ -1,7 +1,7 @@
 ---
-- name: Provision CentOS VMs and static IPs
+- name: Provision CentOS VMs and assign static IPs
   hosts: localhost
-  gather_facts: yes
+  gather_facts: no
 
   vars:
     vcenter_hostname: "192.168.253.129"
@@ -23,7 +23,7 @@
 
   tasks:
 
-    - name: Create VM powered off with static MAC
+    - name: Create VM powered off with static MAC and IP
       vmware_guest:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -56,12 +56,12 @@
               - "192.168.253.151"
         customization:
           domain: "{{ guest_domain }}"
-          dns_servers: 
+          dns_servers:
             - "192.168.253.151"
           hostname: "{{ item.name }}"
       loop: "{{ vm_list }}"
 
-    - name: Power on VM
+    - name: Power on VM and wait for IP
       vmware_guest:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -71,7 +71,9 @@
         folder: "{{ folder }}"
         name: "{{ item.name }}"
         state: poweredon
+        wait_for_ip_address: true
       loop: "{{ vm_list }}"
+      register: poweredon_vms
 
     - name: Wait until VM responds to SSH
       ansible.builtin.wait_for:
@@ -82,14 +84,7 @@
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
-    - name: Ping the VM to verify connectivity
-      ansible.builtin.ping:
-      vars:
-        ansible_host: "{{ item.ip }}"
-      loop: "{{ vm_list }}"
-      delegate_to: localhost
-
-    - name: Show actual MAC assigned (optional debug)
+    - name: Show actual MAC assigned (debug)
       vmware_guest_info:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -103,7 +98,7 @@
     - name: Display VM name, IP, and MAC
       debug:
         msg: >-
-          {{ item.instance.hw_name }}:
-          IP={{ item.instance.ipv4 | default('N/A') }},
-          MAC={{ item.instance.hw_eth0.macaddress | default('N/A') }}
+          VM: {{ item.instance.hw_name }}
+          IP: {{ (item.instance.hw_eth0.ipaddresses | first) | default(item.instance.ipv4, true) | default('N/A') }}
+          MAC: {{ item.instance.hw_eth0.macaddress | default('N/A') }}
       loop: "{{ vm_info.results }}"
