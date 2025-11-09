@@ -7,12 +7,13 @@
     netbox_token: "f68492e4231a818bc477b65295c660b2409cddde"
     pihole_host: "192.168.253.151"
     pihole_dns_domain: "vgs.com"
+    netbox_tag: "{{ tag_name }}"   # AWX Tower survey variable
 
   tasks:
-
+  
     - name: Get devices tagged from NetBox
       uri:
-        url: "{{ netbox_url }}/api/dcim/devices/?tag=existing-centos"
+        url: "{{ netbox_url }}/api/dcim/devices/?tag={{ tag_name }}"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
