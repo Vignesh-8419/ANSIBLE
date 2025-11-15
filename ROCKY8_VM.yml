@@ -19,8 +19,6 @@
     esxi_hostname: "192.168.253.128"
     guest_domain: "vgs.com"
     dns_server: "192.168.253.151"
-
-    # Example VM list
     vm_list:
       - name: "{{ vm_name }}"
         ip: "{{ vm_ip }}"
@@ -78,15 +76,14 @@
       delegate_to: localhost
 
     - name: Disable cloud-init to persist hostname changes
-      ansible.builtin.shell: |
-        ssh -o StrictHostKeyChecking=no root@{{ item.ip }} "touch /etc/cloud/cloud-init.disabled"
+      ansible.builtin.shell: >
+        ssh -o StrictHostKeyChecking=no root@{{ item.ip }} 'mkdir -p /etc/cloud && touch /etc/cloud/cloud-init.disabled'
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
     - name: Force hostname inside the VM
-      ansible.builtin.shell: |
-        ssh -o StrictHostKeyChecking=no root@{{ item.ip }} \
-        "hostnamectl set-hostname {{ item.name }}.{{ guest_domain }} && systemctl restart systemd-hostnamed"
+      ansible.builtin.shell: >
+        ssh -o StrictHostKeyChecking=no root@{{ item.ip }} 'hostnamectl set-hostname {{ item.name }}.{{ guest_domain }} && systemctl restart systemd-hostnamed'
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
