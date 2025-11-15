@@ -19,9 +19,11 @@
     esxi_hostname: "192.168.253.128"
     guest_domain: "vgs.com"
     dns_server: "192.168.253.151"
+
+    # Example VM list, replace with actual variables in AWX survey
     vm_list:
-      - name: "{{ vm_name }}"
-        ip: "{{ vm_ip }}"
+      - name: "rocky-08-01"
+        ip: "192.168.253.133"
 
   tasks:
 
@@ -77,10 +79,10 @@
 
     - name: Force hostname inside the VM
       ansible.builtin.shell: |
-        hostnamectl set-hostname {{ item.name }}.{{ guest_domain }}
-        systemctl restart systemd-hostnamed
-      delegate_to: "{{ item.ip }}"
+        ssh -o StrictHostKeyChecking=no root@{{ item.ip }} \
+        "hostnamectl set-hostname {{ item.name }}.{{ guest_domain }} && systemctl restart systemd-hostnamed"
       loop: "{{ vm_list }}"
+      delegate_to: localhost
 
     - name: Gather VM information from vCenter
       vmware_guest_info:
