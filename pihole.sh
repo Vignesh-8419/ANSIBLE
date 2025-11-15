@@ -10,7 +10,7 @@ sed -i 's/^SELINUX=permissive/SELINUX=disabled/' /etc/selinux/config
 
 # 3. Export environment variable to reflect SELinux disabled
 export SELINUX_DISABLE=1
-
+export PIHOLE_SELINUX=true
 # 5. Show SELinux status
 sestatus
 
