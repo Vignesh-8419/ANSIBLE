@@ -1,15 +1,15 @@
-curl -H "Authorization: Token f68492e4231a818bc477b65295c660b2409cddde" \
+curl -H "Authorization: Token ac398a41868b98659d10c6f500a433f2409960d8" \
      http://192.168.253.135/api/dcim/interfaces/?device_id=2
 	 
 # Create tag (if not already created)
 curl -X POST http://192.168.253.135/api/extras/tags/ \
-  -H "Authorization: Token f68492e4231a818bc477b65295c660b2409cddde" \
+  -H "Authorization: Token ac398a41868b98659d10c6f500a433f2409960d8" \
   -H "Content-Type: application/json" \
   -d '{"name": "new-build-rockyos", "slug": "new-build-rockyos"}'
 
 
 curl -X POST "http://192.168.253.135/api/dcim/device-roles/" \
-  -H "Authorization: Token f68492e4231a818bc477b65295c660b2409cddde" \
+  -H "Authorization: Token ac398a41868b98659d10c6f500a433f2409960d8" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Server",
@@ -19,7 +19,7 @@ curl -X POST "http://192.168.253.135/api/dcim/device-roles/" \
 
 
 curl -X POST "http://192.168.253.135/api/dcim/manufacturers/" \
-  -H "Authorization: Token f68492e4231a818bc477b65295c660b2409cddde" \
+  -H "Authorization: Token ac398a41868b98659d10c6f500a433f2409960d8" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Generic",
@@ -27,7 +27,7 @@ curl -X POST "http://192.168.253.135/api/dcim/manufacturers/" \
   }'
 
 curl -X POST "http://192.168.253.135/api/dcim/device-types/" \
-  -H "Authorization: Token f68492e4231a818bc477b65295c660b2409cddde" \
+  -H "Authorization: Token ac398a41868b98659d10c6f500a433f2409960d8" \
   -H "Content-Type: application/json" \
   -d '{
     "manufacturer": 1,
