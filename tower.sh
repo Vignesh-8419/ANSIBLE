@@ -61,6 +61,10 @@ sed -i '/name: Start the containers/{n;s/restarted:.*/recreate: "{{ (awx_compose
 echo "🚀 Running AWX installer playbook..."
 ansible-playbook -i inventory install.yml
 
+/usr/libexec/platform-python -m pip uninstall -y pyvmomi pyVim
+/usr/libexec/platform-python -m pip install pyvmomi==7.0.3 pyvim
+/usr/libexec/platform-python -c "import pyVmomi, pyVim; print('OK')"
+
 firewall-cmd --add-service=http --permanent
 firewall-cmd --add-service=https --permanent
 firewall-cmd --reload
