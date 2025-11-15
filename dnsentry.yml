@@ -4,11 +4,38 @@
   become: true
 
   vars:
+    pihole_api_dir: /root/pihole_customdns_api
     pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
+    script_url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/pihole-customdns.sh"
+
     netbox_url: "http://192.168.253.135"
     netbox_token: "ac398a41868b98659d10c6f500a433f2409960d8"
 
   tasks:
+
+    # ----------------------------------------------------
+    # 1. Create directory for Pi-hole API script
+    # ----------------------------------------------------
+    - name: Create Pi-hole custom DNS API directory
+      file:
+        path: "{{ pihole_api_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    # ----------------------------------------------------
+    # 2. Download script from GitHub into that directory
+    # ----------------------------------------------------
+    - name: Download Pi-hole custom DNS API script
+      get_url:
+        url: "{{ script_url }}"
+        dest: "{{ pihole_api_script_path }}"
+        mode: '0755'     # same as chmod +x
+
+    # ----------------------------------------------------
+    # Original tasks start here
+    # ----------------------------------------------------
 
     - name: Get devices tagged from NetBox
       uri:
@@ -45,7 +72,13 @@
       set_fact:
         dns_entries: "{{ dns_entries + [ {
           'dns_hostname': item.name,
-          'dns_ip': (netbox_ips.json.results | selectattr('assigned_object.device.name', 'equalto', item.name) | map(attribute='address') | map('regex_replace', '/.*$', '') | list | first | default(''))
+          'dns_ip': (netbox_ips.json.results
+                      | selectattr('assigned_object.device.name', 'equalto', item.name)
+                      | map(attribute='address')
+                      | map('regex_replace', '/.*$', '')
+                      | list
+                      | first
+                      | default(''))
         } ] }}"
       loop: "{{ netbox_devices.json.results }}"
 
@@ -53,7 +86,7 @@
       shell: >
         {{ pihole_api_script_path }} --add {{ item.dns_hostname }} {{ item.dns_ip }}
       args:
-        chdir: "{{ pihole_api_script_path | dirname }}"
+        chdir: "{{ pihole_api_dir }}"
       loop: "{{ dns_entries }}"
       register: result
 
