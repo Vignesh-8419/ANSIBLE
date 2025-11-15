@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Detect primary interface (the one with default route)
+# Detect primary interface (default route)
 iface=$(ip route | awk '/default/ {print $5}' | head -n1)
 
 if [ -z "$iface" ]; then
@@ -8,7 +8,20 @@ if [ -z "$iface" ]; then
   exit 1
 fi
 
-# Detect current IP, CIDR, and gateway
+echo "Detected primary interface: $iface"
+
+# Detect ALTNAME from ip command
+altname=$(ip -o link show "$iface" | grep -o 'altname [^ ]*' | awk '{print $2}')
+
+if [ -z "$altname" ]; then
+  echo "No altname found — using interface name as profile name"
+  profilename="$iface"
+else
+  echo "Detected ALTNAME: $altname"
+  profilename="$altname"
+fi
+
+# Detect IP, CIDR, gateway
 ip_addr=$(ip -4 addr show "$iface" | awk '/inet / {print $2}' | cut -d/ -f1)
 cidr=$(ip -4 addr show "$iface" | awk '/inet / {print $2}' | cut -d/ -f2)
 gateway=$(ip route | awk '/default/ {print $3}' | head -n1)
@@ -32,11 +45,10 @@ cidr2mask() {
 }
 netmask=$(cidr2mask "$cidr")
 
-# Backup original config if present
 cfg_file="/etc/sysconfig/network-scripts/ifcfg-${iface}"
-if [ -f "$cfg_file" ]; then
-  cp "$cfg_file" "${cfg_file}.bak"
-fi
+
+# Backup old config
+[ -f "$cfg_file" ] && cp "$cfg_file" "${cfg_file}.bak"
 
 # Write static config
 cat > "$cfg_file" <<EOF
@@ -51,20 +63,33 @@ DOMAIN=vgs.com
 IPV6INIT=yes
 EOF
 
-# Update resolv.conf
+echo "Written static config: $cfg_file"
+
+# Fix resolv.conf
 chattr -i /etc/resolv.conf 2>/dev/null
 cat > /etc/resolv.conf <<EOF
 search vgs.com
 nameserver 192.168.253.151
 EOF
 
-# Detect the NetworkManager connection bound to this interface
-con_name=$(nmcli -t -f NAME,DEVICE con show | grep ":${iface}" | cut -d: -f1)
+echo "Updated resolv.conf"
 
-if [ -n "$con_name" ] && [ "$con_name" != "$iface" ]; then
-  # Normalize connection name to match interface name
-  nmcli con modify "$con_name" connection.id "$iface"
+# Find current NM connection bound to iface
+current_con=$(nmcli -t -f NAME,DEVICE con show | grep ":${iface}" | cut -d: -f1)
+
+# Rename connection to ALTNAME (profilename)
+if [ -n "$current_con" ]; then
+  echo "Renaming connection '$current_con' -> '$profilename'"
+  nmcli con modify "$current_con" connection.id "$profilename"
+else
+  echo "No connection found for $iface, creating new one..."
+
+  nmcli con add type ethernet ifname "$iface" con-name "$profilename" \
+    ipv4.method manual ipv4.addresses "$ip_addr/$cidr" ipv4.gateway "$gateway" \
+    ipv4.dns "192.168.253.151" ipv4.dns-search "vgs.com"
 fi
 
-# Bring up the connection using interface name
-nmcli connection up "$iface"
+# Bring connection up
+nmcli con up "$profilename"
+
+echo "Network configuration applied successfully."
