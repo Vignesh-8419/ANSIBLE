@@ -19,16 +19,11 @@
     esxi_hostname: "192.168.253.128"
     guest_domain: "vgs.com"
     dns_server: "192.168.253.151"
-
     vm_list:
+      - name: "{{ vm_name }}"
+        ip: "{{ vm_ip }}"
 
   tasks:
-
-    - name: Disable cloud-init on the template VM (if using cloud-init)
-      ansible.builtin.shell: |
-        ssh root@{{ item.ip }} "touch /etc/cloud/cloud-init.disabled && rm -rf /var/lib/cloud/*"
-      ignore_errors: yes
-      loop: "{{ vm_list }}"
 
     - name: Create and power on VM with static IP and Secure Boot disabled
       vmware_guest:
