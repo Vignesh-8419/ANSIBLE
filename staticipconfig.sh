@@ -18,7 +18,7 @@ else
   profilename="$iface"
 fi
 
-echo "Profile name will be: $profilename"
+echo "NetworkManager profile name will be: $profilename"
 
 ### Detect IP, CIDR, Gateway
 ip_full=$(ip -4 addr show "$iface" | awk '/inet /{print $2}')
@@ -73,6 +73,15 @@ EOF
 
 echo "Updated /etc/resolv.conf"
 
+### Set hostname from /etc/hosts
+hostname_from_hosts=$(awk -v ip="$ip_addr" '$1==ip {print $2}' /etc/hosts)
+if [ -n "$hostname_from_hosts" ]; then
+    echo "Setting hostname to: $hostname_from_hosts"
+    hostnamectl set-hostname "$hostname_from_hosts"
+else
+    echo "No hostname found in /etc/hosts for $ip_addr. Skipping hostname change."
+fi
+
 ### Check if NM connection exists
 existing_con=$(nmcli -t -f NAME,DEVICE con show | grep ":${iface}" | cut -d: -f1)
 
@@ -102,3 +111,4 @@ nmcli con up "$profilename" || nmcli con reload
 
 echo "✔ Configuration applied successfully."
 echo "✔ Network profile: $profilename"
+echo "✔ Hostname: $(hostname)"
