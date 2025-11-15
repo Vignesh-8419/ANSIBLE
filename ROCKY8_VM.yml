@@ -20,7 +20,7 @@
     guest_domain: "vgs.com"
     dns_server: "192.168.253.151"
 
-    # Example VM list, replace with actual variables in AWX survey
+    # Example VM list
     vm_list:
       - name: "{{ vm_name }}"
         ip: "{{ vm_ip }}"
@@ -74,6 +74,12 @@
         port: 22
         timeout: 300
         state: started
+      loop: "{{ vm_list }}"
+      delegate_to: localhost
+
+    - name: Disable cloud-init to persist hostname changes
+      ansible.builtin.shell: |
+        ssh -o StrictHostKeyChecking=no root@{{ item.ip }} "touch /etc/cloud/cloud-init.disabled"
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
