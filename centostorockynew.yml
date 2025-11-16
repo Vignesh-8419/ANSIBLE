@@ -370,6 +370,9 @@
 
         - name: Reinstall current kernel-core
           shell: dnf reinstall -y kernel-core-$(uname -r)
+  
+        - name: Rebuild rescue initramfs for current kernel
+          shell: dracut -f /boot/initramfs-$(uname -r)-rescue.img $(uname -r)
 
         - name: Verify old kernels are not in grub
           shell: grubby --info=ALL | grep :"\el7" || echo "Old Kernels are not present in the bootloader."
