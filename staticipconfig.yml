@@ -1,5 +1,5 @@
 ---
-- name: 🛠️ Static Network Configuration
+- name: 🛠 Static Network Configuration
   hosts: "{{ target_hosts }}"
   become: true
 
@@ -43,11 +43,11 @@ EOF
         group: root
         mode: 0644
 
-    - name: Download staticipconfig.sh from GitHub to remote host
+    - name: Download staticipconfig.sh from GitHub
       get_url:
         url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/staticipconfig.sh"
         dest: "/tmp/staticipconfig.sh"
         mode: '0755'
 
-    - name: Execute staticipconfig.sh on remote host and store output
+    - name: Execute staticipconfig.sh and store output
       shell: "/tmp/staticipconfig.sh > /tmp/staticipconfig.txt 2>&1"
