@@ -78,6 +78,10 @@
   set_fact:
     interface_id: "{{ interface_response.json.id }}"
 
+- name: Normalize CIDR to /24
+  set_fact:
+    normalized_ip: "{{ item.ip.split('/')[0] }}/24"
+
 # ------------------------------
 # Assign IP Address to Interface
 # ------------------------------
@@ -89,7 +93,7 @@
       Authorization: "Token {{ netbox_token }}"
     body_format: json
     body:
-      address: "{{ item.ip }}/24"
+      address: "{{ item.ip }}"
       status: "active"
       assigned_object_type: "dcim.interface"
       assigned_object_id: "{{ interface_id }}"
