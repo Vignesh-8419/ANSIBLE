@@ -74,7 +74,7 @@
       Authorization: "Token {{ netbox_token }}"
     body_format: json
     body:
-      address: "{{ item.ip }}"
+      address: "{{ item.ip }}/24"
       status: "active"
       assigned_object_type: "dcim.interface"
       assigned_object_id: "{{ interface_id }}"
