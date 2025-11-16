@@ -2,41 +2,71 @@
 
 NETBOX_URL="http://192.168.253.135/api"
 NETBOX_TOKEN="ac398a41868b98659d10c6f500a433f2409960d8"
+HDR="Content-Type: application/json"
 
-# Common fixed values
+# Fixed IDs
 MANUFACTURER_ID=1
 DEVICETYPE_ID=1
 SITE_ID=1
+DEVICEROLE_ID=1   # Server
 
-# JSON header
-HDR="Content-Type: application/json"
-
-# === Ask user inputs ===
+# === User Inputs ===
 read -p "Hostname: " HOSTNAME
 read -p "Interface name (e.g. eth0): " IFACE
 read -p "IP Address (CIDR) (e.g. 192.168.253.44/24): " IPADDR
 read -p "MAC Address (e.g. AA:BB:CC:DD:EE:FF): " MAC
 read -p "Tags (comma-separated, e.g. rocky,production): " TAGS
 
-# Convert tags to JSON array
-TAG_JSON=$(printf '%s' "$TAGS" | awk -F, '
-BEGIN { printf "[ " }
-{
-    for (i=1; i<=NF; i++) {
-        gsub(/^ +| +$/, "", $i)
-        printf "\"%s\"", $i
-        if (i < NF) printf ", "
-    }
-}
-END { printf " ]" }')
 
+# ---------------------------------------------------------
+# Convert tags to JSON array and auto-create missing tags
+# ---------------------------------------------------------
+TAG_IDS=()
+
+IFS=',' read -ra TAGLIST <<< "$TAGS"
+
+for TAG in "${TAGLIST[@]}"; do
+    TAG=$(echo "$TAG" | xargs)   # trim spaces
+
+    # Check if tag exists
+    EXISTING=$(curl -s -H "Authorization: Token $NETBOX_TOKEN" \
+        "$NETBOX_URL/extras/tags/?name=$TAG" | jq '.results | length')
+
+    if [[ "$EXISTING" -eq 0 ]]; then
+        echo "Creating tag: $TAG"
+
+        NEW_TAG_PAYLOAD=$(cat <<EOF
+{ "name": "$TAG", "slug": "$TAG" }
+EOF
+)
+
+        TAG_RESPONSE=$(curl -s -X POST "$NETBOX_URL/extras/tags/" \
+            -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+            -d "$NEW_TAG_PAYLOAD")
+
+        TAG_ID=$(echo "$TAG_RESPONSE" | jq -r '.id')
+    else
+        TAG_ID=$(curl -s -H "Authorization: Token $NETBOX_TOKEN" \
+            "$NETBOX_URL/extras/tags/?name=$TAG" | jq -r '.results[0].id')
+    fi
+
+    TAG_IDS+=("$TAG_ID")
+done
+
+# Build JSON array
+TAG_JSON="[ $(printf '%s\n' "${TAG_IDS[@]}" | sed 's/^/"/;s/$/"/' | paste -sd ', ' -) ]"
+
+
+# ---------------------------------------------------------
+# Create Device
+# ---------------------------------------------------------
 echo "=== Creating device ==="
 
 DEVICE_PAYLOAD=$(cat <<EOF
 {
   "name": "$HOSTNAME",
   "device_type": $DEVICETYPE_ID,
-  "device_role": 1,
+  "device_role": $DEVICEROLE_ID,
   "site": $SITE_ID,
   "tags": $TAG_JSON
 }
@@ -55,8 +85,12 @@ if [[ "$DEVICE_ID" == "null" ]]; then
     exit 1
 fi
 
-echo "✔ Device created with ID: $DEVICE_ID"
+echo "✔ Device created ID: $DEVICE_ID"
 
+
+# ---------------------------------------------------------
+# Create Interface
+# ---------------------------------------------------------
 echo "=== Creating interface ==="
 
 INTERFACE_PAYLOAD=$(cat <<EOF
@@ -81,9 +115,12 @@ if [[ "$INTERFACE_ID" == "null" ]]; then
     exit 1
 fi
 
-echo "✔ Interface created with ID: $INTERFACE_ID"
+echo "✔ Interface created ID: $INTERFACE_ID"
 
 
+# ---------------------------------------------------------
+# Create IP Address
+# ---------------------------------------------------------
 echo "=== Creating IP address ==="
 
 IP_PAYLOAD=$(cat <<EOF
@@ -103,14 +140,17 @@ IP_RESPONSE=$(curl -s -X POST "$NETBOX_URL/ipam/ip-addresses/" \
 IP_ID=$(echo "$IP_RESPONSE" | jq -r '.id')
 
 if [[ "$IP_ID" == "null" ]]; then
-    echo "❌ Failed to create IP address"
+    echo "❌ Failed to create IP"
     echo "$IP_RESPONSE"
     exit 1
 fi
 
-echo "✔ IP address created with ID: $IP_ID"
+echo "✔ IP address created ID: $IP_ID"
 
 
+# ---------------------------------------------------------
+# Assign Primary IP
+# ---------------------------------------------------------
 echo "=== Assigning primary IP ==="
 
 PRIMARY_PAYLOAD=$(cat <<EOF
@@ -120,16 +160,18 @@ PRIMARY_PAYLOAD=$(cat <<EOF
 EOF
 )
 
-PRIMARY_RESPONSE=$(curl -s -X PATCH "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
+curl -s -X PATCH "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
     -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
-    -d "$PRIMARY_PAYLOAD")
+    -d "$PRIMARY_PAYLOAD" >/dev/null
 
 echo "✔ Primary IP assigned"
 
 
-echo "=== ✅ DONE ==="
+echo
+echo "=== 🎉 Completed Successfully ==="
 echo "Device: $HOSTNAME"
+echo "Interface: $IFACE"
 echo "IP: $IPADDR"
 echo "MAC: $MAC"
 echo "Tags: $TAGS"
-echo "-------------------------------"
+echo "--------------------------------"
