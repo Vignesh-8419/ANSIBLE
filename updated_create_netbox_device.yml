@@ -1,0 +1,116 @@
+---
+# ------------------------------
+# Create Tag
+# ------------------------------
+- name: Create tag if not exists
+  uri:
+    url: "{{ netbox_url }}/api/extras/tags/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      name: "{{ item.tag }}"
+      slug: "{{ item.tag }}"
+    status_code: [200, 201, 400]
+
+# ------------------------------
+# Get Tag ID
+# ------------------------------
+- name: Get tag ID
+  uri:
+    url: "{{ netbox_url }}/api/extras/tags/?name={{ item.tag }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+  register: tag_response
+
+- name: Set tag_id
+  set_fact:
+    tag_id: "{{ tag_response.json.results[0].id }}"
+
+# ------------------------------
+# Create Device
+# ------------------------------
+- name: Create device
+  uri:
+    url: "{{ netbox_url }}/api/dcim/devices/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      name: "{{ item.name }}"
+      device_type: "{{ device_type_id }}"
+      role: "{{ role_id }}"
+      site: "{{ site_id }}"
+      status: "active"
+      tags: ["{{ tag_id }}"]
+    status_code: [200, 201]
+    return_content: yes
+  register: device_response
+
+- name: Set device_id
+  set_fact:
+    device_id: "{{ device_response.json.id }}"
+
+# ------------------------------
+# Create Interface
+# ------------------------------
+- name: Create interface
+  uri:
+    url: "{{ netbox_url }}/api/dcim/interfaces/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      device: "{{ device_id }}"
+      name: "{{ item.interface }}"
+      type: "1000base-t"
+      mac_address: "{{ item.mac }}"
+    status_code: [200, 201]
+    return_content: yes
+  register: interface_response
+
+- name: Set interface_id
+  set_fact:
+    interface_id: "{{ interface_response.json.id }}"
+
+# ------------------------------
+# Assign IP Address to Interface
+# ------------------------------
+- name: Assign IP address
+  uri:
+    url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      address: "{{ item.ip }}"
+      status: "active"
+      assigned_object_type: "dcim.interface"
+      assigned_object_id: "{{ interface_id }}"
+    status_code: [200, 201]
+    return_content: yes
+  register: ip_response
+
+- name: Set ip_id
+  set_fact:
+    ip_id: "{{ ip_response.json.id }}"
+
+# ------------------------------
+# Set Primary IPv4
+# ------------------------------
+- name: Set primary IPv4 for the device
+  uri:
+    url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
+    method: PATCH
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      primary_ip4: "{{ ip_id }}"
+    status_code: [200, 204]
