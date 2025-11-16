@@ -18,6 +18,24 @@
         return_content: yes
       register: tagged_devices
 
+    - name: Get ID of new tag
+      uri:
+        url: "{{ netbox_url }}/api/extras/tags/?name={{ new_tag }}"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+      register: new_tag_lookup
+
+    - name: Fail if new_tag does not exist in NetBox
+      fail:
+        msg: "Tag '{{ new_tag }}' not found in NetBox! Create it first."
+      when: new_tag_lookup.json.count == 0
+
+    - name: Set new tag ID
+      set_fact:
+        new_tag_id: "{{ new_tag_lookup.json.results[0].id }}"
+
     - name: Update tag to new_tag
       uri:
         url: "{{ netbox_url }}/api/dcim/devices/{{ item.id }}/"
@@ -28,12 +46,12 @@
         body_format: json
         body:
           tags:
-            - "{{ new_tag }}"
+            - "{{ new_tag_id }}"
         status_code: 200
       loop: "{{ tagged_devices.json.results }}"
       when: tagged_devices.json.results | length > 0
 
     - name: Confirm updates
       debug:
-        msg: "Updated {{ item.name }} → new tag: {{ new_tag }}"
+        msg: "Updated {{ item.name }} → new tag ID: {{ new_tag_id }}"
       loop: "{{ tagged_devices.json.results }}"
