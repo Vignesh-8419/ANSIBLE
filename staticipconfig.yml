@@ -10,25 +10,20 @@
   tasks:
     # 1. Detect primary interface
     - name: Detect primary interface
-      shell: "ip -o -4 addr show | awk '!/ lo / {print $2}' | head -n 1"
-      register: primary_iface
+      command: ip -o -4 addr show
+      register: iface_list
       changed_when: false
 
-    # 2. Ensure default gateway is configured (temporary)
-    - name: Ensure default gateway is configured
-      shell: |
-        IFACE="{{ primary_iface.stdout }}"
-        # Add default route only if it doesn't exist
-        if ! ip route show default | grep -q "via $GATEWAY dev $IFACE"; then
-            ip route add default via "$GATEWAY" dev "$IFACE"
-            echo "default gateway added"
-        else
-            echo "default gateway already exists, skipping"
-        fi
-      args:
-        warn: false
+    - name: Extract primary interface
+      set_fact:
+        primary_iface: "{{ iface_list.stdout_lines | select('search', '^[0-9]+: (?!lo)') | map('split') | map('last') | list | first }}"
+
+    # 2. Ensure temporary default gateway is configured
+    - name: Add temporary default gateway if missing
+      command: ip route add default via {{ GATEWAY }} dev {{ primary_iface }}
+      ignore_errors: true
       register: default_gw_result
-      changed_when: "'default gateway added' in default_gw_result.stdout"
+      changed_when: default_gw_result.rc == 0
 
     # 3. Download staticipconfig.sh from GitHub
     - name: Download staticipconfig.sh
@@ -39,4 +34,11 @@
 
     # 4. Execute staticipconfig.sh and save output
     - name: Execute staticipconfig.sh and save output
-      shell: "/tmp/staticipconfig.sh > /tmp/staticipconfig.txt 2>&1"
+      command: /tmp/staticipconfig.sh
+      register: static_ip_result
+      ignore_errors: false
+
+    - name: Save script output to file
+      copy:
+        content: "{{ static_ip_result.stdout }}"
+        dest: /tmp/staticipconfig.txt
