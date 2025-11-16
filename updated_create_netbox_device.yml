@@ -78,6 +78,7 @@
   set_fact:
     interface_id: "{{ interface_response.json.id }}"
 
+# Normalize CIDR to /24
 - name: Normalize CIDR to /24
   set_fact:
     normalized_ip: "{{ item.ip.split('/')[0] }}/24"
@@ -93,13 +94,14 @@
       Authorization: "Token {{ netbox_token }}"
     body_format: json
     body:
-      address: "{{ item.ip }}"
+      address: "{{ normalized_ip }}"
       status: "active"
       assigned_object_type: "dcim.interface"
       assigned_object_id: "{{ interface_id }}"
     status_code: [200, 201]
     return_content: yes
   register: ip_response
+
 
 - name: Set ip_id
   set_fact:
