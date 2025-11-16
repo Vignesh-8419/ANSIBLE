@@ -36,15 +36,6 @@
       shell: "nmcli -t -f NAME,DEVICE connection show | grep {{ primary_iface.stdout }} | cut -d: -f1"
       register: nm_conn_name
 
-    # 5. Set DNS using nmcli (shell-based)
-    - name: Set DNS using nmcli via shell
-      shell: |
-        nmcli connection modify "{{ nm_conn_name.stdout }}" ipv4.ignore-auto-dns yes
-        nmcli connection modify "{{ nm_conn_name.stdout }}" ipv4.dns "192.168.253.151"
-        nmcli connection up "{{ nm_conn_name.stdout }}"
-      args:
-        warn: false
-
     # 6. Download script
     - name: Download staticipconfig.sh from GitHub
       get_url:
