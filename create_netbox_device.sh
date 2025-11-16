@@ -66,7 +66,7 @@ DEVICE_PAYLOAD=$(cat <<EOF
 {
   "name": "$HOSTNAME",
   "device_type": $DEVICETYPE_ID,
-  "device_role": $DEVICEROLE_ID,
+  "role": $DEVICEROLE_ID,
   "site": $SITE_ID,
   "tags": $TAG_JSON
 }
@@ -86,6 +86,7 @@ if [[ "$DEVICE_ID" == "null" ]]; then
 fi
 
 echo "✔ Device created ID: $DEVICE_ID"
+
 
 
 # ---------------------------------------------------------
