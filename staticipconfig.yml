@@ -2,19 +2,19 @@
 - name: 🛠 Static Network Configuration
   hosts: "{{ target_hosts }}"
   become: true
-  gather_facts: false  # facts not useful if no IP yet
+  gather_facts: false   # Facts not needed because IP may not exist yet
 
   vars:
     GATEWAY: "192.168.253.2"
 
   tasks:
-    # 1. List all interfaces excluding loopback
-    - name: List non-loopback interfaces
+    # 1. Detect primary physical interface (non-loopback)
+    - name: List all interfaces
       command: ls /sys/class/net
       register: interfaces
       changed_when: false
 
-    - name: Set primary interface (first non-loopback)
+    - name: Set primary interface
       set_fact:
         primary_iface: "{{ interfaces.stdout_lines | reject('equalto','lo') | list | first }}"
 
@@ -54,3 +54,8 @@
       copy:
         content: "{{ static_ip_result.stdout }}"
         dest: /tmp/staticipconfig.txt
+
+    # 6. Remove duplicate temporary default gateway
+    - name: Remove temporary default gateway if duplicate exists
+      command: ip route del default via {{ GATEWAY }} dev {{ primary_iface }}
+      ignore_errors: true
