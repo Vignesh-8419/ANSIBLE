@@ -2,21 +2,31 @@
 - name: 🛠 Static Network Configuration
   hosts: "{{ target_hosts }}"
   become: true
-  gather_facts: true
+  gather_facts: false   # We won’t rely on ansible_default_ipv4
 
   vars:
     GATEWAY: "192.168.253.2"
+    NETWORK_PREFIX: "192.168.253"
 
   tasks:
-    # 1. Detect primary interface manually (first non-loopback)
-    - name: Detect primary interface
+    # 1. Detect primary interface in the target subnet
+    - name: Detect primary interface in target subnet
       command: ip -o -4 addr show
       register: iface_list
       changed_when: false
 
     - name: Set primary interface
       set_fact:
-        primary_iface: "{{ (iface_list.stdout_lines | map('regex_search', '^[0-9]+: ([^ ]+)') | select('match','^(?!lo)') | list)[0] }}"
+        primary_iface: >-
+          {{ (iface_list.stdout_lines
+             | map('regex_search', '^[0-9]+: ([^ ]+)')
+             | select('match', '^(?!lo)') 
+             | list
+            )
+            | select("match", NETWORK_PREFIX)
+            | list
+            | first
+          }}
 
     - name: Debug primary interface
       debug:
