@@ -2,27 +2,26 @@
 - name: 🛠 Static Network Configuration
   hosts: "{{ target_hosts }}"
   become: true
-  gather_facts: true   # Need facts to use ansible_default_ipv4.interface
+  gather_facts: true
 
   vars:
     GATEWAY: "192.168.253.2"
 
   tasks:
-    # 1. Detect primary interface using Ansible facts
-    - name: Set primary interface
-      set_fact:
-        primary_iface: "{{ ansible_default_ipv4.interface }}"
-
-    - name: Debug primary interface
-      debug:
-        msg: "Primary interface detected: {{ primary_iface }}"
+    # 1. Check if a default gateway already exists
+    - name: Check for existing default route
+      command: ip route show default
+      register: existing_gateway
+      changed_when: false
+      ignore_errors: true
 
     # 2. Add temporary default gateway if missing
     - name: Add temporary default gateway if missing
-      command: ip route add default via {{ GATEWAY }} dev {{ primary_iface }}
+      command: ip route add default via {{ GATEWAY }} dev {{ ansible_default_ipv4.interface }}
+      when: existing_gateway.stdout == ""
+      register: temp_gw_result
+      changed_when: temp_gw_result.rc == 0
       ignore_errors: true
-      register: default_gw_result
-      changed_when: default_gw_result.rc == 0
 
     # 3. Download staticipconfig.sh from GitHub
     - name: Download staticipconfig.sh
