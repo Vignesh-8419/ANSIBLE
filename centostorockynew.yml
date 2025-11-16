@@ -371,17 +371,24 @@
         - name: Reinstall current kernel-core
           shell: dnf reinstall -y kernel-core-$(uname -r)
   
+        - name: Rebuild standard initramfs for current kernel
+          ansible.builtin.shell: dracut -f /boot/initramfs-{{ ansible_kernel }}.img {{ ansible_kernel }}
+          register: rebuild_initramfs
+          changed_when: true
+        
         - name: Rebuild rescue initramfs for current kernel
-          shell: dracut -f /boot/initramfs-$(uname -r)-rescue.img $(uname -r)
-
-        - name: Verify old kernels are not in grub
-          shell: grubby --info=ALL | grep :"\el7" || echo "Old Kernels are not present in the bootloader."
-          register: grub_check
+          ansible.builtin.shell: dracut -f /boot/initramfs-{{ ansible_kernel }}-rescue.img {{ ansible_kernel }}
+          register: rebuild_rescue
+          changed_when: true
+        
+        - name: Verify rescue initramfs contains modules
+          ansible.builtin.shell: lsinitrd /boot/initramfs-{{ ansible_kernel }}-rescue.img | grep -q "modules/" && echo "OK" || echo "FAIL"
+          register: rescue_modules_check
           changed_when: false
-
-        - name: Show grub verification result
-          debug:
-            var: grub_check.stdout_lines
+        
+        - name: Show rescue initramfs verification
+          ansible.builtin.debug:
+            var: rescue_modules_check.stdout
 
         - name: Verify rescue image contains current kernel
           shell: |
