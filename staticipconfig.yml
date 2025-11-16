@@ -2,31 +2,21 @@
 - name: 🛠 Static Network Configuration
   hosts: "{{ target_hosts }}"
   become: true
-  gather_facts: false   # We won’t rely on ansible_default_ipv4
+  gather_facts: false  # facts not useful if no IP yet
 
   vars:
     GATEWAY: "192.168.253.2"
-    NETWORK_PREFIX: "192.168.253"
 
   tasks:
-    # 1. Detect primary interface in the target subnet
-    - name: Detect primary interface in target subnet
-      command: ip -o -4 addr show
-      register: iface_list
+    # 1. List all interfaces excluding loopback
+    - name: List non-loopback interfaces
+      command: ls /sys/class/net
+      register: interfaces
       changed_when: false
 
-    - name: Set primary interface
+    - name: Set primary interface (first non-loopback)
       set_fact:
-        primary_iface: >-
-          {{ (iface_list.stdout_lines
-             | map('regex_search', '^[0-9]+: ([^ ]+)')
-             | select('match', '^(?!lo)') 
-             | list
-            )
-            | select("match", NETWORK_PREFIX)
-            | list
-            | first
-          }}
+        primary_iface: "{{ interfaces.stdout_lines | reject('equalto','lo') | list | first }}"
 
     - name: Debug primary interface
       debug:
