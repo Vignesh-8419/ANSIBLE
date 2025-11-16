@@ -4,23 +4,32 @@
   become: true
 
   tasks:
-
+    ####################################################################
+    # 1. Detect primary interface
+    ####################################################################
     - name: Detect primary interface
       shell: "ip -o -4 addr show | awk '!/ lo / {print $2}' | head -n 1"
       register: primary_iface
 
-    - name: Ensure default gateway is configured (add if missing)
+    ####################################################################
+    # 2. Ensure default gateway is added (only if missing)
+    ####################################################################
+    - name: Ensure default gateway is configured
       shell: |
         GATEWAY="192.168.253.2"
         IFACE="{{ primary_iface.stdout }}"
 
+        # If missing, add route
         if ! ip route | grep -q '^default'; then
           ip route add default via "$GATEWAY" dev "$IFACE"
         fi
       args:
         warn: false
 
-    - name: Install persistent default route dispatcher
+    ####################################################################
+    # 3. Persist default route after reboot
+    ####################################################################
+    - name: Install persistent default-route dispatcher
       copy:
         dest: /etc/NetworkManager/dispatcher.d/99-default-route
         mode: '0755'
@@ -30,22 +39,34 @@
               /usr/sbin/ip route replace default via 192.168.253.2 dev {{ primary_iface.stdout }}
           fi
 
-    - name: Add DNS entries
-      copy:
-        dest: /etc/resolv.conf
-        content: |
-          # Generated manually
-          search vgs.com
-          nameserver 192.168.253.151
-        owner: root
-        group: root
-        mode: 0644
+    ####################################################################
+    # 4. Get NetworkManager connection name
+    ####################################################################
+    - name: Get NetworkManager connection name
+      shell: "nmcli -t -f NAME,DEVICE connection show | grep {{ primary_iface.stdout }} | cut -d: -f1"
+      register: nm_conn_name
 
-    - name: Download staticipconfig.sh
+    ####################################################################
+    # 5. Configure DNS using NetworkManager (correct safe method)
+    ####################################################################
+    - name: Set DNS using NetworkManager
+      nmcli:
+        conn_name: "{{ nm_conn_name.stdout }}"
+        dns4:
+          - 192.168.253.151
+        state: present
+
+    ####################################################################
+    # 6. Download your staticipconfig.sh file
+    ####################################################################
+    - name: Download staticipconfig.sh from GitHub
       get_url:
         url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/staticipconfig.sh"
         dest: "/tmp/staticipconfig.sh"
         mode: '0755'
 
-    - name: Execute staticipconfig.sh and store output
+    ####################################################################
+    # 7. Execute your script
+    ####################################################################
+    - name: Execute staticipconfig.sh and save output
       shell: "/tmp/staticipconfig.sh > /tmp/staticipconfig.txt 2>&1"
