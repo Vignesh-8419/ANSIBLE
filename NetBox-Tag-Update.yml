@@ -1,0 +1,39 @@
+---
+- name: Update NetBox tag from old_tag to new_tag
+  hosts: rocky-08-03
+  gather_facts: no
+
+  vars:
+    netbox_url: "http://192.168.253.135"
+    netbox_token: "ac398a41868b98659d10c6f500a433f2409960d8"
+
+  tasks:
+
+    - name: Get devices with old tag
+      uri:
+        url: "{{ netbox_url }}/api/dcim/devices/?tag={{ old_tag }}"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+      register: tagged_devices
+
+    - name: Update tag to new_tag
+      uri:
+        url: "{{ netbox_url }}/api/dcim/devices/{{ item.id }}/"
+        method: PATCH
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          tags:
+            - "{{ new_tag }}"
+        status_code: 200
+      loop: "{{ tagged_devices.json.results }}"
+      when: tagged_devices.json.results | length > 0
+
+    - name: Confirm updates
+      debug:
+        msg: "Updated {{ item.name }} → new tag: {{ new_tag }}"
+      loop: "{{ tagged_devices.json.results }}"
