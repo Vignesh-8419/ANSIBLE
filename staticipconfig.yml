@@ -8,7 +8,7 @@
     GATEWAY: "192.168.253.2"
 
   tasks:
-    # 1. Detect primary interface
+    # 1. Detect primary interface (non-loopback, first IPv4)
     - name: Detect primary interface
       command: ip -o -4 addr show
       register: iface_list
@@ -16,9 +16,9 @@
 
     - name: Extract primary interface
       set_fact:
-        primary_iface: "{{ iface_list.stdout_lines | select('search', '^[0-9]+: (?!lo)') | map('split') | map('last') | list | first }}"
+        primary_iface: "{{ (iface_list.stdout_lines | map('regex_search', '^[0-9]+: ([^ ]+)') | select('string') | list)[0] }}"
 
-    # 2. Ensure temporary default gateway is configured
+    # 2. Add temporary default gateway if missing
     - name: Add temporary default gateway if missing
       command: ip route add default via {{ GATEWAY }} dev {{ primary_iface }}
       ignore_errors: true
