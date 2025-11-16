@@ -1,0 +1,45 @@
+---
+- name: Collect facts from all servers
+  hosts: "{{ target_hosts.split(',') | map('trim') | list }}"
+  gather_facts: yes
+  become: yes
+
+  vars:
+    tag: "new-build-rockyos"   # overridden by AWX survey
+
+  tasks:
+    - name: Build server_info from facts
+      set_fact:
+        server_info:
+          name: "{{ ansible_hostname }}.vgs.com"
+          ip: "{{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.netmask | ipaddr('prefix') }}"
+          mac: "{{ ansible_default_ipv4.macaddress }}"
+          interface: "{{ ansible_default_ipv4.interface }}"
+          tag: "{{ tag }}"
+
+
+- name: Push collected servers into NetBox
+  hosts: rocky-08-03
+  gather_facts: no
+
+  vars:
+    netbox_url: "http://192.168.253.135"
+    netbox_token: "ac398a41868b98659d10c6f500a433f2409960d8"
+    device_type_id: 1
+    role_id: 1
+    site_id: 1
+
+  tasks:
+    - name: Aggregate servers_list from hostvars
+      set_fact:
+        servers_list: "{{ target_hosts.split(',') | map('trim') | map('extract', hostvars, 'server_info') | list }}"
+
+    - name: Debug servers_list (optional)
+      debug:
+        var: servers_list
+
+    - name: Loop through servers and include device creation tasks
+      include_tasks: create_netbox_device.yml
+      loop: "{{ servers_list }}"
+      loop_control:
+        loop_var: item
