@@ -5,8 +5,8 @@
   gather_facts: no
 
   vars:
-    netbox_url: "http://192.168.253.134"
-    netbox_token: "ee63f94d72c6c10a5b4e2cab4edbea9af0f18ac0"
+    netbox_url: "http://192.168.253.135"
+    netbox_token: "ac398a41868b98659d10c6f500a433f2409960d8"
     tag_name: "new-build-centos"  # Can be overridden via AWX survey
 
   tasks:
