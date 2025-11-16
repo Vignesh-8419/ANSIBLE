@@ -2,21 +2,20 @@
 - name: 🛠 Static Network Configuration
   hosts: "{{ target_hosts }}"
   become: true
-  gather_facts: false
+  gather_facts: true   # Need facts to use ansible_default_ipv4.interface
 
   vars:
     GATEWAY: "192.168.253.2"
 
   tasks:
-    # 1. Detect primary interface (non-loopback, first IPv4)
-    - name: Detect primary interface
-      command: ip -o -4 addr show
-      register: iface_list
-      changed_when: false
-
-    - name: Extract primary interface
+    # 1. Detect primary interface using Ansible facts
+    - name: Set primary interface
       set_fact:
-        primary_iface: "{{ (iface_list.stdout_lines | map('regex_search', '^[0-9]+: ([^ ]+)') | select('string') | list)[0] }}"
+        primary_iface: "{{ ansible_default_ipv4.interface }}"
+
+    - name: Debug primary interface
+      debug:
+        msg: "Primary interface detected: {{ primary_iface }}"
 
     # 2. Add temporary default gateway if missing
     - name: Add temporary default gateway if missing
@@ -33,7 +32,7 @@
         mode: '0755'
 
     # 4. Execute staticipconfig.sh and save output
-    - name: Execute staticipconfig.sh and save output
+    - name: Execute staticipconfig.sh
       command: /tmp/staticipconfig.sh
       register: static_ip_result
       ignore_errors: false
