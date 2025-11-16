@@ -1,86 +1,135 @@
 #!/bin/bash
 
-# NetBox API details
-NETBOX_URL="http://192.168.253.135"
-TOKEN="f68492e4231a818bc477b65295c660b2409cddde"
+NETBOX_URL="http://192.168.253.135/api"
+NETBOX_TOKEN="ac398a41868b98659d10c6f500a433f2409960d8"
 
-# Prompt for input
-read -p "Enter device name: " DEVICE_NAME
-read -p "Enter IP address (CIDR format, e.g., 192.168.1.10/24): " IP_ADDRESS
-read -p "Enter MAC address (e.g., 00:1A:2B:3C:4D:5E): " MAC_ADDRESS
-read -p "Enter tag name (e.g., new-rocky): " TAG_NAME
-read -p "Enter interface name (e.g., eth0): " INTERFACE_NAME
+# Common fixed values
+MANUFACTURER_ID=1
+DEVICETYPE_ID=1
+SITE_ID=1
 
-# Create tag if not exists
-curl -s -X POST "$NETBOX_URL/api/extras/tags/" \
-  -H "Authorization: Token $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"name\": \"$TAG_NAME\", \"slug\": \"$TAG_NAME\"}" > /dev/null
+# JSON header
+HDR="Content-Type: application/json"
 
-# Get tag ID
-TAG_ID=$(curl -s -H "Authorization: Token $TOKEN" "$NETBOX_URL/api/extras/tags/?name=$TAG_NAME" | grep -o '"id":[0-9]*' | head -n1 | cut -d: -f2)
+# === Ask user inputs ===
+read -p "Hostname: " HOSTNAME
+read -p "Interface name (e.g. eth0): " IFACE
+read -p "IP Address (CIDR) (e.g. 192.168.253.44/24): " IPADDR
+read -p "MAC Address (e.g. AA:BB:CC:DD:EE:FF): " MAC
+read -p "Tags (comma-separated, e.g. rocky,production): " TAGS
 
-if [ -z "$TAG_ID" ]; then
-  echo "❌ Failed to retrieve tag ID for '$TAG_NAME'"
-  exit 1
+# Convert tags to JSON array
+TAG_JSON=$(printf '%s' "$TAGS" | awk -F, '
+BEGIN { printf "[ " }
+{
+    for (i=1; i<=NF; i++) {
+        gsub(/^ +| +$/, "", $i)
+        printf "\"%s\"", $i
+        if (i < NF) printf ", "
+    }
+}
+END { printf " ]" }')
+
+echo "=== Creating device ==="
+
+DEVICE_PAYLOAD=$(cat <<EOF
+{
+  "name": "$HOSTNAME",
+  "device_type": $DEVICETYPE_ID,
+  "device_role": 1,
+  "site": $SITE_ID,
+  "tags": $TAG_JSON
+}
+EOF
+)
+
+DEVICE_RESPONSE=$(curl -s -X POST "$NETBOX_URL/dcim/devices/" \
+     -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+     -d "$DEVICE_PAYLOAD")
+
+DEVICE_ID=$(echo "$DEVICE_RESPONSE" | jq -r '.id')
+
+if [[ "$DEVICE_ID" == "null" ]]; then
+    echo "❌ Failed to create device"
+    echo "$DEVICE_RESPONSE"
+    exit 1
 fi
 
-# Create device
-DEVICE_RESPONSE=$(curl -s -X POST "$NETBOX_URL/api/dcim/devices/" \
-  -H "Authorization: Token $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"name\": \"$DEVICE_NAME\",
-    \"device_type\": 1,
-    \"role\": 1,
-    \"site\": 1,
-    \"status\": \"active\",
-    \"tags\": [$TAG_ID]
-  }")
+echo "✔ Device created with ID: $DEVICE_ID"
 
-echo "📦 Device creation response:"
-echo "$DEVICE_RESPONSE"
+echo "=== Creating interface ==="
 
-DEVICE_ID=$(echo "$DEVICE_RESPONSE" | grep -o '"id":[0-9]*' | head -n1 | cut -d: -f2)
+INTERFACE_PAYLOAD=$(cat <<EOF
+{
+  "device": $DEVICE_ID,
+  "name": "$IFACE",
+  "type": "1000base-t",
+  "mac_address": "$MAC"
+}
+EOF
+)
 
-if [ -z "$DEVICE_ID" ]; then
-  echo "❌ Device creation failed. Check response above."
-  exit 1
+INTERFACE_RESPONSE=$(curl -s -X POST "$NETBOX_URL/dcim/interfaces/" \
+    -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+    -d "$INTERFACE_PAYLOAD")
+
+INTERFACE_ID=$(echo "$INTERFACE_RESPONSE" | jq -r '.id')
+
+if [[ "$INTERFACE_ID" == "null" ]]; then
+    echo "❌ Failed to create interface"
+    echo "$INTERFACE_RESPONSE"
+    exit 1
 fi
 
-# Create interface
-INTERFACE_RESPONSE=$(curl -s -X POST "$NETBOX_URL/api/dcim/interfaces/" \
-  -H "Authorization: Token $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"device\": $DEVICE_ID,
-    \"name\": \"$INTERFACE_NAME\",
-    \"type\": \"1000base-t\",
-    \"mac_address\": \"$MAC_ADDRESS\"
-  }")
+echo "✔ Interface created with ID: $INTERFACE_ID"
 
-echo "🔌 Interface creation response:"
-echo "$INTERFACE_RESPONSE"
 
-INTERFACE_ID=$(echo "$INTERFACE_RESPONSE" | grep -o '"id":[0-9]*' | head -n1 | cut -d: -f2)
+echo "=== Creating IP address ==="
 
-if [ -z "$INTERFACE_ID" ]; then
-  echo "❌ Interface creation failed. Check response above."
-  exit 1
+IP_PAYLOAD=$(cat <<EOF
+{
+  "address": "$IPADDR",
+  "assigned_object_type": "dcim.interface",
+  "assigned_object_id": $INTERFACE_ID,
+  "status": "active"
+}
+EOF
+)
+
+IP_RESPONSE=$(curl -s -X POST "$NETBOX_URL/ipam/ip-addresses/" \
+    -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+    -d "$IP_PAYLOAD")
+
+IP_ID=$(echo "$IP_RESPONSE" | jq -r '.id')
+
+if [[ "$IP_ID" == "null" ]]; then
+    echo "❌ Failed to create IP address"
+    echo "$IP_RESPONSE"
+    exit 1
 fi
 
-# Assign IP address
-IP_RESPONSE=$(curl -s -X POST "$NETBOX_URL/api/ipam/ip-addresses/" \
-  -H "Authorization: Token $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"address\": \"$IP_ADDRESS\",
-    \"status\": \"active\",
-    \"assigned_object_type\": \"dcim.interface\",
-    \"assigned_object_id\": $INTERFACE_ID
-  }")
+echo "✔ IP address created with ID: $IP_ID"
 
-echo "🌐 IP assignment response:"
-echo "$IP_RESPONSE"
 
-echo "✅ Device '$DEVICE_NAME' created with IP $IP_ADDRESS and MAC $MAC_ADDRESS"
+echo "=== Assigning primary IP ==="
+
+PRIMARY_PAYLOAD=$(cat <<EOF
+{
+  "primary_ip4": $IP_ID
+}
+EOF
+)
+
+PRIMARY_RESPONSE=$(curl -s -X PATCH "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
+    -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+    -d "$PRIMARY_PAYLOAD")
+
+echo "✔ Primary IP assigned"
+
+
+echo "=== ✅ DONE ==="
+echo "Device: $HOSTNAME"
+echo "IP: $IPADDR"
+echo "MAC: $MAC"
+echo "Tags: $TAGS"
+echo "-------------------------------"
