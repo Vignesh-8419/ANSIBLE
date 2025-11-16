@@ -8,29 +8,43 @@
     GATEWAY: "192.168.253.2"
 
   tasks:
-    # 1. Check if a default gateway already exists
+    # 1. Detect primary interface manually (first non-loopback)
+    - name: Detect primary interface
+      command: ip -o -4 addr show
+      register: iface_list
+      changed_when: false
+
+    - name: Set primary interface
+      set_fact:
+        primary_iface: "{{ (iface_list.stdout_lines | map('regex_search', '^[0-9]+: ([^ ]+)') | select('match','^(?!lo)') | list)[0] }}"
+
+    - name: Debug primary interface
+      debug:
+        msg: "Primary interface detected: {{ primary_iface }}"
+
+    # 2. Check for existing default route
     - name: Check for existing default route
       command: ip route show default
       register: existing_gateway
       changed_when: false
       ignore_errors: true
 
-    # 2. Add temporary default gateway if missing
+    # 3. Add temporary default gateway if missing
     - name: Add temporary default gateway if missing
-      command: ip route add default via {{ GATEWAY }} dev {{ ansible_default_ipv4.interface }}
+      command: ip route add default via {{ GATEWAY }} dev {{ primary_iface }}
       when: existing_gateway.stdout == ""
       register: temp_gw_result
       changed_when: temp_gw_result.rc == 0
       ignore_errors: true
 
-    # 3. Download staticipconfig.sh from GitHub
+    # 4. Download staticipconfig.sh from GitHub
     - name: Download staticipconfig.sh
       get_url:
         url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/staticipconfig.sh"
         dest: "/tmp/staticipconfig.sh"
         mode: '0755'
 
-    # 4. Execute staticipconfig.sh and save output
+    # 5. Execute staticipconfig.sh and save output
     - name: Execute staticipconfig.sh
       command: /tmp/staticipconfig.sh
       register: static_ip_result
