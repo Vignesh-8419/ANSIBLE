@@ -2,47 +2,41 @@
 - name: 🛠 Static Network Configuration
   hosts: "{{ target_hosts }}"
   become: true
+  gather_facts: false
+
+  vars:
+    GATEWAY: "192.168.253.2"
 
   tasks:
-    # 1. Detect interface
+    # 1. Detect primary interface
     - name: Detect primary interface
       shell: "ip -o -4 addr show | awk '!/ lo / {print $2}' | head -n 1"
       register: primary_iface
+      changed_when: false
 
-    # 2. Add default gateway if missing
+    # 2. Ensure default gateway is configured (temporary)
     - name: Ensure default gateway is configured
       shell: |
-        GATEWAY="192.168.253.2"
         IFACE="{{ primary_iface.stdout }}"
-        if ! ip route | grep -q '^default'; then
-          ip route add default via "$GATEWAY" dev "$IFACE"
+        # Add default route only if it doesn't exist
+        if ! ip route show default | grep -q "via $GATEWAY dev $IFACE"; then
+            ip route add default via "$GATEWAY" dev "$IFACE"
+            echo "default gateway added"
+        else
+            echo "default gateway already exists, skipping"
         fi
       args:
         warn: false
+      register: default_gw_result
+      changed_when: "'default gateway added' in default_gw_result.stdout"
 
-    # 3. Persist gateway
-    - name: Install persistent default-route dispatcher
-      copy:
-        dest: /etc/NetworkManager/dispatcher.d/99-default-route
-        mode: '0755'
-        content: |
-          #!/bin/bash
-          if [ "$2" = "up" ]; then
-              /usr/sbin/ip route replace default via 192.168.253.2 dev {{ primary_iface.stdout }}
-          fi
-
-    # 4. Get connection name
-    - name: Get NetworkManager connection name
-      shell: "nmcli -t -f NAME,DEVICE connection show | grep {{ primary_iface.stdout }} | cut -d: -f1"
-      register: nm_conn_name
-
-    # 6. Download script
-    - name: Download staticipconfig.sh from GitHub
+    # 3. Download staticipconfig.sh from GitHub
+    - name: Download staticipconfig.sh
       get_url:
         url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/staticipconfig.sh"
         dest: "/tmp/staticipconfig.sh"
         mode: '0755'
 
-    # 7. Execute script
+    # 4. Execute staticipconfig.sh and save output
     - name: Execute staticipconfig.sh and save output
       shell: "/tmp/staticipconfig.sh > /tmp/staticipconfig.txt 2>&1"
