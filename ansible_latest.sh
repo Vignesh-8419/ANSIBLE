@@ -103,3 +103,12 @@ docker exec -it awx_task awx-manage migrate
 docker restart awx_web awx_task
 
 echo "✅ AWX installation complete. Access it via http://localhost or your server IP."
+
+
+#dnf module reset python36
+#dnf module enable python39
+#dnf install python39 python39-pip -y
+#python3.9 -m pip install --upgrade pip
+#python3.9 -m pip install docker docker-compose
+#docker exec -it awx_task awx-manage migrate
+#docker restart awx_web awx_task
