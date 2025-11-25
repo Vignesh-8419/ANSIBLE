@@ -112,3 +112,6 @@ echo "✅ AWX installation complete. Access it via http://localhost or your serv
 #python3.9 -m pip install docker docker-compose
 #docker exec -it awx_task awx-manage migrate
 #docker restart awx_web awx_task
+#sed -i 's/kwargs = kwargs_from_env(environment=environment, ssl_version=tls_version)/kwargs = kwargs_from_env(environment=environment)/' \
+  /usr/local/lib/python3.9/site-packages/compose/cli/docker_client.py
+#requests==2.31.0 
