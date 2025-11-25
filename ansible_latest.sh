@@ -118,15 +118,7 @@ echo "✅ AWX installation complete. Access it via http://localhost or your serv
 
 
 [root@test-pxe01 installer]# cat inventory | head
-localhost ansible_connection=local ansible_python_interpreter="/usr/bin/env python3"
+localhost ansible_connection=local ansible_python_interpreter=/usr/bin/python3.9
 
 [all:vars]
 ansible_python_interpreter=/usr/bin/python3.9
-
-# Remove these lines if you want to run a local image build
-# Otherwise the setup playbook will install the official Ansible images. Versions may
-# be selected based on: latest, 1, 1.0, 1.0.0, 1.0.0.123
-# by default the base will be used to search for ansible/awx
-dockerhub_base=ansible
-[root@test-pxe01 installer]#
-
