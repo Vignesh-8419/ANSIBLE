@@ -218,4 +218,10 @@ firewall-cmd --add-service=https --permanent
 firewall-cmd --add-port=8140/tcp --permanent
 firewall-cmd --reload
 
+
+mkdir -p /var/lib/tftpboot/centos
+cd /var/lib/tftpboot/centos
+cp -rp /var/www/html/repo/centos/isolinux/initrd.img .
+cp -rp /var/www/html/repo/centos/isolinux/vmlinuz .
+
 echo "✅ Foreman proxy services configured successfully."
