@@ -149,6 +149,15 @@ foreman-installer \\
   --foreman-proxy-tftp true \\
   --foreman-proxy-tftp-servername "${FOREMAN_PROXY}"
 
+sshpass -p 'Root@123' scp -rp root@rocky-08-01.vgs.com:/boot/efi/EFI/rocky/shimx64.efi /var/lib/tftpboot/grub2/
+sshpass -p 'Root@123' scp -rp root@rocky-08-01.vgs.com:/boot/efi/EFI/rocky/grub.cfg /var/lib/tftpboot/grub2/
+
+
+ mkdir -p /var/lib/tftpboot/rockyos
+ cp -rp /var/www/html/repo/rocky8/isolinux/vmlinuz /var/lib/tftpboot/rockyos/
+ cp -rp /var/www/html/repo/rocky8/isolinux/initrd.img /var/lib/tftpboot/rockyos/
+ chown -R foreman-proxy:root /var/lib/tftpboot/rockyos
+
 echo "✅ Smart Proxy installation completed."
 EOF
 
