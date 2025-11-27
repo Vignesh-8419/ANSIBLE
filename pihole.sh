@@ -1,16 +1,4 @@
 #!/bin/bash
-# Disable SELinux and perform basic setup
-
-# 1. Disable SELinux immediately (runtime)
-setenforce 0
-
-# 3. Export environment variable to reflect SELinux disabled
-export SELINUX_DISABLE=1
-export PIHOLE_SELINUX=true
-# 5. Show SELinux status
-sestatus
-
-echo "SELinux has been disabled. Please reboot for permanent changes to take effect."
 
 echo "deleting exisiting repos"
 rm -rf /etc/yum.repos.d/CentOS-*
