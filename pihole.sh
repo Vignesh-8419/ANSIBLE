@@ -4,10 +4,6 @@
 # 1. Disable SELinux immediately (runtime)
 setenforce 0
 
-# 2. Permanently disable SELinux in config
-sed -i 's/^SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config
-sed -i 's/^SELINUX=permissive/SELINUX=disabled/' /etc/selinux/config
-
 # 3. Export environment variable to reflect SELinux disabled
 export SELINUX_DISABLE=1
 export PIHOLE_SELINUX=true
