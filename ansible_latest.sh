@@ -5,7 +5,6 @@ set -e
 echo "🔧 Installing system dependencies..."
 dnf install epel-release -y
 dnf install git gcc gcc-c++ nodejs gettext device-mapper-persistent-data lvm2 bzip2 -y
-python3.9 -m pip install ansible
 
 echo "🧹 Removing old Python 3.6..."
 dnf remove python36 -y
