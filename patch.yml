@@ -1,6 +1,6 @@
 ---
 - name: Patch CentOS systems
-  hosts: "{{ target_hosts }}"
+  hosts: all
   become: true
   vars:
     repo_mount: "//192.168.31.87/ISO"
