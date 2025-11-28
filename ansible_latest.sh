@@ -43,6 +43,8 @@ if [ ! -d "awx" ]; then
 fi
 cd awx/installer
 
+sed -i 's|ansible_python_interpreter="/usr/bin/env python3"|ansible_python_interpreter="/usr/bin/env python3.9"|' /root/awx/installer/inventory
+
 echo "📝 Updating inventory file..."
 # Ensure pg_password
 if grep -q '^pg_password=' inventory; then
