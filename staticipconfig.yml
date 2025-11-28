@@ -1,6 +1,6 @@
 ---
 - name: 🛠 Static Network Configuration
-  hosts: "{{ target_hosts }}"
+  hosts: all
   become: true
   gather_facts: false   # Facts not needed because IP may not exist yet
 
