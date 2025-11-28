@@ -1,5 +1,5 @@
 - name: Configure HTTP server and prepare Rocky 8 repo
-  hosts: "{{ target_hosts }}"
+  hosts: all
   become: yes
 
   vars:
