@@ -1,6 +1,6 @@
 ---
 - name: Patching Rocky 8 server to latest version
-  hosts: "{{ target_hosts }}"
+  hosts: all
   become: true
   gather_facts: true
 
