@@ -1,6 +1,6 @@
 ---
 - name: 🧹 Cleanup old CentOS 7 kernels and packages after ELevate migration
-  hosts: "{{ target_hosts }}"
+  hosts: all
   become: true
 
   tasks:
