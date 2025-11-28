@@ -1,6 +1,6 @@
 ---
 - name: Migrate CentOS 7 to Rocky Linux 8 using ELevate
-  hosts: "{{ target_hosts }}"
+  hosts: all
   become: yes
   vars:
     centos_vault_repo_file: /etc/yum.repos.d/CentOS-Base.repo
