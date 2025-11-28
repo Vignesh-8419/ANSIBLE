@@ -9,7 +9,6 @@ python3.9 -m pip install ansible
 
 echo "🧹 Removing old Python 3.6..."
 dnf remove python36 -y
-dnf remove python3.12 -y
 
 echo "🐍 Switching to Python 3.9..."
 dnf module reset python36 -y
