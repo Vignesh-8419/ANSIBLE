@@ -1,6 +1,6 @@
 ---
 - name: Create awx username and provide sudo access
-  hosts: "{{ target_hosts }}"
+  hosts: all
   become: true
   vars:
     password: "Welcome123"
