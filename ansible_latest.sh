@@ -131,6 +131,7 @@ ansible-playbook -i inventory install.yml
 firewall-cmd --add-service=http --permanent
 firewall-cmd --add-service=https --permanent
 firewall-cmd --reload
+pip install awxkit
 
 echo "🔄 Running database migrations and restarting AWX services..."
 docker exec -it awx_task awx-manage migrate
