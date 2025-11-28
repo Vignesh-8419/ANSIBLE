@@ -37,6 +37,12 @@ fi
 echo "🧹 Clearing existing YUM repo files..."
 rm -f /etc/yum.repos.d/*.repo
 
+echo "Check if yum-complete-transaction is pending"
+yum-complete-transaction --cleanup-only --quiet --skip-broken
+
+echo "Run yum-complete-transaction if pending"
+yum-complete-transaction -y
+
 echo "📝 Creating base.repo..."
 cat <<EOF > /etc/yum.repos.d/base.repo
 [baseos]
