@@ -37,6 +37,16 @@
       changed_when: temp_gw_result.rc == 0
       ignore_errors: true
 
+    - name: Configure resolv.conf with custom DNS
+      ansible.builtin.copy:
+        dest: /etc/resolv.conf
+        content: |
+          search vgs.com
+          nameserver 192.168.253.151
+        owner: root
+        group: root
+        mode: '0644'
+
     # 4. Download staticipconfig.sh from GitHub
     - name: Download staticipconfig.sh
       get_url:
