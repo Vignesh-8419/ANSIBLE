@@ -104,7 +104,8 @@ sed -i '/name: Start the containers/{n;s/restarted:.*/recreate: "{{ (awx_compose
 echo "🔐 Generating self-signed SSL certificates..."
 openssl genrsa -out pvt.pem 2048
 openssl req -new -key pvt.pem -out cert.pem \
-  -subj "/C=IN/ST=Tamilnadu/L=Chennai/O=AWX/OU=AWX/CN=test-pxe01.vgs.com"
+  -subj "/C=IN/ST=Tamilnadu/L=Chennai/O=AWX/OU=AWX/CN=ansible-server-01.vgs.com"
+
 openssl x509 -req -days 3650 -in cert.pem -signkey pvt.pem -out cert.pem
 
 echo "📂 Preparing AWX SSL directory..."
