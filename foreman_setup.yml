@@ -4,28 +4,26 @@
   tasks:
 
     - name: Download foreman.sh from GitHub to remote host
-      become: true
       get_url:
         url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman.sh"
         dest: "/tmp/foreman.sh"
         mode: '0755'
-        remote_src: yes
 
-    - name: Create a file in tmp
-      become: true
+    - name: Ensure log file exists
       file:
-       path: /tmp/foreman_log.txt
-       state: touch
-       mode: '0644'
-    
-    - name: Execute foreman.sh on remote host and store output
-      become: true
-      shell: "/tmp/foreman.sh > /tmp/foreman_log.txt 2>&1"
+        path: /tmp/foreman_log.txt
+        state: touch
+        mode: '0644'
 
-    - name: Show Foreman setup log
+    - name: Execute foreman.sh on remote host
+      shell: /tmp/foreman.sh > /tmp/foreman_log.txt 2>&1
+      register: foreman_run
+      ignore_errors: true
+
+    - name: Print Foreman setup log
       command: cat /tmp/foreman_log.txt
       register: foreman_log
 
-    - name: Print log contents
+    - name: Show log contents
       debug:
         var: foreman_log.stdout_lines
