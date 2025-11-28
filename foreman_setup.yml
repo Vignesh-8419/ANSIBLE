@@ -18,7 +18,6 @@
     - name: Execute foreman.sh on remote host
       shell: /tmp/foreman.sh > /tmp/foreman_log.txt 2>&1
       register: foreman_run
-      ignore_errors: true
 
     - name: Print Foreman setup log
       command: cat /tmp/foreman_log.txt
