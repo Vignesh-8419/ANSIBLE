@@ -1,13 +1,13 @@
-curl -k -H "Authorization: Token e3ee4eda03d81a42b07de1d20064b89bba21e041" https://192.168.253.134/api/dcim/interfaces/?device_id=2
+curl -k -H "Authorization: Token e3ee4eda03d81a42b07de1d20064b89bba21e041" httpss://192.168.253.134/api/dcim/interfaces/?device_id=2
 	 
 # Create tag (if not already created)
-curl -X POST http://192.168.253.134/api/extras/tags/ \
+curl -X POST https://192.168.253.134/api/extras/tags/ \
   -H "Authorization: Token e3ee4eda03d81a42b07de1d20064b89bba21e041" \
   -H "Content-Type: application/json" \
   -d '{"name": "new-build-rockyos", "slug": "new-build-rockyos"}'
 
 
-curl -X POST "http://192.168.253.134/api/dcim/device-roles/" \
+curl -X POST -k "https://192.168.253.134/api/dcim/device-roles/" \
   -H "Authorization: Token e3ee4eda03d81a42b07de1d20064b89bba21e041" \
   -H "Content-Type: application/json" \
   -d '{
@@ -17,7 +17,7 @@ curl -X POST "http://192.168.253.134/api/dcim/device-roles/" \
 
 
 
-curl -X POST "http://192.168.253.134/api/dcim/manufacturers/" \
+curl -X POST -k "https://192.168.253.134/api/dcim/manufacturers/" \
   -H "Authorization: Token e3ee4eda03d81a42b07de1d20064b89bba21e041" \
   -H "Content-Type: application/json" \
   -d '{
@@ -25,7 +25,7 @@ curl -X POST "http://192.168.253.134/api/dcim/manufacturers/" \
     "slug": "generic"
   }'
 
-curl -X POST "http://192.168.253.134/api/dcim/device-types/" \
+curl -X POST -k "https://192.168.253.134/api/dcim/device-types/" \
   -H "Authorization: Token e3ee4eda03d81a42b07de1d20064b89bba21e041" \
   -H "Content-Type: application/json" \
   -d '{
