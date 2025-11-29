@@ -1,0 +1,20 @@
+<VirtualHost *:443>
+    ServerName http-server-01.vgs.com
+    DocumentRoot "/var/www/html"
+
+    SSLEngine on
+    SSLCertificateFile /etc/httpd/ssl/crt.pem
+    SSLCertificateKeyFile /etc/httpd/ssl/pvtkey.pem
+
+    # Optional: If you have a CA bundle
+    # SSLCertificateChainFile /etc/httpd/ssl/ca-bundle.pem
+
+    <Directory "/var/www/html">
+        Options Indexes FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+
+    ErrorLog logs/ssl_error_log
+    CustomLog logs/ssl_access_log combined
+</VirtualHost>
