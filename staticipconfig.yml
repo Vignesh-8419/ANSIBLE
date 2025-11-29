@@ -64,8 +64,3 @@
       copy:
         content: "{{ static_ip_result.stdout }}"
         dest: /tmp/staticipconfig.txt
-
-    # 6. Remove duplicate temporary default gateway
-    - name: Remove temporary default gateway if duplicate exists
-      command: ip route del default via {{ GATEWAY }} dev {{ primary_iface }}
-      ignore_errors: true
