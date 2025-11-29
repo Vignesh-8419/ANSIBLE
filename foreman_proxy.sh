@@ -149,8 +149,9 @@ foreman-installer \\
   --foreman-proxy-tftp true \\
   --foreman-proxy-tftp-servername "${FOREMAN_PROXY}"
 
-sshpass -p 'Root@123' scp -rp root@rocky-08-01.vgs.com:/boot/efi/EFI/rocky/shimx64.efi /var/lib/tftpboot/grub2/
-sshpass -p 'Root@123' scp -rp root@rocky-08-01.vgs.com:/boot/efi/EFI/rocky/grub.cfg /var/lib/tftpboot/grub2/
+
+sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@rocky-08-01.vgs.com:/boot/efi/EFI/rocky/shimx64.efi /var/lib/tftpboot/grub2/
+sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@rocky-08-01.vgs.com:/boot/efi/EFI/rocky/grub.cfg /var/lib/tftpboot/grub2/
 
 
  mkdir -p /var/lib/tftpboot/rockyos
