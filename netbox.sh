@@ -66,7 +66,8 @@ echo "[7/14] Configuring NetBox..."
 cp netbox/netbox/configuration_example.py netbox/netbox/configuration.py
 SECRET_KEY=$(openssl rand -hex 32)
 cat <<EOF > netbox/netbox/configuration.py
-ALLOWED_HOSTS = ['*']
+#ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ['192.168.253.134', 'localhost']
 
 DATABASE = {
     'NAME': 'netbox',
