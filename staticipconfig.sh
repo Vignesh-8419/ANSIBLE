@@ -20,7 +20,6 @@ fi
 
 echo "NetworkManager profile name will be: $profilename"
 
-
 ### Detect IP, CIDR, Gateway
 ip_full=$(ip -4 addr show "$iface" | awk '/inet /{print $2}')
 ip_addr=${ip_full%/*}
@@ -111,7 +110,7 @@ fi
 nmcli con up "$profilename" || nmcli con reload
 
 ### Ensure default route via 192.168.253.2
-if ! netstat -nrv | grep -q "192.168.253.2"; then
+if ! ip route show | grep -q "default via 192.168.253.2"; then
     echo "Default route via 192.168.253.2 not found → adding"
     ip route add default via 192.168.253.2 dev "$iface"
 else
