@@ -454,7 +454,7 @@ PACKAGEJS
 cat <<'ENVFILE' > /root/foreman-frontend/.env
 REACT_APP_API_URL=https://cent-07-01.vgs.com/api/v2
 REACT_APP_API_USER=admin
-REACT_APP_API_PASS=r7DYDRyRQyVVnuwQ
+REACT_APP_API_PASS=hr66wkYy4pYWpQTX
 HTTPS=true
 SSL_CRT_FILE=/root/foreman-frontend/ssl/server.crt
 SSL_KEY_FILE=/root/foreman-frontend/ssl/server.key
