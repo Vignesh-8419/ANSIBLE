@@ -1,12 +1,4 @@
 #!/bin/bash
-### Ensure default route via 192.168.253.2
-if ! netstat -nrv | grep -q "192.168.253.2"; then
-    echo "Default route via 192.168.253.2 not found → adding"
-    ip route add default via 192.168.253.2 dev "$iface"
-else
-    echo "Default route via 192.168.253.2 already exists"
-fi
-
 
 ### Detect primary interface (default route)
 iface=$(ip route | awk '/default/ {print $5}' | head -n1)
@@ -117,6 +109,14 @@ fi
 
 ### Apply the connection
 nmcli con up "$profilename" || nmcli con reload
+
+### Ensure default route via 192.168.253.2
+if ! netstat -nrv | grep -q "192.168.253.2"; then
+    echo "Default route via 192.168.253.2 not found → adding"
+    ip route add default via 192.168.253.2 dev "$iface"
+else
+    echo "Default route via 192.168.253.2 already exists"
+fi
 
 echo "✔ Configuration applied successfully."
 echo "✔ Network profile: $profilename"
