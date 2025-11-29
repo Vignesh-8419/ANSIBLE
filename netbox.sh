@@ -121,7 +121,7 @@ deactivate
 
 # 🔟 Nginx configuration
 echo "[10/14] Configuring Nginx..."
-cat <<EOF > /etc/nginx/conf.d/netbox.conf
+cat <<'EOF' > /etc/nginx/conf.d/netbox.conf
 server {
     listen 80 ;
     server_name _;
@@ -142,7 +142,7 @@ EOF
 
 # 🔧 config nginx.conf
 >/etc/nginx/nginx.conf
-cat <<EOF > /etc/nginx/nginx.conf
+cat <<'EOF' > "/etc/nginx/nginx.conf"
 # For more information on configuration, see:
 #   * Official English Documentation: http://nginx.org/en/docs/
 #   * Official Russian Documentation: http://nginx.org/ru/docs/
