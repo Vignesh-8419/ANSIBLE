@@ -109,13 +109,16 @@ fi
 ### Apply the connection
 nmcli con up "$profilename" || nmcli con reload
 
+# Restart Network Manager
+systemctl restart NetworkManager
+
 ### Ensure default route via 192.168.253.2
-if ! ip route show | grep -q "default via 192.168.253.2"; then
-    echo "Default route via 192.168.253.2 not found → adding"
-    ip route add default via 192.168.253.2 dev "$iface"
-else
-    echo "Default route via 192.168.253.2 already exists"
-fi
+#if ! ip route show | grep -q "default via 192.168.253.2"; then
+#    echo "Default route via 192.168.253.2 not found → adding"
+#    ip route add default via 192.168.253.2 dev "$iface"
+#else
+#    echo "Default route via 192.168.253.2 already exists"
+#fi
 
 echo "✔ Configuration applied successfully."
 echo "✔ Network profile: $profilename"
