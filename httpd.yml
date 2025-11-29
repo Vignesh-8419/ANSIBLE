@@ -7,7 +7,6 @@
     mount_point: "/mnt"
     repo_mount: "//192.168.31.87/ISO"
     mount_point_1: "/var/www/html/repo"
-    local_repo_path: "/var/www/html/srv"
     username: "vigne"
     password: "Vigneshv12$"
 
@@ -41,36 +40,36 @@
         state: started
         enabled: true
 
-    - name: Create local repo directory
-      file:
-        path: "{{ local_repo_path }}"
-        state: directory
-        mode: '0755'
+#    - name: Create local repo directory
+#      file:
+#        path: "{{ local_repo_path }}"
+#        state: directory
+#        mode: '0755'
 
-    - name: Create ISO mount point
-      file:
-        path: "{{ mount_point }}"
-        state: directory
-        mode: '0755'
+#    - name: Create ISO mount point
+#      file:
+#        path: "{{ mount_point }}"
+#        state: directory
+#        mode: '0755'
 
-    - name: Mount RockyOS ISO
-      mount:
-        path: "{{ mount_point }}"
-        src: "{{ iso_path }}"
-        fstype: iso9660
-        opts: loop,ro
-        state: mounted
+#    - name: Mount RockyOS ISO
+#      mount:
+#        path: "{{ mount_point }}"
+#        src: "{{ iso_path }}"
+#        fstype: iso9660
+#        opts: loop,ro
+#        state: mounted
 
-    - name: Copy contents from mounted ISO to local repo
-      command: cp -a {{ mount_point }}/. {{ local_repo_path }}/
-      args:
-        creates: "{{ local_repo_path }}/BaseOS"
+#    - name: Copy contents from mounted ISO to local repo
+#      command: cp -a {{ mount_point }}/. {{ local_repo_path }}/
+#     args:
+#        creates: "{{ local_repo_path }}/BaseOS"
 
-    - name: Rebuild BaseOS metadata
-      command: createrepo --update {{ local_repo_path }}/BaseOS/
+#    - name: Rebuild BaseOS metadata
+#      command: createrepo --update {{ local_repo_path }}/BaseOS/
 
-    - name: Rebuild AppStream metadata
-      command: createrepo --update {{ local_repo_path }}/AppStream/
+#    - name: Rebuild AppStream metadata
+#      command: createrepo --update {{ local_repo_path }}/AppStream/
 
     - name: Configure HTTPD directory permissions
       blockinfile:
