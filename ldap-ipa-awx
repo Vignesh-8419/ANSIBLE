@@ -1,0 +1,46 @@
+LDAP Server URI
+ldap://ipa-server-01.vgs.com:389
+LDAP Bind DN
+uid=vicky,cn=users,cn=accounts,dc=vgs,dc=com
+LDAP Bind Password
+Encrypted
+LDAP User DN Template
+Not configured
+LDAP Group Type
+MemberDNGroupType
+LDAP Require Group
+cn=awx_users,cn=groups,cn=accounts,dc=vgs,dc=com
+LDAP Deny Group
+Not configured
+LDAP Start TLS
+Off
+LDAP User Search
+1
+[
+  "cn=users,cn=accounts,dc=vgs,dc=com",
+  "SCOPE_SUBTREE",
+  "(uid=%(user)s)"
+]
+LDAP Group Search
+[
+  "cn=groups,cn=accounts,dc=vgs,dc=com",
+  "SCOPE_SUBTREE",
+  "(objectClass=groupOfNames)"
+]
+LDAP User Attribute Map
+{
+  "first_name": "givenName",
+  "last_name": "sn",
+  "email": "mail"
+}
+LDAP Group Type Parameters
+{
+  "name_attr": "cn",
+  "member_attr": "member"
+}
+LDAP User Flags By Group
+{}
+LDAP Organization Map
+{}
+LDAP Team Map
+{}
