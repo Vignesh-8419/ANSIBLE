@@ -1,4 +1,3 @@
----
 - name: Create tag if not exists
   uri:
     url: "{{ netbox_url }}/api/extras/tags/"
@@ -8,8 +7,9 @@
     body_format: json
     body:
       name: "{{ item.tag }}"
-      slug: "{{ item.tag }}"
+      slug: "{{ item.tag | lower | regex_replace('[^a-z0-9-]', '-') }}"
     status_code: [200, 201, 400]
+    validate_certs: no   # or yes if your CA is trusted
 
 - name: Get tag ID
   uri:
@@ -18,11 +18,12 @@
     headers:
       Authorization: "Token {{ netbox_token }}"
     return_content: yes
+    validate_certs: no
   register: tag_response
 
 - name: Set tag_id
   set_fact:
-    tag_id: "{{ tag_response.json.results[0].id }}"
+    tag_id: "{{ (tag_response.json.results | first).id | default(omit) }}"
 
 - name: Create device
   uri:
@@ -37,14 +38,17 @@
       role: "{{ role_id }}"
       site: "{{ site_id }}"
       status: "active"
-      tags: ["{{ tag_id }}"]
+      tags: "{{ tag_id | default([]) | list }}"
     status_code: [200, 201]
     return_content: yes
+    validate_certs: no
   register: device_response
+  when: tag_id is defined
 
 - name: Set device_id
   set_fact:
     device_id: "{{ device_response.json.id }}"
+  when: device_response is defined
 
 - name: Create interface
   uri:
@@ -60,11 +64,14 @@
       mac_address: "{{ item.mac }}"
     status_code: [200, 201]
     return_content: yes
+    validate_certs: no
   register: interface_response
+  when: device_id is defined
 
 - name: Set interface_id
   set_fact:
     interface_id: "{{ interface_response.json.id }}"
+  when: interface_response is defined
 
 - name: Assign IP address
   uri:
@@ -74,8 +81,10 @@
       Authorization: "Token {{ netbox_token }}"
     body_format: json
     body:
-      address: "{{ item.ip }}/24"
+      address: "{{ item.ip }}/{{ item.prefix }}"
       status: "active"
       assigned_object_type: "dcim.interface"
       assigned_object_id: "{{ interface_id }}"
     status_code: [200, 201]
+    validate_certs: no
+  when: interface_id is defined
