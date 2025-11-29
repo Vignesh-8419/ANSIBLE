@@ -1,7 +1,7 @@
 #!/bin/bash
 
-NETBOX_URL="http://192.168.253.135/api"
-NETBOX_TOKEN="ac398a41868b98659d10c6f500a433f2409960d8"
+NETBOX_URL="https://192.168.253.134//api"
+NETBOX_TOKEN="e3ee4eda03d81a42b07de1d20064b89bba21e041"
 HDR="Content-Type: application/json"
 
 # Fixed IDs
