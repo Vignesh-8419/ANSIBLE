@@ -1,6 +1,7 @@
 ---
 - name: Collect facts from all servers
-  hosts: "{{ target_hosts.split(',') | map('trim') | list }}"
+#  hosts: "{{ target_hosts.split(',') | map('trim') | list }}"
+  hosts: all
   gather_facts: yes
   become: yes
 
