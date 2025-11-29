@@ -19,7 +19,7 @@
           tag: "{{ tag }}"
 
 - name: Push collected servers into NetBox
-  hosts: rocky-08-03
+  hosts: rocky-08-02
   gather_facts: no
 
   vars:
