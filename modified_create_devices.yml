@@ -39,7 +39,7 @@
         var: servers_list
 
     - name: Loop through servers and include device creation tasks
-      include_tasks: create_netbox_device.yml
+      include_tasks: modified_create_netbox_device.yml
       loop: "{{ servers_list }}"
       loop_control:
         loop_var: item
