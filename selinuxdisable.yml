@@ -1,5 +1,5 @@
 - name: Disable SELinux and reboot
-  hosts: "{{ target_hosts }}"
+  hosts: all
   become: true
 
   tasks:
