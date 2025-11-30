@@ -111,7 +111,6 @@
     - name: Remove leftover el7 RPMs
       shell: |
         for i in $(cat /tmp/rhel7.txt); do
-          echo "Removing $i"
           rpm -e $i --nodeps || true
         done
 
@@ -133,31 +132,41 @@
     - name: Reinstall current kernel-core
       shell: dnf reinstall -y kernel-core
 
-    - name: Verify old kernels are not in grub
-      shell: grubby --info=ALL | grep :"\el7" || echo "Old Kernels are not present in the bootloader."
-      register: grub_check
+    # ----------------------------
+    # 🚀 FIX RESCUE BOOT ENTRY HERE
+    # ----------------------------
+
+    - name: Remove old rescue kernel and initramfs (CentOS leftovers)
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/boot/vmlinuz-0-rescue-*"
+        - "/boot/initramfs-0-rescue-*"
+
+    - name: Recreate rescue initramfs for current kernel
+      shell: dracut -f /boot/initramfs-0-rescue-{{ ansible_kernel }}.img {{ ansible_kernel }}
+
+    - name: Recreate rescue kernel symlink
+      shell: ln -sf /boot/vmlinuz-{{ ansible_kernel }} /boot/vmlinuz-0-rescue-{{ ansible_kernel }}
+
+    - name: Rebuild grub config
+      shell: grub2-mkconfig -o /boot/grub2/grub.cfg
+
+    - name: Verify rescue entry created
+      shell: grubby --info=ALL | grep rescue || true
+      register: rescue_grub
       changed_when: false
 
     - debug:
-        var: grub_check.stdout_lines
+        var: rescue_grub.stdout_lines
 
-    - name: Rebuild rescue initramfs for current kernel
-      shell: dracut -f /boot/initramfs-{{ ansible_kernel }}-rescue.img {{ ansible_kernel }}
-      register: rebuild_rescue
-      changed_when: true
+    # -----------------------------
 
     - name: Final reboot after cleanup
       reboot:
-        msg: "Final reboot after cleanup"
+        msg: "Final reboot after RPMDB + kernel cleanup"
         connect_timeout: 5
         reboot_timeout: 600
         pre_reboot_delay: 10
         post_reboot_delay: 30
-
-    - name: Verify rescue initramfs contains modules
-      shell: lsinitrd /boot/initramfs-{{ ansible_kernel }}-rescue.img | grep -q "modules/" && echo "OK" || echo "FAIL"
-      register: rescue_modules_check
-      changed_when: false
-
-    - debug:
-        var: rescue_modules_check.stdout
