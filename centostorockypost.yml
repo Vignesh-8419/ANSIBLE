@@ -33,6 +33,8 @@
           baseurl=http://http-server-01/repo/rocky8/AppStream/
           gpgcheck=0
           enabled=1
+        dest: /etc/yum.repos.d/base.repo
+
 
     - name: Backup current RPM database
       command: mv /var/lib/rpm /var/lib/rpm.bak-{{ ansible_date_time.epoch }}
