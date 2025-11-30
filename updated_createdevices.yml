@@ -24,7 +24,7 @@
   gather_facts: no
 
   vars:
-    netbox_url: "http://192.168.253.135"
+    netbox_url: "https://192.168.253.134"
     netbox_token: "ac398a41868b98659d10c6f500a433f2409960d8"
     device_type_id: 1
     role_id: 1
