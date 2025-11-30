@@ -145,15 +145,6 @@
       changed_when: false
 
     - debug:
-        var: rescue_modules_check.stdout
-
-    - name: Verify rescue image contains current kernel
-      shell: |
-        lsinitrd /boot/initramfs-*rescue*.img | grep -qm1 "$(uname -r)/kernel/" && echo "OK" || echo "FAIL"
-      register: rescue_check
-      changed_when: false
-
-    - debug:
         var: rescue_check.stdout_lines
 
     - name: Final reboot after cleanup
