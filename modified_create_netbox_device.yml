@@ -88,3 +88,16 @@
     status_code: [200, 201]
     validate_certs: no
   when: interface_id is defined
+
+- name: Set primary IP for device
+  uri:
+    url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
+    method: PATCH
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      primary_ip4: "{{ ip_response.json.id }}"
+    status_code: [200, 201]
+    validate_certs: no
+  when: ip_response is defined and device_id is defined
