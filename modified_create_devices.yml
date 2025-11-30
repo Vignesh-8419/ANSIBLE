@@ -17,7 +17,7 @@
           mac: "{{ ansible_default_ipv4.macaddress }}"
           interface: "{{ ansible_default_ipv4.interface }}"
           tag: "{{ tag }}"
-          serial: "{{ ansible_product_serial | default('UNKNOWN') }}"
+          serial: "{{ ansible_product_serial | regex_replace('[^a-zA-Z0-9]', '') | truncate(50, True, '') }}"
   
     - name: Debug IP format
       debug:
