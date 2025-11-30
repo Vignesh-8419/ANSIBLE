@@ -349,11 +349,7 @@
             done
 
         - name: Cleanup leapp packages
-          dnf:
-            name:
-              - leapp-deps-el8
-              - leapp-repository-deps-el8
-            state: absent
+          shell: dnf remove leapp*
 
         - name: Remove leapp logs and old kernel dirs
           file:
