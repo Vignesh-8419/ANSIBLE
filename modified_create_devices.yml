@@ -18,6 +18,10 @@
           interface: "{{ ansible_default_ipv4.interface }}"
           tag: "{{ tag }}"
 
+    - name: Debug IP format
+      debug:
+       msg: "IP for {{ inventory_hostname }} is {{ server_info.ip }}"
+
 - name: Push collected servers into NetBox
   hosts: rocky-08-02
   gather_facts: no
