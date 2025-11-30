@@ -9,7 +9,7 @@
       name: "{{ item.tag }}"
       slug: "{{ item.tag | lower | regex_replace('[^a-z0-9-]', '-') }}"
     status_code: [200, 201, 400]
-    validate_certs: no   # or yes if your CA is trusted
+    validate_certs: no
 
 - name: Get tag ID
   uri:
@@ -87,6 +87,7 @@
       assigned_object_id: "{{ interface_id }}"
     status_code: [200, 201]
     validate_certs: no
+  register: ip_response
   when: interface_id is defined
 
 - name: Set primary IP for device
