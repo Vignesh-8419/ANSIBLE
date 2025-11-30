@@ -10,6 +10,30 @@
 
   tasks:
 
+    # ----------------------------------------------------
+    # 1. Create directory for Pi-hole API script
+    # ----------------------------------------------------
+    - name: Create Pi-hole custom DNS API directory
+      file:
+        path: "{{ pihole_api_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    # ----------------------------------------------------
+    # 2. Download script from GitHub into that directory
+    # ----------------------------------------------------
+    - name: Download Pi-hole custom DNS API script
+      get_url:
+        url: "{{ script_url }}"
+        dest: "{{ pihole_api_script_path }}"
+        mode: '0755'     # same as chmod +x
+
+    # ----------------------------------------------------
+    # Original tasks start here
+    # ----------------------------------------------------
+
     - name: Get devices tagged from NetBox
       uri:
         url: "{{ netbox_url }}/api/dcim/devices/?tag={{ tag_name }}"
