@@ -5,8 +5,8 @@
   gather_facts: no
 
   vars:
-    netbox_url: "http://192.168.253.135"
-    netbox_token: "ac398a41868b98659d10c6f500a433f2409960d8"
+    netbox_url: "https://192.168.253.134"
+    netbox_token: "e3ee4eda03d81a42b07de1d20064b89bba21e041"
     tag_name: "new-build-centos"  # Can be overridden via AWX survey
 
   tasks:
@@ -17,6 +17,7 @@
         headers:
           Authorization: "Token {{ netbox_token }}"
         return_content: yes
+        validate_certs: no
       register: netbox_devices
 
     - name: Get interfaces from NetBox
@@ -26,6 +27,7 @@
         headers:
           Authorization: "Token {{ netbox_token }}"
         return_content: yes
+        validate_certs: no
       register: netbox_interfaces
 
     - name: Get IP addresses from NetBox
@@ -35,6 +37,7 @@
         headers:
           Authorization: "Token {{ netbox_token }}"
         return_content: yes
+        validate_certs: no
       register: netbox_ips
 
     - name: Initialize vm_list
