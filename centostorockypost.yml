@@ -1,5 +1,5 @@
 ---
-- name: Full RPMDB + Kernel Cleanup & Repair for Rocky Linux 8
+- name: Full RPMDB + Kernel Cleanup & Repair for Rocky Linux 8 (UEFI Safe)
   hosts: all
   become: true
   gather_facts: yes
@@ -14,6 +14,10 @@
         success_msg: "✔ Rocky Linux 8 detected. Continuing..."
 
   tasks:
+
+    ######################################################################
+    # REPO FIX
+    ######################################################################
     - name: Ensure backup directory exists
       file:
         path: /etc/yum.repos.d/backup
@@ -30,6 +34,7 @@
 
     - name: Create Rocky Linux 8 repo
       copy:
+        dest: /etc/yum.repos.d/base.repo
         content: |
           [rocky8-baseos]
           name=Rocky Linux 8 - BaseOS
@@ -42,8 +47,10 @@
           baseurl=http://http-server-01/repo/rocky8/AppStream/
           gpgcheck=0
           enabled=1
-        dest: /etc/yum.repos.d/base.repo
 
+    ######################################################################
+    # RPMDB REPAIR
+    ######################################################################
     - name: Backup current RPM database
       command: mv /var/lib/rpm /var/lib/rpm.bak-{{ ansible_date_time.epoch }}
       args:
@@ -58,13 +65,11 @@
     - name: Initialize new RPM database
       command: rpm --initdb
 
-    - name: Restore Packages file from backup
-      command: cp -av /var/lib/rpm.bak-{{ ansible_date_time.epoch }}/Packages /var/lib/rpm/
-      ignore_errors: yes
+    - name: Restore Packages file from backup if present
+      shell: cp -av /var/lib/rpm.bak-{{ ansible_date_time.epoch }}/Packages /var/lib/rpm/ || true
 
-    - name: Force remove stale __db* files
+    - name: Remove stale __db files
       shell: rm -f /var/lib/rpm/__db.*
-      ignore_errors: yes
 
     - name: Rebuild RPM database
       command: rpm --rebuilddb
@@ -78,13 +83,11 @@
       ignore_errors: yes
 
     - debug:
-        msg: "RPM DB status: {{ rpmdb_test.stdout | default('Failed to query rpmdb') }}"
+        msg: "RPM DB status: {{ rpmdb_test.stdout | default('FAILED') }}"
 
-    - name: List old el7 kernel directories
-      shell: ls -d /lib/modules/*.el7* || true
-      register: old_kernels
-      changed_when: false
-
+    ######################################################################
+    # REMOVE ALL OLD el7 KERNELS
+    ######################################################################
     - name: Remove weak-modules for old el7 kernels
       shell: |
         for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
@@ -94,14 +97,13 @@
     - name: Remove old kernels via kernel-install
       shell: |
         for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
-          /bin/kernel-install remove $k /lib/modules/$k/vmlinuz || true
+          kernel-install remove $k /lib/modules/$k/vmlinuz || true
         done
 
     - name: Find leftover el7 RPMs
       shell: |
-        rpm -qa | grep -e '\.el[67]' | grep -vE '^(gpg-pubkey|libmoduled|katello-ca-consumer)' | sort
+        rpm -qa | grep -e '\.el7' | grep -vE '^(gpg-pubkey)' || true
       register: el7_rpms
-      changed_when: false
 
     - name: Save el7 package list
       copy:
@@ -114,8 +116,11 @@
           rpm -e $i --nodeps || true
         done
 
+    ######################################################################
+    # CLEANUP LEAPP
+    ######################################################################
     - name: Cleanup leapp packages
-      shell: dnf remove leapp* -y
+      shell: dnf remove -y leapp\*
 
     - name: Remove leapp logs and old kernel dirs
       file:
@@ -129,44 +134,62 @@
         - /boot/vmlinuz-*rescue*
         - /boot/initramfs-*rescue*
 
+    ######################################################################
+    # REINSTALL CURRENT KERNEL
+    ######################################################################
     - name: Reinstall current kernel-core
       shell: dnf reinstall -y kernel-core
 
-    # ----------------------------
-    # 🚀 FIX RESCUE BOOT ENTRY HERE
-    # ----------------------------
-
-    - name: Remove old rescue kernel and initramfs (CentOS leftovers)
-      file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - "/boot/vmlinuz-0-rescue-*"
-        - "/boot/initramfs-0-rescue-*"
-
-    - name: Recreate rescue initramfs for current kernel
-      shell: dracut -f /boot/initramfs-0-rescue-{{ ansible_kernel }}.img {{ ansible_kernel }}
-
-    - name: Recreate rescue kernel symlink
-      shell: ln -sf /boot/vmlinuz-{{ ansible_kernel }} /boot/vmlinuz-0-rescue-{{ ansible_kernel }}
-
-    - name: Rebuild grub config
-      shell: grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
-
-    - name: Verify rescue entry created
-      shell: grubby --info=ALL | grep rescue || true
-      register: rescue_grub
-      changed_when: false
+    - name: Verify old kernels are not in grub
+      shell: grubby --info=ALL | grep :"\.el7" || echo "No el7 kernels in grub"
+      register: grub_check
 
     - debug:
-        var: rescue_grub.stdout_lines
+        var: grub_check.stdout_lines
 
-    # -----------------------------
+    ######################################################################
+    # UEFI RESCUE ENTRY FIX (YOUR PROBLEM)
+    ######################################################################
+    - name: Detect UEFI mode
+      stat:
+        path: /sys/firmware/efi
+      register: efi_fw
 
+    - name: Remove old CentOS rescue UEFI entry
+      shell: |
+        efibootmgr -v | grep -i "rescue" | awk -F"Boot" '{print $2}' | cut -c1-4 | \
+        xargs -I {} efibootmgr -b {} -B
+      when: efi_fw.stat.exists
+
+    - name: Create new Rocky Linux rescue entry (UEFI)
+      shell: |
+        kernel=$(ls /boot/vmlinuz-*rescue* | head -1)
+        initrd=$(ls /boot/initramfs-*rescue*.img | head -1)
+        efibootmgr -c -d /dev/sda -p 1 -L "Rocky Linux Rescue" \
+        -l "\EFI\rocky\shimx64.efi" \
+        -u "root=/dev/sda2 ro rd.break initrd=${initrd} ${kernel}"
+      when: efi_fw.stat.exists
+
+    ######################################################################
+    # REBUILD RESCUE INITRAMFS
+    ######################################################################
+    - name: Rebuild rescue initramfs
+      shell: dracut -f /boot/initramfs-{{ ansible_kernel }}-rescue.img {{ ansible_kernel }}
+
+    ######################################################################
+    # REBOOT
+    ######################################################################
     - name: Final reboot after cleanup
       reboot:
-        msg: "Final reboot after RPMDB + kernel cleanup"
+        msg: "Final reboot after cleanup"
         connect_timeout: 5
         reboot_timeout: 600
         pre_reboot_delay: 10
         post_reboot_delay: 30
+
+    - name: Verify rescue initramfs contains modules
+      shell: lsinitrd /boot/initramfs-{{ ansible_kernel }}-rescue.img | grep -q "modules/" && echo "OK" || echo "FAIL"
+      register: rescue_modules_check
+
+    - debug:
+        var: rescue_modules_check.stdout
