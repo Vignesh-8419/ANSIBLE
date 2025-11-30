@@ -8,8 +8,8 @@
     pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
     script_url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/pihole-customdns.sh"
 
-    netbox_url: "http://192.168.253.135"
-    netbox_token: "ac398a41868b98659d10c6f500a433f2409960d8"
+    netbox_url: "https://192.168.253.134"
+    netbox_token: "e3ee4eda03d81a42b07de1d20064b89bba21e041"
 
   tasks:
 
@@ -44,6 +44,7 @@
         headers:
           Authorization: "Token {{ netbox_token }}"
         return_content: yes
+        validate_cert: no
       register: netbox_devices
 
     - name: Get interfaces from NetBox
@@ -53,6 +54,7 @@
         headers:
           Authorization: "Token {{ netbox_token }}"
         return_content: yes
+        validate_cert: no
       register: netbox_interfaces
 
     - name: Get IP addresses from NetBox
@@ -62,6 +64,7 @@
         headers:
           Authorization: "Token {{ netbox_token }}"
         return_content: yes
+        validate_cert: no
       register: netbox_ips
 
     - name: Initialize dns_entries list
