@@ -39,6 +39,7 @@
       site: "{{ site_id }}"
       status: "active"
       tags: "{{ tag_id | default([]) | list }}"
+      serial: "{{ item.serial }}"
     status_code: [200, 201]
     return_content: yes
     validate_certs: no
@@ -102,3 +103,16 @@
     status_code: [200, 201]
     validate_certs: no
   when: ip_response is defined and device_id is defined
+
+- name: Set chassis serial number
+  uri:
+    url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
+    method: PATCH
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      serial: "{{ item.serial }}"
+    status_code: [200, 201]
+    validate_certs: no
+  when: device_id is defined
