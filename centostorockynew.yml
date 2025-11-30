@@ -319,7 +319,7 @@
             path: /etc/yum.repos.d/backup
             state: directory
             mode: '0755'
-	    
+
         - name: Move all repo files except backup directory
           shell: |
             shopt -s extglob
