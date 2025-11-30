@@ -17,6 +17,7 @@
           mac: "{{ ansible_default_ipv4.macaddress }}"
           interface: "{{ ansible_default_ipv4.interface }}"
           tag: "{{ tag }}"
+          serial: "{{ ansible_product_serial | default('UNKNOWN') }}"
   
     - name: Debug IP format
       debug:
