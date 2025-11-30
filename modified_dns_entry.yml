@@ -17,6 +17,7 @@
         headers:
           Authorization: "Token {{ netbox_token }}"
         return_content: yes
+        validate_certs: no
       register: netbox_devices
 
     - name: Get interfaces from NetBox
@@ -26,6 +27,7 @@
         headers:
           Authorization: "Token {{ netbox_token }}"
         return_content: yes
+        validate_certs: no
       register: netbox_interfaces
 
     - name: Get IP addresses from NetBox
@@ -35,6 +37,7 @@
         headers:
           Authorization: "Token {{ netbox_token }}"
         return_content: yes
+        validate_certs: no
       register: netbox_ips
 
     - name: Initialize dns_entries list
