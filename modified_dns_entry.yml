@@ -6,8 +6,10 @@
   vars:
     pihole_api_dir: /root/pihole_customdns_api/
     pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
+    script_url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/pihole-customdns.sh"
     netbox_url: "https://192.168.253.134"
     netbox_token: "e3ee4eda03d81a42b07de1d20064b89bba21e041"
+    tag_name: "customdns"   # <-- define your tag here
 
   tasks:
 
@@ -32,9 +34,8 @@
         mode: '0755'     # same as chmod +x
 
     # ----------------------------------------------------
-    # Original tasks start here
+    # 3. Query NetBox for devices, interfaces, IPs
     # ----------------------------------------------------
-
     - name: Get devices tagged from NetBox
       uri:
         url: "{{ netbox_url }}/api/dcim/devices/?tag={{ tag_name }}"
@@ -65,6 +66,9 @@
         validate_certs: no
       register: netbox_ips
 
+    # ----------------------------------------------------
+    # 4. Build DNS entries list
+    # ----------------------------------------------------
     - name: Initialize dns_entries list
       set_fact:
         dns_entries: []
@@ -73,10 +77,19 @@
       set_fact:
         dns_entries: "{{ dns_entries + [ {
           'dns_hostname': item.name,
-          'dns_ip': (netbox_ips.json.results | selectattr('assigned_object.device.name', 'equalto', item.name) | map(attribute='address') | map('regex_replace', '/.*$', '') | list | first | default(''))
+          'dns_ip': (netbox_ips.json.results
+                     | selectattr('assigned_object.device.name', 'equalto', item.name)
+                     | map(attribute='address')
+                     | map('regex_replace', '/.*$', '')
+                     | list
+                     | first
+                     | default(''))
         } ] }}"
       loop: "{{ netbox_devices.json.results }}"
 
+    # ----------------------------------------------------
+    # 5. Add DNS entries via Pi-hole API script
+    # ----------------------------------------------------
     - name: Add DNS entry using Pi-hole API script
       shell: >
         {{ pihole_api_script_path }} --add {{ item.dns_hostname }} {{ item.dns_ip }}
@@ -88,4 +101,3 @@
     - name: Show result
       debug:
         var: result.results
-
