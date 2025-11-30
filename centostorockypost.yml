@@ -4,10 +4,14 @@
   become: true
   gather_facts: yes
 
-  # Run entire play ONLY on Rocky Linux 8
-  when:
-    - ansible_distribution == "Rocky"
-    - ansible_distribution_major_version == "8"
+  pre_tasks:
+    - name: Ensure system is Rocky Linux 8
+    - assert:
+        that:
+          - ansible_distribution == "Rocky"
+          - ansible_distribution_major_version == "8"
+        fail_msg: "❌ This playbook can run ONLY on Rocky Linux 8!"
+        success_msg: "✔ Rocky Linux 8 detected. Continuing..."
 
   tasks:
 
