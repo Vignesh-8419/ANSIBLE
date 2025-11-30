@@ -4,6 +4,7 @@
   become: true
 
   vars:
+    pihole_api_dir: /root/pihole_customdns_api/
     pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
     netbox_url: "https://192.168.253.134"
     netbox_token: "e3ee4eda03d81a42b07de1d20064b89bba21e041"
