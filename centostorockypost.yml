@@ -139,14 +139,6 @@
       register: rebuild_rescue
       changed_when: true
 
-    - name: Verify rescue initramfs contains modules
-      shell: lsinitrd /boot/initramfs-{{ ansible_kernel }}-rescue.img | grep -q "modules/" && echo "OK" || echo "FAIL"
-      register: rescue_modules_check
-      changed_when: false
-
-    - debug:
-        var: rescue_check.stdout_lines
-
     - name: Final reboot after cleanup
       reboot:
         msg: "Final reboot after cleanup"
@@ -154,3 +146,11 @@
         reboot_timeout: 600
         pre_reboot_delay: 10
         post_reboot_delay: 30
+
+    - name: Verify rescue initramfs contains modules
+      shell: lsinitrd /boot/initramfs-{{ ansible_kernel }}-rescue.img | grep -q "modules/" && echo "OK" || echo "FAIL"
+      register: rescue_modules_check
+      changed_when: false
+
+    - debug:
+        var: rescue_check.stdout_lines
