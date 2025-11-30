@@ -13,11 +13,11 @@
       set_fact:
         server_info:
           name: "{{ ansible_hostname }}.vgs.com"
-          ip: "{{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.prefix }}"
+          ip: "{{ ansible_default_ipv4.address }}/{{ (ansible_default_ipv4.address ~ '/' ~ ansible_default_ipv4.netmask) | ipaddr('prefix') }}"
           mac: "{{ ansible_default_ipv4.macaddress }}"
           interface: "{{ ansible_default_ipv4.interface }}"
           tag: "{{ tag }}"
-
+  
     - name: Debug IP format
       debug:
        msg: "IP for {{ inventory_hostname }} is {{ server_info.ip }}"
