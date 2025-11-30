@@ -340,6 +340,9 @@
             - /boot/vmlinuz-*rescue*
             - /boot/initramfs-*rescue*
 
+        - name: Install current kernel
+          shell: dnf install -y kernel-core-$(uname -r)
+
         - name: Reinstall current kernel
           shell: dnf reinstall -y kernel-core-$(uname -r)
 
