@@ -380,3 +380,11 @@
 
     - debug:
         var: rescue_modules_check.stdout
+
+    - name: Final reboot after cleanup
+      reboot:
+        msg: "Rebooting after RPMDB/UEFI rescue changes"
+        connect_timeout: 5
+        reboot_timeout: 600
+        pre_reboot_delay: 10
+        post_reboot_delay: 30
