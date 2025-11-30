@@ -2,6 +2,12 @@
 - name: Full RPMDB + Kernel Cleanup & Repair for Rocky Linux 8
   hosts: all
   become: true
+  gather_facts: yes
+
+  # Run entire play ONLY on Rocky Linux 8
+  when:
+    - ansible_distribution == "Rocky"
+    - ansible_distribution_major_version == "8"
 
   tasks:
 
@@ -27,14 +33,13 @@
           baseurl=http://http-server-01/repo/rocky8/BaseOS/
           gpgcheck=0
           enabled=1
-          
+
           [rocky8-appstream]
           name=Rocky Linux 8 - AppStream
           baseurl=http://http-server-01/repo/rocky8/AppStream/
           gpgcheck=0
           enabled=1
         dest: /etc/yum.repos.d/base.repo
-
 
     - name: Backup current RPM database
       command: mv /var/lib/rpm /var/lib/rpm.bak-{{ ansible_date_time.epoch }}
@@ -130,8 +135,7 @@
       register: grub_check
       changed_when: false
 
-    - name: Show grub verification result
-      debug:
+    - debug:
         var: grub_check.stdout_lines
 
     - name: Rebuild rescue initramfs for current kernel
@@ -153,4 +157,4 @@
       changed_when: false
 
     - debug:
-        var: rescue_check.stdout_lines
+        var: rescue_modules_check.stdout
