@@ -313,6 +313,56 @@
         var: os_release.stdout_lines
 
     - block:
+
+        - name: Ensure backup directory exists
+          file:
+            path: /etc/yum.repos.d/backup
+            state: directory
+            mode: '0755'
+	    
+        - name: Move Rocky-* repo files to backup
+          command: mv Rocky-* backup/
+          args:
+            chdir: /etc/yum.repos.d/
+          ignore_errors: yes      # if files don't exist
+	    
+        - name: Backup current RPM database
+          command: mv /var/lib/rpm /var/lib/rpm.bak-{{ ansible_date_time.epoch }}
+          args:
+            creates: "/var/lib/rpm.bak-{{ ansible_date_time.epoch }}"
+	    
+        - name: Create new empty RPM db directory
+          file:
+            path: /var/lib/rpm
+            state: directory
+            mode: '0755'
+	    
+        - name: Initialize new RPM database
+          command: rpm --initdb
+	    
+        - name: Restore Packages file from backup
+          command: cp -av /var/lib/rpm.bak-{{ ansible_date_time.epoch }}/Packages /var/lib/rpm/
+          ignore_errors: yes
+	    
+        - name: Force remove stale __db* files
+          file:
+            path: /var/lib/rpm/__db.*
+            state: absent
+	    
+        - name: Rebuild RPM database
+          command: rpm --rebuilddb
+	    
+        - name: Clean DNF cache
+          command: dnf clean all
+
+        - name: Verify rpmdb works
+          command: dnf list installed
+          register: rpmdb_test
+          ignore_errors: yes
+	    
+        - debug:
+            msg: "RPM DB status: {{ rpmdb_test }}"
+    
         - name: List old el7 kernel directories
           shell: ls -d /lib/modules/*.el7* || true
           register: old_kernels
