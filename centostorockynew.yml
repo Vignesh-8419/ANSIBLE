@@ -259,6 +259,7 @@
       command: leapp preupgrade
       register: preupgrade_result
       ignore_errors: true
+
     - name: Set SELinux to permissive (setenforce 0)
       command: setenforce 0
       ignore_errors: yes
