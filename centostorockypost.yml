@@ -122,16 +122,17 @@
         - /boot/vmlinuz-*rescue*
         - /boot/initramfs-*rescue*
 
-    - name: Install current kernel-core
-      shell: dnf install -y kernel-core
-
     - name: Reinstall current kernel-core
       shell: dnf reinstall -y kernel-core
 
-    - name: Rebuild standard initramfs for current kernel
-      shell: dracut -f /boot/initramfs-{{ ansible_kernel }}.img {{ ansible_kernel }}
-      register: rebuild_initramfs
-      changed_when: true
+    - name: Verify old kernels are not in grub
+      shell: grubby --info=ALL | grep :"\el7" || echo "Old Kernels are not present in the bootloader."
+      register: grub_check
+      changed_when: false
+
+    - name: Show grub verification result
+      debug:
+        var: grub_check.stdout_lines
 
     - name: Rebuild rescue initramfs for current kernel
       shell: dracut -f /boot/initramfs-{{ ansible_kernel }}-rescue.img {{ ansible_kernel }}
