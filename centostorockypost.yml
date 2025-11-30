@@ -151,7 +151,7 @@
       shell: ln -sf /boot/vmlinuz-{{ ansible_kernel }} /boot/vmlinuz-0-rescue-{{ ansible_kernel }}
 
     - name: Rebuild grub config
-      shell: grub2-mkconfig -o /boot/grub2/grub.cfg
+      shell: grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
 
     - name: Verify rescue entry created
       shell: grubby --info=ALL | grep rescue || true
