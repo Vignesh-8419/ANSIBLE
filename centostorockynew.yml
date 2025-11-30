@@ -320,12 +320,14 @@
             state: directory
             mode: '0755'
 	    
-        - name: Move Rocky-* repo files to backup
-          command: mv Rocky-* backup/
+        - name: Move all repo files except backup directory
+          shell: |
+            shopt -s extglob
+            mv /etc/yum.repos.d/!(backup) /etc/yum.repos.d/backup/
           args:
-            chdir: /etc/yum.repos.d/
-          ignore_errors: yes      # if files don't exist
-	    
+            executable: /bin/bash
+          ignore_errors: yes
+
         - name: Backup current RPM database
           command: mv /var/lib/rpm /var/lib/rpm.bak-{{ ansible_date_time.epoch }}
           args:
@@ -412,6 +414,9 @@
             - /var/lib/leapp/
             - /boot/vmlinuz-*rescue*
             - /boot/initramfs-*rescue*
+
+        - name: Install current kernel-core
+          shell: dnf install -y kernel-core
 
         - name: Reinstall current kernel-core
           shell: dnf reinstall -y kernel-core
