@@ -13,7 +13,6 @@
         fail_msg: "❌ This playbook can run ONLY on Rocky Linux 8!"
         success_msg: "✔ Rocky Linux 8 detected. Continuing..."
 
-  tasks:
     - name: Detect whether this machine is UEFI
       stat:
         path: /sys/firmware/efi
@@ -24,10 +23,10 @@
       debug:
         msg: "UEFI detected: {{ efi_dir.stat.exists }}"
 
-    # --------------------------
-    # RPMDB / repo / kernel cleanup (kept from original playbook)
-    # (you already had these; unchanged except YAML correctness)
-    # --------------------------
+  tasks:
+    ################################################################
+    # Basic repo/RPMDB/kernel cleanup (non-UEFI-specific)
+    ################################################################
     - name: Ensure backup directory exists
       file:
         path: /etc/yum.repos.d/backup
@@ -44,6 +43,7 @@
 
     - name: Create Rocky Linux 8 repo
       copy:
+        dest: /etc/yum.repos.d/base.repo
         content: |
           [rocky8-baseos]
           name=Rocky Linux 8 - BaseOS
@@ -56,7 +56,6 @@
           baseurl=http://http-server-01/repo/rocky8/AppStream/
           gpgcheck=0
           enabled=1
-        dest: /etc/yum.repos.d/base.repo
         mode: '0644'
 
     - name: Backup current RPM database
@@ -73,7 +72,7 @@
     - name: Initialize new RPM database
       command: rpm --initdb
 
-    - name: Restore Packages file from backup
+    - name: Restore Packages file from backup (if available)
       command: cp -av /var/lib/rpm.bak-{{ ansible_date_time.epoch }}/Packages /var/lib/rpm/
       ignore_errors: yes
 
@@ -83,9 +82,11 @@
 
     - name: Rebuild RPM database
       command: rpm --rebuilddb
+      ignore_errors: yes
 
     - name: Clean DNF cache
       command: dnf clean all
+      ignore_errors: yes
 
     - name: Verify rpmdb works
       command: dnf list installed
@@ -103,16 +104,22 @@
     - name: Remove weak-modules for old el7 kernels
       shell: |
         for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
-          /usr/sbin/weak-modules --remove-kernel $k || true
+          /usr/sbin/weak-modules --remove-kernel "$k" || true
         done
+      args:
+        executable: /bin/bash
       when: old_kernels.stdout | length > 0
+      ignore_errors: yes
 
     - name: Remove old kernels via kernel-install
       shell: |
         for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
-          /bin/kernel-install remove $k /lib/modules/$k/vmlinuz || true
+          /bin/kernel-install remove "$k" /lib/modules/"$k"/vmlinuz || true
         done
+      args:
+        executable: /bin/bash
       when: old_kernels.stdout | length > 0
+      ignore_errors: yes
 
     - name: Find leftover el7 RPMs
       shell: |
@@ -162,46 +169,40 @@
       shell: grubby --info=ALL | grep -E '\.el7' || echo "Old Kernels are not present in the bootloader."
       register: grub_check
       changed_when: false
+      ignore_errors: yes
 
     - debug:
         var: grub_check.stdout_lines
 
-    # --------------------------
-    # UEFI-specific rescue / grub repair steps
-    # --------------------------
-    - name: Ensure efibootmgr and grub2 tools are available
+    ################################################################
+    # UEFI-specific rescue / grub repair (only if UEFI present)
+    ################################################################
+    - name: "UEFI steps - ensure efibootmgr and grub2 packages present"
       package:
         name:
           - efibootmgr
           - grub2-tools
           - grub2-tools-efi
-          - shim-x64
         state: present
+      when: efi_dir.stat.exists
       ignore_errors: yes
 
-    - name: Ensure at least one grub2 efi package is installed (try common names)
-      package:
-        name:
-          - grub2-efi-x64
-          - grub2-efi
-          - grub2-efi-modules
-        state: present
-      ignore_errors: yes
-
-    - name: Ensure /boot/efi mount point exists
+    - name: Ensure /boot/efi mount point exists (UEFI)
       file:
         path: /boot/efi
         state: directory
         mode: '0755'
+      when: efi_dir.stat.exists
 
     - name: Ensure EFI partition is mounted (will try /boot/efi if not mounted)
       mount:
         path: /boot/efi
         state: mounted
+      when: efi_dir.stat.exists
       register: efi_mount
       ignore_errors: yes
 
-    - name: Backup current /boot/efi/EFI/rocky directory if present
+    - name: Backup current /boot/efi/EFI/rocky directory if present (UEFI)
       shell: |
         if [ -d /boot/efi/EFI/rocky ]; then
           mkdir -p /root/efi_backup_{{ ansible_date_time.epoch }}
@@ -209,130 +210,173 @@
         fi
       args:
         executable: /bin/bash
+      when: efi_dir.stat.exists
       changed_when: false
+      ignore_errors: yes
 
-    - name: Rebuild rescue initramfs for current kernel
+    - name: Rebuild rescue initramfs for current kernel (UEFI)
       shell: dracut -f /boot/initramfs-{{ ansible_kernel }}-rescue.img {{ ansible_kernel }}
+      when: efi_dir.stat.exists
       register: rebuild_rescue
       changed_when: true
+      ignore_errors: yes
 
-    - name: Show rebuilt initramfs path
+    - name: Show rebuilt initramfs path (UEFI)
       debug:
         msg: "/boot/initramfs-{{ ansible_kernel }}-rescue.img rebuilt: {{ rebuild_rescue is defined }}"
+      when: efi_dir.stat.exists
 
-    - name: Remove any rescue efi files under /boot/efi/EFI/rocky
+    - name: Ensure EFI Rocky directory exists (UEFI)
       file:
         path: /boot/efi/EFI/rocky
         state: directory
-      # ensure directory exists so we can delete only rescue files safely
-    - name: Remove rescue-specific EFI files (wildcard)
+        mode: '0755'
+      when: efi_dir.stat.exists
+
+    - name: Remove rescue-specific EFI files (wildcard) (UEFI)
       shell: rm -f /boot/efi/EFI/rocky/*rescue* || true
       args:
         executable: /bin/bash
+      when: efi_dir.stat.exists
       ignore_errors: yes
 
-    - name: Generate grub config for both BIOS and EFI locations
+    - name: Generate grub config for both BIOS and EFI locations (UEFI)
       shell: |
         grub2-mkconfig -o /boot/grub2/grub.cfg || true
         grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg || true
       args:
         executable: /bin/bash
+      when: efi_dir.stat.exists
+      ignore_errors: yes
 
-    - name: Install GRUB EFI bootloader to the EFI directory (explicit target)
+    - name: Install GRUB EFI bootloader to the EFI directory (explicit target) (UEFI)
       shell: |
-        # Use explicit target to avoid modinfo.sh errors.
         if command -v grub2-install >/dev/null 2>&1; then
           grub2-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id="Rocky" || \
           grub2-install --efi-directory=/boot/efi --bootloader-id="Rocky" || true
         fi
       args:
         executable: /bin/bash
+      when: efi_dir.stat.exists
       register: grub_install
       ignore_errors: yes
 
-    - name: Show grub install output
+    - name: Show grub install output (UEFI)
       debug:
         var: grub_install.stdout_lines
+      when: efi_dir.stat.exists
 
-    - name: Ensure loader file exists (grubx64.efi) before creating boot entry
+    - name: Ensure loader file exists (grubx64.efi) before creating boot entry (UEFI)
       stat:
         path: /boot/efi/EFI/rocky/grubx64.efi
       register: grubx64_stat
+      when: efi_dir.stat.exists
+      changed_when: false
 
-    - name: Copy fallback grubx64.efi into place when missing
+    - name: Copy fallback grubx64.efi into place when missing (UEFI)
       shell: |
-        # try to locate grubx64.efi in common locations and copy to /boot/efi/EFI/rocky/
         mkdir -p /boot/efi/EFI/rocky
-        for src in /usr/lib/grub/x86_64-efi/core.efi /usr/lib/grub/x86_64-efi/grubx64.efi /usr/lib/grub2/x86_64-efi/grubx64.efi /usr/lib/grub2/x86_64-efi/core.efi; do
+        for src in \
+          /usr/lib/grub/x86_64-efi/core.efi \
+          /usr/lib/grub/x86_64-efi/grubx64.efi \
+          /usr/lib/grub2/x86_64-efi/grubx64.efi \
+          /usr/lib/grub2/x86_64-efi/core.efi; do
           if [ -f "$src" ]; then
             cp -a "$src" /boot/efi/EFI/rocky/grubx64.efi && break
           fi
         done
       args:
         executable: /bin/bash
-      when: not grubx64_stat.stat.exists
+      when:
+        - efi_dir.stat.exists
+        - not grubx64_stat.stat.exists
       ignore_errors: yes
 
-    - name: Gather current efibootmgr output
+    - name: Gather current efibootmgr output (UEFI)
       shell: efibootmgr -v || true
       register: efiboot_out
       changed_when: false
+      when: efi_dir.stat.exists
+      ignore_errors: yes
 
-    - name: Remove duplicate boot entries with label "Rocky Linux Rescue" or "Rocky Rescue"
+    - name: Remove duplicate boot entries with label "Rocky Linux Rescue" or "Rocky Rescue" (UEFI)
       shell: |
-        set -e
-        efibootmgr -v | awk -F' *\\* ' '/Rocky Linux Rescue|Rocky Rescue|Rocky Rescue/ {print $1}' | sed 's/Boot//' | awk '{print $1}' | while read -r b; do
+        efibootmgr -v | awk -F' *\\* ' '/Rocky Linux Rescue|Rocky Rescue|Rocky Linux/ {print $1}' | sed 's/Boot//' | awk '{print $1}' | while read -r b; do
           if [ -n "$b" ]; then
             efibootmgr -b "$b" -B || true
           fi
         done
       args:
         executable: /bin/bash
+      when: efi_dir.stat.exists
       ignore_errors: yes
 
-    - name: Create proper Rocky Linux Rescue EFI entry pointing to /EFI/rocky/grubx64.efi
+    - name: Create proper Rocky Linux Rescue EFI entry pointing to /EFI/rocky/grubx64.efi (UEFI)
       shell: |
-        # Create new entry if one doesn't exist with correct loader path
-        # Remove existing entry with identical label first (defensive)
-        # Create entry
-        efibootmgr -c -d /dev/sda -p 1 -L "Rocky Linux Rescue" -l "\\EFI\\rocky\\grubx64.efi" || true
+        # Defensive: remove identical label (if present) then create
+        set -e
+        # remove any existing entries using that loader path first
+        efibootmgr -v | awk -F' ' '/\\\\EFI\\\\rocky\\\\grubx64.efi/ {gsub("Boot","",$1); print $1}' | while read -r b; do
+          [ -n "$b" ] && efibootmgr -b "$b" -B || true
+        done || true
+        # create new entry (use double backslash escapes inside the quoted loader string)
+        efibootmgr -c -d /dev/sda -p 1 -L "Rocky Linux Rescue" -l "\\\\EFI\\\\rocky\\\\grubx64.efi" || true
       args:
         executable: /bin/bash
+      when: efi_dir.stat.exists
       register: efiboot_create
       ignore_errors: yes
 
-    - name: Show efibootmgr creation output
+    - name: Show efibootmgr creation output (UEFI)
       debug:
         var: efiboot_create.stdout_lines
+      when: efi_dir.stat.exists
 
-    - name: Ensure boot order favors Rocky (put Rocky first)
+    - name: Ensure boot order favors Rocky (put Rocky or Rocky Linux Rescue first) (UEFI)
       shell: |
-        # read current BootOrder
         current=$(efibootmgr | awk -F': ' '/BootOrder/ {print $2}')
-        # find Rocky or Rocky Linux Rescue entries
-        rocky_boot=$(efibootmgr | awk '/Rocky( Linux)? Rescue|Rocky Linux|rocky/ {gsub(\"Boot\",\"\",$1); print $1; exit}')
+        # find any Rocky / Rocky Linux Rescue entry number (first match)
+        rocky_boot=$(efibootmgr -v | awk '/Rocky Linux Rescue|Rocky Linux|rocky/ {gsub("Boot","",$1); print $1; exit}')
         if [ -n "$rocky_boot" ]; then
-          # put it first
-          efibootmgr -o ${rocky_boot},$(echo $current | sed 's/,/ /g' | tr ' ' ',') || true
+          # prepend rocky_boot to existing BootOrder (remove duplicates)
+          # build new order: rocky_boot followed by existing entries excluding rocky_boot
+          new_order="$rocky_boot"
+          for b in $(echo "$current" | tr ',' ' '); do
+            if [ "$b" != "$rocky_boot" ]; then
+              new_order="$new_order,$b"
+            fi
+          done
+          efibootmgr -o "$new_order" || true
         fi
       args:
         executable: /bin/bash
+      when: efi_dir.stat.exists
       ignore_errors: yes
 
     - name: Re-run grub2-mkconfig to ensure rescue entry is in grub.cfg (EFI)
       shell: grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg || true
       args:
         executable: /bin/bash
+      when: efi_dir.stat.exists
+      ignore_errors: yes
 
-    - name: Final reboot after cleanup (only if requested)
+    ################################################################
+    # Completion / verification
+    ################################################################
+    - name: Final note - play complete
       debug:
-        msg: "Play completed. Consider rebooting the host to apply bootloader changes."
-      # actual reboot is left manual; change this task to 'reboot:' if you want auto-reboot
+        msg: |
+          Play completed. -- Summary:
+          - RPMDB/kernel cleanup attempted.
+          - If UEFI present, GRUB/EFI repair steps were attempted.
+          Please review the debug outputs above (grub_install, efiboot_create, rebuild_rescue).
+          Reboot manually when ready (or change this play to reboot automatically).
 
     - name: Verify rescue initramfs contains modules (sanity)
       shell: lsinitrd /boot/initramfs-{{ ansible_kernel }}-rescue.img | grep -q "modules/" && echo "OK" || echo "FAIL"
       register: rescue_modules_check
       changed_when: false
+      ignore_errors: yes
 
     - debug:
         var: rescue_modules_check.stdout
