@@ -13,7 +13,7 @@
       set_fact:
         server_info:
           name: "{{ ansible_hostname }}.vgs.com"
-          ip: "{{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.netmask | ipaddr('net') | ipaddr('prefix') }}"
+          ip: "{{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.prefix }}"
           mac: "{{ ansible_default_ipv4.macaddress }}"
           interface: "{{ ansible_default_ipv4.interface }}"
           tag: "{{ tag }}"
