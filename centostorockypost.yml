@@ -6,7 +6,7 @@
 
   pre_tasks:
     - name: Ensure system is Rocky Linux 8
-    - assert:
+      assert:
         that:
           - ansible_distribution == "Rocky"
           - ansible_distribution_major_version == "8"
@@ -14,7 +14,6 @@
         success_msg: "✔ Rocky Linux 8 detected. Continuing..."
 
   tasks:
-
     - name: Ensure backup directory exists
       file:
         path: /etc/yum.repos.d/backup
