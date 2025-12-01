@@ -2,146 +2,146 @@
 - name: 🧹 Cleanup old CentOS 7 kernels and packages after ELevate migration
   hosts: all
   become: true
+  gather_facts: true
+
+  # Run ENTIRE play ONLY on Rocky Linux 8
+  when:
+    - ansible_distribution == "Rocky"
+    - ansible_distribution_major_version == "8"
 
   tasks:
 
-    - block:
+    ####################################################################
+    # 1. Pre-checks
+    ####################################################################
+    - name: List old el7 kernel directories
+      shell: ls -d /lib/modules/*.el7* || true
+      register: old_kernels
+      changed_when: false
 
-        - name: List old el7 kernel directories
-          shell: ls -d /lib/modules/*.el7* || true
-          register: old_kernels
-          changed_when: false
+    ####################################################################
+    # 2. Kernel Cleanup
+    ####################################################################
+    - name: Remove weak-modules for old el7 kernels
+      shell: |
+        for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
+          /usr/sbin/weak-modules --remove-kernel $k || true
+        done
 
-        - name: Remove weak-modules for old el7 kernels
-          shell: |
-            for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
-              /usr/sbin/weak-modules --remove-kernel $k || true
-            done
+    - name: Remove old kernels via kernel-install
+      shell: |
+        for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
+          /bin/kernel-install remove $k /lib/modules/$k/vmlinuz || true
+        done
 
-        - name: Remove old kernels via kernel-install
-          shell: |
-            for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
-              /bin/kernel-install remove $k /lib/modules/$k/vmlinuz || true
-            done
+    - name: Remove old kernel dirs
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /lib/modules/*el7*
 
-        - name: Find leftover el7 RPMs
-          shell: |
-            rpm -qa | grep -e '\.el[67]' | grep -vE '^(gpg-pubkey|libmoduled|katello-ca-consumer)' | sort
-          register: el7_rpms
-          changed_when: false
+    ####################################################################
+    # 3. RPM Cleanup
+    ####################################################################
+    - name: Find leftover el7 RPMs
+      shell: |
+        rpm -qa | grep -e '\.el[67]' | grep -vE '^(gpg-pubkey|libmoduled|katello-ca-consumer)' | sort
+      register: el7_rpms
+      changed_when: false
 
-        - name: Save el7 package list
-          copy:
-            dest: /tmp/rhel7.txt
-            content: "{{ el7_rpms.stdout }}"
+    - name: Save el7 package list
+      copy:
+        dest: /tmp/rhel7.txt
+        content: "{{ el7_rpms.stdout }}"
 
-        - name: Remove leftover el7 RPMs
-          shell: |
-            for i in $(cat /tmp/rhel7.txt); do
-              echo "Removing $i"
-              rpm -e $i --nodeps || true
-            done
-          when: el7_rpms.stdout != ""
+    - name: Remove leftover el7 RPMs
+      shell: |
+        for i in $(cat /tmp/rhel7.txt); do
+          echo "Removing $i"
+          rpm -e $i --nodeps || true
+        done
+      when: el7_rpms.stdout != ""
 
-        - name: Cleanup leapp packages
-          yum:
-            name:
-              - leapp-pp
-              - leapp-deps-el8
-              - leapp-repository-deps-el8
-            state: absent
+    - name: Cleanup leapp packages
+      yum:
+        name:
+          - leapp-pp
+          - leapp-deps-el8
+          - leapp-repository-deps-el8
+        state: absent
 
-        - name: Remove leapp logs and old kernel dirs
-          file:
-            path: "{{ item }}"
-            state: absent
-          loop:
-            - /lib/modules/*el7*
-            - /var/log/leapp/
-            - /root/tmp_leapp_py3
-            - /var/lib/leapp/
+    - name: Remove leapp logs and temp dirs
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/log/leapp/
+        - /root/tmp_leapp_py3
+        - /var/lib/leapp/
 
-        - name: Reinstall current kernel-core
-          shell: dnf reinstall -y kernel-core-$(uname -r)
+    ####################################################################
+    # 4. Kernel Reinstallation & Grub Verification
+    ####################################################################
+    - name: Reinstall current kernel-core
+      shell: dnf reinstall -y kernel-core-$(uname -r)
 
-        - name: Verify old kernels are not in grub
-          shell: grubby --info=ALL | grep :"\el7" || echo "Old Kernels are not present in the bootloader."
-          register: grub_check
-          changed_when: false
+    - name: Verify old kernels are not in grub
+      shell: grubby --info=ALL | grep :"\el7" || echo "Old Kernels are not present in bootloader."
+      register: grub_check
+      changed_when: false
 
-        - name: Show grub verification result
-          debug:
-            var: grub_check.stdout_lines
+    - name: Show grub verification
+      debug:
+        var: grub_check.stdout_lines
 
-        - name: Verify rescue image contains current kernel
-          shell: |
-            lsinitrd /boot/initramfs-*rescue*.img | grep -qm1 "$(uname -r)/kernel/" && echo "OK" || echo "FAIL"
-          register: rescue_check
-          changed_when: false
+    ####################################################################
+    # 5. Rescue Image Rebuild
+    ####################################################################
+    - name: Remove old rescue images
+      shell: rm -rf /boot/vmlinuz-*rescue* /boot/initramfs-*rescue*
+      args:
+        warn: false
 
-        - name: Show rescue verification
-          debug:
-            var: rescue_check.stdout_lines
+    - name: Regenerate rescue entry
+      shell: |
+        /usr/lib/kernel/install.d/51-dracut-rescue.install add "$(uname -r)" /boot "/boot/vmlinuz-$(uname -r)"
 
+    - name: List regenerated rescue images
+      shell: ls /boot/vmlinuz-*rescue* /boot/initramfs-*rescue*
+      register: rescue_files
+      changed_when: false
 
-        ####################################################################
-        # 🔽 NEW TASKS YOU REQUESTED — Rock8 only
-        ####################################################################
+    - name: Show rescue images
+      debug:
+        var: rescue_files.stdout_lines
 
-        - name: Remove existing rescue kernel images
-          shell: rm -rf /boot/vmlinuz-*rescue* /boot/initramfs-*rescue*
-          args:
-            warn: false
+    - name: Validate rescue initramfs contains correct kernel
+      shell: |
+        lsinitrd /boot/initramfs-*rescue*.img | grep -qm1 "$(uname -r)/kernel/" && echo OK || echo FAIL
+      register: rescue_validation
+      changed_when: false
 
-        - name: Regenerate rescue entry using dracut-rescue.install
-          shell: |
-            /usr/lib/kernel/install.d/51-dracut-rescue.install add "$(uname -r)" /boot "/boot/vmlinuz-$(uname -r)"
+    - name: Show rescue validation
+      debug:
+        var: rescue_validation.stdout_lines
 
-        - name: Check grub entries for el7 leftovers
-          shell: grubby --info=ALL | grep "\.el7" || echo "Old kernels are not present in the boot loader."
-          register: grub_check2
-          changed_when: false
+    - name: Show grub entry for rescue kernel
+      shell: grubby --info $(ls /boot/vmlinuz-*rescue*)
+      register: grub_rescue
+      changed_when: false
 
-        - name: Show el7 grub verification
-          debug:
-            var: grub_check2.stdout_lines
+    - name: Show rescue grub entry
+      debug:
+        var: grub_rescue.stdout_lines
 
-        - name: List regenerated rescue kernel files
-          shell: ls /boot/vmlinuz-*rescue* /boot/initramfs-*rescue*
-          register: rescue_list
-          changed_when: false
-
-        - name: Show rescue kernel files
-          debug:
-            var: rescue_list.stdout_lines
-
-        - name: Verify rescue initramfs contains correct kernel
-          shell: |
-            lsinitrd /boot/initramfs-*rescue*.img | grep -qm1 "$(uname -r)/kernel/" && echo "OK" || echo "FAIL"
-          register: rescue_ok
-          changed_when: false
-
-        - name: Show rescue kernel verification
-          debug:
-            var: rescue_ok.stdout_lines
-
-        - name: Show grub info for rescue kernel
-          shell: grubby --info $(ls /boot/vmlinuz-*rescue*)
-          register: grub_rescue
-          changed_when: false
-
-        - name: Show rescue grub entry details
-          debug:
-            var: grub_rescue.stdout_lines
-
-        ####################################################################
-
-        - name: Final reboot after cleanup
-          reboot:
-            msg: "Final reboot after cleanup"
-            connect_timeout: 5
-            reboot_timeout: 600
-            pre_reboot_delay: 10
-            post_reboot_delay: 30
-
-      when: ansible_distribution == "Rocky" and ansible_distribution_major_version == "8"
+    ####################################################################
+    # 6. Final Reboot
+    ####################################################################
+    - name: Final reboot after cleanup
+      reboot:
+        msg: "Final reboot after ELevate cleanup"
+        connect_timeout: 5
+        reboot_timeout: 600
+        pre_reboot_delay: 10
+        post_reboot_delay: 30
