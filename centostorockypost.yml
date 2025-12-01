@@ -15,6 +15,78 @@
 
   tasks:
 
+    ################################################################
+    # Basic repo/RPMDB/kernel cleanup (non-UEFI-specific)
+    ################################################################
+    - name: Ensure backup directory exists
+      file:
+        path: /etc/yum.repos.d/backup
+        state: directory
+        mode: '0755'
+
+    - name: Move all repo files except backup directory
+      shell: |
+        shopt -s extglob
+        mv /etc/yum.repos.d/!(backup) /etc/yum.repos.d/backup/ || true
+      args:
+        executable: /bin/bash
+      ignore_errors: yes
+
+    - name: Create Rocky Linux 8 repo
+      copy:
+        dest: /etc/yum.repos.d/base.repo
+        content: |
+          [rocky8-baseos]
+          name=Rocky Linux 8 - BaseOS
+          baseurl=http://http-server-01/repo/rocky8/BaseOS/
+          gpgcheck=0
+          enabled=1
+
+          [rocky8-appstream]
+          name=Rocky Linux 8 - AppStream
+          baseurl=http://http-server-01/repo/rocky8/AppStream/
+          gpgcheck=0
+          enabled=1
+        mode: '0644'
+
+    - name: Backup current RPM database
+      command: mv /var/lib/rpm /var/lib/rpm.bak-{{ ansible_date_time.epoch }}
+      args:
+        creates: "/var/lib/rpm.bak-{{ ansible_date_time.epoch }}"
+
+    - name: Create new empty RPM db directory
+      file:
+        path: /var/lib/rpm
+        state: directory
+        mode: '0755'
+
+    - name: Initialize new RPM database
+      command: rpm --initdb
+
+    - name: Restore Packages file from backup (if available)
+      command: cp -av /var/lib/rpm.bak-{{ ansible_date_time.epoch }}/Packages /var/lib/rpm/
+      ignore_errors: yes
+
+    - name: Force remove stale __db* files
+      shell: rm -f /var/lib/rpm/__db.* || true
+      ignore_errors: yes
+
+    - name: Rebuild RPM database
+      command: rpm --rebuilddb
+      ignore_errors: yes
+
+    - name: Clean DNF cache
+      command: dnf clean all
+      ignore_errors: yes
+
+    - name: Verify rpmdb works
+      command: dnf list installed
+      register: rpmdb_test
+      ignore_errors: yes
+
+    - debug:
+        msg: "RPM DB status: {{ rpmdb_test.stdout | default('Failed to query rpmdb') }}"
+
     ####################################################################
     # 1. Pre-checks
     ####################################################################
