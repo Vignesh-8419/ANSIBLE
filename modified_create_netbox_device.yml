@@ -1,3 +1,8 @@
+# ============================================================
+#  NetBox Device Creation With Overwrite Mode
+# ============================================================
+
+# ---------- 1. Create Tag If It Doesn't Exist ----------
 - name: Create tag if not exists
   uri:
     url: "{{ netbox_url }}/api/extras/tags/"
@@ -11,6 +16,7 @@
     status_code: [200, 201, 400]
     validate_certs: no
 
+# ---------- 2. Get Tag ID ----------
 - name: Get tag ID
   uri:
     url: "{{ netbox_url }}/api/extras/tags/?name={{ item.tag }}"
@@ -23,9 +29,37 @@
 
 - name: Set tag_id
   set_fact:
-    tag_id: "{{ (tag_response.json.results | first).id | default(omit) }}"
+    tag_id: "{{ (tag_response.json.results | first).id }}"
 
-- name: Create device
+# ---------- 3. Check if device already exists ----------
+- name: Check if device exists
+  uri:
+    url: "{{ netbox_url }}/api/dcim/devices/?name={{ item.name }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: existing_device
+
+- name: Set existing_device_id
+  set_fact:
+    existing_device_id: "{{ existing_device.json.results[0].id }}"
+  when: existing_device.json.results | length > 0
+
+# ---------- 4. DELETE device if exists (OVERWRITE MODE) ----------
+- name: Delete existing device (overwrite mode)
+  uri:
+    url: "{{ netbox_url }}/api/dcim/devices/{{ existing_device_id }}/"
+    method: DELETE
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    status_code: [204, 404]
+    validate_certs: no
+  when: existing_device_id is defined
+
+# ---------- 5. Create NEW device ----------
+- name: Create new device
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/"
     method: POST
@@ -38,19 +72,18 @@
       role: "{{ role_id }}"
       site: "{{ site_id }}"
       status: "active"
-      tags: "{{ tag_id | default([]) | list }}"
-      serial: "{{ item.serial }}"
+      tags: [ "{{ tag_id }}" ]
+      serial: "{{ item.serial | default('') }}"
     status_code: [200, 201]
     return_content: yes
     validate_certs: no
   register: device_response
-  when: tag_id is defined
 
 - name: Set device_id
   set_fact:
     device_id: "{{ device_response.json.id }}"
-  when: device_response is defined
 
+# ---------- 6. Create Interface ----------
 - name: Create interface
   uri:
     url: "{{ netbox_url }}/api/dcim/interfaces/"
@@ -67,13 +100,12 @@
     return_content: yes
     validate_certs: no
   register: interface_response
-  when: device_id is defined
 
 - name: Set interface_id
   set_fact:
     interface_id: "{{ interface_response.json.id }}"
-  when: interface_response is defined
 
+# ---------- 7. Assign IP ----------
 - name: Assign IP address
   uri:
     url: "{{ netbox_url }}/api/ipam/ip-addresses/"
@@ -89,8 +121,8 @@
     status_code: [200, 201]
     validate_certs: no
   register: ip_response
-  when: interface_id is defined
 
+# ---------- 8. Set Primary IP ----------
 - name: Set primary IP for device
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
@@ -102,4 +134,3 @@
       primary_ip4: "{{ ip_response.json.id }}"
     status_code: [200, 201]
     validate_certs: no
-  when: ip_response is defined and device_id is defined
