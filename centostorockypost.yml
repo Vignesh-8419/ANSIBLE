@@ -1,390 +1,147 @@
 ---
-- name: Full RPMDB + Kernel Cleanup & UEFI Rescue Repair for Rocky Linux 8
+- name: 🧹 Cleanup old CentOS 7 kernels and packages after ELevate migration
   hosts: all
   become: true
-  gather_facts: yes
-
-  pre_tasks:
-    - name: Ensure system is Rocky Linux 8
-      assert:
-        that:
-          - ansible_distribution == "Rocky"
-          - ansible_distribution_major_version == "8"
-        fail_msg: "❌ This playbook can run ONLY on Rocky Linux 8!"
-        success_msg: "✔ Rocky Linux 8 detected. Continuing..."
-
-    - name: Detect whether this machine is UEFI
-      stat:
-        path: /sys/firmware/efi
-      register: efi_dir
-      changed_when: false
-
-    - name: Print boot mode
-      debug:
-        msg: "UEFI detected: {{ efi_dir.stat.exists }}"
 
   tasks:
-    ################################################################
-    # Basic repo/RPMDB/kernel cleanup (non-UEFI-specific)
-    ################################################################
-    - name: Ensure backup directory exists
-      file:
-        path: /etc/yum.repos.d/backup
-        state: directory
-        mode: '0755'
 
-    - name: Move all repo files except backup directory
-      shell: |
-        shopt -s extglob
-        mv /etc/yum.repos.d/!(backup) /etc/yum.repos.d/backup/ || true
-      args:
-        executable: /bin/bash
-      ignore_errors: yes
+    - block:
 
-    - name: Create Rocky Linux 8 repo
-      copy:
-        dest: /etc/yum.repos.d/base.repo
-        content: |
-          [rocky8-baseos]
-          name=Rocky Linux 8 - BaseOS
-          baseurl=http://http-server-01/repo/rocky8/BaseOS/
-          gpgcheck=0
-          enabled=1
+        - name: List old el7 kernel directories
+          shell: ls -d /lib/modules/*.el7* || true
+          register: old_kernels
+          changed_when: false
 
-          [rocky8-appstream]
-          name=Rocky Linux 8 - AppStream
-          baseurl=http://http-server-01/repo/rocky8/AppStream/
-          gpgcheck=0
-          enabled=1
-        mode: '0644'
+        - name: Remove weak-modules for old el7 kernels
+          shell: |
+            for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
+              /usr/sbin/weak-modules --remove-kernel $k || true
+            done
 
-    - name: Backup current RPM database
-      command: mv /var/lib/rpm /var/lib/rpm.bak-{{ ansible_date_time.epoch }}
-      args:
-        creates: "/var/lib/rpm.bak-{{ ansible_date_time.epoch }}"
+        - name: Remove old kernels via kernel-install
+          shell: |
+            for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
+              /bin/kernel-install remove $k /lib/modules/$k/vmlinuz || true
+            done
 
-    - name: Create new empty RPM db directory
-      file:
-        path: /var/lib/rpm
-        state: directory
-        mode: '0755'
+        - name: Find leftover el7 RPMs
+          shell: |
+            rpm -qa | grep -e '\.el[67]' | grep -vE '^(gpg-pubkey|libmoduled|katello-ca-consumer)' | sort
+          register: el7_rpms
+          changed_when: false
 
-    - name: Initialize new RPM database
-      command: rpm --initdb
+        - name: Save el7 package list
+          copy:
+            dest: /tmp/rhel7.txt
+            content: "{{ el7_rpms.stdout }}"
 
-    - name: Restore Packages file from backup (if available)
-      command: cp -av /var/lib/rpm.bak-{{ ansible_date_time.epoch }}/Packages /var/lib/rpm/
-      ignore_errors: yes
+        - name: Remove leftover el7 RPMs
+          shell: |
+            for i in $(cat /tmp/rhel7.txt); do
+              echo "Removing $i"
+              rpm -e $i --nodeps || true
+            done
+          when: el7_rpms.stdout != ""
 
-    - name: Force remove stale __db* files
-      shell: rm -f /var/lib/rpm/__db.* || true
-      ignore_errors: yes
+        - name: Cleanup leapp packages
+          yum:
+            name:
+              - leapp-pp
+              - leapp-deps-el8
+              - leapp-repository-deps-el8
+            state: absent
 
-    - name: Rebuild RPM database
-      command: rpm --rebuilddb
-      ignore_errors: yes
+        - name: Remove leapp logs and old kernel dirs
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /lib/modules/*el7*
+            - /var/log/leapp/
+            - /root/tmp_leapp_py3
+            - /var/lib/leapp/
 
-    - name: Clean DNF cache
-      command: dnf clean all
-      ignore_errors: yes
+        - name: Reinstall current kernel-core
+          shell: dnf reinstall -y kernel-core-$(uname -r)
 
-    - name: Verify rpmdb works
-      command: dnf list installed
-      register: rpmdb_test
-      ignore_errors: yes
+        - name: Verify old kernels are not in grub
+          shell: grubby --info=ALL | grep :"\el7" || echo "Old Kernels are not present in the bootloader."
+          register: grub_check
+          changed_when: false
 
-    - debug:
-        msg: "RPM DB status: {{ rpmdb_test.stdout | default('Failed to query rpmdb') }}"
+        - name: Show grub verification result
+          debug:
+            var: grub_check.stdout_lines
 
-    - name: List old el7 kernel directories
-      shell: ls -d /lib/modules/*.el7* 2>/dev/null || true
-      register: old_kernels
-      changed_when: false
+        - name: Verify rescue image contains current kernel
+          shell: |
+            lsinitrd /boot/initramfs-*rescue*.img | grep -qm1 "$(uname -r)/kernel/" && echo "OK" || echo "FAIL"
+          register: rescue_check
+          changed_when: false
 
-    - name: Remove weak-modules for old el7 kernels
-      shell: |
-        for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
-          /usr/sbin/weak-modules --remove-kernel "$k" || true
-        done
-      args:
-        executable: /bin/bash
-      when: old_kernels.stdout | length > 0
-      ignore_errors: yes
+        - name: Show rescue verification
+          debug:
+            var: rescue_check.stdout_lines
 
-    - name: Remove old kernels via kernel-install
-      shell: |
-        for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
-          /bin/kernel-install remove "$k" /lib/modules/"$k"/vmlinuz || true
-        done
-      args:
-        executable: /bin/bash
-      when: old_kernels.stdout | length > 0
-      ignore_errors: yes
 
-    - name: Find leftover el7 RPMs
-      shell: |
-        rpm -qa | grep -E '\.el[67]' | grep -vE '^(gpg-pubkey|libmoduled|katello-ca-consumer)' | sort || true
-      register: el7_rpms
-      changed_when: false
+        ####################################################################
+        # 🔽 NEW TASKS YOU REQUESTED — Rock8 only
+        ####################################################################
 
-    - name: Save el7 package list
-      copy:
-        dest: /tmp/rhel7.txt
-        content: "{{ el7_rpms.stdout | default('') }}"
+        - name: Remove existing rescue kernel images
+          shell: rm -rf /boot/vmlinuz-*rescue* /boot/initramfs-*rescue*
+          args:
+            warn: false
 
-    - name: Remove leftover el7 RPMs
-      shell: |
-        if [ -s /tmp/rhel7.txt ]; then
-          while read -r pkg; do
-            echo "Removing $pkg"
-            rpm -e "$pkg" --nodeps || true
-          done < /tmp/rhel7.txt
-        fi
-      args:
-        executable: /bin/bash
-      ignore_errors: yes
+        - name: Regenerate rescue entry using dracut-rescue.install
+          shell: |
+            /usr/lib/kernel/install.d/51-dracut-rescue.install add "$(uname -r)" /boot "/boot/vmlinuz-$(uname -r)"
 
-    - name: Cleanup leapp packages
-      shell: dnf remove -y 'leapp*' || true
-      ignore_errors: yes
+        - name: Check grub entries for el7 leftovers
+          shell: grubby --info=ALL | grep "\.el7" || echo "Old kernels are not present in the boot loader."
+          register: grub_check2
+          changed_when: false
 
-    - name: Remove leapp logs and old kernel dirs
-      file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /lib/modules/*el7*
-        - /var/log/leapp/
-        - /root/tmp_leapp_py3
-        - /var/lib/leapp/
-        - /boot/vmlinuz-*rescue*
-        - /boot/initramfs-*rescue*
-      ignore_errors: yes
+        - name: Show el7 grub verification
+          debug:
+            var: grub_check2.stdout_lines
 
-    - name: Reinstall current kernel-core
-      shell: dnf reinstall -y kernel-core || true
-      ignore_errors: yes
+        - name: List regenerated rescue kernel files
+          shell: ls /boot/vmlinuz-*rescue* /boot/initramfs-*rescue*
+          register: rescue_list
+          changed_when: false
 
-    - name: Verify old kernels are not in grub (grubby)
-      shell: grubby --info=ALL | grep -E '\.el7' || echo "Old Kernels are not present in the bootloader."
-      register: grub_check
-      changed_when: false
-      ignore_errors: yes
+        - name: Show rescue kernel files
+          debug:
+            var: rescue_list.stdout_lines
 
-    - debug:
-        var: grub_check.stdout_lines
+        - name: Verify rescue initramfs contains correct kernel
+          shell: |
+            lsinitrd /boot/initramfs-*rescue*.img | grep -qm1 "$(uname -r)/kernel/" && echo "OK" || echo "FAIL"
+          register: rescue_ok
+          changed_when: false
 
-    ################################################################
-    # UEFI-specific rescue / grub repair (only if UEFI present)
-    ################################################################
-    - name: "UEFI steps - ensure efibootmgr and grub2 packages present"
-      package:
-        name:
-          - efibootmgr
-          - grub2-tools
-          - grub2-tools-efi
-        state: present
-      when: efi_dir.stat.exists
-      ignore_errors: yes
+        - name: Show rescue kernel verification
+          debug:
+            var: rescue_ok.stdout_lines
 
-    - name: Ensure /boot/efi mount point exists (UEFI)
-      file:
-        path: /boot/efi
-        state: directory
-        mode: '0755'
-      when: efi_dir.stat.exists
+        - name: Show grub info for rescue kernel
+          shell: grubby --info $(ls /boot/vmlinuz-*rescue*)
+          register: grub_rescue
+          changed_when: false
 
-    - name: Ensure EFI partition is mounted (will try /boot/efi if not mounted)
-      mount:
-        path: /boot/efi
-        state: mounted
-      when: efi_dir.stat.exists
-      register: efi_mount
-      ignore_errors: yes
+        - name: Show rescue grub entry details
+          debug:
+            var: grub_rescue.stdout_lines
 
-    - name: Backup current /boot/efi/EFI/rocky directory if present (UEFI)
-      shell: |
-        if [ -d /boot/efi/EFI/rocky ]; then
-          mkdir -p /root/efi_backup_{{ ansible_date_time.epoch }}
-          cp -a /boot/efi/EFI/rocky /root/efi_backup_{{ ansible_date_time.epoch }} || true
-        fi
-      args:
-        executable: /bin/bash
-      when: efi_dir.stat.exists
-      changed_when: false
-      ignore_errors: yes
+        ####################################################################
 
-    - name: Rebuild rescue initramfs for current kernel (UEFI)
-      shell: dracut -f /boot/initramfs-{{ ansible_kernel }}-rescue.img {{ ansible_kernel }}
-      when: efi_dir.stat.exists
-      register: rebuild_rescue
-      changed_when: true
-      ignore_errors: yes
+        - name: Final reboot after cleanup
+          reboot:
+            msg: "Final reboot after cleanup"
+            connect_timeout: 5
+            reboot_timeout: 600
+            pre_reboot_delay: 10
+            post_reboot_delay: 30
 
-    - name: Show rebuilt initramfs path (UEFI)
-      debug:
-        msg: "/boot/initramfs-{{ ansible_kernel }}-rescue.img rebuilt: {{ rebuild_rescue is defined }}"
-      when: efi_dir.stat.exists
-
-    - name: Ensure EFI Rocky directory exists (UEFI)
-      file:
-        path: /boot/efi/EFI/rocky
-        state: directory
-        mode: '0755'
-      when: efi_dir.stat.exists
-
-    - name: Remove rescue-specific EFI files (wildcard) (UEFI)
-      shell: rm -f /boot/efi/EFI/rocky/*rescue* || true
-      args:
-        executable: /bin/bash
-      when: efi_dir.stat.exists
-      ignore_errors: yes
-
-    - name: Generate grub config for both BIOS and EFI locations (UEFI)
-      shell: |
-        grub2-mkconfig -o /boot/grub2/grub.cfg || true
-        grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg || true
-      args:
-        executable: /bin/bash
-      when: efi_dir.stat.exists
-      ignore_errors: yes
-
-    - name: Install GRUB EFI bootloader to the EFI directory (explicit target) (UEFI)
-      shell: |
-        if command -v grub2-install >/dev/null 2>&1; then
-          grub2-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id="Rocky" || \
-          grub2-install --efi-directory=/boot/efi --bootloader-id="Rocky" || true
-        fi
-      args:
-        executable: /bin/bash
-      when: efi_dir.stat.exists
-      register: grub_install
-      ignore_errors: yes
-
-    - name: Show grub install output (UEFI)
-      debug:
-        var: grub_install.stdout_lines
-      when: efi_dir.stat.exists
-
-    - name: Ensure loader file exists (grubx64.efi) before creating boot entry (UEFI)
-      stat:
-        path: /boot/efi/EFI/rocky/grubx64.efi
-      register: grubx64_stat
-      when: efi_dir.stat.exists
-      changed_when: false
-
-    - name: Copy fallback grubx64.efi into place when missing (UEFI)
-      shell: |
-        mkdir -p /boot/efi/EFI/rocky
-        for src in \
-          /usr/lib/grub/x86_64-efi/core.efi \
-          /usr/lib/grub/x86_64-efi/grubx64.efi \
-          /usr/lib/grub2/x86_64-efi/grubx64.efi \
-          /usr/lib/grub2/x86_64-efi/core.efi; do
-          if [ -f "$src" ]; then
-            cp -a "$src" /boot/efi/EFI/rocky/grubx64.efi && break
-          fi
-        done
-      args:
-        executable: /bin/bash
-      when:
-        - efi_dir.stat.exists
-        - not grubx64_stat.stat.exists
-      ignore_errors: yes
-
-    - name: Gather current efibootmgr output (UEFI)
-      shell: efibootmgr -v || true
-      register: efiboot_out
-      changed_when: false
-      when: efi_dir.stat.exists
-      ignore_errors: yes
-
-    - name: Remove duplicate boot entries with label "Rocky Linux Rescue" or "Rocky Rescue" (UEFI)
-      shell: |
-        efibootmgr -v | awk -F' *\\* ' '/Rocky Linux Rescue|Rocky Rescue|Rocky Linux/ {print $1}' | sed 's/Boot//' | awk '{print $1}' | while read -r b; do
-          if [ -n "$b" ]; then
-            efibootmgr -b "$b" -B || true
-          fi
-        done
-      args:
-        executable: /bin/bash
-      when: efi_dir.stat.exists
-      ignore_errors: yes
-
-    - name: Create proper Rocky Linux Rescue EFI entry pointing to /EFI/rocky/grubx64.efi (UEFI)
-      shell: |
-        # Defensive: remove identical label (if present) then create
-        set -e
-        # remove any existing entries using that loader path first
-        efibootmgr -v | awk -F' ' '/\\\\EFI\\\\rocky\\\\grubx64.efi/ {gsub("Boot","",$1); print $1}' | while read -r b; do
-          [ -n "$b" ] && efibootmgr -b "$b" -B || true
-        done || true
-        # create new entry (use double backslash escapes inside the quoted loader string)
-        efibootmgr -c -d /dev/sda -p 1 -L "Rocky Linux Rescue" -l "\\\\EFI\\\\rocky\\\\grubx64.efi" || true
-      args:
-        executable: /bin/bash
-      when: efi_dir.stat.exists
-      register: efiboot_create
-      ignore_errors: yes
-
-    - name: Show efibootmgr creation output (UEFI)
-      debug:
-        var: efiboot_create.stdout_lines
-      when: efi_dir.stat.exists
-
-    - name: Ensure boot order favors Rocky (put Rocky or Rocky Linux Rescue first) (UEFI)
-      shell: |
-        current=$(efibootmgr | awk -F': ' '/BootOrder/ {print $2}')
-        # find any Rocky / Rocky Linux Rescue entry number (first match)
-        rocky_boot=$(efibootmgr -v | awk '/Rocky Linux Rescue|Rocky Linux|rocky/ {gsub("Boot","",$1); print $1; exit}')
-        if [ -n "$rocky_boot" ]; then
-          # prepend rocky_boot to existing BootOrder (remove duplicates)
-          # build new order: rocky_boot followed by existing entries excluding rocky_boot
-          new_order="$rocky_boot"
-          for b in $(echo "$current" | tr ',' ' '); do
-            if [ "$b" != "$rocky_boot" ]; then
-              new_order="$new_order,$b"
-            fi
-          done
-          efibootmgr -o "$new_order" || true
-        fi
-      args:
-        executable: /bin/bash
-      when: efi_dir.stat.exists
-      ignore_errors: yes
-
-    - name: Re-run grub2-mkconfig to ensure rescue entry is in grub.cfg (EFI)
-      shell: grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg || true
-      args:
-        executable: /bin/bash
-      when: efi_dir.stat.exists
-      ignore_errors: yes
-
-    ################################################################
-    # Completion / verification
-    ################################################################
-    - name: Final note - play complete
-      debug:
-        msg: |
-          Play completed. -- Summary:
-          - RPMDB/kernel cleanup attempted.
-          - If UEFI present, GRUB/EFI repair steps were attempted.
-          Please review the debug outputs above (grub_install, efiboot_create, rebuild_rescue).
-          Reboot manually when ready (or change this play to reboot automatically).
-
-    - name: Verify rescue initramfs contains modules (sanity)
-      shell: lsinitrd /boot/initramfs-{{ ansible_kernel }}-rescue.img | grep -q "modules/" && echo "OK" || echo "FAIL"
-      register: rescue_modules_check
-      changed_when: false
-      ignore_errors: yes
-
-    - debug:
-        var: rescue_modules_check.stdout
-
-    - name: Final reboot after cleanup
-      reboot:
-        msg: "Rebooting after RPMDB/UEFI rescue changes"
-        connect_timeout: 5
-        reboot_timeout: 600
-        pre_reboot_delay: 10
-        post_reboot_delay: 30
+      when: ansible_distribution == "Rocky" and ansible_distribution_major_version == "8"
