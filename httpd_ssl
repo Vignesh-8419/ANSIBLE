@@ -381,34 +381,41 @@ PidFile /var/run/httpd/httpd.pid
  systemctl status httpd
 
 
-Step-by-Step SOP (Exactly What We Did)
 
-Install and enable mod_ssl (only once)Bashsudo yum install -y mod_ssl        # or dnf install mod_ssl on newer systems
-Put your certificate and key in the standard locationBashsudo cp your-cert.crt /etc/pki/tls/certs/crt.pem
+
+
+
+
+============================================
+
+
+sudo yum install -y mod_ssl        # or dnf install mod_ssl on newer systems
+sudo cp your-cert.crt /etc/pki/tls/certs/crt.pem
 sudo cp your-key.key  /etc/pki/tls/private/pvt.pem
 sudo chmod 600 /etc/pki/tls/private/pvt.pem
-Edit the default SSL VirtualHost (port 443) – usually /etc/httpd/conf.d/ssl.confBashsudo vi /etc/httpd/conf.d/ssl.confMake sure these lines exist inside the <VirtualHost _default_:443> or <VirtualHost *:443> block:apacheServerName http-server-01.vgs.com
+sudo vi /etc/httpd/conf.d/ssl.conf
+ServerName http-server-01.vgs.com
 SSLEngine on
 SSLCertificateFile /etc/pki/tls/certs/crt.pem
 SSLCertificateKeyFile /etc/pki/tls/private/pvt.pem
-Create a clean HTTP-to-HTTPS redirect file (port 80 only)Bashsudo vi /etc/httpd/conf.d/ssl-redirect.confContent (only these lines):apache<VirtualHost *:80>
+sudo vi /etc/httpd/conf.d/ssl-redirect.conf
+<VirtualHost *:80>
     ServerName http-server-01.vgs.com
     RewriteEngine On
     RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [L,R=301]
 </VirtualHost>
-Make sure mod_rewrite is loaded (it is loaded by default)Bashgrep -i rewrite /etc/httpd/conf.modules.d/00-base.confYou must see:textLoadModule rewrite_module modules/mod_rewrite.so→ Do NOT create any file/symlink named 00-rewrite.conf
-If you accidentally created a broken symlink, remove itBashsudo rm -f /etc/httpd/conf.modules.d/00-rewrite.conf
-Test configurationBashsudo apachectl configtestMust return: Syntax OK
-Restart ApacheBashsudo systemctl restart httpd
+grep -i rewrite /etc/httpd/conf.modules.d/00-base.conf
+#You must see: LoadModule rewrite_module modules/mod_rewrite.so
+sudo rm -f /etc/httpd/conf.modules.d/00-rewrite.conf
+sudo apachectl configtest
+sudo systemctl restart httpd
 sudo systemctl status httpd    # should be active (running)
-Verify redirect worksBashcurl -I http://http-server-01.vgs.comExpected output:textHTTP/1.1 301 Moved Permanently
+curl -I http://http-server-01.vgs.com
+HTTP/1.1 301 Moved Permanently
 Location: https://http-server-01.vgs.com/
 
-Final File Summary
 
-/etc/httpd/conf.d/ssl.conf          → contains only the real <VirtualHost *:443> with SSLEngine and certificates
-/etc/httpd/conf.d/ssl-redirect.conf → contains only the <VirtualHost *:80> redirect block
-No duplicate <VirtualHost *:443> anywhere
-No file named 00-rewrite.conf
 
-You can now safely re-run this SOP on any similar server. Just copy-paste the commands in order.
+
+
+=========================================
