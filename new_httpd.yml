@@ -1,5 +1,5 @@
 ---
-- name: Configure HTTP server with real SSL cert + HTTP→HTTPS redirect + Rocky repo via CIFS
+- name: Configure HTTP server with auto-generated self-signed SSL + HTTP→HTTPS redirect + Rocky repo
   hosts: all
   become: yes
   vars:
@@ -8,13 +8,11 @@
     cifs_username: "vigne"
     cifs_password: "Vigneshv12$"
     fqdn: "http-server-01.vgs.com"
-
-    # CHANGE THESE TWO PATHS to where your real cert/key are located on the target server
-    source_cert: "/tmp/crt.pem"        # or /home/vigne/crt.pem, etc.
-    source_key:  "/tmp/pvt.pem"        # or /home/vigne/pvt.pem, etc.
-
+    ssl_key_path: "/etc/pki/tls/private/pvt.pem"
     ssl_cert_path: "/etc/pki/tls/certs/crt.pem"
-    ssl_key_path:  "/etc/pki/tls/private/pvt.pem"
+    temp_key: "/tmp/pvt.pem"
+    temp_csr: "/tmp/cert.pem"
+    temp_cert: "/tmp/crt.pem"
 
   tasks:
     - name: Create mount point directory for CIFS share
@@ -38,6 +36,7 @@
           - mod_ssl
           - createrepo
           - firewalld
+          - openssl
         state: present
 
     - name: Ensure firewalld is running
@@ -67,24 +66,60 @@
           </Directory>
         marker: "# {mark} ANSIBLE MANAGED BLOCK FOR /var/www/html"
 
-    # ——— REAL CERTIFICATE COPY (this replaces self-signed generation) ———
-    - name: Copy real certificate to Apache location
+    # ——— Generate self-signed certificate exactly like your manual commands ———
+    - name: Generate 2048-bit private key
+      openssl_privatekey:
+        path: "{{ temp_key }}"
+        size: 2048
+      register: key_gen
+
+    - name: Generate Certificate Signing Request (CSR)
+      openssl_csr:
+        path: "{{ temp_csr }}"
+        privatekey_path: "{{ temp_key }}"
+        common_name: "{{ fqdn }}"
+        country_name: IN
+        state_or_province_name: Tamil Nadu
+        locality_name: Chennai
+        organization_name: VGS.COM
+        organizational_unit_name: VGS.COM
+      when: key_gen.changed
+
+    - name: Sign the CSR → create self-signed certificate (365 days)
+      openssl_certificate:
+        path: "{{ temp_cert }}"
+        csr_path: "{{ temp_csr }}"
+        privatekey_path: "{{ temp_key }}"
+        provider: selfsigned
+        selfsigned_not_after: "+365d"
+      when: key_gen.changed
+
+    - name: Install certificate to final Apache location
       copy:
-        src: "{{ source_cert }}"
+        src: "{{ temp_cert }}"
         dest: "{{ ssl_cert_path }}"
         mode: '0644'
         remote_src: yes
       notify: Restart httpd
 
-    - name: Copy real private key to Apache location
+    - name: Install private key to final Apache location
       copy:
-        src: "{{ source_key }}"
+        src: "{{ temp_key }}"
         dest: "{{ ssl_key_path }}"
         mode: '0600'
         remote_src: yes
       notify: Restart httpd
 
-    - name: Configure SSL VirtualHost in ssl.conf
+    - name: Clean up temporary files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ temp_key }}"
+        - "{{ temp_csr }}"
+        - "{{ temp_cert }}"
+
+    - name: Configure SSL VirtualHost
       blockinfile:
         path: /etc/httpd/conf.d/ssl.conf
         insertafter: "^<VirtualHost.*443>"
@@ -96,7 +131,7 @@
         marker: "# {mark} ANSIBLE MANAGED SSL CONFIG"
       notify: Restart httpd
 
-    - name: Create HTTP → HTTPS redirect config
+    - name: Create HTTP → HTTPS redirect
       copy:
         dest: /etc/httpd/conf.d/ssl-redirect.conf
         content: |
@@ -108,7 +143,7 @@
         mode: '0644'
       notify: Restart httpd
 
-    - name: Remove any broken rewrite symlink (safety)
+    - name: Remove any broken rewrite symlink
       file:
         path: /etc/httpd/conf.modules.d/00-rewrite.conf
         state: absent
@@ -119,7 +154,7 @@
         state: started
         enabled: true
 
-    - name: Verify Apache configuration is OK
+    - name: Verify Apache config
       command: apachectl configtest
       changed_when: false
 
