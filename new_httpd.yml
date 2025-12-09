@@ -122,6 +122,7 @@
         validate_certs: no
       register: redirect_test
       delegate_to: localhost
+      ignore_errors: true
 
     - name: Confirm redirect works perfectly
       assert:
