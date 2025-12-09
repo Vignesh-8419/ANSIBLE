@@ -1,33 +1,25 @@
 ---
-- name: Configure HTTP server with auto-generated self-signed SSL + HTTP→HTTPS redirect + Rocky repo
+- name: Configure HTTP server with self-signed SSL + HTTP to HTTPS redirect + Rocky repo
   hosts: all
   become: yes
   vars:
-    repo_mount: "//192.168.31.87/ISO"
-    mount_point_1: "/var/www/html/repo"
-    cifs_username: "vigne"
-    cifs_password: "Vigneshv12$"
     fqdn: "http-server-01.vgs.com"
-    ssl_key_path: "/etc/pki/tls/private/pvt.pem"
-    ssl_cert_path: "/etc/pki/tls/certs/crt.pem"
-    temp_key: "/tmp/pvt.pem"
-    temp_csr: "/tmp/cert.pem"
-    temp_cert: "/tmp/crt.pem"
+    ssl_key:  "/etc/pki/tls/private/pvt.pem"
+    ssl_cert: "/etc/pki/tls/certs/crt.pem"
 
   tasks:
-    - name: Create mount point directory for CIFS share
-      file:
-        path: "{{ mount_point_1 }}"
-        state: directory
-        mode: '0777'
-
-    - name: Mount ISO share via CIFS
-      mount:
-        path: "{{ mount_point_1 }}"
-        src: "{{ repo_mount }}"
-        fstype: cifs
-        opts: "username={{ cifs_username }},password={{ cifs_password }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
-        state: mounted
+    - name: Create repo directory and mount CIFS share
+      block:
+        - file:
+            path: /var/www/html/repo
+            state: directory
+            mode: '0777'
+        - mount:
+            path: /var/www/html/repo
+            src: //192.168.31.87/ISO
+            fstype: cifs
+            opts: "username=vigne,password=Vigneshv12$,rw,dir_mode=0777,file_mode=0777,vers=3.0"
+            state: mounted
 
     - name: Install required packages
       yum:
@@ -39,23 +31,22 @@
           - openssl
         state: present
 
-    - name: Ensure firewalld is running
-      service:
-        name: firewalld
-        state: started
-        enabled: true
+    - name: Start and enable firewalld + open ports
+      block:
+        - service:
+            name: firewalld
+            state: started
+            enabled: yes
+        - firewalld:
+            service: "{{ item }}"
+            permanent: yes
+            immediate: yes
+            state: enabled
+          loop:
+            - http
+            - https
 
-    - name: Open HTTP and HTTPS in firewall
-      firewalld:
-        service: "{{ item }}"
-        permanent: yes
-        immediate: yes
-        state: enabled
-      loop:
-        - http
-        - https
-
-    - name: Configure /var/www/html permissions
+    - name: Allow /var/www/html in httpd.conf
       blockinfile:
         path: /etc/httpd/conf/httpd.conf
         block: |
@@ -64,74 +55,39 @@
               AllowOverride None
               Require all granted
           </Directory>
-        marker: "# {mark} ANSIBLE MANAGED BLOCK FOR /var/www/html"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
 
-    # ——— Generate self-signed certificate exactly like your manual commands ———
-    - name: Generate 2048-bit private key
-      openssl_privatekey:
-        path: "{{ temp_key }}"
-        size: 2048
-      register: key_gen
+    # Your exact working manual commands – now automated and idempotent
+    - name: Generate private key (idempotent)
+      command: openssl genrsa -out {{ ssl_key }} 2048
+      args:
+        creates: "{{ ssl_key }}"
 
-    - name: Generate Certificate Signing Request (CSR)
-      openssl_csr:
-        path: "{{ temp_csr }}"
-        privatekey_path: "{{ temp_key }}"
-        common_name: "{{ fqdn }}"
-        country_name: IN
-        state_or_province_name: Tamil Nadu
-        locality_name: Chennai
-        organization_name: VGS.COM
-        organizational_unit_name: VGS.COM
-      when: key_gen.changed
+    - name: Generate self-signed certificate (365 days)
+      command: >
+        openssl req -new -x509 -days 365 -key {{ ssl_key }} -out {{ ssl_cert }}
+        -subj "/C=IN/ST=Tamil Nadu/L=Chennai/O=VGS.COM/OU=VGS.COM/CN={{ fqdn }}"
+      args:
+        creates: "{{ ssl_cert }}"
 
-    - name: Sign the CSR → create self-signed certificate (365 days)
-      openssl_certificate:
-        path: "{{ temp_cert }}"
-        csr_path: "{{ temp_csr }}"
-        privatekey_path: "{{ temp_key }}"
-        provider: selfsigned
-        selfsigned_not_after: "+365d"
-      when: key_gen.changed
-
-    - name: Install certificate to final Apache location
-      copy:
-        src: "{{ temp_cert }}"
-        dest: "{{ ssl_cert_path }}"
-        mode: '0644'
-        remote_src: yes
-      notify: Restart httpd
-
-    - name: Install private key to final Apache location
-      copy:
-        src: "{{ temp_key }}"
-        dest: "{{ ssl_key_path }}"
-        mode: '0600'
-        remote_src: yes
-      notify: Restart httpd
-
-    - name: Clean up temporary files
+    - name: Set correct permissions on private key
       file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - "{{ temp_key }}"
-        - "{{ temp_csr }}"
-        - "{{ temp_cert }}"
+        path: "{{ ssl_key }}"
+        mode: '0600'
 
-    - name: Configure SSL VirtualHost
+    - name: Configure SSL VirtualHost (ssl.conf)
       blockinfile:
         path: /etc/httpd/conf.d/ssl.conf
         insertafter: "^<VirtualHost.*443>"
         block: |
           ServerName {{ fqdn }}
           SSLEngine on
-          SSLCertificateFile {{ ssl_cert_path }}
-          SSLCertificateKeyFile {{ ssl_key_path }}
+          SSLCertificateFile {{ ssl_cert }}
+          SSLCertificateKeyFile {{ ssl_key }}
         marker: "# {mark} ANSIBLE MANAGED SSL CONFIG"
-      notify: Restart httpd
+      notify: restart httpd
 
-    - name: Create HTTP → HTTPS redirect
+    - name: Create HTTP to HTTPS redirect
       copy:
         dest: /etc/httpd/conf.d/ssl-redirect.conf
         content: |
@@ -141,9 +97,9 @@
               RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [L,R=301]
           </VirtualHost>
         mode: '0644'
-      notify: Restart httpd
+      notify: restart httpd
 
-    - name: Remove any broken rewrite symlink
+    - name: Remove broken rewrite symlink (if exists)
       file:
         path: /etc/httpd/conf.modules.d/00-rewrite.conf
         state: absent
@@ -152,23 +108,27 @@
       service:
         name: httpd
         state: started
-        enabled: true
+        enabled: yes
 
-    - name: Verify Apache config
-      command: apachectl configtest
-      changed_when: false
-
-    - name: Verify HTTP → HTTPS redirect works
-      uri:
-        url: "http://{{ fqdn }}"
-        follow_redirects: none
-        validate_certs: no
-      register: redirect_test
-      failed_when: redirect_test.status != 301 or 'https://' not in redirect_test.location
-      delegate_to: localhost
+    - name: Verify config + redirect
+      block:
+        - command: apachectl configtest
+          register: configtest
+          changed_when: false
+        - uri:
+            url: "http://{{ fqdn }}"
+            follow_redirects: none
+            validate_certs: no
+          register: redirect
+          delegate_to: localhost
+        - name: Assert redirect works
+          assert:
+            that:
+              - redirect.status == 301
+              - "'https://' in redirect.location"
 
   handlers:
-    - name: Restart httpd
+    - name: restart httpd
       service:
         name: httpd
         state: restarted
