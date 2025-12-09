@@ -1,0 +1,139 @@
+---
+- name: Configure HTTP server with real SSL cert + HTTP→HTTPS redirect + Rocky repo via CIFS
+  hosts: all
+  become: yes
+  vars:
+    repo_mount: "//192.168.31.87/ISO"
+    mount_point_1: "/var/www/html/repo"
+    cifs_username: "vigne"
+    cifs_password: "Vigneshv12$"
+    fqdn: "http-server-01.vgs.com"
+
+    # CHANGE THESE TWO PATHS to where your real cert/key are located on the target server
+    source_cert: "/tmp/crt.pem"        # or /home/vigne/crt.pem, etc.
+    source_key:  "/tmp/pvt.pem"        # or /home/vigne/pvt.pem, etc.
+
+    ssl_cert_path: "/etc/pki/tls/certs/crt.pem"
+    ssl_key_path:  "/etc/pki/tls/private/pvt.pem"
+
+  tasks:
+    - name: Create mount point directory for CIFS share
+      file:
+        path: "{{ mount_point_1 }}"
+        state: directory
+        mode: '0777'
+
+    - name: Mount ISO share via CIFS
+      mount:
+        path: "{{ mount_point_1 }}"
+        src: "{{ repo_mount }}"
+        fstype: cifs
+        opts: "username={{ cifs_username }},password={{ cifs_password }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
+        state: mounted
+
+    - name: Install required packages
+      yum:
+        name:
+          - httpd
+          - mod_ssl
+          - createrepo
+          - firewalld
+        state: present
+
+    - name: Ensure firewalld is running
+      service:
+        name: firewalld
+        state: started
+        enabled: true
+
+    - name: Open HTTP and HTTPS in firewall
+      firewalld:
+        service: "{{ item }}"
+        permanent: yes
+        immediate: yes
+        state: enabled
+      loop:
+        - http
+        - https
+
+    - name: Configure /var/www/html permissions
+      blockinfile:
+        path: /etc/httpd/conf/httpd.conf
+        block: |
+          <Directory "/var/www/html">
+              Options Indexes FollowSymLinks
+              AllowOverride None
+              Require all granted
+          </Directory>
+        marker: "# {mark} ANSIBLE MANAGED BLOCK FOR /var/www/html"
+
+    # ——— REAL CERTIFICATE COPY (this replaces self-signed generation) ———
+    - name: Copy real certificate to Apache location
+      copy:
+        src: "{{ source_cert }}"
+        dest: "{{ ssl_cert_path }}"
+        mode: '0644'
+        remote_src: yes
+      notify: Restart httpd
+
+    - name: Copy real private key to Apache location
+      copy:
+        src: "{{ source_key }}"
+        dest: "{{ ssl_key_path }}"
+        mode: '0600'
+        remote_src: yes
+      notify: Restart httpd
+
+    - name: Configure SSL VirtualHost in ssl.conf
+      blockinfile:
+        path: /etc/httpd/conf.d/ssl.conf
+        insertafter: "^<VirtualHost.*443>"
+        block: |
+          ServerName {{ fqdn }}
+          SSLEngine on
+          SSLCertificateFile {{ ssl_cert_path }}
+          SSLCertificateKeyFile {{ ssl_key_path }}
+        marker: "# {mark} ANSIBLE MANAGED SSL CONFIG"
+      notify: Restart httpd
+
+    - name: Create HTTP → HTTPS redirect config
+      copy:
+        dest: /etc/httpd/conf.d/ssl-redirect.conf
+        content: |
+          <VirtualHost *:80>
+              ServerName {{ fqdn }}
+              RewriteEngine On
+              RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [L,R=301]
+          </VirtualHost>
+        mode: '0644'
+      notify: Restart httpd
+
+    - name: Remove any broken rewrite symlink (safety)
+      file:
+        path: /etc/httpd/conf.modules.d/00-rewrite.conf
+        state: absent
+
+    - name: Start and enable httpd
+      service:
+        name: httpd
+        state: started
+        enabled: true
+
+    - name: Verify Apache configuration is OK
+      command: apachectl configtest
+      changed_when: false
+
+    - name: Verify HTTP → HTTPS redirect works
+      uri:
+        url: "http://{{ fqdn }}"
+        follow_redirects: none
+        validate_certs: no
+      register: redirect_test
+      failed_when: redirect_test.status != 301 or 'https://' not in redirect_test.location
+      delegate_to: localhost
+
+  handlers:
+    - name: Restart httpd
+      service:
+        name: httpd
+        state: restarted
