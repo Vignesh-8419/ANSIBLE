@@ -29,7 +29,7 @@
 
   vars:
     netbox_url: "https://192.168.253.134"
-    netbox_token: "e3ee4eda03d81a42b07de1d20064b89bba21e041"
+    netbox_token: "668d10258cfa6ad36826afdf4c3141be6f960369"
     device_type_id: 1
     role_id: 1
     site_id: 1
