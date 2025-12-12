@@ -1,42 +1,32 @@
 ---
-# ============================================================
-# PLAY 1: Prepare Pi-hole Script + Sync DNS From NetBox Cluster
-# ============================================================
-
 - name: Add multiple DNS entries to Pi-hole via API
   hosts: dns-server-01
   become: true
 
   vars:
-    # Pi-hole script details
     pihole_api_dir: /root/pihole_customdns_api
     pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
     script_url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/pihole-customdns.sh"
 
-    # NetBox details
     netbox_url: "https://192.168.253.134"
-    netbox_token: "668d10258cfa6ad36826afdf4c3141be6f960369"
+    netbox_token: "e3ee4eda03d81a42b07de1d20064b89bba21e041"
 
-    # These come from AWX/Tower Survey
+    # From AWX Survey
     cluster_name: "{{ cluster_name }}"
     cluster_type: "{{ cluster_type | default('os-cluster') }}"
+    dns_hosts: "{{ dns_hosts }}"   # comma-separated list from survey
 
   tasks:
 
     # ----------------------------------------------------
-    # 1. Create directory for Pi-hole API script
+    # 1. Prepare Pi-hole script
     # ----------------------------------------------------
     - name: Create Pi-hole custom DNS API directory
       file:
         path: "{{ pihole_api_dir }}"
         state: directory
-        owner: root
-        group: root
         mode: '0755'
 
-    # ----------------------------------------------------
-    # 2. Download script from GitHub
-    # ----------------------------------------------------
     - name: Download Pi-hole custom DNS API script
       get_url:
         url: "{{ script_url }}"
@@ -44,7 +34,7 @@
         mode: '0755'
 
     # ----------------------------------------------------
-    # 3. Get Cluster ID from NetBox
+    # 2. Get Cluster ID
     # ----------------------------------------------------
     - name: Get cluster ID from NetBox
       uri:
@@ -66,7 +56,7 @@
         cluster_id: "{{ (cluster_lookup.json.results | first).id }}"
 
     # ----------------------------------------------------
-    # 4. Get devices in this cluster
+    # 3. Get devices in this cluster
     # ----------------------------------------------------
     - name: Get devices from NetBox cluster
       uri:
@@ -77,6 +67,24 @@
         return_content: yes
         validate_certs: no
       register: netbox_devices
+
+    # ----------------------------------------------------
+    # 4. Filter devices based on dns_hosts list
+    # ----------------------------------------------------
+    - name: Convert dns_hosts string to list
+      set_fact:
+        dns_hosts_list: "{{ dns_hosts.split(',') | map('trim') | list }}"
+
+    - name: Filter cluster devices to only selected hosts
+      set_fact:
+        filtered_devices: >-
+          {{ netbox_devices.json.results
+             | selectattr('name', 'in', dns_hosts_list)
+             | list }}
+
+    - name: Debug filtered devices
+      debug:
+        var: filtered_devices
 
     # ----------------------------------------------------
     # 5. Get all IP addresses
@@ -98,7 +106,7 @@
       set_fact:
         dns_entries: []
 
-    - name: Build dns_entries from NetBox data
+    - name: Build dns_entries from filtered devices
       set_fact:
         dns_entries: "{{ dns_entries + [ {
           'dns_hostname': item.name,
@@ -112,7 +120,7 @@
             | default('')
           )
         } ] }}"
-      loop: "{{ netbox_devices.json.results }}"
+      loop: "{{ filtered_devices }}"
 
     - name: Debug DNS entries
       debug:
