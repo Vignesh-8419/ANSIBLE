@@ -1,60 +1,167 @@
----
 # ============================================================
-#  PLAY 1: Collect Facts From Target Hosts
-# ============================================================
-
-- name: Collect facts from all servers
-  hosts: "{{ target_hosts.split(',') | map('trim') | list }}"
-  gather_facts: yes
-  become: yes
-
-  # These come from AWX/Tower Survey
-  vars:
-    cluster_name: "{{ cluster_name }}"
-    cluster_type: "{{ cluster_type }}"
-
-  tasks:
-    - name: Build server_info from facts
-      set_fact:
-        server_info:
-          name: "{{ ansible_hostname }}.vgs.com"
-          ip: "{{ ansible_default_ipv4.address }}/{{ (ansible_default_ipv4.address ~ '/' ~ ansible_default_ipv4.netmask) | ipaddr('prefix') }}"
-          mac: "{{ ansible_default_ipv4.macaddress }}"
-          interface: "{{ ansible_default_ipv4.interface }}"
-          cluster_name: "{{ cluster_name }}"
-          cluster_type: "{{ cluster_type }}"
-          serial: "{{ ansible_product_serial | regex_replace('[^a-zA-Z0-9]', '') | truncate(50, True, '') }}"
-
-    - name: Debug IP format
-      debug:
-        msg: "IP for {{ inventory_hostname }} is {{ server_info.ip }}"
-
-# ============================================================
-#  PLAY 2: Push Servers Into NetBox
+#  NetBox Device Creation With Overwrite Mode + CLUSTER SUPPORT
 # ============================================================
 
-- name: Push collected servers into NetBox
-  hosts: rocky-08-02
-  gather_facts: no
+# ---------- 1. Create Cluster Type If Not Exists ----------
+- name: Create cluster type if not exists
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      name: "{{ item.cluster_type }}"
+      slug: "{{ item.cluster_type | lower | regex_replace('[^a-z0-9-]', '-') }}"
+    status_code: [200, 201, 400]
+    validate_certs: no
 
-  vars:
-    netbox_url: "https://192.168.253.134"
-    netbox_token: "668d10258cfa6ad36826afdf4c3141be6f960369"
-    device_type_id: 1
-    role_id: 1
-    site_id: 1
+# ---------- 2. Get Cluster Type ID ----------
+- name: Get cluster type ID
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?name={{ item.cluster_type }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: cluster_type_response
 
-  tasks:
-    - name: Aggregate servers_list from hostvars
-      set_fact:
-        servers_list: "{{ target_hosts.split(',') | map('trim') | map('extract', hostvars, 'server_info') | list }}"
+- name: Set cluster_type_id
+  set_fact:
+    cluster_type_id: "{{ (cluster_type_response.json.results | first).id }}"
 
-    - name: Debug servers_list
-      debug:
-        var: servers_list
+# ---------- 3. Create Cluster If Not Exists ----------
+- name: Create cluster if not exists
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/clusters/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      name: "{{ item.cluster_name }}"
+      slug: "{{ item.cluster_name | lower | regex_replace('[^a-z0-9-]', '-') }}"
+      type: "{{ cluster_type_id }}"
+      site: "{{ site_id }}"
+    status_code: [200, 201, 400]
+    validate_certs: no
 
-    - name: Loop through servers and include device creation tasks
-      include_tasks: modified_create_netbox_device.yml
-      loop: "{{ servers_list }}"
-      loop_control:
-        loop_var: item
+# ---------- 4. Get Cluster ID ----------
+- name: Get cluster ID
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster_name }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: cluster_response
+
+- name: Set cluster_id
+  set_fact:
+    cluster_id: "{{ (cluster_response.json.results | first).id }}"
+
+# ---------- 5. Check if device already exists ----------
+- name: Check if device exists
+  uri:
+    url: "{{ netbox_url }}/api/dcim/devices/?name={{ item.name }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: existing_device
+
+- name: Set existing_device_id
+  set_fact:
+    existing_device_id: "{{ existing_device.json.results[0].id }}"
+  when: existing_device.json.results | length > 0
+
+# ---------- 6. DELETE device if exists (OVERWRITE MODE) ----------
+- name: Delete existing device (overwrite mode)
+  uri:
+    url: "{{ netbox_url }}/api/dcim/devices/{{ existing_device_id }}/"
+    method: DELETE
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    status_code: [204, 404]
+    validate_certs: no
+  when: existing_device_id is defined
+
+# ---------- 7. Create NEW device WITH CLUSTER ----------
+- name: Create new device
+  uri:
+    url: "{{ netbox_url }}/api/dcim/devices/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      name: "{{ item.name }}"
+      device_type: "{{ device_type_id }}"
+      role: "{{ role_id }}"
+      site: "{{ site_id }}"
+      cluster: "{{ cluster_id }}"
+      status: "active"
+      serial: "{{ item.serial | default('') }}"
+    status_code: [200, 201]
+    return_content: yes
+    validate_certs: no
+  register: device_response
+
+- name: Set device_id
+  set_fact:
+    device_id: "{{ device_response.json.id }}"
+
+# ---------- 8. Create Interface ----------
+- name: Create interface
+  uri:
+    url: "{{ netbox_url }}/api/dcim/interfaces/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      device: "{{ device_id }}"
+      name: "{{ item.interface }}"
+      type: "1000base-t"
+      mac_address: "{{ item.mac }}"
+    status_code: [200, 201]
+    return_content: yes
+    validate_certs: no
+  register: interface_response
+
+- name: Set interface_id
+  set_fact:
+    interface_id: "{{ interface_response.json.id }}"
+
+# ---------- 9. Assign IP ----------
+- name: Assign IP address
+  uri:
+    url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      address: "{{ item.ip }}"
+      status: "active"
+      assigned_object_type: "dcim.interface"
+      assigned_object_id: "{{ interface_id }}"
+    status_code: [200, 201]
+    validate_certs: no
+  register: ip_response
+
+# ---------- 10. Set Primary IP ----------
+- name: Set primary IP for device
+  uri:
+    url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
+    method: PATCH
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      primary_ip4: "{{ ip_response.json.id }}"
+    status_code: [200, 201]
+    validate_certs: no
