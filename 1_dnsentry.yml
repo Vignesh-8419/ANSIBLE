@@ -15,7 +15,7 @@
 
     # NetBox details
     netbox_url: "https://192.168.253.134"
-    netbox_token: "e3ee4eda03d81a42b07de1d20064b89bba21e041"
+    netbox_token: "668d10258cfa6ad36826afdf4c3141be6f960369"
 
     # These come from AWX/Tower Survey
     cluster_name: "{{ cluster_name }}"
