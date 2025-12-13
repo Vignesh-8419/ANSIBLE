@@ -1,6 +1,6 @@
 # ============================================================
 #  NetBox Device Creation With Overwrite Mode + CLUSTER + SITE SUPPORT
-#  Fully Updated — Slug-Based Lookups — Error-Proof
+#  Slug-Based Lookups + Idempotent Device Creation
 # ============================================================
 
 # ---------- 0. Ensure Site Exists ----------
@@ -120,7 +120,7 @@
       Authorization: "Token {{ netbox_token }}"
     body_format: json
     body:
-      model: "{{ item.device_type_name | trim | replace('-', ' ') | title }}"
+      model: "{{ item.device_type_name | trim }}"
       slug: "{{ dtype_slug }}"
       manufacturer: "{{ manufacturer_id }}"
     status_code: [200, 201, 400]
@@ -241,8 +241,27 @@
 - set_fact:
     cluster_id: "{{ cluster_final.json.results[0].id }}"
 
-# ---------- 5. Create Device ----------
-- name: Create device
+# ---------- 5. Ensure Device Exists (Idempotent) ----------
+- name: Normalize device name
+  set_fact:
+    device_name_clean: "{{ item.device_name | trim }}"
+
+- name: Check if device already exists
+  uri:
+    url: "{{ netbox_url }}/api/dcim/devices/?name={{ device_name_clean }}&site_id={{ site_id }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: device_lookup
+
+- name: Set existing device ID if found
+  set_fact:
+    device_id: "{{ device_lookup.json.results[0].id }}"
+  when: device_lookup.json.results | length > 0
+
+- name: Create device if not existing
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/"
     method: POST
@@ -250,7 +269,7 @@
       Authorization: "Token {{ netbox_token }}"
     body_format: json
     body:
-      name: "{{ item.device_name | trim }}"
+      name: "{{ device_name_clean }}"
       device_type: "{{ device_type_id }}"
       role: 1
       site: "{{ site_id }}"
@@ -259,10 +278,13 @@
     status_code: [200, 201]
     return_content: yes
     validate_certs: no
-  register: device_response
+  register: device_create
+  when: device_lookup.json.results | length == 0
 
-- set_fact:
-    device_id: "{{ device_response.json.id }}"
+- name: Set device ID from creation
+  set_fact:
+    device_id: "{{ device_create.json.id }}"
+  when: device_lookup.json.results | length == 0
 
 # ---------- 6. Create Interface ----------
 - name: Create interface
