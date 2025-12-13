@@ -12,6 +12,7 @@
   vars:
     cluster_name: "{{ cluster_name }}"
     cluster_type: "{{ cluster_type }}"
+    site_name: "{{ site_name }}"
 
   tasks:
     - name: Build server_info from facts
@@ -23,6 +24,7 @@
           interface: "{{ ansible_default_ipv4.interface }}"
           cluster_name: "{{ cluster_name }}"
           cluster_type: "{{ cluster_type }}"
+          site_name: "{{ site_name }}"
           serial: "{{ ansible_product_serial | regex_replace('[^a-zA-Z0-9]', '') | truncate(50, True, '') }}"
 
     - name: Debug IP format
@@ -42,7 +44,6 @@
     netbox_token: "668d10258cfa6ad36826afdf4c3141be6f960369"
     device_type_id: 1
     role_id: 1
-    site_id: 1
 
   tasks:
     - name: Aggregate servers_list from hostvars
