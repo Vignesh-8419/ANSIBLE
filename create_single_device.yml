@@ -1,6 +1,6 @@
 # ============================================================
 #  NetBox Device Creation With Overwrite Mode + CLUSTER + SITE SUPPORT
-#  Slug-Based Lookups + Idempotent Device Creation
+#  Slug-Based Lookups + Fully Idempotent (Device, Interface, IP)
 # ============================================================
 
 # ---------- 0. Ensure Site Exists ----------
@@ -286,8 +286,27 @@
     device_id: "{{ device_create.json.id }}"
   when: device_lookup.json.results | length == 0
 
-# ---------- 6. Create Interface ----------
-- name: Create interface
+# ---------- 6. Ensure Interface Exists (Idempotent) ----------
+- name: Normalize interface name
+  set_fact:
+    iface_name_clean: "{{ item.interface_name | trim }}"
+
+- name: Check if interface already exists
+  uri:
+    url: "{{ netbox_url }}/api/dcim/interfaces/?device_id={{ device_id }}&name={{ iface_name_clean }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: iface_lookup
+
+- name: Set existing interface ID if found
+  set_fact:
+    interface_id: "{{ iface_lookup.json.results[0].id }}"
+  when: iface_lookup.json.results | length > 0
+
+- name: Create interface if not existing
   uri:
     url: "{{ netbox_url }}/api/dcim/interfaces/"
     method: POST
@@ -296,19 +315,41 @@
     body_format: json
     body:
       device: "{{ device_id }}"
-      name: "{{ item.interface_name | trim }}"
+      name: "{{ iface_name_clean }}"
       type: "1000base-t"
       mac_address: "{{ item.mac_address | trim }}"
     status_code: [200, 201]
     return_content: yes
     validate_certs: no
-  register: iface_response
+  register: iface_create
+  when: iface_lookup.json.results | length == 0
 
-- set_fact:
-    interface_id: "{{ iface_response.json.id }}"
+- name: Set interface ID from creation
+  set_fact:
+    interface_id: "{{ iface_create.json.id }}"
+  when: iface_lookup.json.results | length == 0
 
-# ---------- 7. Assign IP ----------
-- name: Assign IP address
+# ---------- 7. Ensure IP Exists (Idempotent) ----------
+- name: Normalize IP
+  set_fact:
+    ip_clean: "{{ item.ip_address | trim }}"
+
+- name: Check if IP already exists
+  uri:
+    url: "{{ netbox_url }}/api/ipam/ip-addresses/?address={{ ip_clean }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: ip_lookup
+
+- name: Set existing IP ID if found
+  set_fact:
+    ip_id: "{{ ip_lookup.json.results[0].id }}"
+  when: ip_lookup.json.results | length > 0
+
+- name: Create IP if not existing
   uri:
     url: "{{ netbox_url }}/api/ipam/ip-addresses/"
     method: POST
@@ -316,13 +357,19 @@
       Authorization: "Token {{ netbox_token }}"
     body_format: json
     body:
-      address: "{{ item.ip_address | trim }}"
+      address: "{{ ip_clean }}"
       status: "active"
       assigned_object_type: "dcim.interface"
       assigned_object_id: "{{ interface_id }}"
     status_code: [200, 201]
     validate_certs: no
-  register: ip_response
+  register: ip_create
+  when: ip_lookup.json.results | length == 0
+
+- name: Set IP ID from creation
+  set_fact:
+    ip_id: "{{ ip_create.json.id }}"
+  when: ip_lookup.json.results | length == 0
 
 # ---------- 8. Set Primary IP ----------
 - name: Set primary IP for device
@@ -333,6 +380,6 @@
       Authorization: "Token {{ netbox_token }}"
     body_format: json
     body:
-      primary_ip4: "{{ ip_response.json.id }}"
+      primary_ip4: "{{ ip_id }}"
     status_code: [200, 201]
     validate_certs: no
