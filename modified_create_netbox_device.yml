@@ -17,49 +17,7 @@
   set_fact:
     cluster_type_id: "{{ (cluster_type_response.json.results | first).id }}"
 
-# ---------- 2. Check if cluster exists ----------
-- name: Check if cluster exists
-  uri:
-    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster }}"
-    method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    return_content: yes
-    validate_certs: no
-  register: cluster_check
-
-# ---------- 3. Create cluster only if missing ----------
-- name: Create cluster (only if missing)
-  uri:
-    url: "{{ netbox_url }}/api/virtualization/clusters/"
-    method: POST
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    body_format: json
-    body:
-      name: "{{ item.cluster }}"
-      type: "{{ cluster_type_id }}"
-      site: "{{ site_id }}"        # ✅ ADD THIS LINE
-    status_code: [200, 201]
-    validate_certs: no
-  when: cluster_check.json.results | length == 0
-
-# ---------- 4. Get cluster ID (works for existing or newly created) ----------
-- name: Get cluster ID
-  uri:
-    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster }}"
-    method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    return_content: yes
-    validate_certs: no
-  register: cluster_response
-
-- name: Set cluster_id
-  set_fact:
-    cluster_id: "{{ (cluster_response.json.results | first).id }}"
-
-# ---------- 5. Get site ID (from survey-provided site name) ----------
+# ---------- 2. Get site ID (survey-provided site name) ----------
 - name: Get site ID
   uri:
     url: "{{ netbox_url }}/api/dcim/sites/?name={{ item.site }}"
@@ -74,7 +32,62 @@
   set_fact:
     site_id: "{{ (site_response.json.results | first).id }}"
 
-# ---------- 6. Check if device already exists ----------
+# ---------- 3. Check if cluster exists ----------
+- name: Check if cluster exists
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: cluster_check
+
+# ---------- 4. Create cluster only if missing ----------
+- name: Create cluster (only if missing)
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/clusters/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      name: "{{ item.cluster }}"
+      type: "{{ cluster_type_id }}"
+      site: "{{ site_id }}"        # ✅ Now site_id is defined
+    status_code: [200, 201]
+    validate_certs: no
+  when: cluster_check.json.results | length == 0
+
+# ---------- 5. Get cluster ID ----------
+- name: Get cluster ID
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: cluster_response
+
+- name: Set cluster_id
+  set_fact:
+    cluster_id: "{{ (cluster_response.json.results | first).id }}"
+
+# ---------- 6. Patch cluster site (for existing clusters) ----------
+- name: Ensure cluster has correct site
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/clusters/{{ cluster_id }}/"
+    method: PATCH
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      site: "{{ site_id }}"
+    status_code: [200, 201]
+    validate_certs: no
+
+# ---------- 7. Check if device already exists ----------
 - name: Check if device exists
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/?name={{ item.name }}"
@@ -90,7 +103,7 @@
     existing_device_id: "{{ existing_device.json.results[0].id }}"
   when: existing_device.json.results | length > 0
 
-# ---------- 7. DELETE device if exists (overwrite mode) ----------
+# ---------- 8. DELETE device if exists (overwrite mode) ----------
 - name: Delete existing device (overwrite mode)
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/{{ existing_device_id }}/"
@@ -101,7 +114,7 @@
     validate_certs: no
   when: existing_device_id is defined
 
-# ---------- 8. Create NEW device ----------
+# ---------- 9. Create NEW device ----------
 - name: Create new device
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/"
@@ -126,7 +139,7 @@
   set_fact:
     device_id: "{{ device_response.json.id }}"
 
-# ---------- 9. Create interface ----------
+# ---------- 10. Create interface ----------
 - name: Create interface
   uri:
     url: "{{ netbox_url }}/api/dcim/interfaces/"
@@ -148,7 +161,7 @@
   set_fact:
     interface_id: "{{ interface_response.json.id }}"
 
-# ---------- 10. Assign IP ----------
+# ---------- 11. Assign IP ----------
 - name: Assign IP address
   uri:
     url: "{{ netbox_url }}/api/ipam/ip-addresses/"
@@ -165,7 +178,7 @@
     validate_certs: no
   register: ip_response
 
-# ---------- 11. Set primary IP ----------
+# ---------- 12. Set primary IP ----------
 - name: Set primary IP for device
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
