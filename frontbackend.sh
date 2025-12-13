@@ -12,7 +12,7 @@ cat <<'FOREMANCONF' > /etc/httpd/conf.d/05-foreman.conf
   ServerName cent-07-01.vgs.com
 
   ## CORS Headers
-  Header always set Access-Control-Allow-Origin "https://rocky-08-01.vgs.com:3000"
+  Header always set Access-Control-Allow-Origin "https://rocky-08-01.vgs.com"
   Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS, PUT, DELETE"
   Header always set Access-Control-Allow-Headers "Origin, Content-Type, Accept, Authorization"
   Header always set Access-Control-Allow-Credentials "true"
@@ -156,13 +156,13 @@ cat <<'FOREMANSSL' > /etc/httpd/conf.d/05-foreman-ssl.conf
   DocumentRoot "/usr/share/foreman/public"
 
   ## Directories, there should at least be a declaration for /usr/share/foreman/public
-  Header always set Access-Control-Allow-Origin "https://rocky-08-01.vgs.com:3000"
+  Header always set Access-Control-Allow-Origin "https://rocky-08-01.vgs.com"
   Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS, PUT, DELETE"
   Header always set Access-Control-Allow-Headers "Origin, Content-Type, Accept, Authorization"
   Header always set Access-Control-Allow-Credentials "true"
 
   <Location "/users/login">
-    Header always set Access-Control-Allow-Origin "https://rocky-08-01.vgs.com:3000"
+    Header always set Access-Control-Allow-Origin "https://rocky-08-01.vgs.com"
     Header always set Access-Control-Allow-Credentials "true"
   </Location>
 
@@ -348,7 +348,7 @@ Alias /pub /var/www/html/pub
 
 # Handle CORS preflight OPTIONS requests
   <IfModule mod_headers.c>
-    Header always set Access-Control-Allow-Origin "https://rocky-08-01.vgs.com:3000"
+    Header always set Access-Control-Allow-Origin "https://rocky-08-01.vgs.com"
     Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS, PUT, DELETE"
     Header always set Access-Control-Allow-Headers "Origin, Content-Type, Accept, Authorization"
     Header always set Access-Control-Allow-Credentials "true"
