@@ -1,6 +1,6 @@
 ---
 # ============================================================
-# 1. Collect Facts From All Target Hosts
+# 1. Collect facts from all target hosts
 # ============================================================
 
 - name: Collect facts from all servers
@@ -9,9 +9,8 @@
   become: yes
 
   vars:
-    cluster_name: "centos-7"     # existing cluster
-    site_name: "{{ site_name }}" # passed from Tower survey
-    cluster_type: "{{ cluster_type }}"
+    cluster_name: "centos-7"      # existing NetBox cluster name
+    site_name: "{{ site_name }}"  # passed from Tower/AWX survey
 
   tasks:
     - name: Build server_info from facts
@@ -30,7 +29,7 @@
         msg: "IP for {{ inventory_hostname }} is {{ server_info.ip }}"
 
 # ============================================================
-# 2. Push Collected Servers Into NetBox
+# 2. Push collected servers into NetBox
 # ============================================================
 
 - name: Push collected servers into NetBox
@@ -41,6 +40,7 @@
     netbox_url: "https://192.168.253.134"
     netbox_token: "668d10258cfa6ad36826afdf4c3141be6f960369"
 
+    # Still using IDs for these; can be converted to slug lookups later if you want
     device_type_id: 1
     role_id: 1
 
