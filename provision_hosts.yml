@@ -34,6 +34,7 @@
         headers:
           Authorization: "Token {{ netbox_token }}"
         return_content: yes
+        validate_certs: no
       register: netbox_devices
 
     # ✅ Filter only selected servers inside the cluster
@@ -51,6 +52,7 @@
         headers:
           Authorization: "Token {{ netbox_token }}"
         return_content: yes
+        validate_certs: no
       register: netbox_interfaces
 
     - name: Get IP addresses from NetBox
@@ -60,6 +62,7 @@
         headers:
           Authorization: "Token {{ netbox_token }}"
         return_content: yes
+        validate_certs: no
       register: netbox_ips
 
     - name: Initialize foreman_hosts list
