@@ -50,9 +50,9 @@
         name: "{{ host_name }}"
         ip: "{{ mgmt_ip }}"
         mac: "{{ mac_addr }}"
-        domain_name: "{{ domain_name }}"
+        domain_name: "vgs.com"
         architecture_name: "x86_64"
-        operatingsystem_name: "{{ os_name }}"
+        operatingsystem_name: "CentOSLinux"
         build: true
         overwrite: true
 
