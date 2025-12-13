@@ -11,6 +11,7 @@
   vars:
     cluster_name: "centos-7"     # existing cluster
     site_name: "{{ site_name }}" # passed from Tower survey
+    cluster_type: "{{ cluster_type }}"
 
   tasks:
     - name: Build server_info from facts
