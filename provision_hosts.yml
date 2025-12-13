@@ -1,6 +1,6 @@
 ---
 - name: Provision hosts in Foreman using NetBox + Cluster + Frontend URL
-  hosts: localhost
+  hosts: all
   connection: local
   gather_facts: false
 
