@@ -1,6 +1,6 @@
 ---
 - name: Provision hosts in Foreman using NetBox Cluster
-  hosts: localhost
+  hosts: rocky-08-02
   connection: local
   gather_facts: no
 
