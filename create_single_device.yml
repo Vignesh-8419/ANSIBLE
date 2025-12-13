@@ -1,0 +1,270 @@
+# ============================================================
+#  NetBox Device Creation With Overwrite Mode + CLUSTER + SITE SUPPORT
+# ============================================================
+
+# ---------- 0. Ensure Site Exists ----------
+- name: Get site
+  uri:
+    url: "{{ netbox_url }}/api/dcim/sites/?name={{ item.site_name }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: site_lookup
+
+- name: Create site if missing
+  uri:
+    url: "{{ netbox_url }}/api/dcim/sites/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      name: "{{ item.site_name }}"
+      slug: "{{ item.site_name | lower | regex_replace('[^a-z0-9-]', '-') }}"
+    status_code: [200, 201, 400]
+    validate_certs: no
+  when: site_lookup.json.results | length == 0
+
+- name: Get site ID
+  uri:
+    url: "{{ netbox_url }}/api/dcim/sites/?name={{ item.site_name }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: site_final
+
+- set_fact:
+    site_id: "{{ site_final.json.results[0].id }}"
+
+# ---------- 1. Ensure Manufacturer Exists ----------
+- name: Get manufacturer
+  uri:
+    url: "{{ netbox_url }}/api/dcim/manufacturers/?name={{ item.manufacturer_name }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: manu_lookup
+
+- name: Create manufacturer if missing
+  uri:
+    url: "{{ netbox_url }}/api/dcim/manufacturers/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      name: "{{ item.manufacturer_name }}"
+      slug: "{{ item.manufacturer_name | lower | regex_replace('[^a-z0-9-]', '-') }}"
+    status_code: [200, 201, 400]
+    validate_certs: no
+  when: manu_lookup.json.results | length == 0
+
+- name: Get manufacturer ID
+  uri:
+    url: "{{ netbox_url }}/api/dcim/manufacturers/?name={{ item.manufacturer_name }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: manu_final
+
+- set_fact:
+    manufacturer_id: "{{ manu_final.json.results[0].id }}"
+
+# ---------- 2. Ensure Device Type Exists ----------
+- name: Get device type
+  uri:
+    url: "{{ netbox_url }}/api/dcim/device-types/?model={{ item.device_type_name }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: dtype_lookup
+
+- name: Create device type if missing
+  uri:
+    url: "{{ netbox_url }}/api/dcim/device-types/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      model: "{{ item.device_type_name }}"
+      slug: "{{ item.device_type_name | lower | regex_replace('[^a-z0-9-]', '-') }}"
+      manufacturer: "{{ manufacturer_id }}"
+    status_code: [200, 201, 400]
+    validate_certs: no
+  when: dtype_lookup.json.results | length == 0
+
+- name: Get device type ID
+  uri:
+    url: "{{ netbox_url }}/api/dcim/device-types/?model={{ item.device_type_name }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: dtype_final
+
+- set_fact:
+    device_type_id: "{{ dtype_final.json.results[0].id }}"
+
+# ---------- 3. Ensure Cluster Type Exists ----------
+- name: Get cluster type
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?name={{ item.cluster_type }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: ctype_lookup
+
+- name: Create cluster type if missing
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      name: "{{ item.cluster_type }}"
+      slug: "{{ item.cluster_type | lower | regex_replace('[^a-z0-9-]', '-') }}"
+    status_code: [200, 201, 400]
+    validate_certs: no
+  when: ctype_lookup.json.results | length == 0
+
+- name: Get cluster type ID
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?name={{ item.cluster_type }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: ctype_final
+
+- set_fact:
+    cluster_type_id: "{{ ctype_final.json.results[0].id }}"
+
+# ---------- 4. Ensure Cluster Exists ----------
+- name: Get cluster
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster_name }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: cluster_lookup
+
+- name: Create cluster if missing
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/clusters/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      name: "{{ item.cluster_name }}"
+      slug: "{{ item.cluster_name | lower | regex_replace('[^a-z0-9-]', '-') }}"
+      type: "{{ cluster_type_id }}"
+      site: "{{ site_id }}"
+    status_code: [200, 201, 400]
+    validate_certs: no
+  when: cluster_lookup.json.results | length == 0
+
+- name: Get cluster ID
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster_name }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: cluster_final
+
+- set_fact:
+    cluster_id: "{{ cluster_final.json.results[0].id }}"
+
+# ---------- 5. Create Device ----------
+- name: Create device
+  uri:
+    url: "{{ netbox_url }}/api/dcim/devices/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      name: "{{ item.device_name }}"
+      device_type: "{{ device_type_id }}"
+      role: 1
+      site: "{{ site_id }}"
+      cluster: "{{ cluster_id }}"
+      status: "active"
+    status_code: [200, 201]
+    return_content: yes
+    validate_certs: no
+  register: device_response
+
+- set_fact:
+    device_id: "{{ device_response.json.id }}"
+
+# ---------- 6. Create Interface ----------
+- name: Create interface
+  uri:
+    url: "{{ netbox_url }}/api/dcim/interfaces/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      device: "{{ device_id }}"
+      name: "{{ item.interface_name }}"
+      type: "1000base-t"
+      mac_address: "{{ item.mac_address }}"
+    status_code: [200, 201]
+    return_content: yes
+    validate_certs: no
+  register: iface_response
+
+- set_fact:
+    interface_id: "{{ iface_response.json.id }}"
+
+# ---------- 7. Assign IP ----------
+- name: Assign IP address
+  uri:
+    url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      address: "{{ item.ip_address }}"
+      status: "active"
+      assigned_object_type: "dcim.interface"
+      assigned_object_id: "{{ interface_id }}"
+    status_code: [200, 201]
+    validate_certs: no
+  register: ip_response
+
+# ---------- 8. Set Primary IP ----------
+- name: Set primary IP for device
+  uri:
+    url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
+    method: PATCH
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      primary_ip4: "{{ ip_response.json.id }}"
+    status_code: [200, 201]
+    validate_certs: no
