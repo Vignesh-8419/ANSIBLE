@@ -1,11 +1,8 @@
 ---
-- name: Prepare and create hosts in Foreman
+- name: Prepare and create hosts in Foreman using curl
   hosts: localhost
   connection: local
   gather_facts: no
-
-  collections:
-    - theforeman.foreman
 
   vars:
     netbox_url: "https://192.168.253.134"
@@ -81,59 +78,42 @@
         } ] }}"
       loop: "{{ filtered_devices }}"
 
-    - name: Display host data for manual Foreman creation
+    - name: Display host data
       debug:
-        msg: |
-          Host: {{ item.name }}
-          IP:   {{ item.ip }}
-          MAC:  {{ item.mac }}
+        var: host_info
 
-          These values will be used to create the host in Foreman:
-            - Organization: Default Organization
-            - Location: Default Location
-            - Architecture: x86_64
-            - Domain: vgs.com
-            - OS: CentOS 7
-            - Medium: CentOSLinux
-            - Partition Table: Kickstart default
-            - Subnet: vgs-subnet-centos
-            - Root Password: Root@123
-            - Managed: Yes
-            - Build: Yes
-            - Primary Interface: {{ item.mac }} / {{ item.ip }}
-
+    # ✅ Create host in Foreman using curl
+    - name: Create host in Foreman via API
+      shell: |
+        curl -k -u "{{ foreman_user }}:{{ foreman_password }}" \
+        -H "Content-Type: application/json" \
+        -X POST "{{ foreman_server_url }}/api/hosts" \
+        -d '{
+          "host": {
+            "name": "{{ item.name }}",
+            "organization_name": "Default Organization",
+            "location_name": "Default Location",
+            "architecture_name": "x86_64",
+            "domain_name": "vgs.com",
+            "operatingsystem_name": "CentOS 7",
+            "medium_name": "CentOSLinux",
+            "ptable_name": "Kickstart default",
+            "subnet_name": "vgs-subnet-centos",
+            "root_pass": "{{ host_root_pass }}",
+            "managed": true,
+            "build": true,
+            "interfaces_attributes": [{
+              "type": "interface",
+              "mac": "{{ item.mac }}",
+              "ip": "{{ item.ip }}",
+              "primary": true,
+              "provision": true
+            }]
+          }
+        }'
       loop: "{{ host_info }}"
+      register: foreman_create_output
 
-    # ✅ Create host in Foreman (API)
-    - name: Create host in Foreman
-      theforeman.foreman.host:
-        server_url: "{{ foreman_server_url }}"
-        username: "{{ foreman_user }}"
-        password: "{{ foreman_password }}"
-        validate_certs: false
-
-        name: "{{ item.name }}"
-        organization: "Default Organization"
-        location: "Default Location"
-        architecture: "x86_64"
-        domain: "vgs.com"
-        operatingsystem: "CentOS 7"
-        medium: "CentOSLinux"
-        ptable: "Kickstart default"
-        subnet: "vgs-subnet-centos"
-
-        ip: "{{ item.ip }}"
-        mac: "{{ item.mac }}"
-        root_pass: "{{ host_root_pass }}"
-        managed: true
-        build: true
-        enabled: true
-
-        interfaces_attributes:
-          - type: interface
-            mac: "{{ item.mac }}"
-            ip: "{{ item.ip }}"
-            primary: true
-            provision: true
-
-      loop: "{{ host_info }}"
+    - name: Show Foreman API response
+      debug:
+        var: foreman_create_output
