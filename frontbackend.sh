@@ -930,24 +930,72 @@ const HostsTable = ({ onEdit }) => {
 export default HostsTable;
 TABLEJS
 
-cat <<'SYSTEMD' > /etc/systemd/system/foreman-frontend.service
-[Unit]
-Description=Foreman Frontend Service
-After=network.target
 
-[Service]
-Type=simple
-WorkingDirectory=/root/foreman-frontend
-ExecStart=/usr/bin/env NODE_OPTIONS=--max-old-space-size=2048 npm start
-Restart=on-failure
-User=root
-Environment=NODE_ENV=production
-StandardOutput=journal
-StandardError=journal
+echo "=== Installing Nginx ==="
+dnf install nginx -y
 
-[Install]
-WantedBy=multi-user.target
-SYSTEMD
+echo "=== Enabling and starting Nginx ==="
+systemctl enable nginx
+systemctl start nginx
+
+echo "=== Creating SSL directory ==="
+mkdir -p /etc/nginx/ssl
+
+echo "=== Copying SSL certificates ==="
+cp /root/foreman-frontend/ssl/server.crt /etc/nginx/ssl/rocky.crt
+cp /root/foreman-frontend/ssl/server.key /etc/nginx/ssl/rocky.key
+
+echo "=== Writing Nginx config: /etc/nginx/conf.d/foreman-api.conf ==="
+cat << 'EOF' > /etc/nginx/conf.d/foreman-api.conf
+server {
+    listen 3000 ssl;
+    server_name rocky-08-01.vgs.com;
+
+    ssl_certificate     /etc/nginx/ssl/rocky.crt;
+    ssl_certificate_key /etc/nginx/ssl/rocky.key;
+
+    # Proxy all API calls to Foreman backend
+    location /api/ {
+        proxy_pass https://cent-07-01.vgs.com/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # Serve React frontend
+    location / {
+        root /var/www/foreman-frontend;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+}
+EOF
+
+echo "=== Testing Nginx configuration ==="
+nginx -t
+
+echo "=== Restarting Nginx ==="
+systemctl restart nginx
+systemctl status nginx --no-pager
+
+echo "=== Building Foreman frontend ==="
+cd /root/foreman-frontend/
+npm install
+npm run build
+
+echo "=== Deploying frontend to /var/www/foreman-frontend ==="
+mkdir -p /var/www/foreman-frontend
+cp -r /root/foreman-frontend/build/* /var/www/foreman-frontend/
+
+echo "=== Setting permissions ==="
+chown -R nginx:nginx /var/www/foreman-frontend
+chmod -R 755 /var/www/foreman-frontend
+
+echo "=== Final Nginx reload ==="
+nginx -t
+systemctl restart nginx
+systemctl status nginx --no-pager
 
 firewall-cmd --add-port=3000/tcp --permanent
 firewall-cmd --add-service=http --permanent
@@ -955,11 +1003,8 @@ firewall-cmd --add-service=https --permanent
 firewall-cmd --reload
 
 systemctl daemon-reexec
-systemctl daemon-reload
-systemctl enable --now foreman-frontend.service
 
 npm install axios
-systemctl restart foreman-frontend.service
 
 echo "All copied."
 EOF
