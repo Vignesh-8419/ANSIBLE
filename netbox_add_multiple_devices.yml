@@ -1,6 +1,6 @@
 ---
 - name: Add multiple devices into NetBox
-  hosts: localhost
+  hosts: rocky-08-02
   connection: local
   gather_facts: no
 
