@@ -946,7 +946,7 @@ cp /root/foreman-frontend/ssl/server.crt /etc/nginx/ssl/rocky.crt
 cp /root/foreman-frontend/ssl/server.key /etc/nginx/ssl/rocky.key
 
 echo "=== Writing Nginx config: /etc/nginx/conf.d/foreman-api.conf ==="
-cat << 'EOF' > /etc/nginx/conf.d/foreman-api.conf
+cat << 'NGINX' > /etc/nginx/conf.d/foreman-api.conf
 # Redirect port 3000 → 443
 server {
     listen 3000 ssl;
@@ -990,7 +990,7 @@ server {
         try_files $uri $uri/ /index.html;
     }
 }
-EOF
+NGINX
 
 echo "=== Testing Nginx configuration ==="
 nginx -t
