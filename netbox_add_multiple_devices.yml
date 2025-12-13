@@ -1,0 +1,46 @@
+---
+- name: Add multiple devices into NetBox
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars:
+    netbox_url: "https://192.168.253.134"
+    netbox_token: "YOUR_NETBOX_TOKEN"
+
+  tasks:
+
+    # -------------------------------------------------------
+    # 1. Convert devices_list (multiline string) into list
+    # -------------------------------------------------------
+    - name: Split devices_list into lines
+      set_fact:
+        device_lines: "{{ devices_list.split('\n') | reject('equalto','') | list }}"
+
+    - name: Parse each line into structured objects
+      set_fact:
+        devices: "{{ devices | default([]) + [ {
+          'device_name': item.split(',')[0] | trim,
+          'site_name': item.split(',')[1] | trim,
+          'manufacturer_name': item.split(',')[2] | trim,
+          'device_type_name': item.split(',')[3] | trim,
+          'interface_name': item.split(',')[4] | trim,
+          'mac_address': item.split(',')[5] | trim,
+          'ip_address': item.split(',')[6] | trim,
+          'cluster_name': item.split(',')[7] | trim,
+          'cluster_type': item.split(',')[8] | trim
+        } ] }}"
+      loop: "{{ device_lines }}"
+
+    - name: Debug parsed devices
+      debug:
+        var: devices
+
+    # -------------------------------------------------------
+    # 2. Loop through each device and create in NetBox
+    # -------------------------------------------------------
+    - name: Process each device
+      include_tasks: create_single_device.yml
+      loop: "{{ devices }}"
+      loop_control:
+        loop_var: item
