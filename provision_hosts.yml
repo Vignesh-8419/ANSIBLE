@@ -1,6 +1,6 @@
 ---
 - name: Provision hosts in Foreman using NetBox Cluster
-  hosts: rocky-08-02
+  hosts: rocky-08-01        # ✅ Run everything on rocky-08-01
   connection: local
   gather_facts: no
 
@@ -98,7 +98,7 @@
         return_content: yes
       register: netbox_devices
 
-    # ✅ ✅ ✅ FILTER DEVICES TO ONLY SELECTED HOSTS
+    # ✅ Filter only selected hosts
     - name: Filter devices to selected hosts only
       set_fact:
         filtered_devices: >-
