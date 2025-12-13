@@ -91,27 +91,22 @@
       loop: "{{ filtered_devices }}"
 
     # ✅ Create host in Foreman using validated IDs
-    - name: Create host in Foreman
-      theforeman.foreman.host:
-        server_url: "{{ foreman_server_url }}"
-        username: "{{ foreman_user }}"
-        password: "{{ foreman_password }}"
-        validate_certs: false
+- name: Create host in Foreman
+  theforeman.foreman.host:
+    server_url: "{{ foreman_server_url }}"
+    username: "{{ foreman_user }}"
+    password: "{{ foreman_password }}"
+    validate_certs: false
 
-        name: "{{ item.vm_name }}"
-        organization_id: 1
-        location_id: 2
-        architecture_id: 1
-        domain_id: 1
-        operatingsystem_id: 2
-        medium_id: 15
-        ptable_id: 126
-        subnet_id: 1
-        hostgroup_id: 1
+    name: "{{ item.vm_name }}"
 
-        ip: "{{ item.vm_ip }}"
-        mac: "{{ item.vm_mac }}"
-        root_pass: "{{ host_root_pass }}"
-        build: true
-        enabled: true
-      loop: "{{ foreman_hosts }}"
+    # ✅ Use names instead of IDs
+    organization: "VGS"
+    location: "Chennai"
+    architecture: "x86_64"
+    domain: "vgs.com"
+    operatingsystem: "CentOS 7"
+    medium: "CentOSLinux"
+    ptable: "Kickstart default"
+    subnet: "vgs-subnet-centos"
+#    hostgroup: ""
