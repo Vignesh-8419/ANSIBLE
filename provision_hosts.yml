@@ -1,5 +1,5 @@
 ---
-- name: Prepare and create hosts in Foreman using curl
+- name: Prepare and create hosts in Foreman using API
   hosts: localhost
   connection: local
   gather_facts: no
@@ -8,7 +8,7 @@
     netbox_url: "https://192.168.253.134"
     netbox_token: "668d10258cfa6ad36826afdf4c3141be6f960369"
 
-    foreman_server_url: "https://rocky-08-01.vgs.com:3000"
+    foreman_url: "https://rocky-08-01.vgs.com:3000"
     foreman_user: "admin"
     foreman_password: "zqs977dXzqfEvTML"
 
@@ -21,22 +21,120 @@
 
   tasks:
 
+    ###########################################################################
+    # 1. FETCH FOREMAN IDs (REQUIRED FOR API)
+    ###########################################################################
+
+    - name: Get Foreman organizations
+      uri:
+        url: "{{ foreman_url }}/api/organizations"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: orgs
+
+    - name: Get Foreman locations
+      uri:
+        url: "{{ foreman_url }}/api/locations"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: locs
+
+    - name: Get Foreman architectures
+      uri:
+        url: "{{ foreman_url }}/api/architectures"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: archs
+
+    - name: Get Foreman domains
+      uri:
+        url: "{{ foreman_url }}/api/domains"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: domains
+
+    - name: Get Foreman OS list
+      uri:
+        url: "{{ foreman_url }}/api/operatingsystems"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: oses
+
+    - name: Get Foreman media
+      uri:
+        url: "{{ foreman_url }}/api/media"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: media
+
+    - name: Get Foreman partition tables
+      uri:
+        url: "{{ foreman_url }}/api/ptables"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: ptables
+
+    - name: Get Foreman subnets
+      uri:
+        url: "{{ foreman_url }}/api/subnets"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: subnets
+
+    ###########################################################################
+    # 2. MAP NAMES → IDs
+    ###########################################################################
+
+    - set_fact:
+        org_id: "{{ orgs.json.results | selectattr('name','equalto','Default Organization') | map(attribute='id') | first }}"
+        loc_id: "{{ locs.json.results | selectattr('name','equalto','Default Location') | map(attribute='id') | first }}"
+        arch_id: "{{ archs.json.results | selectattr('name','equalto','x86_64') | map(attribute='id') | first }}"
+        domain_id: "{{ domains.json.results | selectattr('name','equalto','vgs.com') | map(attribute='id') | first }}"
+        os_id: "{{ oses.json.results | selectattr('name','search','CentOS') | map(attribute='id') | first }}"
+        medium_id: "{{ media.json.results | selectattr('name','equalto','CentOSLinux') | map(attribute='id') | first }}"
+        ptable_id: "{{ ptables.json.results | selectattr('name','equalto','Kickstart default') | map(attribute='id') | first }}"
+        subnet_id: "{{ subnets.json.results | selectattr('name','equalto','vgs-subnet-centos') | map(attribute='id') | first }}"
+
+    ###########################################################################
+    # 3. FETCH NETBOX DATA
+    ###########################################################################
+
     - name: Get devices from NetBox cluster
       uri:
         url: "{{ netbox_url }}/api/dcim/devices/?cluster={{ cluster_name }}"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
-        return_content: yes
         validate_certs: no
       register: netbox_devices
 
     - name: Filter only selected servers
       set_fact:
-        filtered_devices: >-
-          {{ netbox_devices.json.results
-             | selectattr('name', 'in', target_servers)
-             | list }}
+        filtered_devices: "{{ netbox_devices.json.results | selectattr('name','in',target_servers) | list }}"
 
     - name: Get interfaces from NetBox
       uri:
@@ -44,7 +142,6 @@
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
-        return_content: yes
         validate_certs: no
       register: netbox_interfaces
 
@@ -54,9 +151,12 @@
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
-        return_content: yes
         validate_certs: no
       register: netbox_ips
+
+    ###########################################################################
+    # 4. BUILD HOST INFO
+    ###########################################################################
 
     - name: Build host info list
       set_fact:
@@ -64,56 +164,58 @@
           'name': item.name,
           'ip': (
               netbox_ips.json.results
-              | selectattr('assigned_object.device.name', 'equalto', item.name)
+              | selectattr('assigned_object.device.name','equalto',item.name)
               | map(attribute='address')
-              | map('regex_replace', '/.*$', '')
-              | list | first | default('')
+              | map('regex_replace','/.*$','')
+              | first | default('')
           ),
           'mac': (
               netbox_interfaces.json.results
-              | selectattr('device.name', 'equalto', item.name)
+              | selectattr('device.name','equalto',item.name)
               | map(attribute='mac_address')
-              | list | first | default('')
+              | first | default('')
           )
         } ] }}"
       loop: "{{ filtered_devices }}"
 
-    - name: Display host data
-      debug:
-        var: host_info
+    ###########################################################################
+    # 5. CREATE HOST IN FOREMAN USING API
+    ###########################################################################
 
-    # ✅ Create host in Foreman using curl
-    - name: Create host in Foreman via API
-      shell: |
-        curl -k -u "{{ foreman_user }}:{{ foreman_password }}" \
-        -H "Content-Type: application/json" \
-        -X POST "{{ foreman_server_url }}/api/hosts" \
-        -d '{
-          "host": {
-            "name": "{{ item.name }}",
-            "organization_name": "Default Organization",
-            "location_name": "Default Location",
-            "architecture_name": "x86_64",
-            "domain_name": "vgs.com",
-            "operatingsystem_name": "CentOS 7",
-            "medium_name": "CentOSLinux",
-            "ptable_name": "Kickstart default",
-            "subnet_name": "vgs-subnet-centos",
-            "root_pass": "{{ host_root_pass }}",
-            "managed": true,
-            "build": true,
-            "interfaces_attributes": [{
-              "type": "interface",
-              "mac": "{{ item.mac }}",
-              "ip": "{{ item.ip }}",
-              "primary": true,
-              "provision": true
-            }]
-          }
-        }'
+    - name: Create host in Foreman
+      uri:
+        url: "{{ foreman_url }}/api/hosts"
+        method: POST
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+        status_code: [200, 201]
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          host:
+            name: "{{ item.name }}"
+            organization_id: "{{ org_id }}"
+            location_id: "{{ loc_id }}"
+            architecture_id: "{{ arch_id }}"
+            domain_id: "{{ domain_id }}"
+            operatingsystem_id: "{{ os_id }}"
+            medium_id: "{{ medium_id }}"
+            ptable_id: "{{ ptable_id }}"
+            subnet_id: "{{ subnet_id }}"
+            root_pass: "{{ host_root_pass }}"
+            managed: true
+            build: true
+            interfaces_attributes:
+              - type: interface
+                mac: "{{ item.mac }}"
+                ip: "{{ item.ip }}"
+                primary: true
+                provision: true
       loop: "{{ host_info }}"
-      register: foreman_create_output
+      register: foreman_create
 
-    - name: Show Foreman API response
-      debug:
-        var: foreman_create_output
+    - debug:
+        var: foreman_create
