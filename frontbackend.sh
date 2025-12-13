@@ -947,6 +947,7 @@ cp /root/foreman-frontend/ssl/server.key /etc/nginx/ssl/rocky.key
 
 echo "=== Writing Nginx config: /etc/nginx/conf.d/foreman-api.conf ==="
 cat << 'EOF' > /etc/nginx/conf.d/foreman-api.conf
+# Redirect port 3000 → 443
 server {
     listen 3000 ssl;
     server_name rocky-08-01.vgs.com;
@@ -954,19 +955,38 @@ server {
     ssl_certificate     /etc/nginx/ssl/rocky.crt;
     ssl_certificate_key /etc/nginx/ssl/rocky.key;
 
-    # Proxy all API calls to Foreman backend
+    return 301 https://rocky-08-01.vgs.com$request_uri;
+}
+
+# Main server block on HTTPS (443)
+server {
+    listen 443 ssl;
+    server_name rocky-08-01.vgs.com;
+
+    ssl_certificate     /etc/nginx/ssl/rocky.crt;
+    ssl_certificate_key /etc/nginx/ssl/rocky.key;
+
+    # -------------------------------
+    # ✅ Foreman API Reverse Proxy
+    # -------------------------------
     location /api/ {
         proxy_pass https://cent-07-01.vgs.com/api/;
+
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Real-IP $remote_addr;
+
+        proxy_ssl_verify off;
     }
 
-    # Serve React frontend
+    # -------------------------------
+    # ✅ React Frontend UI
+    # -------------------------------
+    root /var/www/foreman-frontend;
+    index index.html;
+
     location / {
-        root /var/www/foreman-frontend;
-        index index.html;
         try_files $uri $uri/ /index.html;
     }
 }
