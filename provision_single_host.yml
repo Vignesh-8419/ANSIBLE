@@ -1,0 +1,77 @@
+---
+# ---------------------------------------------------------
+# Get host details from NetBox
+# ---------------------------------------------------------
+- name: Get device info from NetBox
+  uri:
+    url: "{{ netbox_url }}/api/dcim/devices/?name={{ host_name }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    validate_certs: false
+  register: device_info
+
+- name: Fail if device not found
+  fail:
+    msg: "Device {{ host_name }} not found in NetBox!"
+  when: device_info.json.count == 0
+
+# Extract fields
+- set_fact:
+    device: "{{ device_info.json.results[0] }}"
+    mgmt_ip: "{{ device.primary_ip4.address.split('/')[0] if device.primary_ip4 else '' }}"
+    mac_addr: "{{ device.interfaces[0].mac_address if device.interfaces|length > 0 else '' }}"
+    os_name: "{{ device.platform.name if device.platform else 'CentOS 7' }}"
+    domain_name: "vgs.com"
+
+# ---------------------------------------------------------
+# Check if host already exists in Foreman
+# ---------------------------------------------------------
+- name: Check if host exists in Foreman
+  uri:
+    url: "{{ foreman_server_url }}/api/hosts?search=name={{ host_name }}"
+    method: GET
+    user: "{{ foreman_user }}"
+    password: "{{ foreman_password }}"
+    force_basic_auth: yes
+    validate_certs: false
+  register: foreman_host_check
+
+# ---------------------------------------------------------
+# Create or update host in Foreman
+# ---------------------------------------------------------
+- name: Create or update host in Foreman
+  uri:
+    url: "{{ foreman_server_url }}/api/hosts"
+    method: POST
+    user: "{{ foreman_user }}"
+    password: "{{ foreman_password }}"
+    force_basic_auth: yes
+    validate_certs: false
+    headers:
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      host:
+        name: "{{ host_name }}"
+        ip: "{{ mgmt_ip }}"
+        mac: "{{ mac_addr }}"
+        domain_name: "{{ domain_name }}"
+        architecture_name: "x86_64"
+        operatingsystem_name: "{{ os_name }}"
+        build: true
+        overwrite: true
+  when: foreman_host_check.json.total == 0
+
+# ---------------------------------------------------------
+# Trigger build for existing host
+# ---------------------------------------------------------
+- name: Trigger rebuild for existing host
+  uri:
+    url: "{{ foreman_server_url }}/api/hosts/{{ host_name }}/build"
+    method: PUT
+    user: "{{ foreman_user }}"
+    password: "{{ foreman_password }}"
+    force_basic_auth: yes
+    validate_certs: false
+  when: foreman_host_check.json.total > 0
