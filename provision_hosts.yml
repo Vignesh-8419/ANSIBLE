@@ -1,60 +1,75 @@
 ---
-- name: Provision hosts in Foreman using NetBox + Cluster + Frontend URL
-  hosts: all
+- name: Provision hosts in Foreman using NetBox Cluster
+  hosts: rocky-08-02
   connection: local
-  gather_facts: false
+  gather_facts: no
+
+  collections:
+    - theforeman.foreman
 
   vars:
-    # Foreman Frontend URL (Nginx reverse proxy)
+    netbox_url: "https://192.168.253.134"
+    netbox_token: "668d10258cfa6ad36826afdf4c3141be6f960369"
+
     foreman_server_url: "https://rocky-08-01.vgs.com"
     foreman_user: "admin"
     foreman_password: "zqs977dXzqfEvTML"
-    validate_certs: false
+    host_root_pass: "Root@123"
 
-    # NetBox API
-    netbox_url: "http://netbox.vgs.com"
-    netbox_token: "668d10258cfa6ad36826afdf4c3141be6f960369"
+    cluster_name: "{{ cluster_name }}"
+    cluster_type: "{{ cluster_type }}"
+    site_name: "{{ site_name }}"
 
-    # AWX Survey Inputs 
-    cluster_name: "{{ survey_cluster_name }}"
-    cluster_type: "{{ survey_cluster_type }}"
-    site_name: "{{ survey_site_name }}"
-    selected_hosts: "{{ survey_selected_hosts }}"
-
-    # Foreman provisioning fields Optional
-    hostgroup_name: "{{ survey_hostgroup }}"
-    partition_table: "{{ survey_partition_table }}"
-    installation_medium: "{{ survey_installation_medium }}"
-    subnet_name: "{{ survey_subnet }}"
+    # ✅ AWX survey input: comma-separated hostnames
+    survey_selected_hosts: "{{ survey_selected_hosts }}"
 
   tasks:
 
+    # ---------------------------------------------------------
     # Convert selected hosts to list
+    # ---------------------------------------------------------
     - name: Convert selected hosts to list
       set_fact:
-        host_list: "{{ selected_hosts.split(',') | map('trim') | list }}"
+        selected_hosts_list: "{{ survey_selected_hosts.split(',') | map('trim') | list }}"
 
-    # Validate required fields when no hostgroup is selected
-    - name: Validate provisioning fields
-      fail:
-        msg: "Partition Table, Installation Medium, and Subnet are required when no Host Group is selected."
-      when:
-        - hostgroup_name | length == 0
-        - (partition_table | length == 0) or
-          (installation_medium | length == 0) or
-          (subnet_name | length == 0)
+    # ---------------------------------------------------------
+    # 1. Ensure Cluster Type Exists
+    # ---------------------------------------------------------
+    - name: Get cluster type from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/virtualization/cluster-types/?name={{ cluster_type }}"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+      register: cluster_type_lookup
 
-    # Get cluster from NetBox
+    - name: Create cluster type if missing
+      uri:
+        url: "{{ netbox_url }}/api/virtualization/cluster-types/"
+        method: POST
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          name: "{{ cluster_type }}"
+          slug: "{{ cluster_type | lower | regex_replace('[^a-z0-9-]', '-') }}"
+        validate_certs: false
+      when: cluster_type_lookup.json.count == 0
+
+    # ---------------------------------------------------------
+    # 2. Ensure Cluster Exists
+    # ---------------------------------------------------------
     - name: Get cluster from NetBox
       uri:
         url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ cluster_name }}"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
-        validate_certs: false
+        return_content: yes
       register: cluster_lookup
 
-    # Create cluster if missing
     - name: Create cluster if missing
       uri:
         url: "{{ netbox_url }}/api/virtualization/clusters/"
@@ -65,14 +80,112 @@
         body_format: json
         body:
           name: "{{ cluster_name }}"
+          slug: "{{ cluster_name | lower | regex_replace('[^a-z0-9-]', '-') }}"
           type: "{{ cluster_type }}"
           site: "{{ site_name }}"
         validate_certs: false
       when: cluster_lookup.json.count == 0
 
-    # Process each selected host
-    - name: Process each selected host
-      include_tasks: tasks/provision_single_host.yml
-      loop: "{{ host_list }}"
-      loop_control:
-        loop_var: host_name
+    # ---------------------------------------------------------
+    # 3. Get all devices in this cluster
+    # ---------------------------------------------------------
+    - name: Get devices from NetBox by cluster
+      uri:
+        url: "{{ netbox_url }}/api/dcim/devices/?cluster={{ cluster_name }}"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+      register: netbox_devices
+
+    # ✅ ✅ ✅ FILTER DEVICES TO ONLY SELECTED HOSTS
+    - name: Filter devices to selected hosts only
+      set_fact:
+        filtered_devices: >-
+          {{ netbox_devices.json.results
+             | selectattr('name', 'in', selected_hosts_list)
+             | list }}
+
+    - name: Debug filtered devices
+      debug:
+        var: filtered_devices
+
+    # ---------------------------------------------------------
+    # 4. Get interfaces + IPs
+    # ---------------------------------------------------------
+    - name: Get interfaces from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/dcim/interfaces/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+      register: netbox_interfaces
+
+    - name: Get IP addresses from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+      register: netbox_ips
+
+    # ---------------------------------------------------------
+    # 5. Build Foreman host list
+    # ---------------------------------------------------------
+    - name: Initialize foreman_hosts list
+      set_fact:
+        foreman_hosts: []
+
+    - name: Build foreman_hosts list from NetBox data
+      set_fact:
+        foreman_hosts: "{{ foreman_hosts + [ {
+          'vm_name': item.name,
+          'vm_ip': (
+            netbox_ips.json.results
+            | selectattr('assigned_object.device.name', 'equalto', item.name)
+            | map(attribute='address')
+            | map('regex_replace', '/.*$', '')
+            | list
+            | first
+            | default('')
+          ),
+          'vm_mac': (
+            netbox_interfaces.json.results
+            | selectattr('device.name', 'equalto', item.name)
+            | map(attribute='mac_address')
+            | list
+            | first
+            | default('')
+          )
+        } ] }}"
+      loop: "{{ filtered_devices }}"
+
+    # ---------------------------------------------------------
+    # 6. Create hosts in Foreman
+    # ---------------------------------------------------------
+    - name: Create hosts in Foreman
+      theforeman.foreman.host:
+        server_url: "{{ foreman_server_url }}"
+        username: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        validate_certs: false
+
+        name: "{{ item.vm_name }}"
+        organization: "Default Organization"
+        location: "Default Location"
+        architecture: "x86_64"
+        domain: "vgs.com"
+        operatingsystem: "CentOSLinux"
+        medium: "CentOS 7 Remote"
+        ptable: "Kickstart default"
+        subnet: "vgs-subnet-centos"
+        hostgroup: "VGS HOSTS CENTOS 7"
+
+        ip: "{{ item.vm_ip }}"
+        mac: "{{ item.vm_mac }}"
+        root_pass: "{{ host_root_pass }}"
+        build: true
+        enabled: true
+      loop: "{{ foreman_hosts }}"
