@@ -1,0 +1,125 @@
+---
+- name: Prepare and create Rocky 8 hosts in Foreman using API
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars:
+    netbox_url: "https://192.168.253.134"
+    netbox_token: "668d10258cfa6ad36826afdf4c3141be6f960369"
+
+    foreman_url: "https://rocky-08-01.vgs.com"
+    foreman_user: "admin"
+    foreman_password: "zqs977dXzqfEvTML"
+
+    host_root_pass: "Root@123"
+
+    cluster_name: "ROCKYOS-8"     # ✅ Rocky cluster name
+    target_servers: []            # ✅ Optional filter (empty = all in cluster)
+
+    # ✅ Foreman IDs for Rocky 8
+    org_id: 1
+    loc_id: 2
+    hostgroup_id: 2               # ✅ VGS HOSTS ROCKY 8 (UEFI-ready)
+
+  tasks:
+
+    ###########################################################################
+    # 1. FETCH NETBOX DATA
+    ###########################################################################
+
+    - name: Get devices from NetBox cluster
+      uri:
+        url: "{{ netbox_url }}/api/dcim/devices/?cluster={{ cluster_name }}"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        validate_certs: no
+      register: netbox_devices
+
+    - name: Filter only selected servers (if target_servers is not empty)
+      set_fact:
+        filtered_devices: >-
+          {{ netbox_devices.json.results
+             if target_servers | length == 0
+             else netbox_devices.json.results | selectattr('name','in',target_servers) | list }}
+
+    - name: Get interfaces from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/dcim/interfaces/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        validate_certs: no
+      register: netbox_interfaces
+
+    - name: Get IP addresses from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        validate_certs: no
+      register: netbox_ips
+
+    ###########################################################################
+    # 2. BUILD HOST INFO
+    ###########################################################################
+
+    - name: Build host info list
+      set_fact:
+        host_info: "{{ host_info | default([]) + [ {
+          'name': item.name,
+          'ip': (
+              netbox_ips.json.results
+              | selectattr('assigned_object.device.name','equalto',item.name)
+              | map(attribute='address')
+              | map('regex_replace','/.*$','')
+              | first | default('')
+          ),
+          'mac': (
+              netbox_interfaces.json.results
+              | selectattr('device.name','equalto',item.name)
+              | map(attribute='mac_address')
+              | first | default('')
+          )
+        } ] }}"
+      loop: "{{ filtered_devices }}"
+
+    ###########################################################################
+    # 3. CREATE HOST IN FOREMAN (UEFI + Hostgroup)
+    ###########################################################################
+
+    - name: Create host in Foreman
+      uri:
+        url: "{{ foreman_url }}/api/hosts"
+        method: POST
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+        status_code: [200, 201]
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          host:
+            name: "{{ item.name }}"
+            hostgroup_id: "{{ hostgroup_id }}"   # ✅ Inherits OS, Medium, Ptable, Subnet, Templates
+            organization_id: "{{ org_id }}"
+            location_id: "{{ loc_id }}"
+            managed: true
+            build: true
+            pxe_loader: "Grub2 UEFI"             # ✅ Ensures UEFI boot
+            root_pass: "{{ host_root_pass }}"
+            interfaces_attributes:
+              - type: interface
+                mac: "{{ item.mac }}"
+                ip: "{{ item.ip }}"
+                primary: true
+                provision: true
+      loop: "{{ host_info }}"
+      register: foreman_create
+
+    - debug:
+        var: foreman_create
