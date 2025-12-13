@@ -9,7 +9,8 @@
   become: yes
 
   vars:
-    cluster_name: "centos-7"   # existing cluster name
+    cluster_name: "centos-7"     # existing cluster
+    site_name: "{{ site_name }}" # passed from Tower survey
 
   tasks:
     - name: Build server_info from facts
@@ -21,6 +22,7 @@
           interface: "{{ ansible_default_ipv4.interface }}"
           serial: "{{ ansible_product_serial | regex_replace('[^a-zA-Z0-9]', '') | truncate(50, True, '') }}"
           cluster: "{{ cluster_name }}"
+          site: "{{ site_name }}"
 
     - name: Debug IP format
       debug:
@@ -40,7 +42,6 @@
 
     device_type_id: 1
     role_id: 1
-    site_id: 1
 
   tasks:
     - name: Aggregate servers_list from hostvars
