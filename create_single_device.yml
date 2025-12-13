@@ -1,11 +1,16 @@
 # ============================================================
 #  NetBox Device Creation With Overwrite Mode + CLUSTER + SITE SUPPORT
+#  Fully Updated — Slug-Based Lookups — Error-Proof
 # ============================================================
 
 # ---------- 0. Ensure Site Exists ----------
+- name: Normalize site slug
+  set_fact:
+    site_slug: "{{ item.site_name | trim | lower | regex_replace('[^a-z0-9-]', '-') }}"
+
 - name: Get site
   uri:
-    url: "{{ netbox_url }}/api/dcim/sites/?name={{ item.site_name | trim }}"
+    url: "{{ netbox_url }}/api/dcim/sites/?slug={{ site_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -22,14 +27,14 @@
     body_format: json
     body:
       name: "{{ item.site_name | trim }}"
-      slug: "{{ (item.site_name | trim) | lower | regex_replace('[^a-z0-9-]', '-') }}"
+      slug: "{{ site_slug }}"
     status_code: [200, 201, 400]
     validate_certs: no
   when: site_lookup.json.results | length == 0
 
 - name: Get site ID
   uri:
-    url: "{{ netbox_url }}/api/dcim/sites/?name={{ item.site_name | trim }}"
+    url: "{{ netbox_url }}/api/dcim/sites/?slug={{ site_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -44,12 +49,15 @@
 
 - set_fact:
     site_id: "{{ site_final.json.results[0].id }}"
-  when: site_final.json.results | length > 0
 
 # ---------- 1. Ensure Manufacturer Exists ----------
+- name: Normalize manufacturer slug
+  set_fact:
+    manu_slug: "{{ item.manufacturer_name | trim | lower | regex_replace('[^a-z0-9-]', '-') }}"
+
 - name: Get manufacturer
   uri:
-    url: "{{ netbox_url }}/api/dcim/manufacturers/?name={{ item.manufacturer_name | trim }}"
+    url: "{{ netbox_url }}/api/dcim/manufacturers/?slug={{ manu_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -66,14 +74,14 @@
     body_format: json
     body:
       name: "{{ item.manufacturer_name | trim }}"
-      slug: "{{ (item.manufacturer_name | trim) | lower | regex_replace('[^a-z0-9-]', '-') }}"
+      slug: "{{ manu_slug }}"
     status_code: [200, 201, 400]
     validate_certs: no
   when: manu_lookup.json.results | length == 0
 
 - name: Get manufacturer ID
   uri:
-    url: "{{ netbox_url }}/api/dcim/manufacturers/?name={{ item.manufacturer_name | trim }}"
+    url: "{{ netbox_url }}/api/dcim/manufacturers/?slug={{ manu_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -88,12 +96,15 @@
 
 - set_fact:
     manufacturer_id: "{{ manu_final.json.results[0].id }}"
-  when: manu_final.json.results | length > 0
 
 # ---------- 2. Ensure Device Type Exists ----------
+- name: Normalize device type slug
+  set_fact:
+    dtype_slug: "{{ item.device_type_name | trim | lower | regex_replace('[^a-z0-9-]', '-') }}"
+
 - name: Get device type
   uri:
-    url: "{{ netbox_url }}/api/dcim/device-types/?model={{ item.device_type_name | trim }}"
+    url: "{{ netbox_url }}/api/dcim/device-types/?slug={{ dtype_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -109,8 +120,8 @@
       Authorization: "Token {{ netbox_token }}"
     body_format: json
     body:
-      model: "{{ item.device_type_name | trim }}"
-      slug: "{{ (item.device_type_name | trim) | lower | regex_replace('[^a-z0-9-]', '-') }}"
+      model: "{{ item.device_type_name | trim | replace('-', ' ') | title }}"
+      slug: "{{ dtype_slug }}"
       manufacturer: "{{ manufacturer_id }}"
     status_code: [200, 201, 400]
     validate_certs: no
@@ -118,7 +129,7 @@
 
 - name: Get device type ID
   uri:
-    url: "{{ netbox_url }}/api/dcim/device-types/?model={{ item.device_type_name | trim }}"
+    url: "{{ netbox_url }}/api/dcim/device-types/?slug={{ dtype_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -133,12 +144,15 @@
 
 - set_fact:
     device_type_id: "{{ dtype_final.json.results[0].id }}"
-  when: dtype_final.json.results | length > 0
 
 # ---------- 3. Ensure Cluster Type Exists ----------
+- name: Normalize cluster type slug
+  set_fact:
+    ctype_slug: "{{ item.cluster_type | trim | lower | regex_replace('[^a-z0-9-]', '-') }}"
+
 - name: Get cluster type
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?name={{ item.cluster_type | trim }}"
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ ctype_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -155,14 +169,14 @@
     body_format: json
     body:
       name: "{{ item.cluster_type | trim }}"
-      slug: "{{ (item.cluster_type | trim) | lower | regex_replace('[^a-z0-9-]', '-') }}"
+      slug: "{{ ctype_slug }}"
     status_code: [200, 201, 400]
     validate_certs: no
   when: ctype_lookup.json.results | length == 0
 
 - name: Get cluster type ID
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?name={{ item.cluster_type | trim }}"
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ ctype_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -177,12 +191,15 @@
 
 - set_fact:
     cluster_type_id: "{{ ctype_final.json.results[0].id }}"
-  when: ctype_final.json.results | length > 0
 
 # ---------- 4. Ensure Cluster Exists ----------
+- name: Normalize cluster slug
+  set_fact:
+    cluster_slug: "{{ item.cluster_name | trim | lower | regex_replace('[^a-z0-9-]', '-') }}"
+
 - name: Get cluster
   uri:
-    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster_name | trim }}"
+    url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ cluster_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -199,7 +216,7 @@
     body_format: json
     body:
       name: "{{ item.cluster_name | trim }}"
-      slug: "{{ (item.cluster_name | trim) | lower | regex_replace('[^a-z0-9-]', '-') }}"
+      slug: "{{ cluster_slug }}"
       type: "{{ cluster_type_id }}"
       site: "{{ site_id }}"
     status_code: [200, 201, 400]
@@ -208,7 +225,7 @@
 
 - name: Get cluster ID
   uri:
-    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster_name | trim }}"
+    url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ cluster_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -223,7 +240,6 @@
 
 - set_fact:
     cluster_id: "{{ cluster_final.json.results[0].id }}"
-  when: cluster_final.json.results | length > 0
 
 # ---------- 5. Create Device ----------
 - name: Create device
