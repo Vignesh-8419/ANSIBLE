@@ -19,15 +19,16 @@
       - cent-07-03
       - cent-07-04
 
-    # ✅ Correct Foreman IDs (from your API output)
+  # ✅ Correct Foreman IDs
     org_id: 1
     loc_id: 2
     arch_id: 1
     domain_id: 1
-    os_id: 1
-    medium_id: 15
-    ptable_id: 126
-    subnet_id: 2
+    os_id: 2              # ✅ Use CentOSLinux 7
+    medium_id: 15         # ✅ CentOS 7 Remote
+    ptable_id: 126        # ✅ Kickstart default
+    subnet_id: 2          # ✅ vgs-subnet-centos
+
 
   tasks:
 
