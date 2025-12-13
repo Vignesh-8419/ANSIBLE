@@ -19,16 +19,10 @@
       - cent-07-03
       - cent-07-04
 
-  # ✅ Correct Foreman IDs
+    # ✅ Foreman IDs
     org_id: 1
     loc_id: 2
-    arch_id: 1
-    domain_id: 1
-    os_id: 2              # ✅ Use CentOSLinux 7
-    medium_id: 15         # ✅ CentOS 7 Remote
-    ptable_id: 126        # ✅ Kickstart default
-    subnet_id: 2          # ✅ vgs-subnet-centos
-
+    hostgroup_id: 1        # ✅ VGS HOSTS CENTOS 7 (UEFI-ready)
 
   tasks:
 
@@ -92,7 +86,7 @@
       loop: "{{ filtered_devices }}"
 
     ###########################################################################
-    # 3. CREATE HOST IN FOREMAN
+    # 3. CREATE HOST IN FOREMAN (UEFI + Hostgroup)
     ###########################################################################
 
     - name: Create host in Foreman
@@ -110,17 +104,13 @@
         body:
           host:
             name: "{{ item.name }}"
+            hostgroup_id: "{{ hostgroup_id }}"   # ✅ UEFI + OS + Medium + Ptable inherited
             organization_id: "{{ org_id }}"
             location_id: "{{ loc_id }}"
-            architecture_id: "{{ arch_id }}"
-            domain_id: "{{ domain_id }}"
-            operatingsystem_id: "{{ os_id }}"
-            medium_id: "{{ medium_id }}"
-            ptable_id: "{{ ptable_id }}"
-            subnet_id: "{{ subnet_id }}"
-            root_pass: "{{ host_root_pass }}"
             managed: true
             build: true
+            pxe_loader: "Grub2 UEFI"             # ✅ Ensures UEFI boot
+            root_pass: "{{ host_root_pass }}"
             interfaces_attributes:
               - type: interface
                 mac: "{{ item.mac }}"
