@@ -19,6 +19,7 @@
 
     - name: Parse each line into structured objects
       set_fact:
+#      device_list": "cent-07-15.vgs.com,Chennai,Dell,PowerEdge-R740,ens192,00:50:56:AA:BB:CC,192.168.253.150/24,centos-7,os-cluster
         devices: "{{ devices | default([]) + [ {
           'device_name': item.split(',')[0] | trim,
           'site_name': item.split(',')[1] | trim,
