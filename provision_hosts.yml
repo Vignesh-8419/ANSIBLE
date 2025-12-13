@@ -11,7 +11,7 @@
     netbox_url: "https://192.168.253.134"
     netbox_token: "668d10258cfa6ad36826afdf4c3141be6f960369"
 
-    foreman_server_url: "https://rocky-08-01.vgs.com/api/v2"
+    foreman_server_url: "https://rocky-08-01.vgs.com"
     foreman_user: "admin"
     foreman_password: "zqs977dXzqfEvTML"
 
