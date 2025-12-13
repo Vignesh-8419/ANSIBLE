@@ -52,17 +52,22 @@
         mac: "{{ mac_addr }}"
         domain_name: "vgs.com"
         architecture_name: "x86_64"
-        operatingsystem_name: "CentOSLinux"
+        operatingsystem: "CentOSLinux"
+        medium: "CentOS 7 Remote"
+        ptable: "Kickstart default"
+        subnet: "vgs-subnet-centos"
+        hostgroup: "VGS HOSTS CENTOS 7"
+        root_pass: "{{ host_root_pass }}"
         build: true
         overwrite: true
 
         # Hostgroup (optional)
-        hostgroup_name: "{{ hostgroup_name if hostgroup_name | length > 0 else omit }}"
+#        hostgroup_name: "{{ hostgroup_name if hostgroup_name | length > 0 else omit }}"
 
         # Only used when no hostgroup is selected
-        ptable_name: "{{ partition_table if hostgroup_name | length == 0 else omit }}"
-        medium_name: "{{ installation_medium if hostgroup_name | length == 0 else omit }}"
-        subnet_name: "{{ subnet_name if hostgroup_name | length == 0 else omit }}"
+#       ptable_name: "{{ partition_table if hostgroup_name | length == 0 else omit }}"
+#        medium_name: "{{ installation_medium if hostgroup_name | length == 0 else omit }}"
+#        subnet_name: "{{ subnet_name if hostgroup_name | length == 0 else omit }}"
   when: foreman_host_check.json.total == 0
 
 # Trigger rebuild for existing host
