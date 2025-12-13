@@ -6,7 +6,7 @@
 
   vars:
     netbox_url: "https://192.168.253.134"
-    netbox_token: "YOUR_NETBOX_TOKEN"
+    netbox_token: "668d10258cfa6ad36826afdf4c3141be6f960369"
 
     # Survey Variables
     site_name: "{{ site_name }}"
