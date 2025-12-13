@@ -1,7 +1,5 @@
 ---
-# ---------------------------------------------------------
-# Get host details from NetBox
-# ---------------------------------------------------------
+# Get device info from NetBox
 - name: Get device info from NetBox
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/?name={{ host_name }}"
@@ -24,9 +22,7 @@
     os_name: "{{ device.platform.name if device.platform else 'CentOS 7' }}"
     domain_name: "vgs.com"
 
-# ---------------------------------------------------------
-# Check if host already exists in Foreman
-# ---------------------------------------------------------
+# Check if host exists in Foreman
 - name: Check if host exists in Foreman
   uri:
     url: "{{ foreman_server_url }}/api/hosts?search=name={{ host_name }}"
@@ -37,9 +33,7 @@
     validate_certs: false
   register: foreman_host_check
 
-# ---------------------------------------------------------
 # Create or update host in Foreman
-# ---------------------------------------------------------
 - name: Create or update host in Foreman
   uri:
     url: "{{ foreman_server_url }}/api/hosts"
@@ -61,11 +55,17 @@
         operatingsystem_name: "{{ os_name }}"
         build: true
         overwrite: true
+
+        # Hostgroup (optional)
+        hostgroup_name: "{{ hostgroup_name if hostgroup_name | length > 0 else omit }}"
+
+        # Only used when no hostgroup is selected
+        ptable_name: "{{ partition_table if hostgroup_name | length == 0 else omit }}"
+        medium_name: "{{ installation_medium if hostgroup_name | length == 0 else omit }}"
+        subnet_name: "{{ subnet_name if hostgroup_name | length == 0 else omit }}"
   when: foreman_host_check.json.total == 0
 
-# ---------------------------------------------------------
-# Trigger build for existing host
-# ---------------------------------------------------------
+# Trigger rebuild for existing host
 - name: Trigger rebuild for existing host
   uri:
     url: "{{ foreman_server_url }}/api/hosts/{{ host_name }}/build"
