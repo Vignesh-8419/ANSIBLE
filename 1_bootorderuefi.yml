@@ -1,0 +1,239 @@
+---
+# ============================================================
+#  PLAY 1: Load selected VMs from NetBox (Cluster + Host Filter)
+# ============================================================
+
+- name: Load selected VMs from NetBox
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars:
+    netbox_url: "https://192.168.253.134"
+    netbox_token: "e3ee4eda03d81a42b07de1d20064b89bba21e041"
+
+    # From AWX Survey
+    cluster_name: "{{ cluster_name }}"
+    selected_hosts: "{{ selected_hosts }}"   # comma-separated list
+
+  tasks:
+
+    # --------------------------------------------------------
+    # 1. Get cluster ID
+    # --------------------------------------------------------
+    - name: Get cluster ID from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ cluster_name }}"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+        validate_certs: no
+      register: cluster_lookup
+
+    - name: Fail if cluster not found
+      fail:
+        msg: "Cluster '{{ cluster_name }}' not found in NetBox!"
+      when: cluster_lookup.json.results | length == 0
+
+    - name: Set cluster_id
+      set_fact:
+        cluster_id: "{{ (cluster_lookup.json.results | first).id }}"
+
+    # --------------------------------------------------------
+    # 2. Get all devices in this cluster
+    # --------------------------------------------------------
+    - name: Get devices from NetBox cluster
+      uri:
+        url: "{{ netbox_url }}/api/dcim/devices/?cluster_id={{ cluster_id }}"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+        validate_certs: no
+      register: netbox_devices
+
+    # --------------------------------------------------------
+    # 3. Convert selected_hosts to list
+    # --------------------------------------------------------
+    - name: Convert selected_hosts string to list
+      set_fact:
+        selected_hosts_list: "{{ selected_hosts.split(',') | map('trim') | list }}"
+
+    # --------------------------------------------------------
+    # 4. Filter cluster devices to only selected hosts
+    # --------------------------------------------------------
+    - name: Filter devices based on selected hosts
+      set_fact:
+        filtered_devices: >-
+          {{ netbox_devices.json.results
+             | selectattr('name', 'in', selected_hosts_list)
+             | list }}
+
+    - name: Debug filtered devices
+      debug:
+        var: filtered_devices
+
+    # --------------------------------------------------------
+    # 5. Get all IP addresses
+    # --------------------------------------------------------
+    - name: Get IP addresses from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+        validate_certs: no
+      register: netbox_ips
+
+    # --------------------------------------------------------
+    # 6. Build vm_list
+    # --------------------------------------------------------
+    - name: Initialize vm_list
+      set_fact:
+        vm_list: []
+
+    - name: Build vm_list from NetBox data
+      set_fact:
+        vm_list: "{{ vm_list + [ {
+          'vm_name': item.name | regex_replace('\\.vgs\\.com$', ''),
+          'vm_ip': (
+            netbox_ips.json.results
+            | selectattr('assigned_object.device.name', 'equalto', item.name)
+            | map(attribute='address')
+            | map('regex_replace', '/.*$', '')
+            | list
+            | first
+            | default('')
+          )
+        } ] }}"
+      loop: "{{ filtered_devices }}"
+
+    - name: Debug vm_list
+      debug:
+        var: vm_list
+
+# ============================================================
+#  PLAY 2: Manage VM Boot Firmware and Boot Order on ESXi
+# ============================================================
+
+- name: Manage VM Boot Firmware and Boot Order on ESXi
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  collections:
+    - community.vmware
+
+  vars:
+    exsi_hostname: "192.168.253.128"
+    exsi_username: "root"
+    exsi_password: "admin$22"
+    validate_certs: false
+
+  tasks:
+
+    - name: Power OFF VM
+      vmware_guest:
+        hostname: "{{ exsi_hostname }}"
+        username: "{{ exsi_username }}"
+        password: "{{ exsi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ item.vm_name }}"
+        state: poweredoff
+      loop: "{{ vm_list }}"
+
+    - name: Set VM firmware to EFI (UEFI)
+      vmware_guest_boot_manager:
+        hostname: "{{ exsi_hostname }}"
+        username: "{{ exsi_username }}"
+        password: "{{ exsi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ item.vm_name }}"
+        boot_firmware: "efi"
+      loop: "{{ vm_list }}"
+
+    - name: Set boot order to PXE first (ethernet → disk)
+      vmware_guest_boot_manager:
+        hostname: "{{ exsi_hostname }}"
+        username: "{{ exsi_username }}"
+        password: "{{ exsi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ item.vm_name }}"
+        boot_order:
+          - ethernet
+          - disk
+      loop: "{{ vm_list }}"
+
+    - name: Power on VM
+      vmware_guest:
+        hostname: "{{ exsi_hostname }}"
+        username: "{{ exsi_username }}"
+        password: "{{ exsi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ item.vm_name }}"
+        state: poweredon
+      loop: "{{ vm_list }}"
+
+    - name: Switch boot order to disk first (disk → ethernet)
+      vmware_guest_boot_manager:
+        hostname: "{{ exsi_hostname }}"
+        username: "{{ exsi_username }}"
+        password: "{{ exsi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ item.vm_name }}"
+        boot_order:
+          - disk
+          - ethernet
+      loop: "{{ vm_list }}"
+
+    - name: Wait for VM to respond to SSH (port 22)
+      wait_for:
+        host: "{{ item.vm_ip }}"
+        port: 22
+        delay: 10
+        timeout: 3600
+        state: started
+      loop: "{{ vm_list }}"
+      delegate_to: localhost
+
+    - name: Remove old SSH host key from known_hosts
+      shell: ssh-keygen -R {{ item.vm_ip }} || true
+      loop: "{{ vm_list }}"
+      delegate_to: localhost
+
+    - name: Accept new SSH host key
+      shell: ssh-keyscan -H {{ item.vm_ip }} >> /tmp/known_hosts
+      args:
+        executable: /bin/bash
+      loop: "{{ vm_list }}"
+      delegate_to: localhost
+
+# ============================================================
+#  PLAY 3: Check kernel version
+# ============================================================
+
+- name: Check kernel version of new OS
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    ansible_ssh_common_args: "-o UserKnownHostsFile=/tmp/known_hosts -o StrictHostKeyChecking=no"
+
+  tasks:
+
+    - name: Check kernel version via SSH
+      command: uname -r
+      register: kernel_version
+      delegate_to: "{{ item.vm_ip }}"
+      loop: "{{ vm_list }}"
+      loop_control:
+        index_var: loop_index
+
+    - name: Display kernel version
+      debug:
+        msg: "Kernel version on {{ item.vm_name }} ({{ item.vm_ip }}) is {{ kernel_version.results[loop_index].stdout }}"
+      loop: "{{ vm_list }}"
+      loop_control:
+        index_var: loop_index
