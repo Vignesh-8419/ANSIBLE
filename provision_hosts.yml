@@ -89,7 +89,7 @@
 
     # ✅ Create host in Foreman using validated IDs
     - name: Create host in Foreman
-      theforeman.foreman:
+      theforeman.foreman.host:
         server_url: "{{ foreman_server_url }}"
         username: "{{ foreman_user }}"
         password: "{{ foreman_password }}"
