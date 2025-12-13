@@ -39,6 +39,7 @@
     body:
       name: "{{ item.cluster }}"
       type: "{{ cluster_type_id }}"
+      site: "{{ site_id }}"        # ✅ ADD THIS LINE
     status_code: [200, 201]
     validate_certs: no
   when: cluster_check.json.results | length == 0
