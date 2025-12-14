@@ -9,7 +9,7 @@
   become: yes
 
   vars:
-    cluster_name: "centos-7"      # existing NetBox cluster name
+  #  cluster_name: "centos-7"      # existing NetBox cluster name
     site_name: "{{ site_name }}"  # passed from Tower/AWX survey
 
   tasks:
