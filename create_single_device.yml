@@ -1,8 +1,6 @@
 # ============================================================
-# NetBox Device Creation (Cluster-aware, Overwrite-safe)
-# Behavior:
-# - cluster_name controls target cluster (centos-7, rockyos-8, etc.)
-# - If device exists, its cluster is updated to match cluster_name
+# NetBox Device Creation (Cluster-aware + Overwrite Mode)
+# Fully Cleaned-Up, AWX-Safe, Idempotent
 # ============================================================
 
 # ---------- 0. Ensure Site Exists ----------
@@ -34,17 +32,17 @@
     validate_certs: no
   when: site_lookup.json.results | length == 0
 
-- name: Get site ID
-  set_fact:
-    site_id: >-
-      {{ site_lookup.json.results[0].id
-         if site_lookup.json.results | length > 0
-         else (
-           lookup('url', netbox_url + '/api/dcim/sites/?slug=' + site_slug,
-                  headers={'Authorization': 'Token ' + netbox_token},
-                  validate_certs=False).json.results[0].id
-         )
-      }}
+- name: Get final site
+  uri:
+    url: "{{ netbox_url }}/api/dcim/sites/?slug={{ site_slug }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    validate_certs: no
+  register: site_final
+
+- set_fact:
+    site_id: "{{ site_final.json.results[0].id }}"
 
 # ---------- 1. Ensure Manufacturer Exists ----------
 - name: Normalize manufacturer slug
@@ -75,17 +73,17 @@
     validate_certs: no
   when: manu_lookup.json.results | length == 0
 
-- name: Get manufacturer ID
-  set_fact:
-    manufacturer_id: >-
-      {{ manu_lookup.json.results[0].id
-         if manu_lookup.json.results | length > 0
-         else (
-           lookup('url', netbox_url + '/api/dcim/manufacturers/?slug=' + manu_slug,
-                  headers={'Authorization': 'Token ' + netbox_token},
-                  validate_certs=False).json.results[0].id
-         )
-      }}
+- name: Get final manufacturer
+  uri:
+    url: "{{ netbox_url }}/api/dcim/manufacturers/?slug={{ manu_slug }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    validate_certs: no
+  register: manu_final
+
+- set_fact:
+    manufacturer_id: "{{ manu_final.json.results[0].id }}"
 
 # ---------- 2. Ensure Device Type Exists ----------
 - name: Normalize device type slug
@@ -117,17 +115,17 @@
     validate_certs: no
   when: dtype_lookup.json.results | length == 0
 
-- name: Get device type ID
-  set_fact:
-    device_type_id: >-
-      {{ dtype_lookup.json.results[0].id
-         if dtype_lookup.json.results | length > 0
-         else (
-           lookup('url', netbox_url + '/api/dcim/device-types/?slug=' + dtype_slug,
-                  headers={'Authorization': 'Token ' + netbox_token},
-                  validate_certs=False).json.results[0].id
-         )
-      }}
+- name: Get final device type
+  uri:
+    url: "{{ netbox_url }}/api/dcim/device-types/?slug={{ dtype_slug }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    validate_certs: no
+  register: dtype_final
+
+- set_fact:
+    device_type_id: "{{ dtype_final.json.results[0].id }}"
 
 # ---------- 3. Ensure Cluster Type Exists ----------
 - name: Normalize cluster type slug
@@ -158,19 +156,19 @@
     validate_certs: no
   when: ctype_lookup.json.results | length == 0
 
-- name: Get cluster type ID
-  set_fact:
-    cluster_type_id: >-
-      {{ ctype_lookup.json.results[0].id
-         if ctype_lookup.json.results | length > 0
-         else (
-           lookup('url', netbox_url + '/api/virtualization/cluster-types/?slug=' + ctype_slug,
-                  headers={'Authorization': 'Token ' + netbox_token},
-                  validate_certs=False).json.results[0].id
-         )
-      }}
+- name: Get final cluster type
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ ctype_slug }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    validate_certs: no
+  register: ctype_final
 
-# ---------- 4. Ensure Cluster Exists (centos-7 vs rockyos-8, etc.) ----------
+- set_fact:
+    cluster_type_id: "{{ ctype_final.json.results[0].id }}"
+
+# ---------- 4. Ensure Cluster Exists ----------
 - name: Normalize cluster slug
   set_fact:
     cluster_slug: "{{ item.cluster_name | trim | lower | regex_replace('[^a-z0-9-]', '-') }}"
@@ -201,19 +199,19 @@
     validate_certs: no
   when: cluster_lookup.json.results | length == 0
 
-- name: Get cluster ID
-  set_fact:
-    cluster_id: >-
-      {{ cluster_lookup.json.results[0].id
-         if cluster_lookup.json.results | length > 0
-         else (
-           lookup('url', netbox_url + '/api/virtualization/clusters/?slug=' + cluster_slug,
-                  headers={'Authorization': 'Token ' + netbox_token},
-                  validate_certs=False).json.results[0].id
-         )
-      }}
+- name: Get final cluster
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ cluster_slug }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    validate_certs: no
+  register: cluster_final
 
-# ---------- 5. Ensure Device Exists & Force Correct Cluster ----------
+- set_fact:
+    cluster_id: "{{ cluster_final.json.results[0].id }}"
+
+# ---------- 5. Ensure Device Exists ----------
 - name: Normalize device name
   set_fact:
     device_name_clean: "{{ item.device_name | trim }}"
@@ -255,7 +253,7 @@
          else device_create.json.id
       }}
 
-# ---------- 5b. Overwrite device cluster to match cluster_name ----------
+# ---------- 5b. Overwrite cluster (your required logic) ----------
 - name: Ensure device is in correct cluster
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
