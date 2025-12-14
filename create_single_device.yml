@@ -239,8 +239,27 @@
     device_id: "{{ (device_lookup.json.results[0].id if device_lookup.json.results|length > 0 else device_create.json.id) }}"
 
 # ============================================================
-# ✅ INTERFACE
+# ✅ INTERFACE (with overwrite support)
 # ============================================================
+
+- name: Check if interface already exists
+  uri:
+    url: "{{ netbox_url }}/api/dcim/interfaces/?device_id={{ device_id }}&name={{ item.interface_name | urlencode }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    validate_certs: no
+  register: iface_lookup
+
+- name: Delete existing interface (overwrite mode)
+  uri:
+    url: "{{ netbox_url }}/api/dcim/interfaces/{{ iface_lookup.json.results[0].id }}/"
+    method: DELETE
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    status_code: [204, 404]
+    validate_certs: no
+  when: iface_lookup.json.results | length > 0
 
 - name: Create interface
   uri:
