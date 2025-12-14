@@ -1,6 +1,6 @@
 # ============================================================
-# NetBox Device Creation (Auto Cluster-Type + Auto Cluster)
-# Fully Cleaned-Up, AWX-Safe, Idempotent, OS-Based Clustering
+# NetBox Device Creation (Cluster Type From Survey)
+# Fully Cleaned-Up, AWX-Safe, Idempotent
 # ============================================================
 
 # ---------- 0. Ensure Site Exists ----------
@@ -128,27 +128,23 @@
     device_type_id: "{{ dtype_final.json.results[0].id }}"
 
 # ============================================================
-# ✅ AUTO CLUSTER-TYPE CREATION (Fixes NetBox uniqueness issue)
+# ✅ CLUSTER TYPE FROM SURVEY (normalize + create if missing)
 # ============================================================
 
-- name: Derive cluster type from cluster_name
+- name: Normalize cluster type slug
   set_fact:
-    auto_cluster_type: "{{ item.cluster_name | trim | lower | regex_replace('[^a-z0-9-]', '-') }}-type"
+    cluster_type_slug: "{{ item.cluster_type | trim | lower | regex_replace('[^a-z0-9-]', '-') }}"
 
-- name: Normalize auto cluster type slug
-  set_fact:
-    auto_cluster_type_slug: "{{ auto_cluster_type | lower | regex_replace('[^a-z0-9-]', '-') }}"
-
-- name: Get auto cluster type
+- name: Get cluster type
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ auto_cluster_type_slug }}"
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ cluster_type_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
     validate_certs: no
-  register: auto_ctype_lookup
+  register: ctype_lookup
 
-- name: Create auto cluster type if missing
+- name: Create cluster type if missing
   uri:
     url: "{{ netbox_url }}/api/virtualization/cluster-types/"
     method: POST
@@ -157,26 +153,26 @@
       Content-Type: "application/json"
     body_format: json
     body:
-      name: "{{ auto_cluster_type }}"
-      slug: "{{ auto_cluster_type_slug }}"
+      name: "{{ item.cluster_type | trim }}"
+      slug: "{{ cluster_type_slug }}"
     status_code: [200, 201, 400]
     validate_certs: no
-  when: auto_ctype_lookup.json.results | length == 0
+  when: ctype_lookup.json.results | length == 0
 
-- name: Get final auto cluster type
+- name: Get final cluster type
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ auto_cluster_type_slug }}"
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ cluster_type_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
     validate_certs: no
-  register: auto_ctype_final
+  register: ctype_final
 
 - set_fact:
-    cluster_type_id: "{{ auto_ctype_final.json.results[0].id }}"
+    cluster_type_id: "{{ ctype_final.json.results[0].id }}"
 
 # ============================================================
-# ✅ AUTO CLUSTER CREATION (centos-7, rockyos-8, etc.)
+# ✅ CLUSTER CREATION (centos-7, rockyos-8, etc.)
 # ============================================================
 
 - name: Normalize cluster slug
