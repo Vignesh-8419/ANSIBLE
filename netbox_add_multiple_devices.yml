@@ -1,4 +1,3 @@
----
 - name: Add multiple devices into NetBox
   hosts: rocky-08-02
   connection: local
@@ -10,18 +9,12 @@
 
   tasks:
 
-    # -------------------------------------------------------
-    # 1. Convert devices_list (multiline string) into list
-    # -------------------------------------------------------
     - name: Split devices_list into lines
       set_fact:
         device_lines: "{{ devices_list.split('\n') | reject('equalto','') | list }}"
 
     - name: Parse each line into structured objects
       set_fact:
-#      device_list": "cent-07-15.vgs.com,Chennai,Dell,PowerEdge-R740,ens192,00:50:56:AA:BB:CC,192.168.253.150/24,centos-7,os-cluster
-#      ipa-server-01.vgs.com,Chennai,Generic,Generic x86 Server,ens32,00:50:56:98:88:CC,192.168.253.192/24,centos-7,os-cluster
-
         devices: "{{ devices | default([]) + [ {
           'device_name': item.split(',')[0] | trim,
           'site_name': item.split(',')[1] | trim,
@@ -39,9 +32,6 @@
       debug:
         var: devices
 
-    # -------------------------------------------------------
-    # 2. Loop through each device and create in NetBox
-    # -------------------------------------------------------
     - name: Process each device
       include_tasks: create_single_device.yml
       loop: "{{ devices }}"
