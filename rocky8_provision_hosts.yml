@@ -14,13 +14,16 @@
 
     host_root_pass: "Root@123"
 
-    cluster_name: "ROCKYOS-8"     # ✅ Rocky cluster name
-    target_servers: []            # ✅ Optional filter (empty = all in cluster)
+    # ✅ Rocky cluster in NetBox
+    cluster_name: "ROCKYOS-8"
 
-    # ✅ Foreman IDs for Rocky 8
+    # ✅ Optional filter (empty = all Rocky hosts)
+    target_servers: []
+
+    # ✅ Foreman Rocky 8 hostgroup
     org_id: 1
     loc_id: 2
-    hostgroup_id: 2               # ✅ VGS HOSTS ROCKY 8 (UEFI-ready)
+    hostgroup_id: 2        # ✅ VGS HOSTS ROCKY 8 (UEFI-ready)
 
   tasks:
 
@@ -99,6 +102,7 @@
         force_basic_auth: yes
         validate_certs: no
         status_code: [200, 201]
+        timeout: 120
         headers:
           Content-Type: "application/json"
         body_format: json
