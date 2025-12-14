@@ -1,6 +1,6 @@
 # ============================================================
-# NetBox Device Creation (Cluster-aware + Overwrite Mode)
-# Fully Cleaned-Up, AWX-Safe, Idempotent
+# NetBox Device Creation (Auto Cluster-Type + Auto Cluster)
+# Fully Cleaned-Up, AWX-Safe, Idempotent, OS-Based Clustering
 # ============================================================
 
 # ---------- 0. Ensure Site Exists ----------
@@ -127,21 +127,28 @@
 - set_fact:
     device_type_id: "{{ dtype_final.json.results[0].id }}"
 
-# ---------- 3. Ensure Cluster Type Exists ----------
-- name: Normalize cluster type slug
-  set_fact:
-    ctype_slug: "{{ item.cluster_type | trim | lower | regex_replace('[^a-z0-9-]', '-') }}"
+# ============================================================
+# ✅ AUTO CLUSTER-TYPE CREATION (Fixes NetBox uniqueness issue)
+# ============================================================
 
-- name: Get cluster type
+- name: Derive cluster type from cluster_name
+  set_fact:
+    auto_cluster_type: "{{ item.cluster_name | trim | lower | regex_replace('[^a-z0-9-]', '-') }}-type"
+
+- name: Normalize auto cluster type slug
+  set_fact:
+    auto_cluster_type_slug: "{{ auto_cluster_type | lower | regex_replace('[^a-z0-9-]', '-') }}"
+
+- name: Get auto cluster type
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ ctype_slug }}"
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ auto_cluster_type_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
     validate_certs: no
-  register: ctype_lookup
+  register: auto_ctype_lookup
 
-- name: Create cluster type if missing
+- name: Create auto cluster type if missing
   uri:
     url: "{{ netbox_url }}/api/virtualization/cluster-types/"
     method: POST
@@ -150,25 +157,28 @@
       Content-Type: "application/json"
     body_format: json
     body:
-      name: "{{ item.cluster_type | trim }}"
-      slug: "{{ ctype_slug }}"
+      name: "{{ auto_cluster_type }}"
+      slug: "{{ auto_cluster_type_slug }}"
     status_code: [200, 201, 400]
     validate_certs: no
-  when: ctype_lookup.json.results | length == 0
+  when: auto_ctype_lookup.json.results | length == 0
 
-- name: Get final cluster type
+- name: Get final auto cluster type
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ ctype_slug }}"
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ auto_cluster_type_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
     validate_certs: no
-  register: ctype_final
+  register: auto_ctype_final
 
 - set_fact:
-    cluster_type_id: "{{ ctype_final.json.results[0].id }}"
+    cluster_type_id: "{{ auto_ctype_final.json.results[0].id }}"
 
-# ---------- 4. Ensure Cluster Exists ----------
+# ============================================================
+# ✅ AUTO CLUSTER CREATION (centos-7, rockyos-8, etc.)
+# ============================================================
+
 - name: Normalize cluster slug
   set_fact:
     cluster_slug: "{{ item.cluster_name | trim | lower | regex_replace('[^a-z0-9-]', '-') }}"
@@ -211,7 +221,10 @@
 - set_fact:
     cluster_id: "{{ cluster_final.json.results[0].id }}"
 
-# ---------- 5. Ensure Device Exists ----------
+# ============================================================
+# ✅ DEVICE CREATION + CLUSTER OVERWRITE
+# ============================================================
+
 - name: Normalize device name
   set_fact:
     device_name_clean: "{{ item.device_name | trim }}"
@@ -253,7 +266,7 @@
          else device_create.json.id
       }}
 
-# ---------- 5b. Overwrite cluster (your required logic) ----------
+# ✅ Overwrite cluster to correct one
 - name: Ensure device is in correct cluster
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
@@ -267,7 +280,10 @@
     status_code: [200, 201]
     validate_certs: no
 
-# ---------- 6. Ensure Interface Exists ----------
+# ============================================================
+# ✅ INTERFACE CREATION
+# ============================================================
+
 - name: Normalize interface name
   set_fact:
     iface_name_clean: "{{ item.interface_name | trim }}"
@@ -307,7 +323,10 @@
          else iface_create.json.id
       }}
 
-# ---------- 7. Ensure IP Exists ----------
+# ============================================================
+# ✅ IP CREATION + PRIMARY IP
+# ============================================================
+
 - name: Normalize IP
   set_fact:
     ip_clean: "{{ item.ip_address | trim }}"
@@ -347,7 +366,6 @@
          else ip_create.json.id
       }}
 
-# ---------- 8. Set Primary IP ----------
 - name: Set primary IP for device
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
