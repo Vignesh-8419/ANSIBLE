@@ -1,5 +1,5 @@
 ---
-- name: Prepare and create hosts in Foreman using API
+- name: Prepare and create CENTOS hosts in Foreman using API
   hosts: localhost
   connection: local
   gather_facts: no
