@@ -4,7 +4,7 @@
 
 - name: Get site
   uri:
-    url: "{{ netbox_url }}/api/dcim/sites/?name={{ item.site_name }}"
+    url: "{{ netbox_url }}/api/dcim/sites/?name={{ item.site_name | urlencode }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -28,7 +28,7 @@
 
 - name: Get final site ID
   uri:
-    url: "{{ netbox_url }}/api/dcim/sites/?name={{ item.site_name }}"
+    url: "{{ netbox_url }}/api/dcim/sites/?name={{ item.site_name | urlencode }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -44,7 +44,7 @@
 
 - name: Get manufacturer
   uri:
-    url: "{{ netbox_url }}/api/dcim/manufacturers/?name={{ item.manufacturer_name }}"
+    url: "{{ netbox_url }}/api/dcim/manufacturers/?name={{ item.manufacturer_name | urlencode }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -68,7 +68,7 @@
 
 - name: Get final manufacturer ID
   uri:
-    url: "{{ netbox_url }}/api/dcim/manufacturers/?name={{ item.manufacturer_name }}"
+    url: "{{ netbox_url }}/api/dcim/manufacturers/?name={{ item.manufacturer_name | urlencode }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -84,7 +84,7 @@
 
 - name: Get device type
   uri:
-    url: "{{ netbox_url }}/api/dcim/device-types/?model={{ item.device_type_name }}"
+    url: "{{ netbox_url }}/api/dcim/device-types/?model={{ item.device_type_name | urlencode }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -109,7 +109,7 @@
 
 - name: Get final device type ID
   uri:
-    url: "{{ netbox_url }}/api/dcim/device-types/?model={{ item.device_type_name }}"
+    url: "{{ netbox_url }}/api/dcim/device-types/?model={{ item.device_type_name | urlencode }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -120,12 +120,12 @@
     device_type_id: "{{ dtype_final.json.results[0].id }}"
 
 # ============================================================
-# ✅ CLUSTER TYPE (name-based lookup)
+# ✅ CLUSTER TYPE
 # ============================================================
 
 - name: Get cluster type
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?name={{ item.cluster_type }}"
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?name={{ item.cluster_type | urlencode }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -149,7 +149,7 @@
 
 - name: Get final cluster type ID
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?name={{ item.cluster_type }}"
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?name={{ item.cluster_type | urlencode }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -165,7 +165,7 @@
 
 - name: Get cluster
   uri:
-    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster_name }}"
+    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster_name | urlencode }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -191,7 +191,7 @@
 
 - name: Get final cluster ID
   uri:
-    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster_name }}"
+    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster_name | urlencode }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -207,7 +207,7 @@
 
 - name: Check if device exists
   uri:
-    url: "{{ netbox_url }}/api/dcim/devices/?name={{ item.device_name }}"
+    url: "{{ netbox_url }}/api/dcim/devices/?name={{ item.device_name | urlencode }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -232,6 +232,7 @@
     status_code: [200, 201]
     validate_certs: no
   when: device_lookup.json.results | length == 0
+  register: device_create
 
 - name: Set device ID
   set_fact:
