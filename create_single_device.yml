@@ -1,6 +1,8 @@
 # ============================================================
-#  NetBox Device Creation With Overwrite Mode + CLUSTER + SITE SUPPORT
-#  Slug-Based Lookups + Fully Idempotent (Device, Interface, IP)
+# NetBox Device Creation (Cluster-aware, Overwrite-safe)
+# Behavior:
+# - cluster_name controls target cluster (centos-7, rockyos-8, etc.)
+# - If device exists, its cluster is updated to match cluster_name
 # ============================================================
 
 # ---------- 0. Ensure Site Exists ----------
@@ -14,7 +16,6 @@
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
-    return_content: yes
     validate_certs: no
   register: site_lookup
 
@@ -24,6 +25,7 @@
     method: POST
     headers:
       Authorization: "Token {{ netbox_token }}"
+      Content-Type: "application/json"
     body_format: json
     body:
       name: "{{ item.site_name | trim }}"
@@ -33,22 +35,16 @@
   when: site_lookup.json.results | length == 0
 
 - name: Get site ID
-  uri:
-    url: "{{ netbox_url }}/api/dcim/sites/?slug={{ site_slug }}"
-    method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    return_content: yes
-    validate_certs: no
-  register: site_final
-
-- name: Fail if site not found
-  fail:
-    msg: "Site '{{ item.site_name }}' not found in NetBox after creation attempt."
-  when: site_final.json.results | length == 0
-
-- set_fact:
-    site_id: "{{ site_final.json.results[0].id }}"
+  set_fact:
+    site_id: >-
+      {{ site_lookup.json.results[0].id
+         if site_lookup.json.results | length > 0
+         else (
+           lookup('url', netbox_url + '/api/dcim/sites/?slug=' + site_slug,
+                  headers={'Authorization': 'Token ' + netbox_token},
+                  validate_certs=False).json.results[0].id
+         )
+      }}
 
 # ---------- 1. Ensure Manufacturer Exists ----------
 - name: Normalize manufacturer slug
@@ -61,7 +57,6 @@
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
-    return_content: yes
     validate_certs: no
   register: manu_lookup
 
@@ -71,6 +66,7 @@
     method: POST
     headers:
       Authorization: "Token {{ netbox_token }}"
+      Content-Type: "application/json"
     body_format: json
     body:
       name: "{{ item.manufacturer_name | trim }}"
@@ -80,22 +76,16 @@
   when: manu_lookup.json.results | length == 0
 
 - name: Get manufacturer ID
-  uri:
-    url: "{{ netbox_url }}/api/dcim/manufacturers/?slug={{ manu_slug }}"
-    method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    return_content: yes
-    validate_certs: no
-  register: manu_final
-
-- name: Fail if manufacturer not found
-  fail:
-    msg: "Manufacturer '{{ item.manufacturer_name }}' not found in NetBox after creation attempt."
-  when: manu_final.json.results | length == 0
-
-- set_fact:
-    manufacturer_id: "{{ manu_final.json.results[0].id }}"
+  set_fact:
+    manufacturer_id: >-
+      {{ manu_lookup.json.results[0].id
+         if manu_lookup.json.results | length > 0
+         else (
+           lookup('url', netbox_url + '/api/dcim/manufacturers/?slug=' + manu_slug,
+                  headers={'Authorization': 'Token ' + netbox_token},
+                  validate_certs=False).json.results[0].id
+         )
+      }}
 
 # ---------- 2. Ensure Device Type Exists ----------
 - name: Normalize device type slug
@@ -108,7 +98,6 @@
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
-    return_content: yes
     validate_certs: no
   register: dtype_lookup
 
@@ -118,6 +107,7 @@
     method: POST
     headers:
       Authorization: "Token {{ netbox_token }}"
+      Content-Type: "application/json"
     body_format: json
     body:
       model: "{{ item.device_type_name | trim }}"
@@ -128,22 +118,16 @@
   when: dtype_lookup.json.results | length == 0
 
 - name: Get device type ID
-  uri:
-    url: "{{ netbox_url }}/api/dcim/device-types/?slug={{ dtype_slug }}"
-    method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    return_content: yes
-    validate_certs: no
-  register: dtype_final
-
-- name: Fail if device type not found
-  fail:
-    msg: "Device type '{{ item.device_type_name }}' not found in NetBox after creation attempt."
-  when: dtype_final.json.results | length == 0
-
-- set_fact:
-    device_type_id: "{{ dtype_final.json.results[0].id }}"
+  set_fact:
+    device_type_id: >-
+      {{ dtype_lookup.json.results[0].id
+         if dtype_lookup.json.results | length > 0
+         else (
+           lookup('url', netbox_url + '/api/dcim/device-types/?slug=' + dtype_slug,
+                  headers={'Authorization': 'Token ' + netbox_token},
+                  validate_certs=False).json.results[0].id
+         )
+      }}
 
 # ---------- 3. Ensure Cluster Type Exists ----------
 - name: Normalize cluster type slug
@@ -156,7 +140,6 @@
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
-    return_content: yes
     validate_certs: no
   register: ctype_lookup
 
@@ -166,6 +149,7 @@
     method: POST
     headers:
       Authorization: "Token {{ netbox_token }}"
+      Content-Type: "application/json"
     body_format: json
     body:
       name: "{{ item.cluster_type | trim }}"
@@ -175,24 +159,18 @@
   when: ctype_lookup.json.results | length == 0
 
 - name: Get cluster type ID
-  uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ ctype_slug }}"
-    method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    return_content: yes
-    validate_certs: no
-  register: ctype_final
+  set_fact:
+    cluster_type_id: >-
+      {{ ctype_lookup.json.results[0].id
+         if ctype_lookup.json.results | length > 0
+         else (
+           lookup('url', netbox_url + '/api/virtualization/cluster-types/?slug=' + ctype_slug,
+                  headers={'Authorization': 'Token ' + netbox_token},
+                  validate_certs=False).json.results[0].id
+         )
+      }}
 
-- name: Fail if cluster type not found
-  fail:
-    msg: "Cluster type '{{ item.cluster_type }}' not found in NetBox after creation attempt."
-  when: ctype_final.json.results | length == 0
-
-- set_fact:
-    cluster_type_id: "{{ ctype_final.json.results[0].id }}"
-
-# ---------- 4. Ensure Cluster Exists ----------
+# ---------- 4. Ensure Cluster Exists (centos-7 vs rockyos-8, etc.) ----------
 - name: Normalize cluster slug
   set_fact:
     cluster_slug: "{{ item.cluster_name | trim | lower | regex_replace('[^a-z0-9-]', '-') }}"
@@ -203,7 +181,6 @@
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
-    return_content: yes
     validate_certs: no
   register: cluster_lookup
 
@@ -213,6 +190,7 @@
     method: POST
     headers:
       Authorization: "Token {{ netbox_token }}"
+      Content-Type: "application/json"
     body_format: json
     body:
       name: "{{ item.cluster_name | trim }}"
@@ -224,49 +202,38 @@
   when: cluster_lookup.json.results | length == 0
 
 - name: Get cluster ID
-  uri:
-    url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ cluster_slug }}"
-    method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    return_content: yes
-    validate_certs: no
-  register: cluster_final
+  set_fact:
+    cluster_id: >-
+      {{ cluster_lookup.json.results[0].id
+         if cluster_lookup.json.results | length > 0
+         else (
+           lookup('url', netbox_url + '/api/virtualization/clusters/?slug=' + cluster_slug,
+                  headers={'Authorization': 'Token ' + netbox_token},
+                  validate_certs=False).json.results[0].id
+         )
+      }}
 
-- name: Fail if cluster not found
-  fail:
-    msg: "Cluster '{{ item.cluster_name }}' not found in NetBox after creation attempt."
-  when: cluster_final.json.results | length == 0
-
-- set_fact:
-    cluster_id: "{{ cluster_final.json.results[0].id }}"
-
-# ---------- 5. Ensure Device Exists (Idempotent) ----------
+# ---------- 5. Ensure Device Exists & Force Correct Cluster ----------
 - name: Normalize device name
   set_fact:
     device_name_clean: "{{ item.device_name | trim }}"
 
-- name: Check if device already exists
+- name: Check if device exists
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/?name={{ device_name_clean }}&site_id={{ site_id }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
-    return_content: yes
     validate_certs: no
   register: device_lookup
 
-- name: Set existing device ID if found
-  set_fact:
-    device_id: "{{ device_lookup.json.results[0].id }}"
-  when: device_lookup.json.results | length > 0
-
-- name: Create device if not existing
+- name: Create device if missing
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/"
     method: POST
     headers:
       Authorization: "Token {{ netbox_token }}"
+      Content-Type: "application/json"
     body_format: json
     body:
       name: "{{ device_name_clean }}"
@@ -276,42 +243,53 @@
       cluster: "{{ cluster_id }}"
       status: "active"
     status_code: [200, 201]
-    return_content: yes
     validate_certs: no
   register: device_create
   when: device_lookup.json.results | length == 0
 
-- name: Set device ID from creation
+- name: Set device ID
   set_fact:
-    device_id: "{{ device_create.json.id }}"
-  when: device_lookup.json.results | length == 0
+    device_id: >-
+      {{ device_lookup.json.results[0].id
+         if device_lookup.json.results | length > 0
+         else device_create.json.id
+      }}
 
-# ---------- 6. Ensure Interface Exists (Idempotent) ----------
+# ---------- 5b. Overwrite device cluster to match cluster_name ----------
+- name: Ensure device is in correct cluster
+  uri:
+    url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
+    method: PATCH
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      cluster: "{{ cluster_id }}"
+    status_code: [200, 201]
+    validate_certs: no
+
+# ---------- 6. Ensure Interface Exists ----------
 - name: Normalize interface name
   set_fact:
     iface_name_clean: "{{ item.interface_name | trim }}"
 
-- name: Check if interface already exists
+- name: Check interface
   uri:
     url: "{{ netbox_url }}/api/dcim/interfaces/?device_id={{ device_id }}&name={{ iface_name_clean }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
-    return_content: yes
     validate_certs: no
   register: iface_lookup
 
-- name: Set existing interface ID if found
-  set_fact:
-    interface_id: "{{ iface_lookup.json.results[0].id }}"
-  when: iface_lookup.json.results | length > 0
-
-- name: Create interface if not existing
+- name: Create interface if missing
   uri:
     url: "{{ netbox_url }}/api/dcim/interfaces/"
     method: POST
     headers:
       Authorization: "Token {{ netbox_token }}"
+      Content-Type: "application/json"
     body_format: json
     body:
       device: "{{ device_id }}"
@@ -319,42 +297,39 @@
       type: "1000base-t"
       mac_address: "{{ item.mac_address | trim }}"
     status_code: [200, 201]
-    return_content: yes
     validate_certs: no
   register: iface_create
   when: iface_lookup.json.results | length == 0
 
-- name: Set interface ID from creation
+- name: Set interface ID
   set_fact:
-    interface_id: "{{ iface_create.json.id }}"
-  when: iface_lookup.json.results | length == 0
+    interface_id: >-
+      {{ iface_lookup.json.results[0].id
+         if iface_lookup.json.results | length > 0
+         else iface_create.json.id
+      }}
 
-# ---------- 7. Ensure IP Exists (Idempotent) ----------
+# ---------- 7. Ensure IP Exists ----------
 - name: Normalize IP
   set_fact:
     ip_clean: "{{ item.ip_address | trim }}"
 
-- name: Check if IP already exists
+- name: Check IP
   uri:
     url: "{{ netbox_url }}/api/ipam/ip-addresses/?address={{ ip_clean }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
-    return_content: yes
     validate_certs: no
   register: ip_lookup
 
-- name: Set existing IP ID if found
-  set_fact:
-    ip_id: "{{ ip_lookup.json.results[0].id }}"
-  when: ip_lookup.json.results | length > 0
-
-- name: Create IP if not existing
+- name: Create IP if missing
   uri:
     url: "{{ netbox_url }}/api/ipam/ip-addresses/"
     method: POST
     headers:
       Authorization: "Token {{ netbox_token }}"
+      Content-Type: "application/json"
     body_format: json
     body:
       address: "{{ ip_clean }}"
@@ -366,10 +341,13 @@
   register: ip_create
   when: ip_lookup.json.results | length == 0
 
-- name: Set IP ID from creation
+- name: Set IP ID
   set_fact:
-    ip_id: "{{ ip_create.json.id }}"
-  when: ip_lookup.json.results | length == 0
+    ip_id: >-
+      {{ ip_lookup.json.results[0].id
+         if ip_lookup.json.results | length > 0
+         else ip_create.json.id
+      }}
 
 # ---------- 8. Set Primary IP ----------
 - name: Set primary IP for device
@@ -378,6 +356,7 @@
     method: PATCH
     headers:
       Authorization: "Token {{ netbox_token }}"
+      Content-Type: "application/json"
     body_format: json
     body:
       primary_ip4: "{{ ip_id }}"
