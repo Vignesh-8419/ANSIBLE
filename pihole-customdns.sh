@@ -45,3 +45,6 @@ else
   echo "Usage: $0 --add <hostname> <ip>"
   exit 1
 fi
+
+#reload pihole service
+systemctl restart pihole-FTL.service
