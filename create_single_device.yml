@@ -10,7 +10,7 @@
 
 - name: Get site
   uri:
-    url: "{{ netbox_url }}/api/dcim/sites/?slug={{ site_slug }}"
+    url: "{{ netbox_url }}/api/dcim/sites/?slug__exact={{ site_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -34,7 +34,7 @@
 
 - name: Get final site
   uri:
-    url: "{{ netbox_url }}/api/dcim/sites/?slug={{ site_slug }}"
+    url: "{{ netbox_url }}/api/dcim/sites/?slug__exact={{ site_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -51,7 +51,7 @@
 
 - name: Get manufacturer
   uri:
-    url: "{{ netbox_url }}/api/dcim/manufacturers/?slug={{ manu_slug }}"
+    url: "{{ netbox_url }}/api/dcim/manufacturers/?slug__exact={{ manu_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -75,7 +75,7 @@
 
 - name: Get final manufacturer
   uri:
-    url: "{{ netbox_url }}/api/dcim/manufacturers/?slug={{ manu_slug }}"
+    url: "{{ netbox_url }}/api/dcim/manufacturers/?slug__exact={{ manu_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -92,7 +92,7 @@
 
 - name: Get device type
   uri:
-    url: "{{ netbox_url }}/api/dcim/device-types/?slug={{ dtype_slug }}"
+    url: "{{ netbox_url }}/api/dcim/device-types/?slug__exact={{ dtype_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -117,7 +117,7 @@
 
 - name: Get final device type
   uri:
-    url: "{{ netbox_url }}/api/dcim/device-types/?slug={{ dtype_slug }}"
+    url: "{{ netbox_url }}/api/dcim/device-types/?slug__exact={{ dtype_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -137,7 +137,7 @@
 
 - name: Get cluster type
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ cluster_type_slug }}"
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug__exact={{ cluster_type_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -161,7 +161,7 @@
 
 - name: Get final cluster type
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ cluster_type_slug }}"
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug__exact={{ cluster_type_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -172,7 +172,7 @@
     cluster_type_id: "{{ ctype_final.json.results[0].id }}"
 
 # ============================================================
-# ✅ CLUSTER CREATION (cluster_name from survey)
+# ✅ CLUSTER CREATION (cluster_name from survey, exact slug match)
 # ============================================================
 
 - name: Normalize cluster slug
@@ -181,7 +181,7 @@
 
 - name: Get cluster
   uri:
-    url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ cluster_slug }}"
+    url: "{{ netbox_url }}/api/virtualization/clusters/?slug__exact={{ cluster_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -207,7 +207,7 @@
 
 - name: Get final cluster
   uri:
-    url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ cluster_slug }}"
+    url: "{{ netbox_url }}/api/virtualization/clusters/?slug__exact={{ cluster_slug }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
