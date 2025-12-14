@@ -1,16 +1,10 @@
 # ============================================================
-# NetBox Device Creation (Cluster Name + Cluster Type from Survey)
-# Fully Cleaned-Up, AWX-Safe, Idempotent
+# ✅ SITE (name-based lookup)
 # ============================================================
-
-# ---------- 0. Ensure Site Exists ----------
-- name: Normalize site slug
-  set_fact:
-    site_slug: "{{ item.site_name | trim | lower | regex_replace('[^a-z0-9-]', '-') }}"
 
 - name: Get site
   uri:
-    url: "{{ netbox_url }}/api/dcim/sites/?slug__exact={{ site_slug }}"
+    url: "{{ netbox_url }}/api/dcim/sites/?name={{ item.site_name }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -26,15 +20,15 @@
       Content-Type: "application/json"
     body_format: json
     body:
-      name: "{{ item.site_name | trim }}"
-      slug: "{{ site_slug }}"
-    status_code: [200, 201, 400]
+      name: "{{ item.site_name }}"
+      slug: "{{ item.site_name | lower | regex_replace('[^a-z0-9-]', '-') }}"
+    status_code: [200, 201]
     validate_certs: no
   when: site_lookup.json.results | length == 0
 
-- name: Get final site
+- name: Get final site ID
   uri:
-    url: "{{ netbox_url }}/api/dcim/sites/?slug__exact={{ site_slug }}"
+    url: "{{ netbox_url }}/api/dcim/sites/?name={{ item.site_name }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -44,14 +38,13 @@
 - set_fact:
     site_id: "{{ site_final.json.results[0].id }}"
 
-# ---------- 1. Ensure Manufacturer Exists ----------
-- name: Normalize manufacturer slug
-  set_fact:
-    manu_slug: "{{ item.manufacturer_name | trim | lower | regex_replace('[^a-z0-9-]', '-') }}"
+# ============================================================
+# ✅ MANUFACTURER
+# ============================================================
 
 - name: Get manufacturer
   uri:
-    url: "{{ netbox_url }}/api/dcim/manufacturers/?slug__exact={{ manu_slug }}"
+    url: "{{ netbox_url }}/api/dcim/manufacturers/?name={{ item.manufacturer_name }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -67,15 +60,15 @@
       Content-Type: "application/json"
     body_format: json
     body:
-      name: "{{ item.manufacturer_name | trim }}"
-      slug: "{{ manu_slug }}"
-    status_code: [200, 201, 400]
+      name: "{{ item.manufacturer_name }}"
+      slug: "{{ item.manufacturer_name | lower | regex_replace('[^a-z0-9-]', '-') }}"
+    status_code: [200, 201]
     validate_certs: no
   when: manu_lookup.json.results | length == 0
 
-- name: Get final manufacturer
+- name: Get final manufacturer ID
   uri:
-    url: "{{ netbox_url }}/api/dcim/manufacturers/?slug__exact={{ manu_slug }}"
+    url: "{{ netbox_url }}/api/dcim/manufacturers/?name={{ item.manufacturer_name }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -85,14 +78,13 @@
 - set_fact:
     manufacturer_id: "{{ manu_final.json.results[0].id }}"
 
-# ---------- 2. Ensure Device Type Exists ----------
-- name: Normalize device type slug
-  set_fact:
-    dtype_slug: "{{ item.device_type_name | trim | lower | regex_replace('[^a-z0-9-]', '-') }}"
+# ============================================================
+# ✅ DEVICE TYPE
+# ============================================================
 
 - name: Get device type
   uri:
-    url: "{{ netbox_url }}/api/dcim/device-types/?slug__exact={{ dtype_slug }}"
+    url: "{{ netbox_url }}/api/dcim/device-types/?model={{ item.device_type_name }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -108,16 +100,16 @@
       Content-Type: "application/json"
     body_format: json
     body:
-      model: "{{ item.device_type_name | trim }}"
-      slug: "{{ dtype_slug }}"
+      model: "{{ item.device_type_name }}"
+      slug: "{{ item.device_type_name | lower | regex_replace('[^a-z0-9-]', '-') }}"
       manufacturer: "{{ manufacturer_id }}"
-    status_code: [200, 201, 400]
+    status_code: [200, 201]
     validate_certs: no
   when: dtype_lookup.json.results | length == 0
 
-- name: Get final device type
+- name: Get final device type ID
   uri:
-    url: "{{ netbox_url }}/api/dcim/device-types/?slug__exact={{ dtype_slug }}"
+    url: "{{ netbox_url }}/api/dcim/device-types/?model={{ item.device_type_name }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -128,16 +120,12 @@
     device_type_id: "{{ dtype_final.json.results[0].id }}"
 
 # ============================================================
-# ✅ CLUSTER TYPE FROM SURVEY (normalize + create if missing)
+# ✅ CLUSTER TYPE (name-based lookup)
 # ============================================================
-
-- name: Normalize cluster type slug
-  set_fact:
-    cluster_type_slug: "{{ item.cluster_type | trim | lower | regex_replace('[^a-z0-9-]', '-') }}"
 
 - name: Get cluster type
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug__exact={{ cluster_type_slug }}"
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?name={{ item.cluster_type }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -153,15 +141,15 @@
       Content-Type: "application/json"
     body_format: json
     body:
-      name: "{{ item.cluster_type | trim }}"
-      slug: "{{ cluster_type_slug }}"
-    status_code: [200, 201, 400]
+      name: "{{ item.cluster_type }}"
+      slug: "{{ item.cluster_type | lower | regex_replace('[^a-z0-9-]', '-') }}"
+    status_code: [200, 201]
     validate_certs: no
   when: ctype_lookup.json.results | length == 0
 
-- name: Get final cluster type
+- name: Get final cluster type ID
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug__exact={{ cluster_type_slug }}"
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?name={{ item.cluster_type }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -172,16 +160,12 @@
     cluster_type_id: "{{ ctype_final.json.results[0].id }}"
 
 # ============================================================
-# ✅ CLUSTER CREATION (cluster_name from survey, exact slug match)
+# ✅ CLUSTER (name-based lookup)
 # ============================================================
-
-- name: Normalize cluster slug
-  set_fact:
-    cluster_slug: "{{ item.cluster_name | trim | lower | regex_replace('[^a-z0-9-]', '-') }}"
 
 - name: Get cluster
   uri:
-    url: "{{ netbox_url }}/api/virtualization/clusters/?slug__exact={{ cluster_slug }}"
+    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster_name }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -197,17 +181,17 @@
       Content-Type: "application/json"
     body_format: json
     body:
-      name: "{{ item.cluster_name | trim }}"
-      slug: "{{ cluster_slug }}"
+      name: "{{ item.cluster_name }}"
+      slug: "{{ item.cluster_name | lower | regex_replace('[^a-z0-9-]', '-') }}"
       type: "{{ cluster_type_id }}"
       site: "{{ site_id }}"
-    status_code: [200, 201, 400]
+    status_code: [200, 201]
     validate_certs: no
   when: cluster_lookup.json.results | length == 0
 
-- name: Get final cluster
+- name: Get final cluster ID
   uri:
-    url: "{{ netbox_url }}/api/virtualization/clusters/?slug__exact={{ cluster_slug }}"
+    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster_name }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -218,16 +202,12 @@
     cluster_id: "{{ cluster_final.json.results[0].id }}"
 
 # ============================================================
-# ✅ DEVICE CREATION + ALWAYS MOVE TO CORRECT CLUSTER
+# ✅ DEVICE CREATION
 # ============================================================
-
-- name: Normalize device name
-  set_fact:
-    device_name_clean: "{{ item.device_name | trim }}"
 
 - name: Check if device exists
   uri:
-    url: "{{ netbox_url }}/api/dcim/devices/?name={{ device_name_clean }}&site_id={{ site_id }}"
+    url: "{{ netbox_url }}/api/dcim/devices/?name={{ item.device_name }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -243,7 +223,7 @@
       Content-Type: "application/json"
     body_format: json
     body:
-      name: "{{ device_name_clean }}"
+      name: "{{ item.device_name }}"
       device_type: "{{ device_type_id }}"
       role: 1
       site: "{{ site_id }}"
@@ -251,49 +231,17 @@
       status: "active"
     status_code: [200, 201]
     validate_certs: no
-  register: device_create
   when: device_lookup.json.results | length == 0
 
 - name: Set device ID
   set_fact:
-    device_id: >-
-      {{ device_lookup.json.results[0].id
-         if device_lookup.json.results | length > 0
-         else device_create.json.id
-      }}
-
-# ✅ ALWAYS move device to correct cluster
-- name: Ensure device is in correct cluster
-  uri:
-    url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
-    method: PATCH
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-      Content-Type: "application/json"
-    body_format: json
-    body:
-      cluster: "{{ cluster_id }}"
-    status_code: [200, 201]
-    validate_certs: no
+    device_id: "{{ (device_lookup.json.results[0].id if device_lookup.json.results|length > 0 else device_create.json.id) }}"
 
 # ============================================================
-# ✅ INTERFACE CREATION
+# ✅ INTERFACE
 # ============================================================
 
-- name: Normalize interface name
-  set_fact:
-    iface_name_clean: "{{ item.interface_name | trim }}"
-
-- name: Check interface
-  uri:
-    url: "{{ netbox_url }}/api/dcim/interfaces/?device_id={{ device_id }}&name={{ iface_name_clean }}"
-    method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    validate_certs: no
-  register: iface_lookup
-
-- name: Create interface if missing
+- name: Create interface
   uri:
     url: "{{ netbox_url }}/api/dcim/interfaces/"
     method: POST
@@ -303,40 +251,21 @@
     body_format: json
     body:
       device: "{{ device_id }}"
-      name: "{{ iface_name_clean }}"
+      name: "{{ item.interface_name }}"
       type: "1000base-t"
-      mac_address: "{{ item.mac_address | trim }}"
+      mac_address: "{{ item.mac_address }}"
     status_code: [200, 201]
     validate_certs: no
   register: iface_create
-  when: iface_lookup.json.results | length == 0
 
-- name: Set interface ID
-  set_fact:
-    interface_id: >-
-      {{ iface_lookup.json.results[0].id
-         if iface_lookup.json.results | length > 0
-         else iface_create.json.id
-      }}
+- set_fact:
+    interface_id: "{{ iface_create.json.id }}"
 
 # ============================================================
-# ✅ IP CREATION + PRIMARY IP
+# ✅ IP + PRIMARY IP
 # ============================================================
 
-- name: Normalize IP
-  set_fact:
-    ip_clean: "{{ item.ip_address | trim }}"
-
-- name: Check IP
-  uri:
-    url: "{{ netbox_url }}/api/ipam/ip-addresses/?address={{ ip_clean }}"
-    method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    validate_certs: no
-  register: ip_lookup
-
-- name: Create IP if missing
+- name: Assign IP
   uri:
     url: "{{ netbox_url }}/api/ipam/ip-addresses/"
     method: POST
@@ -345,24 +274,15 @@
       Content-Type: "application/json"
     body_format: json
     body:
-      address: "{{ ip_clean }}"
+      address: "{{ item.ip_address }}"
       status: "active"
       assigned_object_type: "dcim.interface"
       assigned_object_id: "{{ interface_id }}"
     status_code: [200, 201]
     validate_certs: no
   register: ip_create
-  when: ip_lookup.json.results | length == 0
 
-- name: Set IP ID
-  set_fact:
-    ip_id: >-
-      {{ ip_lookup.json.results[0].id
-         if ip_lookup.json.results | length > 0
-         else ip_create.json.id
-      }}
-
-- name: Set primary IP for device
+- name: Set primary IP
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
     method: PATCH
@@ -371,6 +291,6 @@
       Content-Type: "application/json"
     body_format: json
     body:
-      primary_ip4: "{{ ip_id }}"
+      primary_ip4: "{{ ip_create.json.id }}"
     status_code: [200, 201]
     validate_certs: no
