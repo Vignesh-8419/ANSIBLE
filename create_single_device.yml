@@ -1,5 +1,5 @@
 # ============================================================
-# NetBox Device Creation (Cluster Type From Survey)
+# NetBox Device Creation (Cluster Name + Cluster Type from Survey)
 # Fully Cleaned-Up, AWX-Safe, Idempotent
 # ============================================================
 
@@ -172,7 +172,7 @@
     cluster_type_id: "{{ ctype_final.json.results[0].id }}"
 
 # ============================================================
-# ✅ CLUSTER CREATION (centos-7, rockyos-8, etc.)
+# ✅ CLUSTER CREATION (cluster_name from survey)
 # ============================================================
 
 - name: Normalize cluster slug
@@ -218,7 +218,7 @@
     cluster_id: "{{ cluster_final.json.results[0].id }}"
 
 # ============================================================
-# ✅ DEVICE CREATION + CLUSTER OVERWRITE
+# ✅ DEVICE CREATION + ALWAYS MOVE TO CORRECT CLUSTER
 # ============================================================
 
 - name: Normalize device name
@@ -262,7 +262,7 @@
          else device_create.json.id
       }}
 
-# ✅ Overwrite cluster to correct one
+# ✅ ALWAYS move device to correct cluster
 - name: Ensure device is in correct cluster
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
