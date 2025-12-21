@@ -38,7 +38,7 @@
 
   vars:
     netbox_url: "https://192.168.253.134"
-    netbox_token: "YOUR_NETBOX_TOKEN"
+    netbox_token: "cc55b995735c3b810a3c0ad1fd888ccb9b78787b"
 
     # Still using IDs for these; can be converted to slug lookups later
     device_type_id: 1
