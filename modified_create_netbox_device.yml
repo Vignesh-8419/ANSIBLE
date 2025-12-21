@@ -34,6 +34,20 @@
     cluster_type_id: "{{ (cluster_type_response.json.results | first).id }}"
   when: cluster_type_response.json.results | length > 0
 
+- name: Create cluster type if missing
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      name: "{{ cluster_type }}"
+      slug: "{{ cluster_type }}"
+    status_code: [200, 201]
+    validate_certs: no
+  when: cluster_type_response.json.results | length == 0
+
 - name: Fail if cluster type not found
   fail:
     msg: "Cluster type {{ cluster_type }} not found in NetBox"
