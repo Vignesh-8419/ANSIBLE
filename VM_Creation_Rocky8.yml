@@ -56,6 +56,9 @@
         hardware:
           memory_mb: 4096
           num_cpus: 4
+          num_cpu_cores_per_socket: 1
+          firmware: efi
+          secure_boot_enabled: false
         networks:
           - name: "{{ vm_network }}"
             type: static
