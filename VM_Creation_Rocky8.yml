@@ -23,10 +23,8 @@
     vm_name: ""
     vm_ip: ""
 
-    # Convert survey strings into list of dicts using zip + dict
-    vm_list: "{{ vm_name.split(',') | zip(vm_ip.split(',')) 
-                | map('community.general.dict', ['name','ip']) 
-                | list }}"
+    # Pure Jinja2 list comprehension to build vm_list
+    vm_list: "{{ [ {'name': n, 'ip': i} for n,i in vm_name.split(',')|zip(vm_ip.split(',')) ] }}"
 
   tasks:
 
