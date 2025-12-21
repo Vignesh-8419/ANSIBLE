@@ -1,3 +1,5 @@
+mkdir -p /etc/nginx/ssl
+openssl req -newkey rsa:2048 -nodes -keyout /etc/nginx/ssl/netbox.key -x509 -days 365 -out /etc/nginx/ssl/netbox.crt
 # For more information on configuration, see:
 #   * Official English Documentation: http://nginx.org/en/docs/
 #   * Official Russian Documentation: http://nginx.org/ru/docs/
