@@ -18,9 +18,19 @@
     gateway: "192.168.253.2"
     esxi_hostname: "192.168.253.128"
     guest_domain: "vgs.com"
-    vm_list:
-      - name: "{{ vm_name }}"
-        ip: "{{ vm_ip }}"
+
+    # Survey inputs (comma-separated strings)
+    vm_name: ""
+    vm_ip: ""
+
+    # Convert survey strings into list of dicts
+    vm_list: >-
+      {{
+        query('zip', vm_name.split(','), vm_ip.split(','))
+        | map('list')
+        | map('community.general.dict_kv', ['name','ip'])
+        | list
+      }}
 
   tasks:
 
