@@ -1,6 +1,7 @@
 ---
 - name: Provision CentOS VMs and assign static IPs
   hosts: localhost
+  connection: local
   gather_facts: no
 
   vars:
@@ -11,19 +12,30 @@
     folder: "vm"
     datastore_name: "datastore1"
     template_name: "GOLDENTEMPLATE_CENTOS_07"
-    guest_id: "centos7_64Guest"
+    guest_id: "rhel8_64Guest"
     vm_network: "VM Network"
-    guest_domain: "vgs.com"
     netmask: "255.255.255.0"
     gateway: "192.168.253.2"
     esxi_hostname: "192.168.253.128"
-    vm_list:
-      - name: "{{ vm_name }}"
-        ip: "{{ vm_ip }}"
+    guest_domain: "vgs.com"
+
+    # Survey inputs (comma-separated strings)
+    vm_name: ""
+    vm_ip: ""
 
   tasks:
 
-    - name: Create VM powered off with static MAC and IP
+    - name: Validate survey input lengths
+      fail:
+        msg: "Number of VM names ({{ vm_name.split(',')|length }}) does not match number of IPs ({{ vm_ip.split(',')|length }})"
+      when: vm_name.split(',')|length != vm_ip.split(',')|length
+
+    - name: Build vm_list from survey inputs
+      set_fact:
+        vm_list: "{{ vm_list | default([]) + [ {'name': item.0, 'ip': item.1} ] }}"
+      loop: "{{ vm_name.split(',') | zip(vm_ip.split(',')) | list }}"
+
+    - name: Create and power on VM with static IP and Secure Boot disabled
       vmware_guest:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -33,7 +45,7 @@
         folder: "{{ folder }}"
         esxi_hostname: "{{ esxi_hostname }}"
         name: "{{ item.name }}"
-        state: poweredoff
+        state: poweredon
         guest_id: "{{ guest_id }}"
         datastore: "{{ datastore_name }}"
         template: "{{ template_name }}"
@@ -42,49 +54,46 @@
             type: thin
             datastore: "{{ datastore_name }}"
         hardware:
-          memory_mb: 8192
-          num_cpus: 8
+          memory_mb: 4096
+          num_cpus: 4
+          num_cpu_cores_per_socket: 1
           firmware: efi
+          secure_boot_enabled: false
         networks:
           - name: "{{ vm_network }}"
-            connected: true
             type: static
             ip: "{{ item.ip }}"
-            netmask: "{{ netmask }}"
             gateway: "{{ gateway }}"
-            dns_servers:
-              - "192.168.253.151"
+            netmask: "{{ netmask }}"
+            device_type: vmxnet3
+            connected: true
+            start_connected: true
         customization:
           domain: "{{ guest_domain }}"
           dns_servers:
             - "192.168.253.151"
           hostname: "{{ item.name }}"
-      loop: "{{ vm_list }}"
-
-    - name: Power on VM and wait for IP
-      vmware_guest:
-        hostname: "{{ vcenter_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
-        validate_certs: false
-        datacenter: "{{ datacenter_name }}"
-        folder: "{{ folder }}"
-        name: "{{ item.name }}"
-        state: poweredon
         wait_for_ip_address: true
       loop: "{{ vm_list }}"
-      register: poweredon_vms
+      register: rocky_vms
 
     - name: Wait until VM responds to SSH
       ansible.builtin.wait_for:
         host: "{{ item.ip }}"
         port: 22
-        timeout: 600
+        timeout: 300
         state: started
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
-    - name: Show actual MAC assigned (debug)
+    - name: Ping the VM to verify connectivity
+      ansible.builtin.ping:
+      vars:
+        ansible_host: "{{ item.ip }}"
+      loop: "{{ vm_list }}"
+      delegate_to: localhost
+
+    - name: Gather VM information from vCenter
       vmware_guest_info:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -95,10 +104,10 @@
       loop: "{{ vm_list }}"
       register: vm_info
 
-    - name: Display VM name, IP, and MAC
+    - name: Display VM Name, IP, and MAC Address
       debug:
         msg: >-
           VM: {{ item.instance.hw_name }}
           IP: {{ (item.instance.hw_eth0.ipaddresses | first) | default(item.instance.ipv4, true) | default('N/A') }}
-          MAC: {{ item.instance.hw_eth0.macaddress | default('N/A') }}
+          MAC: {{ item.instance.hw_eth0.macaddress | default('MAC not found') }}
       loop: "{{ vm_info.results }}"
