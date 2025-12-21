@@ -7,11 +7,12 @@
     mount_point: "/var/www/html/repo"
     username: "vigne"
     password: "Vigneshv12$"
+    google_dns: "google.com"
 
   tasks:
 
     - name: Check DNS resolution
-      command: nslookup "{{ ansible_hostname }}"
+      command: nslookup "{{ google_dns }}"
       register: nslookup_result
       ignore_errors: yes
       changed_when: false
