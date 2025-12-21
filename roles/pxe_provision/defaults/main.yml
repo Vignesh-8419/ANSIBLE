@@ -1,7 +1,11 @@
-# defaults for PXE provisioning
 # Default variables for PXE provisioning
 http_server: "http-server-01.vgs.com"
 iface_installer: "ens192"
 
-# List of servers to provision (overridden by AWX survey)
+# ESXi credentials
+esxi_host: "192.168.253.128"
+esxi_user: "root"
+esxi_pass: "admin@22"
+
+# List of servers to provision (AWX survey overrides this)
 servers: []

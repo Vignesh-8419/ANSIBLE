@@ -1,4 +1,25 @@
 # Tasks for each server
+
+- name: Ensure VM exists on ESXi host {{ esxi_host }}
+  community.vmware.vmware_guest:
+    hostname: "{{ esxi_host }}"
+    username: "{{ esxi_user }}"
+    password: "{{ esxi_pass }}"
+    validate_certs: false
+    name: "{{ server.hostname }}"
+    state: present
+    guest_id: "otherGuest64"
+    hardware:
+      memory_mb: 2048
+      num_cpus: 2
+      network:
+        - name: "VM Network"
+          mac: "{{ server.mac }}"
+    disk:
+      - size_gb: 20
+        type: thin
+        datastore: "datastore1"
+
 - name: Generate PXE config for {{ server.hostname }}
   template:
     src: "pxe-{{ server.os }}.j2"
