@@ -65,7 +65,6 @@
             ip: "{{ item.ip }}"
             gateway: "{{ gateway }}"
             netmask: "{{ netmask }}"
-            device_type: vmxnet3
             connected: true
             start_connected: true
         customization:
