@@ -23,10 +23,9 @@
     vm_name: ""
     vm_ip: ""
 
-    # Convert survey strings into list of dicts
+    # Convert survey strings into list of dicts using zip + dict
     vm_list: "{{ vm_name.split(',') | zip(vm_ip.split(',')) 
-                | map('list') 
-                | map('community.general.dict_kv', ['name','ip']) 
+                | map('community.general.dict', ['name','ip']) 
                 | list }}"
 
   tasks:
