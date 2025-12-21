@@ -1,1 +1,12 @@
-- name: PXE provisioning tasks
+# Main tasks for PXE provisioning
+- name: Loop over servers from survey
+  include_tasks: per_server.yml
+  loop: "{{ servers }}"
+  loop_control:
+    loop_var: server
+
+handlers:
+  - name: restart dhcpd
+    service:
+      name: dhcpd
+      state: restarted

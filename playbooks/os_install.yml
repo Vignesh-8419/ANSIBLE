@@ -1,0 +1,6 @@
+- name: Provision servers via PXE
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - pxe_provision
+

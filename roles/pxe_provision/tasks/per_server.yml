@@ -1,0 +1,17 @@
+# Tasks for each server
+- name: Generate PXE config for {{ server.hostname }}
+  template:
+    src: "pxe-{{ server.os }}.j2"
+    dest: "/var/lib/tftpboot/pxelinux.cfg/01-{{ server.mac | regex_replace(':','-') }}"
+
+- name: Add DHCP reservation for {{ server.hostname }}
+  blockinfile:
+    path: /etc/dhcp/dhcpd.conf
+    marker: "# {mark} ANSIBLE {{ server.hostname }}"
+    block: |
+      host {{ server.hostname }} {
+        hardware ethernet {{ server.mac }};
+        fixed-address {{ server.ip }};
+        option host-name "{{ server.hostname }}";
+      }
+  notify: restart dhcpd

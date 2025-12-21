@@ -1,1 +1,7 @@
 # defaults for PXE provisioning
+# Default variables for PXE provisioning
+http_server: "http-server-01.vgs.com"
+iface_installer: "ens192"
+
+# List of servers to provision (overridden by AWX survey)
+servers: []
