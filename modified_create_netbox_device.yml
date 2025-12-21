@@ -2,7 +2,18 @@
 # NetBox device creation with overwrite mode + cluster + site
 # ============================================================
 
-# ---------- 1. Get cluster type ID (os-cluster) ----------
+# ---------- 1. Get cluster type ----------
+- name: Get cluster type
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ cluster_type }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    return_content: yes
+    validate_certs: no
+  register: cluster_type_response
+
+# ---------- 2. Ensure cluster type exists ----------
 - name: Ensure cluster type exists
   uri:
     url: "{{ netbox_url }}/api/virtualization/cluster-types/"
@@ -17,16 +28,7 @@
     validate_certs: no
   when: cluster_type_response.json.results | length == 0
 
-- name: Get cluster type ID
-  uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ cluster_type }}"
-    method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    return_content: yes
-    validate_certs: no
-  register: cluster_type_response
-
+# ---------- 3. Set cluster_type_id ----------
 - name: Set cluster_type_id
   set_fact:
     cluster_type_id: "{{ (cluster_type_response.json.results | first).id }}"
