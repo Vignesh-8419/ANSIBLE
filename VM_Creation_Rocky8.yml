@@ -23,10 +23,12 @@
     vm_name: ""
     vm_ip: ""
 
-    # Build vm_list using zip + map + dict
-    vm_list: "{{ vm_name.split(',') | zip(vm_ip.split(',')) | map('dict', ['name','ip']) | list }}"
-
   tasks:
+
+    - name: Build vm_list from survey inputs
+      set_fact:
+        vm_list: "{{ vm_list | default([]) + [ {'name': item.0, 'ip': item.1} ] }}"
+      loop: "{{ vm_name.split(',') | zip(vm_ip.split(',')) }}"
 
     - name: Create and power on VM with static IP and Secure Boot disabled
       vmware_guest:
