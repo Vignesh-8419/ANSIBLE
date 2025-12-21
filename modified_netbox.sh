@@ -125,7 +125,7 @@ deactivate
 echo "[10/14] Configuring Nginx..."
 cat <<EOF > /etc/nginx/conf.d/netbox.conf
 server {
-    listen 80 default_server;
+    listen 80;
     server_name _;
 
     location /static/ {
