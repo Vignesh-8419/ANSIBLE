@@ -11,6 +11,7 @@
   vars:
     cluster_name: "cluster_name"      # existing NetBox cluster name
     site_name: "{{ site_name }}"  # passed from Tower/AWX survey
+    cluster_type: "{{ cluster_type }}"
 
   tasks:
     - name: Build server_info from facts
