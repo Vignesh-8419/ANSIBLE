@@ -74,7 +74,7 @@
     - name: Create vault.repo
       copy:
         content: |
-          [base]
+          [base-vault]
           name=CentOS Vault Base
           baseurl=http://vault.centos.org/7.9.2009/os/$basearch/
           enabled=1
