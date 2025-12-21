@@ -33,7 +33,7 @@
 # ============================================================
 
 - name: Push collected servers into NetBox
-  hosts: rocky-08-02
+  hosts: rocky-08-02.vgs.com
   gather_facts: no
 
   vars:
