@@ -53,6 +53,21 @@
     msg: "Cluster type {{ cluster_type }} not found in NetBox"
   when: cluster_type_response.json.results | length == 0
 
+- name: Ensure site exists
+  uri:
+    url: "{{ netbox_url }}/api/dcim/sites/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      name: "{{ item.site }}"
+      slug: "{{ item.site | lower | regex_replace('[^a-z0-9]+','-') }}"
+    status_code: [200, 201]
+    validate_certs: no
+  when: site_response.json.results | length == 0
+
+
 # ---------- 2. Get site ID (survey-provided site name) ----------
 - name: Get site ID
   uri:
