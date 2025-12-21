@@ -3,6 +3,20 @@
 # ============================================================
 
 # ---------- 1. Get cluster type ID (os-cluster) ----------
+- name: Ensure cluster type exists
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body:
+      name: "{{ cluster_type }}"
+      slug: "{{ cluster_type }}"
+    status_code: [200, 201]
+    validate_certs: no
+  when: cluster_type_response.json.results | length == 0
+
 - name: Get cluster type ID
   uri:
     url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ cluster_type }}"
