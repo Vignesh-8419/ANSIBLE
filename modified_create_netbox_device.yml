@@ -5,7 +5,7 @@
 # ---------- 1. Get cluster type ID (os-cluster) ----------
 - name: Get cluster type ID
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug=os-cluster"
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ cluster_type }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -16,6 +16,12 @@
 - name: Set cluster_type_id
   set_fact:
     cluster_type_id: "{{ (cluster_type_response.json.results | first).id }}"
+  when: cluster_type_response.json.results | length > 0
+
+- name: Fail if cluster type not found
+  fail:
+    msg: "Cluster type {{ cluster_type }} not found in NetBox"
+  when: cluster_type_response.json.results | length == 0
 
 # ---------- 2. Get site ID (survey-provided site name) ----------
 - name: Get site ID
