@@ -19,7 +19,7 @@ awx-manage inventory_import \
 vi /root/hosts.ini
 [centos7]
 cent-07-01.vgs.com ansible_host=192.168.253.131
-cent-07-02.vgs.com ansible_host=192.168.253.131
+cent-07-02.vgs.com ansible_host=192.168.253.132
 
 [rocky8]
 rocky-08-01.vgs.com ansible_host=192.168.253.133
