@@ -23,8 +23,8 @@
     vm_name: ""
     vm_ip: ""
 
-    # Pure Jinja2 list comprehension to build vm_list
-    vm_list: "{{ [ {'name': n, 'ip': i} for n,i in vm_name.split(',')|zip(vm_ip.split(',')) ] }}"
+    # Build vm_list using zip + map + dict
+    vm_list: "{{ vm_name.split(',') | zip(vm_ip.split(',')) | map('dict', ['name','ip']) | list }}"
 
   tasks:
 
