@@ -17,7 +17,7 @@
     username: "{{ esxi_user }}"
     password: "{{ esxi_pass }}"
     validate_certs: false
-    datacenter: "ha-datacenter"
+    datacenter: "datacenter"
     name: "{{ server.hostname }}"
     state: present
     guest_id: "otherGuest64"
