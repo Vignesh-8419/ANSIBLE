@@ -10,23 +10,23 @@
   tasks:
     - name: Normalize survey inputs
       set_fact:
-        host_list: "{{ hostnames | replace('\"','') | split(',') | map('trim') | list }}"
-        ip_list: "{{ ips | replace('\"','') | split(',') | map('trim') | list }}"
-        mac_list: "{{ macs | replace('\"','') | split(',') | map('trim') | list }}"
+        host_list: "{{ hostnames | replace('\"','') | trim | split(',') }}"
+        ip_list: "{{ ips | replace('\"','') | trim | split(',') }}"
+        mac_list: "{{ macs | replace('\"','') | trim | split(',') }}"
 
     - name: Validate input lengths
       assert:
         that:
           - host_list | length == ip_list | length
           - host_list | length == mac_list | length
-        fail_msg: "Survey inputs count mismatch"
+        fail_msg: "Survey input count mismatch"
 
     - name: Build servers list
       set_fact:
         servers: "{{ servers | default([]) + [ {
-          'hostname': item.0,
-          'ip': item.1,
-          'mac': item.2 | lower
+          'hostname': item.0 | trim,
+          'ip': item.1 | trim,
+          'mac': item.2 | lower | trim
         } ] }}"
       loop: "{{ host_list | zip(ip_list, mac_list) | list }}"
 
