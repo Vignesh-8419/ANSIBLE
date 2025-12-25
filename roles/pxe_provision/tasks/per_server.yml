@@ -6,6 +6,7 @@
     username: "{{ esxi_user }}"
     password: "{{ esxi_pass }}"
     validate_certs: false
+    datacenter: "ha-datacenter"
     name: "{{ server.hostname }}"
   register: vm_info
   ignore_errors: true
@@ -16,6 +17,7 @@
     username: "{{ esxi_user }}"
     password: "{{ esxi_pass }}"
     validate_certs: false
+    datacenter: "ha-datacenter"
     name: "{{ server.hostname }}"
     state: present
     guest_id: "otherGuest64"
@@ -30,6 +32,12 @@
         type: thin
         datastore: "datastore1"
   when: vm_info.instance is not defined
+
+- name: Ensure PXE config directory exists
+  file:
+    path: /var/lib/tftpboot/pxelinux.cfg
+    state: directory
+    mode: '0755'
 
 - name: Generate PXE config for {{ server.hostname }}
   template:
