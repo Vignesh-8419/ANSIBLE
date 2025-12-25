@@ -1,6 +1,25 @@
 - name: Provision servers via PXE
   hosts: localhost
   gather_facts: false
-  roles:
-    - pxe_provision
 
+  vars:
+    # These variables come from AWX survey as comma-separated strings
+    hostnames: ""
+    ips: ""
+    macs: ""
+    oses: ""
+
+  tasks:
+    - name: Convert survey inputs into structured servers list
+      set_fact:
+        servers: >-
+          {{
+            hostnames.split(',') | zip(ips.split(','), macs.split(','), oses.split(',')) |
+            map('list') |
+            map('community.general.dict', ['hostname','ip','mac','os']) |
+            list
+          }}
+
+    - name: Run PXE provisioning role
+      include_role:
+        name: pxe_provision
