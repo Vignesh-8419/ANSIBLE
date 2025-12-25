@@ -29,4 +29,4 @@
 
     - name: Run PXE provisioning role
       include_role:
-        name: pxe_provision
+        name: roles/pxe_provision
