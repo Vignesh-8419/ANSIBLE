@@ -35,7 +35,7 @@
 
 - name: Ensure PXE config directory exists
   file:
-    path: /var/lib/tftpboot/pxelinux.cfg
+    path: /var/lib/tftpboot/grub
     state: directory
     mode: '0755'
   delegate_to: tftp-server-01
