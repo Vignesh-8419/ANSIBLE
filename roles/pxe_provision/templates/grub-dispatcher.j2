@@ -1,0 +1,9 @@
+set timeout=0
+set default=0
+
+if [ -f $prefix/grub.cfg-$net_default_mac ]; then
+    configfile $prefix/grub.cfg-$net_default_mac
+fi
+
+echo "No per-host GRUB config found"
+sleep 5
