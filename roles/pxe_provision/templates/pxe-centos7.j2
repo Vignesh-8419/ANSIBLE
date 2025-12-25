@@ -5,7 +5,7 @@ menuentry "Install CentOS 7 - {{ server.hostname }}" {
     linuxefi http://{{ http_server }}/repo/centos7/images/pxeboot/vmlinuz \
         inst.repo=http://{{ http_server }}/repo/centos7 \
         ks=http://{{ http_server }}/repo/centos7/kickstart/centos.cfg \
-        ip={{ server.ip }}::192.168.253.1:255.255.255.0:{{ server.hostname }}:{{ iface_installer }}:none \
+        ip={{ server.ip }}::192.168.253.2:255.255.255.0:{{ server.hostname }}:{{ iface_installer }}:none \
         hostname={{ server.hostname }}
     initrdefi http://{{ http_server }}/repo/centos7/images/pxeboot/initrd.img
 }
