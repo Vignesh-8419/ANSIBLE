@@ -42,7 +42,7 @@
 
 - name: Generate GRUB config for {{ server.hostname }}
   template:
-    src: "grub-grub-rocky8.j2"
+    src: "grub-rocky8.j2"
     dest: "/var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') }}"
   delegate_to: tftp-server-01
 
