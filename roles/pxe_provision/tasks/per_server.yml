@@ -10,13 +10,13 @@
     state: present
     guest_id: "otherGuest64"
     hardware:
-      memory_mb: 2048
+      memory_mb: 4096
       num_cpus: 2
       network:
         - name: "VM Network"
           mac: "{{ server.mac }}"
     disk:
-      - size_gb: 20
+      - size_gb: 100
         type: thin
         datastore: "datastore1"
 
