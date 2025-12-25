@@ -40,10 +40,10 @@
     mode: '0755'
   delegate_to: tftp-server-01
 
-- name: Generate PXE config for {{ server.hostname }}
+- name: Generate GRUB config for {{ server.hostname }}
   template:
-    src: "pxe-{{ server.os }}.j2"
-    dest: "/var/lib/tftpboot/pxelinux.cfg/01-{{ server.mac | regex_replace(':','-') }}"
+    src: "grub-{{ server.os }}.j2"
+    dest: "/var/lib/tftpboot/grub/grub.cfg-01-{{ server.mac | regex_replace(':','-') }}"
   delegate_to: tftp-server-01
 
 - name: Add DHCP reservation for {{ server.hostname }}
