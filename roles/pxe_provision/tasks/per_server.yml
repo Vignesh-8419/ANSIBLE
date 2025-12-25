@@ -9,8 +9,8 @@
     state: present
     guest_id: "otherGuest64"
     hardware:
-      memory_mb: 4096
-      num_cpus: 2
+#      memory_mb: 4096
+#      num_cpus: 2
       network:
         - name: "VM Network"
           mac: "{{ server.mac }}"
