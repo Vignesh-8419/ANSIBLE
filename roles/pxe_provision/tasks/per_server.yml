@@ -1,7 +1,7 @@
 # Tasks for each server
 
 - name: Ensure VM exists on ESXi host {{ esxi_host }}
-  community.vmware.vmware_guest:
+  vmware_guest:
     hostname: "{{ esxi_host }}"
     username: "{{ esxi_user }}"
     password: "{{ esxi_pass }}"
