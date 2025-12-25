@@ -35,7 +35,7 @@
 
 - name: Ensure PXE config directory exists
   file:
-    path: /var/lib/tftpboot/grub
+    path: /var/lib/tftpboot/grub2
     state: directory
     mode: '0755'
   delegate_to: tftp-server-01
@@ -43,7 +43,7 @@
 - name: Generate GRUB config for {{ server.hostname }}
   template:
     src: "grub-{{ server.os }}.j2"
-    dest: "/var/lib/tftpboot/grub/grub.cfg-01-{{ server.mac | regex_replace(':','-') }}"
+    dest: "/var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') }}"
   delegate_to: tftp-server-01
 
 - name: Add DHCP reservation for {{ server.hostname }}
