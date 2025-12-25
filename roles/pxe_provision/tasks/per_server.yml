@@ -1,7 +1,17 @@
 # Tasks for each server
 
+- name: Check if VM already exists on ESXi host {{ esxi_host }}
+  community.vmware.vmware_guest_info:
+    hostname: "{{ esxi_host }}"
+    username: "{{ esxi_user }}"
+    password: "{{ esxi_pass }}"
+    validate_certs: false
+    name: "{{ server.hostname }}"
+  register: vm_info
+  ignore_errors: true
+
 - name: Ensure VM exists on ESXi host {{ esxi_host }}
-  vmware_guest:
+  community.vmware.vmware_guest:
     hostname: "{{ esxi_host }}"
     username: "{{ esxi_user }}"
     password: "{{ esxi_pass }}"
@@ -19,6 +29,7 @@
       - size_gb: 100
         type: thin
         datastore: "datastore1"
+  when: vm_info.instance is not defined
 
 - name: Generate PXE config for {{ server.hostname }}
   template:
