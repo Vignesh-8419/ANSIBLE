@@ -10,15 +10,22 @@
     oses: ""
 
   tasks:
-    - name: Convert survey inputs into structured servers list
+    - name: Split survey inputs into lists
       set_fact:
-        servers: >-
-          {{
-            hostnames.split(',') | zip(ips.split(','), macs.split(','), oses.split(',')) |
-            map('list') |
-            map('community.general.dict', ['hostname','ip','mac','os']) |
-            list
-          }}
+        host_list: "{{ hostnames.split(',') }}"
+        ip_list: "{{ ips.split(',') }}"
+        mac_list: "{{ macs.split(',') }}"
+        os_list: "{{ oses.split(',') }}"
+
+    - name: Build servers list
+      set_fact:
+        servers: "{{ servers | default([]) + [ {
+          'hostname': item.0,
+          'ip': item.1,
+          'mac': item.2,
+          'os': item.3
+        } ] }}"
+      loop: "{{ host_list | zip(ip_list, mac_list, os_list) | list }}"
 
     - name: Run PXE provisioning role
       include_role:
