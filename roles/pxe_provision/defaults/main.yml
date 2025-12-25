@@ -5,7 +5,7 @@ iface_installer: "ens192"
 # ESXi credentials
 esxi_host: "192.168.253.128"
 esxi_user: "root"
-esxi_pass: "admin@22"
+esxi_pass: "admin$22"
 
 # List of servers to provision (AWX survey overrides this)
 servers: []
