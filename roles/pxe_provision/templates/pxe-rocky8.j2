@@ -1,14 +1,13 @@
-DEFAULT menu.c32
+DEFAULT install
 PROMPT 0
 TIMEOUT 100
 MENU TITLE PXE Boot Menu
 
 LABEL install
   MENU LABEL Install Rocky Linux 8 - {{ server.hostname }}
-  KERNEL http://{{ http_server }}/repo/rocky8/images/pxeboot/vmlinuz
-  INITRD http://{{ http_server }}/repo/rocky8/images/pxeboot/initrd.img
+  KERNEL vmlinuz
+  INITRD initrd.img
   APPEND inst.repo=http://{{ http_server }}/repo/rocky8 \
          ks=http://{{ http_server }}/repo/rocky8/kickstart/rockyos.cfg \
          ip={{ server.ip }}::192.168.253.1:255.255.255.0:{{ server.hostname }}:{{ iface_installer }}:none \
          hostname={{ server.hostname }}
-
