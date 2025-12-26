@@ -16,8 +16,8 @@
   # vm_list should now be defined externally (e.g., via AWX survey or inventory)
   # Example:
   # vm_list:
-  #   - { vm_name: "centos-test1", vm_ip: "192.168.253.201" }
-  #   - { vm_name: "centos-test2", vm_ip: "192.168.253.202" }
+  #   - { hostnames: "centos-test1", ips: "192.168.253.201" }
+  #   - { hostnames: "centos-test2", ips: "192.168.253.202" }
 
   tasks:
 
@@ -27,7 +27,7 @@
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: "{{ validate_certs }}"
-        name: "{{ item.vm_name }}"
+        name: "{{ item.hostnames }}"
         state: poweredoff
       loop: "{{ vm_list }}"
 
@@ -37,7 +37,7 @@
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: "{{ validate_certs }}"
-        name: "{{ item.vm_name }}"
+        name: "{{ item.hostnames }}"
         boot_firmware: "efi"
       loop: "{{ vm_list }}"
 
@@ -47,7 +47,7 @@
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: "{{ validate_certs }}"
-        name: "{{ item.vm_name }}"
+        name: "{{ item.hostnames }}"
         boot_order:
           - ethernet
           - disk
@@ -62,7 +62,7 @@
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: "{{ validate_certs }}"
-        name: "{{ item.vm_name }}"
+        name: "{{ item.hostnames }}"
         state: poweredon
       loop: "{{ vm_list }}"
 
@@ -72,7 +72,7 @@
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: "{{ validate_certs }}"
-        name: "{{ item.vm_name }}"
+        name: "{{ item.hostnames }}"
         boot_order:
           - disk
           - ethernet
@@ -83,7 +83,7 @@
 
     - name: Wait for VM to respond to SSH (port 22)
       wait_for:
-        host: "{{ item.vm_ip }}"
+        host: "{{ item.ips }}"
         port: 22
         delay: 10
         timeout: 3600
@@ -92,12 +92,12 @@
       delegate_to: localhost
 
     - name: Remove old SSH host key from known_hosts
-      shell: ssh-keygen -R {{ item.vm_ip }} || true
+      shell: ssh-keygen -R {{ item.ips }} || true
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
     - name: Accept new SSH host key
-      shell: ssh-keyscan -H {{ item.vm_ip }} >> /tmp/known_hosts
+      shell: ssh-keyscan -H {{ item.ips }} >> /tmp/known_hosts
       args:
         executable: /bin/bash
       loop: "{{ vm_list }}"
@@ -115,14 +115,14 @@
     - name: Check kernel version via SSH
       command: uname -r
       register: kernel_version
-      delegate_to: "{{ item.vm_ip }}"
+      delegate_to: "{{ item.ips }}"
       loop: "{{ vm_list }}"
       loop_control:
         index_var: loop_index
 
     - name: Display kernel version
       debug:
-        msg: "Kernel version on {{ item.vm_name }} ({{ item.vm_ip }}) is {{ kernel_version.results[loop_index].stdout }}"
+        msg: "Kernel version on {{ item.hostnames }} ({{ item.ips }}) is {{ kernel_version.results[loop_index].stdout }}"
       loop: "{{ vm_list }}"
       loop_control:
         index_var: loop_index
