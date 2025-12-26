@@ -49,10 +49,10 @@ EOF
 
 # 7. Copy kernel/initrd from repo server
 sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
-  root@192.168.253.136:/var/www/html/rocky8/isolinux/vmlinuz /var/lib/tftpboot/grub2/
+  root@192.168.253.136:/var/www/html/repo/rocky8/isolinux/vmlinuz /var/lib/tftpboot/grub2/
 
 sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
-  root@192.168.253.136:/var/www/html/rocky8/isolinux/initrd.img /var/lib/tftpboot/grub2/
+  root@192.168.253.136:/var/www/html/repo/rocky8/isolinux/initrd.img /var/lib/tftpboot/grub2/
 
 sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
   root@192.168.253.136:/var/www/html/repo/rocky8/EFI/BOOT/grubx64.efi /var/lib/tftpboot/grub2/
