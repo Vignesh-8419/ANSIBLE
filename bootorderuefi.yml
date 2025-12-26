@@ -1,57 +1,4 @@
 ---
-- name: Load selected VMs from NetBox
-  hosts: localhost
-  connection: local
-  gather_facts: no
-
-  vars:
-    netbox_url: "https://192.168.253.134"
-    netbox_token: "e3ee4eda03d81a42b07de1d20064b89bba21e041"
-    tag_name: "new-build-centos"  # Can be overridden via AWX survey
-
-  tasks:
-    - name: Get devices tagged from NetBox
-      uri:
-        url: "{{ netbox_url }}/api/dcim/devices/?tag={{ tag_name }}"
-        method: GET
-        headers:
-          Authorization: "Token {{ netbox_token }}"
-        return_content: yes
-        validate_certs: no
-      register: netbox_devices
-
-    - name: Get interfaces from NetBox
-      uri:
-        url: "{{ netbox_url }}/api/dcim/interfaces/"
-        method: GET
-        headers:
-          Authorization: "Token {{ netbox_token }}"
-        return_content: yes
-        validate_certs: no
-      register: netbox_interfaces
-
-    - name: Get IP addresses from NetBox
-      uri:
-        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
-        method: GET
-        headers:
-          Authorization: "Token {{ netbox_token }}"
-        return_content: yes
-        validate_certs: no
-      register: netbox_ips
-
-    - name: Initialize vm_list
-      set_fact:
-        vm_list: []
-
-    - name: Build vm_list from NetBox data
-      set_fact:
-        vm_list: "{{ vm_list + [ {
-          'vm_name': item.name | regex_replace('\\.vgs\\.com$', ''),
-          'vm_ip': (netbox_ips.json.results | selectattr('assigned_object.device.name', 'equalto', item.name) | map(attribute='address') | map('regex_replace', '/.*$', '') | list | first | default(''))
-        } ] }}"
-      loop: "{{ netbox_devices.json.results }}"
-
 - name: Manage VM Boot Firmware and Boot Order on ESXi
   hosts: localhost
   connection: local
@@ -65,6 +12,12 @@
     exsi_username: "root"
     exsi_password: "admin$22"
     validate_certs: false
+
+  # vm_list should now be defined externally (e.g., via AWX survey or inventory)
+  # Example:
+  # vm_list:
+  #   - { vm_name: "centos-test1", vm_ip: "192.168.253.201" }
+  #   - { vm_name: "centos-test2", vm_ip: "192.168.253.202" }
 
   tasks:
 
