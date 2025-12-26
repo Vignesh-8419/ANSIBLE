@@ -1,4 +1,27 @@
 ---
+- name: Prepare VM list from AWX survey
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    # These come directly from AWX survey input
+    hostnames: "{{ hostnames | default('') }}"
+    ips: "{{ ips | default('') }}"
+
+  tasks:
+    - name: Split survey strings into lists
+      set_fact:
+        hostnames_list: "{{ hostnames.split(',') | map('trim') | list }}"
+        ips_list: "{{ ips.split(',') | map('trim') | list }}"
+
+    - name: Combine into vm_list
+      set_fact:
+        vm_list: "{{ hostnames_list | zip(ips_list) | map('list') | map('community.general.dict', ['hostnames','ips']) | list }}"
+
+    - name: Show vm_list
+      debug:
+        var: vm_list
+
 - name: Manage VM Boot Firmware and Boot Order on ESXi
   hosts: localhost
   connection: local
@@ -12,12 +35,6 @@
     exsi_username: "root"
     exsi_password: "admin$22"
     validate_certs: false
-
-  # vm_list should now be defined externally (e.g., via AWX survey or inventory)
-  # Example:
-  # vm_list:
-  #   - { hostnames: "centos-test1", ips: "192.168.253.201" }
-  #   - { hostnames: "centos-test2", ips: "192.168.253.202" }
 
   tasks:
 
