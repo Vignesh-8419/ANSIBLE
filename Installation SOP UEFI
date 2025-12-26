@@ -1,0 +1,117 @@
+
+1. Install required packages
+bash
+yum install -y tftp-server syslinux dhcp-server grub2-efi-x64 shim-x64 sshpass
+2. Prepare TFTP directories
+bash
+mkdir -p /var/lib/tftpboot/pxelinux.cfg
+mkdir -p /var/lib/tftpboot/grub2
+3. Copy PXE/GRUB binaries
+bash
+cp -v /usr/share/syslinux/{pxelinux.0,ldlinux.c32,menu.c32,libutil.c32} /var/lib/tftpboot/
+cp -v /usr/share/grub2/grubx64.efi /var/lib/tftpboot/grub2/
+cp -v /usr/share/shim/shimx64.efi /var/lib/tftpboot/grub2/
+4. Configure DHCP (/etc/dhcp/dhcpd.conf)
+conf
+subnet 192.168.253.0 netmask 255.255.255.0 {
+  option routers 192.168.253.2;
+  option subnet-mask 255.255.255.0;
+
+  filename "grub2/grubx64.efi";
+  next-server 192.168.253.160;
+}
+
+# BEGIN ANSIBLE test-server-01
+host test-server-01 {
+  hardware ethernet 00:50:56:20:bb:4e;
+  fixed-address 192.168.253.161;
+  option host-name "test-server-01";
+}
+# END ANSIBLE test-server-01
+
+# BEGIN ANSIBLE test-server-02
+host test-server-02 {
+  hardware ethernet 00:50:56:3b:19:ea;
+  fixed-address 192.168.253.162;
+  option host-name "test-server-02";
+}
+# END ANSIBLE test-server-02
+Restart DHCP:
+
+bash
+systemctl restart dhcpd
+systemctl enable dhcpd
+5. Configure firewall
+bash
+firewall-cmd --add-service={tftp,dhcp} --permanent
+firewall-cmd --reload
+6. Create GRUB dispatcher (/var/lib/tftpboot/grub2/grub.cfg)
+cfg
+set timeout=0
+set default=0
+
+if [ -f $prefix/grub.cfg-$net_default_mac ]; then
+    configfile $prefix/grub.cfg-$net_default_mac
+fi
+
+echo "No per-host GRUB config found"
+sleep 5
+7. Copy kernel/initrd from repo server
+bash
+sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
+  root@192.168.253.136:/var/www/html/rocky8/isolinux/vmlinuz /var/lib/tftpboot/grub2/
+
+sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
+  root@192.168.253.136:/var/www/html/rocky8/isolinux/initrd.img /var/lib/tftpboot/grub2/
+
+sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
+  root@192.168.253.136:/var/www/html/repo/rocky8/EFI/BOOT/grubx64.efi /var/lib/tftpboot/grub2/
+8. Create per‑host GRUB configs
+Example: /var/lib/tftpboot/grub2/grub.cfg-01-00-50-56-20-bb-4e
+cfg
+set default=0
+set timeout=5
+
+insmod efinet
+insmod net
+insmod http
+dhcp
+
+menuentry "Install Rocky Linux 8 - test-server-01" {
+    linuxefi http://192.168.253.136/repo/rocky8/images/pxeboot/vmlinuz \
+        inst.repo=http://192.168.253.136/repo/rocky8/ \
+        inst.stage2=http://192.168.253.136/repo/rocky8/ \
+        ks=http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg \
+        inst.text inst.default_fstype=ext4 console=tty0
+    initrdefi http://192.168.253.136/repo/rocky8/images/pxeboot/initrd.img
+}
+Example: /var/lib/tftpboot/grub2/grub.cfg-01-00-50-56-3b-19-ea
+cfg
+set default=0
+set timeout=5
+
+insmod efinet
+insmod net
+insmod http
+dhcp
+
+menuentry "Install Rocky Linux 8 - test-server-02" {
+    linuxefi http://192.168.253.136/repo/rocky8/images/pxeboot/vmlinuz \
+        inst.repo=http://192.168.253.136/repo/rocky8/ \
+        inst.stage2=http://192.168.253.136/repo/rocky8/ \
+        ks=http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg \
+        inst.text inst.default_fstype=ext4 console=tty0
+    initrdefi http://192.168.253.136/repo/rocky8/images/pxeboot/initrd.img
+}
+9. Validate
+Boot PXE client.
+
+Check /var/log/messages for DHCPDISCOVER → OFFER → REQUEST → ACK.
+
+Confirm TFTP logs show downloads of grubx64.efi and grub.cfg.
+
+GRUB menu loads per‑host entry.
+
+Kernel/initrd fetched via HTTP.
+
+Kickstart runs unattended install.
