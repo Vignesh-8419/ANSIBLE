@@ -16,7 +16,8 @@
 
     - name: Combine into vm_list
       set_fact:
-        vm_list: "{{ hostnames_list | zip(ips_list) | map('list') | map('community.general.dict', ['hostnames','ips']) | list }}"
+        vm_list: "{{ vm_list | default([]) + [ {'hostnames': item.0, 'ips': item.1 } ] }}"
+      loop: "{{ hostnames_list | zip(ips_list) | list }}"
 
     - name: Show vm_list
       debug:
