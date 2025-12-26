@@ -4,7 +4,7 @@
 set -e
 
 # 1. Install required packages
-yum install -y tftp-server syslinux dhcp-server grub2-efi-x64 shim-x64 sshpass
+yum install -y tftp-server syslinux dhcp-server grub2-efi-x64 shim-x64 sshpass xinetd
 
 # 2. Prepare TFTP directories
 mkdir -p /var/lib/tftpboot/pxelinux.cfg
