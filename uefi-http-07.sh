@@ -5,16 +5,16 @@
 set -e
 
 # 1. Install required packages
-yum install -y tftp-server syslinux dhcp-server grub2-efi-x64 shim-x64 sshpass
+yum install -y tftp-server syslinux dhcp-server grub2-efi-x64 shim-x64 sshpass xinted
 
 # 2. Prepare TFTP directories
 mkdir -p /var/lib/tftpboot/pxelinux.cfg
 mkdir -p /var/lib/tftpboot/grub2
 
 # 3. Copy PXE/GRUB binaries
-cp -v /usr/share/syslinux/{pxelinux.0,ldlinux.c32,menu.c32,libutil.c32} /var/lib/tftpboot/
-cp -v /usr/share/grub2/grubx64.efi /var/lib/tftpboot/grub2/ || true
-cp -v /usr/share/shim/shimx64.efi /var/lib/tftpboot/grub2/ || true
+#cp -v /usr/share/syslinux/{pxelinux.0,ldlinux.c32,menu.c32,libutil.c32} /var/lib/tftpboot/
+#cp -v /usr/share/grub2/grubx64.efi /var/lib/tftpboot/grub2/ || true
+#cp -v /usr/share/shim/shimx64.efi /var/lib/tftpboot/grub2/ || true
 
 # 4. Configure firewall
 firewall-cmd --add-service={tftp,dhcp} --permanent
@@ -27,7 +27,7 @@ subnet 192.168.253.0 netmask 255.255.255.0 {
   option subnet-mask 255.255.255.0;
 
   filename "grub2/grubx64.efi";
-  next-server 192.168.253.160;
+  next-server 192.168.253.170;
 }
 
 EOF
