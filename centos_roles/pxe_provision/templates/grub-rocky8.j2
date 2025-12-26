@@ -14,6 +14,7 @@ menuentry "Install Rocky Linux 8" {
         inst.ks=http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg \
         inst.text \
         inst.default_fstype=ext4 \
+        hostname={{ server.hostname }} \
         console=tty0
     initrdefi rockyos/initrd.img
 }
