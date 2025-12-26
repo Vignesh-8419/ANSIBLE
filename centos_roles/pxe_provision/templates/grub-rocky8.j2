@@ -7,7 +7,7 @@ insmod http
 dhcp
 
 menuentry "Install Rocky Linux 8" {
-    linuxefi vmlinuz \
+    linuxefi rockyos/vmlinuz \
         ip=dhcp \
         inst.repo=http://192.168.253.136/repo/rocky8/ \
         inst.stage2=http://192.168.253.136/repo/rocky8/ \
@@ -15,5 +15,5 @@ menuentry "Install Rocky Linux 8" {
         inst.text \
         inst.default_fstype=ext4 \
         console=tty0
-    initrdefi initrd.img
+    initrdefi rockyos/initrd.img
 }
