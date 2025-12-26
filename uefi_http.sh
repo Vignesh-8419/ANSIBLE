@@ -29,21 +29,6 @@ subnet 192.168.253.0 netmask 255.255.255.0 {
   next-server 192.168.253.160;
 }
 
-# BEGIN ANSIBLE test-server-01
-host test-server-01 {
-  hardware ethernet 00:50:56:20:bb:4e;
-  fixed-address 192.168.253.161;
-  option host-name "test-server-01";
-}
-# END ANSIBLE test-server-01
-
-# BEGIN ANSIBLE test-server-02
-host test-server-02 {
-  hardware ethernet 00:50:56:3b:19:ea;
-  fixed-address 192.168.253.162;
-  option host-name "test-server-02";
-}
-# END ANSIBLE test-server-02
 EOF
 
 systemctl restart dhcpd
@@ -72,43 +57,5 @@ sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
 sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
   root@192.168.253.136:/var/www/html/repo/rocky8/EFI/BOOT/grubx64.efi /var/lib/tftpboot/grub2/
 
-# 8. Example per-host GRUB configs
-cat > /var/lib/tftpboot/grub2/grub.cfg-01-00-50-56-20-bb-4e <<'EOF'
-set default=0
-set timeout=5
-
-insmod efinet
-insmod net
-insmod http
-dhcp
-
-menuentry "Install Rocky Linux 8 - test-server-01" {
-    linuxefi http://192.168.253.136/repo/rocky8/images/pxeboot/vmlinuz \
-        inst.repo=http://192.168.253.136/repo/rocky8/ \
-        inst.stage2=http://192.168.253.136/repo/rocky8/ \
-        ks=http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg \
-        inst.text inst.default_fstype=ext4 console=tty0
-    initrdefi http://192.168.253.136/repo/rocky8/images/pxeboot/initrd.img
-}
-EOF
-
-cat > /var/lib/tftpboot/grub2/grub.cfg-01-00-50-56-3b-19-ea <<'EOF'
-set default=0
-set timeout=5
-
-insmod efinet
-insmod net
-insmod http
-dhcp
-
-menuentry "Install Rocky Linux 8 - test-server-02" {
-    linuxefi http://192.168.253.136/repo/rocky8/images/pxeboot/vmlinuz \
-        inst.repo=http://192.168.253.136/repo/rocky8/ \
-        inst.stage2=http://192.168.253.136/repo/rocky8/ \
-        ks=http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg \
-        inst.text inst.default_fstype=ext4 console=tty0
-    initrdefi http://192.168.253.136/repo/rocky8/images/pxeboot/initrd.img
-}
-EOF
 
 echo "PXE/GRUB2 setup complete."
