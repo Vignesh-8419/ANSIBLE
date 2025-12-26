@@ -58,5 +58,6 @@ sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
 sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
   root@192.168.253.136:/var/www/html/repo/centos/EFI/BOOT/grubx64.efi /var/lib/tftpboot/grub2/
 
+chmod 755 -R /var/lib/tftpboot/centos
 
 echo "PXE/GRUB2 setup complete."
