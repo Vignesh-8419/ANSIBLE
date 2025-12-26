@@ -5,3 +5,9 @@
     name: dhcpd
     state: restarted
   delegate_to: tftp-server-01
+
+- name: restart dhcpd
+  service:
+    name: dhcpd
+    state: restarted
+  delegate_to: tftp-server-02
