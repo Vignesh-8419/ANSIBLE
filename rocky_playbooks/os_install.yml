@@ -32,4 +32,4 @@
 
     - name: Run PXE provisioning role
       include_role:
-        name: roles/pxe_provision
+        name: rocky_roles/pxe_provision
