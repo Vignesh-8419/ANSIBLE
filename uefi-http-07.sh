@@ -50,10 +50,10 @@ EOF
 
 # 7. Copy kernel/initrd from repo server
 sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
-  root@192.168.253.136:/var/www/html/centos/isolinux/vmlinuz /var/lib/tftpboot/centos/
+  root@192.168.253.136:/var/www/html/repo/centos/isolinux/vmlinuz /var/lib/tftpboot/centos/
 
 sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
-  root@192.168.253.136:/var/www/html/centos/isolinux/initrd.img /var/lib/tftpboot/centos/
+  root@192.168.253.136:/var/www/html/repo/centos/isolinux/initrd.img /var/lib/tftpboot/centos/
 
 sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
   root@192.168.253.136:/var/www/html/repo/centos/EFI/BOOT/grubx64.efi /var/lib/tftpboot/grub2/
