@@ -1,11 +1,16 @@
 set default=0
 set timeout=5
 
-menuentry "Install RockyOS 8" {
- linuxefi vmlinuz \
-    inst.repo=http://192.168.253.136/repo/rocky8 \
-    inst.stage2=http://192.168.253.136/repo/rocky8 \
-    ks=http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg \
-    console=tty0 console=ttyS0,115200n8
+insmod efinet
+insmod net
+insmod http
+dhcp
 
- initrdefi initrd.img
+menuentry "Install RockyOS 8" {
+    linuxefi http://192.168.253.136/repo/rocky8/images/pxeboot/vmlinuz \
+        inst.repo=http://192.168.253.136/repo/rocky8 \
+        inst.stage2=http://192.168.253.136/repo/rocky8 \
+        ks=http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg \
+        console=tty0 console=ttyS0,115200n8
+    initrdefi http://192.168.253.136/repo/rocky8/images/pxeboot/initrd.img
+}
