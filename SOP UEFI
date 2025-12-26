@@ -1,0 +1,202 @@
+📘 SOP: PXE Provisioning Workflow with Ansible & GRUB2
+1. Purpose
+This SOP describes how to provision servers via PXE boot using Ansible automation. It covers GRUB2 configuration templates, DHCP integration, per‑host GRUB dispatching, and AWX survey inputs.
+
+2. Pre‑requisites
+A PXE/TFTP server (tftp-server-01) with:
+
+dhcpd running and configured to serve UEFI clients.
+
+TFTP service enabled (grubx64.efi, shimx64.efi available).
+
+HTTP repo server (192.168.253.136) hosting OS images and kickstart files.
+
+Ansible control node with access to AWX/Tower for surveys.
+
+ESXi host credentials (if VM provisioning is part of workflow).
+
+3. Directory Structure
+Code
+roles/
+  pxe_provision/
+    templates/
+      grub-rocky8.j2
+      grub-dispatcher.j2
+    tasks/
+      main.yml
+      per_server.yml
+    defaults/
+      main.yml
+    handlers/
+      main.yml
+playbooks/
+  os_install.yml
+4. Templates
+grub-rocky8.j2
+Defines GRUB menu for Rocky Linux 8:
+
+cfg
+set default=0
+set timeout=5
+
+insmod efinet
+insmod net
+insmod http
+dhcp
+
+menuentry "Install Rocky Linux 8" {
+    linuxefi http://{{ http_server }}/repo/rocky8/images/pxeboot/vmlinuz \
+        ip=dhcp \
+        inst.repo=http://{{ http_server }}/repo/rocky8/ \
+        inst.stage2=http://{{ http_server }}/repo/rocky8/ \
+        inst.ks=http://{{ http_server }}/repo/rocky8/kickstart/rockyos.cfg \
+        inst.text inst.default_fstype=ext4 console=tty0
+    initrdefi http://{{ http_server }}/repo/rocky8/images/pxeboot/initrd.img
+}
+grub-dispatcher.j2
+Dispatcher that loads per‑host GRUB configs:
+
+cfg
+set timeout=0
+set default=0
+
+if [ -f $prefix/grub.cfg-$net_default_mac ]; then
+    configfile $prefix/grub.cfg-$net_default_mac
+fi
+
+echo "No per-host GRUB config found"
+sleep 5
+5. Defaults (defaults/main.yml)
+yaml
+http_server: "192.168.253.136"
+
+esxi_host: "192.168.253.128"
+esxi_user: "root"
+esxi_pass: "admin$22"
+
+servers: []   # overridden by AWX survey
+6. Tasks
+tasks/main.yml
+Deploy dispatcher once.
+
+Loop through servers list to provision per‑server configs.
+
+yaml
+- name: Ensure GRUB dispatcher exists
+  template:
+    src: grub-dispatcher.j2
+    dest: /var/lib/tftpboot/grub2/grub.cfg
+    mode: '0644'
+  delegate_to: tftp-server-01
+  run_once: true
+
+- name: Provision PXE servers
+  include_tasks: per_server.yml
+  loop: "{{ servers }}"
+  loop_control:
+    loop_var: server
+tasks/per_server.yml
+Ensures dispatcher exists (idempotent).
+
+Generates per‑host GRUB configs based on survey input.
+
+yaml
+- name: Ensure GRUB dispatcher exists
+  template:
+    src: grub-dispatcher.j2
+    dest: /var/lib/tftpboot/grub2/grub.cfg
+    mode: '0644'
+  delegate_to: tftp-server-01
+  run_once: true
+
+- name: Provision PXE servers
+  template:
+    src: grub-rocky8.j2
+    dest: "/var/lib/tftpboot/grub2/grub.cfg-{{ server.mac }}"
+    mode: '0644'
+  delegate_to: tftp-server-01
+7. Handlers
+Restart DHCP when configs change:
+
+yaml
+- name: restart dhcpd
+  service:
+    name: dhcpd
+    state: restarted
+  delegate_to: tftp-server-01
+8. Playbook (playbooks/os_install.yml)
+Handles AWX survey inputs and builds server list:
+
+yaml
+- name: Provision servers via PXE
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    hostnames: ""
+    ips: ""
+    macs: ""
+
+  tasks:
+    - name: Normalize survey inputs
+      set_fact:
+        host_list: "{{ hostnames.replace('\"','').strip().split(',') }}"
+        ip_list: "{{ ips.replace('\"','').strip().split(',') }}"
+        mac_list: "{{ macs.replace('\"','').strip().split(',') }}"
+
+    - name: Validate input lengths
+      assert:
+        that:
+          - host_list | length == ip_list | length
+          - host_list | length == mac_list | length
+        fail_msg: "Survey input count mismatch"
+
+    - name: Build servers list
+      set_fact:
+        servers: "{{ servers | default([]) + [ {
+          'hostname': item.0.strip(),
+          'ip': item.1.strip(),
+          'mac': item.2.strip() | lower
+        } ] }}"
+      loop: "{{ host_list | zip(ip_list, mac_list) | list }}"
+
+    - name: Run PXE provisioning role
+      include_role:
+        name: roles/pxe_provision
+9. Execution Flow
+AWX survey collects hostnames, IPs, MACs.
+
+Playbook normalizes inputs and builds servers list.
+
+Role pxe_provision:
+
+Deploys dispatcher (grub.cfg).
+
+Generates per‑host GRUB configs (grub.cfg-<MAC>).
+
+Restarts DHCP if needed.
+
+PXE client boots:
+
+DHCP assigns IP.
+
+TFTP serves grubx64.efi and dispatcher.
+
+Dispatcher loads per‑host GRUB config.
+
+GRUB fetches kernel/initrd via HTTP.
+
+Kickstart runs unattended install.
+
+10. Validation
+Check /var/log/messages for DHCPDISCOVER → OFFER → REQUEST → ACK.
+
+Confirm TFTP logs show grubx64.efi  and grub.cfg  downloads.
+
+GRUB menu appears with correct per‑host entry.
+
+Kernel/initrd fetched via HTTP (watch Apache logs).
+
+OS installation proceeds automatically.
+
+👉 This SOP ties together your templates, 
