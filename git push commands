@@ -1,0 +1,12 @@
+git clone https://github.com/Vignesh-8419/ANSIBLE.git
+cd ANSIBLE
+
+git remote set-url origin https://github.com/Vignesh-8419/ANSIBLE.git
+git config --global credential.helper store
+git push origin main
+mkdir -p roles/pxe_provision/{tasks,templates,defaults}
+git add roles/
+git add -A
+git commit -m "Save edited PXE provisioning role and configs"
+git commit -m "Add PXE provisioning role with templates"
+git push origin main
