@@ -1,0 +1,28 @@
+- name: Run CentOS PXE Setup script from GitHub
+  hosts: all
+  become: true
+  tasks:
+
+    - name: Download uefi-http-07.sh from GitHub to remote host
+      get_url:
+        url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/uefi-http-07.sh"
+        dest: "/tmp/uefi-http-07.sh"
+        mode: '0755'
+
+    - name: Ensure log file exists
+      file:
+        path: /tmp/pxe-centos-07-logs.txt
+        state: touch
+        mode: '0644'
+
+    - name: Execute uefi-http-07.sh on remote host
+      shell: /tmp/uefi-http-07.sh > /tmp/pxe-centos-07-logs.txt 2>&1
+      register: pxe_run
+
+    - name: Print centos PXE Setup log
+      command: cat /tmp/pxe-centos-07-logs.txt
+      register: pxe_log
+
+    - name: Show log contents
+      debug:
+        var: pxe_log.stdout_lines
