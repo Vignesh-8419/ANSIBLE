@@ -77,6 +77,23 @@ sudo firewall-cmd --reload || true
 echo "[Step 10] Reset previous kube state..."
 sudo kubeadm reset -f || true
 sudo rm -rf /etc/cni/net.d/* || true
+# Stop kubelet
+systemctl stop kubelet
+
+# Remove old CNI bridge
+ip link delete cni0 || true
+
+# Clean CNI state
+rm -rf /var/lib/cni/*
+rm -rf /etc/cni/net.d/*
+
+# Restart kubelet
+systemctl start kubelet
+#on control node kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
+
+kubectl delete pod -n kube-flannel -l app=flannel
+
+
 sudo dnf install -y containernetworking-plugins
 ls /opt/cni/bin
 sudo mkdir -p /etc/cni/net.d
