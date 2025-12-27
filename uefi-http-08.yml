@@ -16,13 +16,13 @@
         mode: '0644'
 
     - name: Execute uefi-http-08.sh on remote host
-      shell: /tmp/uefi-http-08.sh > /tmp/foreman_log.txt 2>&1
-      register: foreman_run
+      shell: /tmp/uefi-http-08.sh > /tmp/pxe-rocky-08-logs.txt 2>&1
+      register: pxe_run
 
     - name: Print Rocky PXE Setup log
       command: cat /tmp/pxe-rocky-08-logs.txt
-      register: foreman_log
+      register: pxe_log
 
     - name: Show log contents
       debug:
-        var: pxe-rocky-08-logs.stdout_lines
+        var: pxe_log.stdout_lines
