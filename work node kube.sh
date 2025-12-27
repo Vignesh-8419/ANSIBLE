@@ -92,7 +92,20 @@ systemctl start kubelet
 #on control node kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
 
 kubectl delete pod -n kube-flannel -l app=flannel
+# Bring the interface down
+ip link set cni0 down
 
+# Delete the bridge and the flannel interface
+brctl delbr cni0 || ip link delete cni0
+ip link delete flannel.1
+
+# Delete the local flannel subnet file to let it recreate
+rm -rf /var/lib/cni/flannel/*
+rm -rf /var/lib/cni/networks/cni0/*
+
+# Restart networking services
+systemctl restart containerd
+systemctl restart kubelet
 
 sudo dnf install -y containernetworking-plugins
 ls /opt/cni/bin
