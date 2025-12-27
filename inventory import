@@ -17,19 +17,15 @@ awx-manage inventory_import \
 
 
 vi /root/hosts.ini
-[centos7]
+
 cent-07-01.vgs.com ansible_host=192.168.253.131
 cent-07-02.vgs.com ansible_host=192.168.253.132
-
-[rocky8]
 rocky-08-01.vgs.com ansible_host=192.168.253.133
 rocky-08-02.vgs.com ansible_host=192.168.253.134
 dns-server-01.vgs.com ansible_host=192.168.253.151
-ansible-server-01.vgs.com ansible_host=192.168.253.137
+ansible-server-01.vgs.com ansible_host=192.168.253.135
 http-server-01.vgs.com ansible_host=192.168.253.136
-
-
-[pxe]
-test-pxe01 ansible_host=192.168.253.191
-test-pxe02 ansible_host=192.168.253.192
-
+test-pxe01.vgs.com ansible_host=192.168.253.191
+test-pxe02.vgs.com ansible_host=192.168.253.192
+tftp-server-01.vgs.com ansible_host=192.168.253.160
+tftp-server-02.vgs.com ansible_host=192.168.253.170
