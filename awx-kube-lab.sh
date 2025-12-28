@@ -2,27 +2,39 @@
 set -euo pipefail
 
 ###############################################################################
-# AWX 2.7.2 Installation on Kubernetes (LAB / NON-PROD)
+# AWX 2.7.2 Full Installation on Kubernetes (LAB / NON-PROD)
 # NodePort | Flannel CNI | Local-Path Storage
+# Includes DNS fix for CoreDNS / Postgres connectivity
 ###############################################################################
 
 AWX_NAMESPACE="awx"
 AWX_NAME="awx-demo"
 AWX_OPERATOR_VERSION="2.7.2"
 ADMIN_PASSWORD="AdminPassword123"
+DNS_SERVER="192.168.253.151"
 
-echo "=== AWX 2.7.2 LAB INSTALLATION STARTED ==="
+echo "=== AWX 2.7.2 FULL LAB INSTALLATION STARTED ==="
 
 ###############################################################################
 # 0. SYSTEM PREP
 ###############################################################################
 
-echo "[1/9] Disabling firewalld and enabling IP forwarding..."
+echo "[1/11] Disabling firewall, enabling IP forwarding, and fixing DNS..."
 systemctl stop firewalld || true
 systemctl disable firewalld || true
 iptables -F || true
 sysctl -w net.bridge.bridge-nf-call-iptables=1
 sysctl -w net.ipv4.ip_forward=1
+
+# Set internal DNS
+cp -a /etc/resolv.conf /etc/resolv.conf.bak.$(date +%F_%T)
+cat <<EOF | tee /etc/resolv.conf
+search localdomain
+nameserver ${DNS_SERVER}
+EOF
+chmod 644 /etc/resolv.conf
+
+# Restart containerd and kubelet
 systemctl restart containerd || true
 systemctl restart kubelet || true
 
@@ -30,7 +42,7 @@ systemctl restart kubelet || true
 # 1. INSTALL FLANNEL CNI
 ###############################################################################
 
-echo "[2/9] Installing Flannel CNI..."
+echo "[2/11] Installing Flannel CNI..."
 kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
 
 echo "Waiting for Flannel pods to become Ready..."
@@ -48,7 +60,7 @@ done
 # 2. INSTALL LOCAL-PATH STORAGE
 ###############################################################################
 
-echo "[3/9] Installing local-path provisioner..."
+echo "[3/11] Installing Local-Path Provisioner..."
 kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
 kubectl delete pod -n local-path-storage -l app=local-path-provisioner || true
 kubectl patch storageclass local-path \
@@ -56,10 +68,19 @@ kubectl patch storageclass local-path \
 kubectl get storageclass
 
 ###############################################################################
-# 3. INSTALL AWX OPERATOR
+# 3. FIX COREDNS (if already deployed)
 ###############################################################################
 
-echo "[4/9] Installing AWX Operator ${AWX_OPERATOR_VERSION}..."
+echo "[4/11] Deleting broken CoreDNS pods..."
+kubectl delete pod -n kube-system -l k8s-app=kube-dns --ignore-not-found || true
+echo "Waiting for CoreDNS to restart..."
+kubectl wait --for=condition=Ready pod -n kube-system -l k8s-app=kube-dns --timeout=300s || true
+
+###############################################################################
+# 4. INSTALL AWX OPERATOR
+###############################################################################
+
+echo "[5/11] Installing AWX Operator ${AWX_OPERATOR_VERSION}..."
 kubectl create namespace ${AWX_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
 
 dnf install -y git make || true
@@ -74,10 +95,10 @@ export VERSION=${AWX_OPERATOR_VERSION}
 make deploy
 
 ###############################################################################
-# 4. APPLY KUSTOMIZATION (OPERATOR)
+# 5. APPLY OPERATOR KUSTOMIZATION
 ###############################################################################
 
-echo "[5/9] Applying operator kustomization..."
+echo "[6/11] Applying operator kustomization..."
 cat <<EOF > kustomization.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -95,10 +116,10 @@ kubectl apply -k .
 kubectl config set-context --current --namespace=${AWX_NAMESPACE}
 
 ###############################################################################
-# 5. DEPLOY AWX INSTANCE
+# 6. DEPLOY AWX INSTANCE
 ###############################################################################
 
-echo "[6/9] Deploying AWX instance..."
+echo "[7/11] Deploying AWX instance..."
 kubectl create secret generic awx-admin-password \
   --from-literal=password="${ADMIN_PASSWORD}" \
   -n ${AWX_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
@@ -138,10 +159,10 @@ EOF
 kubectl apply -k .
 
 ###############################################################################
-# 6. WAIT FOR AWX PODS
+# 7. WAIT FOR AWX PODS
 ###############################################################################
 
-echo "[7/9] Waiting for AWX pods to become Ready..."
+echo "[8/11] Waiting for AWX pods to become Ready..."
 # Wait until all pods exist
 while [[ $(kubectl get pods -n ${AWX_NAMESPACE} --no-headers | wc -l) -lt 3 ]]; do
     echo "Pods not yet created, waiting..."
@@ -156,10 +177,10 @@ kubectl wait --for=condition=Ready pod -l app.kubernetes.io/component=database -
 kubectl get pods -n ${AWX_NAMESPACE}
 
 ###############################################################################
-# 7. SERVICE & ACCESS INFO
+# 8. SERVICE & ACCESS INFO
 ###############################################################################
 
-echo "[8/9] AWX Service Details:"
+echo "[9/11] AWX Service Details:"
 # Wait until the NodePort service exists
 until kubectl get svc ${AWX_NAME}-service -n ${AWX_NAMESPACE} &> /dev/null; do
     echo "Waiting for AWX NodePort service..."
@@ -176,13 +197,21 @@ kubectl get secret ${AWX_NAME}-admin-password \
 echo
 
 ###############################################################################
-# 8. OPTIONAL DNS TEST
+# 9. OPTIONAL DNS TEST
 ###############################################################################
 
-echo "[9/9] Testing internal DNS (Postgres)..."
+echo "[10/11] Testing internal DNS (Postgres)..."
 kubectl run busybox --image=busybox:1.28 \
   -n ${AWX_NAMESPACE} \
   --rm -it --restart=Never -- \
   nslookup ${AWX_NAME}-postgres-13 || true
 
-echo "=== AWX 2.7.2 LAB INSTALLATION COMPLETE ==="
+###############################################################################
+# 10. FINAL CHECKS
+###############################################################################
+
+echo "[11/11] Final checks for CoreDNS and AWX pods..."
+kubectl get pods -n kube-system -l k8s-app=kube-dns
+kubectl get pods -n ${AWX_NAMESPACE}
+
+echo "=== AWX 2.7.2 FULL LAB INSTALLATION COMPLETE ==="
