@@ -1,3 +1,22 @@
+# Stop kubelet temporarily
+systemctl stop kubelet
+
+# Delete existing cni0, flannel.1 bridges
+ip link delete cni0
+ip link delete flannel.1
+
+# Remove old CNI state
+rm -rf /var/lib/cni/networks/*
+rm -rf /var/lib/cni/bin/*
+rm -rf /etc/cni/net.d/*
+systemctl start kubelet
+kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
+kubectl get pods -n kube-flannel -o wide
+kubectl get nodes -o wide
+kubectl delete pod -n awx -l name=awx-operator
+kubectl delete pod -n kube-flannel -l app=flannel
+
+
 # 1️⃣ Stop Firewall, Flush iptables, Disable SELinux (all nodes)
 systemctl stop firewalld
 systemctl disable firewalld
