@@ -5,6 +5,7 @@ set -euo pipefail
 # AWX 2.7.2 Full Installation on Kubernetes (LAB / NON-PROD)
 # NodePort | Flannel CNI | Local-Path Storage
 # Includes DNS fix for CoreDNS / Postgres connectivity
+# Automatically configures br_netfilter and sysctl on worker nodes
 ###############################################################################
 
 AWX_NAMESPACE="awx"
@@ -13,33 +14,21 @@ AWX_OPERATOR_VERSION="2.7.2"
 ADMIN_PASSWORD="AdminPassword123"
 DNS_SERVER="192.168.253.151"
 
+# Worker nodes (update with your actual hostnames)
+WORKER_NODES=("awx-work-node-01.vgs.com" "awx-work-node-02.vgs.com")
+
 echo "=== AWX 2.7.2 FULL LAB INSTALLATION STARTED ==="
 
 ###############################################################################
 # 0. SYSTEM PREP
 ###############################################################################
 
-echo "[1/11] Disabling firewall, enabling IP forwarding, loading br_netfilter, and fixing DNS..."
+echo "[1/11] Disabling firewall, enabling IP forwarding, and fixing DNS..."
 systemctl stop firewalld || true
 systemctl disable firewalld || true
 iptables -F || true
-
-# Load br_netfilter module (required for Flannel)
-modprobe br_netfilter
-echo "br_netfilter" >> /etc/modules-load.d/br_netfilter.conf
-
-# Enable forwarding and bridge-nf for Kubernetes networking
 sysctl -w net.bridge.bridge-nf-call-iptables=1
-sysctl -w net.bridge.bridge-nf-call-ip6tables=1
 sysctl -w net.ipv4.ip_forward=1
-
-# Persist sysctl settings
-cat <<EOF >> /etc/sysctl.d/k8s.conf
-net.bridge.bridge-nf-call-iptables = 1
-net.bridge.bridge-nf-call-ip6tables = 1
-net.ipv4.ip_forward = 1
-EOF
-sysctl --system
 
 # Set internal DNS
 cp -a /etc/resolv.conf /etc/resolv.conf.bak.$(date +%F_%T)
@@ -49,9 +38,33 @@ nameserver ${DNS_SERVER}
 EOF
 chmod 644 /etc/resolv.conf
 
-# Restart containerd and kubelet to pick up network changes
-systemctl restart containerd || true
-systemctl restart kubelet || true
+###############################################################################
+# 0a. CONFIGURE WORKER NODES BR_NETFILTER & SYSCTL
+###############################################################################
+
+echo "[1a/11] Configuring br_netfilter and sysctl settings on worker nodes..."
+for NODE in "${WORKER_NODES[@]}"; do
+    echo "Configuring $NODE ..."
+    ssh root@"$NODE" bash -s <<'EOF'
+modprobe br_netfilter
+echo "br_netfilter" >> /etc/modules-load.d/br_netfilter.conf
+
+sysctl -w net.bridge.bridge-nf-call-iptables=1
+sysctl -w net.bridge.bridge-nf-call-ip6tables=1
+sysctl -w net.ipv4.ip_forward=1
+
+cat <<EOT >> /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward = 1
+EOT
+
+sysctl --system
+
+systemctl restart kubelet
+EOF
+done
+echo "Worker nodes configuration complete."
 
 ###############################################################################
 # 1. INSTALL FLANNEL CNI
@@ -178,13 +191,11 @@ kubectl apply -k .
 ###############################################################################
 
 echo "[8/11] Waiting for AWX pods to become Ready..."
-# Wait until all pods exist
 while [[ $(kubectl get pods -n ${AWX_NAMESPACE} --no-headers | wc -l) -lt 3 ]]; do
     echo "Pods not yet created, waiting..."
     sleep 5
 done
 
-# Wait for task, web, and postgres pods individually
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/component=task -n ${AWX_NAMESPACE} --timeout=900s || true
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/component=web -n ${AWX_NAMESPACE} --timeout=900s || true
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/component=database -n ${AWX_NAMESPACE} --timeout=900s || true
@@ -196,7 +207,6 @@ kubectl get pods -n ${AWX_NAMESPACE}
 ###############################################################################
 
 echo "[9/11] AWX Service Details:"
-# Wait until the NodePort service exists
 until kubectl get svc ${AWX_NAME}-service -n ${AWX_NAMESPACE} &> /dev/null; do
     echo "Waiting for AWX NodePort service..."
     sleep 5
