@@ -1,3 +1,6 @@
+#!/bin/bash
+set -euo pipefail
+
 # ========================
 # 1️⃣ System Preparation
 # ========================
@@ -35,7 +38,43 @@ dnf install -y kubelet kubeadm kubectl
 systemctl enable --now kubelet
 
 # ========================
-# 4️⃣ Initialize Kubernetes
+# 4️⃣ Apply Kernel & Networking Fixes (Flannel) to All Nodes
+# ========================
+WORKER_NODES=("worker-01" "worker-02") # Replace with your worker node hostnames/IPs
+
+# Apply on control plane
+modprobe br_netfilter
+echo "br_netfilter" >> /etc/modules-load.d/br_netfilter.conf
+sysctl -w net.bridge.bridge-nf-call-iptables=1
+sysctl -w net.bridge.bridge-nf-call-ip6tables=1
+sysctl -w net.ipv4.ip_forward=1
+cat <<EOF >> /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward = 1
+EOF
+sysctl --system
+
+# Apply on workers
+for NODE in "${WORKER_NODES[@]}"; do
+  ssh root@"$NODE" bash -s <<'EOF'
+modprobe br_netfilter
+echo "br_netfilter" >> /etc/modules-load.d/br_netfilter.conf
+sysctl -w net.bridge.bridge-nf-call-iptables=1
+sysctl -w net.bridge.bridge-nf-call-ip6tables=1
+sysctl -w net.ipv4.ip_forward=1
+cat <<EOT >> /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward = 1
+EOT
+sysctl --system
+systemctl restart kubelet
+EOF
+done
+
+# ========================
+# 5️⃣ Initialize Kubernetes
 # ========================
 kubeadm init --pod-network-cidr=10.244.0.0/16
 
@@ -46,29 +85,40 @@ export KUBECONFIG=/etc/kubernetes/admin.conf
 kubectl taint nodes --all node-role.kubernetes.io/control-plane-
 
 # ========================
-# 5️⃣ Install Flannel CNI
+# 6️⃣ Install Flannel CNI
 # ========================
 kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
 
-# Verify Flannel pods
+# Wait until Flannel pods are ready
+echo "Waiting for Flannel pods..."
+for i in {1..30}; do
+    NOT_READY=$(kubectl get pods -n kube-flannel -o jsonpath='{.items[*].status.containerStatuses[*].ready}' | grep false || true)
+    if [[ -z "$NOT_READY" ]]; then
+        echo "Flannel is Ready"
+        break
+    fi
+    echo "Waiting for Flannel... (${i}/30)"
+    sleep 5
+done
+
 kubectl get pods -n kube-flannel -o wide
 
 # ========================
-# 6️⃣ Install Local Path Storage
+# 7️⃣ Install Local Path Storage
 # ========================
 kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
 kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 kubectl get storageclass
 
 # ========================
-# 7️⃣ Deploy AWX Operator
+# 8️⃣ Deploy AWX Operator
 # ========================
 kubectl create namespace awx
 kubectl apply -f https://raw.githubusercontent.com/ansible/awx-operator/devel/deploy/awx-operator.yaml
 kubectl get pods -n awx
 
 # ========================
-# 8️⃣ Deploy AWX Instance
+# 9️⃣ Deploy AWX Instance
 # ========================
 cat <<EOF | kubectl apply -f -
 apiVersion: awx.ansible.com/v1beta1
@@ -83,13 +133,11 @@ EOF
 kubectl get pods -n awx -o wide
 kubectl get svc -n awx
 
-# Example: Access AWX UI at http://<node-ip>:<NodePort>
-
 # ========================
-# 9️⃣ Optional: Longhorn (Persistent Storage)
+# 🔟 Optional: Longhorn (Persistent Storage)
 # ========================
 kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/master/deploy/longhorn.yaml
 kubectl get pods -n longhorn-system
 
-# Forward Longhorn UI to local machine
+# Port-forward Longhorn UI
 kubectl port-forward svc/longhorn-frontend -n longhorn-system 8080:80
