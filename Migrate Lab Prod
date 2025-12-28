@@ -1,9 +1,15 @@
-🔹 0️⃣ Kernel & Networking (MANDATORY)
+🔹 1️⃣ Kernel & Networking Validation (ALL NODES)
 
-📍 RUN ON: ALL NODES
+📍 RUN ON: CONTROL + WORKERS
 
-modprobe br_netfilter
-echo br_netfilter > /etc/modules-load.d/br_netfilter.conf
+lsmod | grep br_netfilter || modprobe br_netfilter
+
+sysctl net.bridge.bridge-nf-call-iptables
+sysctl net.bridge.bridge-nf-call-ip6tables
+sysctl net.ipv4.ip_forward
+
+
+If NOT set, persist:
 
 cat <<EOF > /etc/sysctl.d/k8s.conf
 net.bridge.bridge-nf-call-iptables = 1
@@ -14,12 +20,19 @@ EOF
 sysctl --system
 
 
-✅ Required for Flannel + kube-proxy
-❌ Cluster WILL fail without this
+✔ Required for stable networking
+❌ No reboot needed
 
-🔹 0️⃣A DNS Configuration (PRODUCTION SAFE)
+🔹 2️⃣ DNS: LAB TEMP FIX ➜ PROD SAFE FIX
 
 📍 RUN ON: ALL NODES
+
+❌ REMOVE any /etc/resolv.conf overwrite
+
+chattr -i /etc/resolv.conf 2>/dev/null || true
+
+
+✔ Configure DNS via NetworkManager:
 
 nmcli con show
 nmcli con mod <connection-name> ipv4.ignore-auto-dns yes
@@ -27,169 +40,152 @@ nmcli con mod <connection-name> ipv4.dns "8.8.8.8 1.1.1.1"
 nmcli con up <connection-name>
 
 
-⚠️ DO NOT overwrite /etc/resolv.conf directly in production
+✔ CoreDNS will stabilize after this
 
-🔹 1️⃣ Firewall & SELinux
+🔹 3️⃣ Firewall: LAB OPEN ➜ PROD CONTROLLED
 
 📍 RUN ON: ALL NODES
 
 systemctl enable firewalld
 systemctl start firewalld
 
+
+📍 CONTROL-PLANE
+
 firewall-cmd --permanent --add-port=6443/tcp
 firewall-cmd --permanent --add-port=10250/tcp
 firewall-cmd --permanent --add-port=30000-32767/tcp
 firewall-cmd --reload
 
+
+📍 WORKERS
+
+firewall-cmd --permanent --add-port=10250/tcp
+firewall-cmd --permanent --add-port=30000-32767/tcp
+firewall-cmd --reload
+
+
+✔ Safe NodePort exposure
+✔ kubelet secure
+
+🔹 4️⃣ SELinux: Disabled ➜ Permissive
+
+📍 RUN ON: ALL NODES
+
+sed -i 's/^SELINUX=.*/SELINUX=permissive/' /etc/selinux/config
 setenforce 0
 getenforce
 
 
-✔ SELinux: Permissive
-❌ Never disable SELinux permanently in prod
+✔ Production-compliant
+❌ Never leave disabled
 
-🔹 2️⃣ Container Runtime (Docker)
-
-📍 RUN ON: ALL NODES
-
-dnf install -y yum-utils
-dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-dnf install -y docker-ce docker-ce-cli containerd.io
-
-systemctl enable --now docker
-
-🔹 3️⃣ Kubernetes Components
-
-📍 RUN ON: ALL NODES
-
-cat <<EOF > /etc/yum.repos.d/kubernetes.repo
-[kubernetes]
-name=Kubernetes
-baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-\$basearch
-enabled=1
-gpgcheck=0
-EOF
-
-dnf install -y kubelet kubeadm kubectl
-systemctl enable --now kubelet
-
-🔹 4️⃣ Initialize Kubernetes
+🔹 5️⃣ CNI & CoreDNS Stabilization
 
 📍 RUN ON: CONTROL-PLANE ONLY
 
-❗ ONLY on a NEW cluster
-
-[ -f /etc/kubernetes/admin.conf ] && echo "Cluster already initialized" && exit 1
-
-kubeadm init --pod-network-cidr=10.244.0.0/16 --upload-certs
-
-export KUBECONFIG=/etc/kubernetes/admin.conf
-kubectl taint nodes --all node-role.kubernetes.io/control-plane-
-
-🔹 5️⃣ Join Worker Nodes
-
-📍 CONTROL-PLANE
-
-kubeadm token create --print-join-command
-
-
-📍 EACH WORKER NODE
-
-kubeadm join <CONTROL-PLANE-IP>:6443 --token <TOKEN> \
---discovery-token-ca-cert-hash sha256:<HASH>
-
-🔹 6️⃣ Install Flannel CNI (PINNED)
-
-📍 CONTROL-PLANE ONLY
-
-kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/v0.27.4/Documentation/kube-flannel.yml
-
-kubectl get pods -n kube-flannel -o wide
-kubectl get nodes -o wide
-
-🔹 7️⃣ Restart CoreDNS
-
-📍 CONTROL-PLANE ONLY
+Restart CoreDNS (post-network fix):
 
 kubectl delete pod -n kube-system -l k8s-app=kube-dns
+
+
+Validate:
+
 kubectl get pods -n kube-system -l k8s-app=kube-dns
 
-🔹 8️⃣ Storage Prerequisites (REQUIRED)
 
-📍 RUN ON: ALL NODES
-
-dnf install -y iscsi-initiator-utils
-systemctl enable --now iscsid
-modprobe iscsi_tcp
-
-🔹 9️⃣ Install Longhorn (PRIMARY STORAGE)
-
-📍 CONTROL-PLANE ONLY
-
-kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/master/deploy/longhorn.yaml
-
-kubectl get pods -n longhorn-system -w
-
-
-Access UI:
-
-kubectl port-forward svc/longhorn-frontend -n longhorn-system 8080:80
-
-🔹 🔟 Install Local-Path (LAB ONLY)
-
-📍 CONTROL-PLANE ONLY
-
-kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
-
-
-⚠️ DO NOT use for production data
-
-🔹 1️⃣1️⃣ Deploy AWX Operator (PROD)
-
-📍 CONTROL-PLANE ONLY
-
-kubectl create namespace awx
-kubectl apply -f https://github.com/ansible/awx-operator/releases/download/2.7.2/awx-operator.yaml
-
-kubectl get pods -n awx
-
-🔹 1️⃣2️⃣ Create AWX Admin Password
-
-📍 CONTROL-PLANE ONLY
-
-read -s AWX_PASS
-kubectl create secret generic awx-admin-password \
---from-literal=password="$AWX_PASS" -n awx
-
-🔹 1️⃣3️⃣ Deploy AWX Instance (PROD STORAGE)
-
-📍 CONTROL-PLANE ONLY
-
-cat <<EOF | kubectl apply -f -
-apiVersion: awx.ansible.com/v1beta1
-kind: AWX
-metadata:
-  name: awx-prod
-  namespace: awx
-spec:
-  service_type: NodePort
-  postgres_storage_class: longhorn
-  projects_storage_class: longhorn
-EOF
-
-🔹 1️⃣4️⃣ Validate Cluster & AWX
-
-📍 CONTROL-PLANE ONLY
-
-kubectl get pods -A
-kubectl get svc -n awx
-
-
-Test DNS:
+Test:
 
 kubectl run -it --rm busybox \
 --image=busybox --restart=Never -- \
 nslookup kubernetes.default.svc.cluster.local
 
-🔹 1️⃣5️⃣ Access AWX
-http://<ANY-NODE-IP>:<NodePort>
+
+✔ This confirms LAB DNS hacks are gone
+
+🔹 6️⃣ Storage Migration: Local-Path ➜ Longhorn
+
+📍 CONTROL-PLANE ONLY
+
+A️⃣ Install Longhorn (if not already)
+kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/master/deploy/longhorn.yaml
+kubectl get pods -n longhorn-system -w
+
+B️⃣ Change Default StorageClass
+kubectl patch storageclass longhorn \
+-p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+kubectl patch storageclass local-path \
+-p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
+
+
+✔ New PVCs will use Longhorn
+
+🔹 7️⃣ AWX Data Migration (NO DATA LOSS)
+
+📍 CONTROL-PLANE ONLY
+
+1️⃣ Scale AWX down:
+
+kubectl scale deployment awx-operator -n awx --replicas=0
+kubectl scale deployment awx-demo-web -n awx --replicas=0
+kubectl scale deployment awx-demo-task -n awx --replicas=0
+
+
+2️⃣ Patch AWX to use Longhorn:
+
+kubectl patch awx awx-demo -n awx --type merge -p '
+spec:
+  postgres_storage_class: longhorn
+  projects_storage_class: longhorn
+'
+
+
+3️⃣ Scale back up:
+
+kubectl scale deployment awx-operator -n awx --replicas=1
+
+
+✔ PostgreSQL & project data preserved
+
+🔹 8️⃣ Upgrade AWX Operator (LAB ➜ PROD)
+
+📍 CONTROL-PLANE ONLY
+
+kubectl delete deployment awx-operator -n awx
+kubectl apply -f https://github.com/ansible/awx-operator/releases/download/2.7.2/awx-operator.yaml
+kubectl get pods -n awx
+
+
+✔ Locks operator version
+✔ Avoids devel branch risk
+
+🔹 9️⃣ Node Hardening Checks
+
+📍 CONTROL-PLANE ONLY
+
+kubectl get nodes
+kubectl describe node | egrep "Ready|NetworkUnavailable"
+
+
+📍 ALL NODES
+
+df -h
+free -m
+uptime
+
+🔹 🔟 Production Acceptance Tests
+
+✔ DNS
+✔ Pod-to-Pod
+✔ Storage
+✔ AWX UI
+
+kubectl get pods -A
+kubectl get pvc -A
+kubectl get svc -n awx
+
+
+Access:
+
+http://<NODE-IP>:<NodePort>
