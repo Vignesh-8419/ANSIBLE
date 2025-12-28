@@ -29,7 +29,7 @@ sysctl -w net.ipv4.ip_forward=1
 # Set internal DNS
 cp -a /etc/resolv.conf /etc/resolv.conf.bak.$(date +%F_%T)
 cat <<EOF | tee /etc/resolv.conf
-search localdomain
+search localdomain vgs.com
 nameserver ${DNS_SERVER}
 EOF
 chmod 644 /etc/resolv.conf
