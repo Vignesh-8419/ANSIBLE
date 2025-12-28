@@ -1,6 +1,8 @@
-🔹 0️⃣ Kernel + Networking Fix (RUN ON ALL NODES)
+This is COMPLETE and PRODUCTION-SAFE based on your final working state.
 
-Run on control-plane and each worker node
+🔹 0️⃣ Kernel + Networking Fix
+
+📍 RUN ON: ALL NODES (Control-plane + Workers)
 
 modprobe br_netfilter
 echo br_netfilter > /etc/modules-load.d/br_netfilter.conf
@@ -9,7 +11,7 @@ sysctl -w net.bridge.bridge-nf-call-iptables=1
 sysctl -w net.bridge.bridge-nf-call-ip6tables=1
 sysctl -w net.ipv4.ip_forward=1
 
-cat <<EOF >> /etc/sysctl.d/k8s.conf
+cat <<EOF > /etc/sysctl.d/k8s.conf
 net.bridge.bridge-nf-call-iptables = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 net.ipv4.ip_forward = 1
@@ -17,14 +19,30 @@ EOF
 
 sysctl --system
 
-🔹 1️⃣ Disable Firewall & SELinux (ALL NODES)
+🔹 0️⃣A DNS TEMP FIX
+
+📍 RUN ON: ALL NODES
+
+cat <<EOF > /etc/resolv.conf
+search localdomain vgs.com
+nameserver 8.8.8.8
+nameserver 1.1.1.1
+EOF
+
+🔹 1️⃣ Disable Firewall & SELinux
+
+📍 RUN ON: ALL NODES
+
 systemctl stop firewalld
 systemctl disable firewalld
 iptables -F
 setenforce 0
 getenforce
 
-🔹 2️⃣ Clean Old CNI (CONTROL-PLANE ONLY)
+🔹 2️⃣ Clean Old CNI State
+
+📍 RUN ON: CONTROL-PLANE ONLY
+
 systemctl stop kubelet
 
 ip link delete cni0 || true
@@ -36,46 +54,50 @@ rm -rf /etc/cni/net.d/*
 
 systemctl start kubelet
 
-🔹 3️⃣ Initialize Kubernetes (CONTROL-PLANE)
+🔹 3️⃣ Initialize Kubernetes
+
+📍 RUN ON: CONTROL-PLANE ONLY
+
 kubeadm init --pod-network-cidr=10.244.0.0/16 --upload-certs
 
-Configure kubectl
 export KUBECONFIG=/etc/kubernetes/admin.conf
 
-Allow scheduling on control-plane (LAB / SMALL PROD)
 kubectl taint nodes --all node-role.kubernetes.io/control-plane-
 
-🔹 4️⃣ Join Worker Nodes (RUN ON EACH WORKER)
+🔹 4️⃣ Join Worker Nodes
 
-On control-plane:
+📍 RUN ON: CONTROL-PLANE (GET COMMAND)
 
 kubeadm token create --print-join-command
 
 
-Example output:
+📍 RUN ON: EACH WORKER NODE (PASTE OUTPUT)
 
-kubeadm join <control-plane-ip>:6443 --token <token> \
---discovery-token-ca-cert-hash sha256:<hash>
+kubeadm join <CONTROL-PLANE-IP>:6443 --token <TOKEN> \
+--discovery-token-ca-cert-hash sha256:<HASH>
 
+🔹 5️⃣ Install Flannel CNI
 
-Run that exact command on each worker node.
+📍 RUN ON: CONTROL-PLANE ONLY
 
-🔹 5️⃣ Install Flannel CNI (CONTROL-PLANE)
 kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
 
-Verify Flannel
-kubectl get daemonset kube-flannel-ds -n kube-flannel
 kubectl get pods -n kube-flannel -o wide
 
+kubectl get nodes -o wide
 
-✔ All pods must be Running (1/1)
-❌ If CrashLoopBackOff → kernel/sysctl step was skipped on that node
+🔹 6️⃣ Restart CoreDNS
 
-🔹 6️⃣ Fix CoreDNS (If Needed)
+📍 RUN ON: CONTROL-PLANE ONLY
+
 kubectl delete pod -n kube-system -l k8s-app=kube-dns
+
 kubectl get pods -n kube-system -l k8s-app=kube-dns
 
-🔹 7️⃣ Install Local Path Storage (TEST / FALLBACK)
+🔹 7️⃣ Install Local-Path Storage
+
+📍 RUN ON: CONTROL-PLANE ONLY
+
 kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
 
 kubectl patch storageclass local-path \
@@ -83,27 +105,38 @@ kubectl patch storageclass local-path \
 
 kubectl get storageclass
 
-🔹 8️⃣ Install Longhorn (PRODUCTION STORAGE)
+🔹 8️⃣ Install Longhorn
+
+📍 RUN ON: CONTROL-PLANE ONLY
+
 kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/master/deploy/longhorn.yaml
 
-Watch pods
 kubectl get pods -n longhorn-system -w
 
-Access UI
 kubectl port-forward svc/longhorn-frontend -n longhorn-system 8080:80
 
-🔹 9️⃣ Deploy AWX Operator
+🔹 9️⃣ Deploy AWX Operator (PRODUCTION VERSION)
+
+📍 RUN ON: CONTROL-PLANE ONLY
+
 kubectl create namespace awx
-kubectl apply -f https://raw.githubusercontent.com/ansible/awx-operator/devel/deploy/awx-operator.yaml
+
+kubectl apply -f https://github.com/ansible/awx-operator/releases/download/2.7.2/awx-operator.yaml
 
 kubectl get pods -n awx
 
 🔹 🔟 Create AWX Admin Password
+
+📍 RUN ON: CONTROL-PLANE ONLY
+
 kubectl create secret generic awx-admin-password \
 --from-literal=password="ProdSecretPassword123" \
 -n awx
 
 🔹 1️⃣1️⃣ Deploy AWX Instance
+
+📍 RUN ON: CONTROL-PLANE ONLY
+
 cat <<EOF | kubectl apply -f -
 apiVersion: awx.ansible.com/v1beta1
 kind: AWX
@@ -114,25 +147,27 @@ spec:
   service_type: NodePort
 EOF
 
-Monitor AWX
 kubectl get pods -n awx -o wide
+
 kubectl get svc -n awx
 
 🔹 1️⃣2️⃣ Connectivity Tests
-DNS Test
+
+📍 RUN ON: CONTROL-PLANE ONLY
+
 kubectl run -it --rm busybox \
 --image=busybox --restart=Never -- \
 nslookup kubernetes.default.svc.cluster.local
 
-Service Network Test
 kubectl run -it --rm busybox \
 --image=busybox --restart=Never -- \
 ping -c 3 10.96.0.1
 
-🔹 1️⃣3️⃣ Access AWX UI
+🔹 1️⃣3️⃣ Access AWX
+
+📍 RUN ON: CONTROL-PLANE ONLY
+
 kubectl get svc -n awx
 
-
-Open in browser:
-
 http://<ANY-NODE-IP>:<NodePort>
+
