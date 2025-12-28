@@ -1,0 +1,138 @@
+🔹 0️⃣ Kernel + Networking Fix (RUN ON ALL NODES)
+
+Run on control-plane and each worker node
+
+modprobe br_netfilter
+echo br_netfilter > /etc/modules-load.d/br_netfilter.conf
+
+sysctl -w net.bridge.bridge-nf-call-iptables=1
+sysctl -w net.bridge.bridge-nf-call-ip6tables=1
+sysctl -w net.ipv4.ip_forward=1
+
+cat <<EOF >> /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward = 1
+EOF
+
+sysctl --system
+
+🔹 1️⃣ Disable Firewall & SELinux (ALL NODES)
+systemctl stop firewalld
+systemctl disable firewalld
+iptables -F
+setenforce 0
+getenforce
+
+🔹 2️⃣ Clean Old CNI (CONTROL-PLANE ONLY)
+systemctl stop kubelet
+
+ip link delete cni0 || true
+ip link delete flannel.1 || true
+
+rm -rf /var/lib/cni/networks/*
+rm -rf /var/lib/cni/bin/*
+rm -rf /etc/cni/net.d/*
+
+systemctl start kubelet
+
+🔹 3️⃣ Initialize Kubernetes (CONTROL-PLANE)
+kubeadm init --pod-network-cidr=10.244.0.0/16 --upload-certs
+
+Configure kubectl
+export KUBECONFIG=/etc/kubernetes/admin.conf
+
+Allow scheduling on control-plane (LAB / SMALL PROD)
+kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+
+🔹 4️⃣ Join Worker Nodes (RUN ON EACH WORKER)
+
+On control-plane:
+
+kubeadm token create --print-join-command
+
+
+Example output:
+
+kubeadm join <control-plane-ip>:6443 --token <token> \
+--discovery-token-ca-cert-hash sha256:<hash>
+
+
+Run that exact command on each worker node.
+
+🔹 5️⃣ Install Flannel CNI (CONTROL-PLANE)
+kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
+
+Verify Flannel
+kubectl get daemonset kube-flannel-ds -n kube-flannel
+kubectl get pods -n kube-flannel -o wide
+
+
+✔ All pods must be Running (1/1)
+❌ If CrashLoopBackOff → kernel/sysctl step was skipped on that node
+
+🔹 6️⃣ Fix CoreDNS (If Needed)
+kubectl delete pod -n kube-system -l k8s-app=kube-dns
+kubectl get pods -n kube-system -l k8s-app=kube-dns
+
+🔹 7️⃣ Install Local Path Storage (TEST / FALLBACK)
+kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+
+kubectl patch storageclass local-path \
+-p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+kubectl get storageclass
+
+🔹 8️⃣ Install Longhorn (PRODUCTION STORAGE)
+kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/master/deploy/longhorn.yaml
+
+Watch pods
+kubectl get pods -n longhorn-system -w
+
+Access UI
+kubectl port-forward svc/longhorn-frontend -n longhorn-system 8080:80
+
+🔹 9️⃣ Deploy AWX Operator
+kubectl create namespace awx
+kubectl apply -f https://raw.githubusercontent.com/ansible/awx-operator/devel/deploy/awx-operator.yaml
+
+kubectl get pods -n awx
+
+🔹 🔟 Create AWX Admin Password
+kubectl create secret generic awx-admin-password \
+--from-literal=password="ProdSecretPassword123" \
+-n awx
+
+🔹 1️⃣1️⃣ Deploy AWX Instance
+cat <<EOF | kubectl apply -f -
+apiVersion: awx.ansible.com/v1beta1
+kind: AWX
+metadata:
+  name: awx-demo
+  namespace: awx
+spec:
+  service_type: NodePort
+EOF
+
+Monitor AWX
+kubectl get pods -n awx -o wide
+kubectl get svc -n awx
+
+🔹 1️⃣2️⃣ Connectivity Tests
+DNS Test
+kubectl run -it --rm busybox \
+--image=busybox --restart=Never -- \
+nslookup kubernetes.default.svc.cluster.local
+
+Service Network Test
+kubectl run -it --rm busybox \
+--image=busybox --restart=Never -- \
+ping -c 3 10.96.0.1
+
+🔹 1️⃣3️⃣ Access AWX UI
+kubectl get svc -n awx
+
+
+Open in browser:
+
+http://<ANY-NODE-IP>:<NodePort>
