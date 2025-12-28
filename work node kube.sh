@@ -103,15 +103,21 @@ ip link delete flannel.1
 rm -rf /var/lib/cni/flannel/*
 rm -rf /var/lib/cni/networks/cni0/*
 
-# Restart networking services
-systemctl restart containerd
-systemctl restart kubelet
 
 sudo dnf install -y containernetworking-plugins
 ls /opt/cni/bin
 sudo mkdir -p /etc/cni/net.d
-sudo systemctl restart kubelet
+# 1. Disable firewalld temporarily to see if it's the culprit
+systemctl stop firewalld
+systemctl disable firewalld
 
+# 2. Ensure IP forwarding is enabled (Crucial for Kubernetes)
+sysctl -w net.bridge.bridge-nf-call-iptables=1
+sysctl -w net.ipv4.ip_forward=1
+
+# 3. Restart the container runtime and kubelet to pick up changes
+systemctl restart containerd
+systemctl restart kubelet
 
 echo "[Step 11] Join Kubernetes cluster..."
 # ⚠️ Replace the line below with the actual join command from your control plane:
