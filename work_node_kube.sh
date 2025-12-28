@@ -119,6 +119,19 @@ sysctl -w net.ipv4.ip_forward=1
 systemctl restart containerd
 systemctl restart kubelet
 
+# Stop kubelet temporarily
+systemctl stop kubelet
+
+# Delete existing cni0, flannel.1 bridges
+ip link delete cni0
+ip link delete flannel.1
+
+# Remove old CNI state
+rm -rf /var/lib/cni/networks/*
+rm -rf /var/lib/cni/bin/*
+rm -rf /etc/cni/net.d/*
+systemctl start kubelet
+
 echo "[Step 11] Join Kubernetes cluster..."
 # ⚠️ Replace the line below with the actual join command from your control plane:
 # Run on control plane: kubeadm token create --print-join-command
