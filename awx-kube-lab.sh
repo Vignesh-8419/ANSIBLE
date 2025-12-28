@@ -19,12 +19,27 @@ echo "=== AWX 2.7.2 FULL LAB INSTALLATION STARTED ==="
 # 0. SYSTEM PREP
 ###############################################################################
 
-echo "[1/11] Disabling firewall, enabling IP forwarding, and fixing DNS..."
+echo "[1/11] Disabling firewall, enabling IP forwarding, loading br_netfilter, and fixing DNS..."
 systemctl stop firewalld || true
 systemctl disable firewalld || true
 iptables -F || true
+
+# Load br_netfilter module (required for Flannel)
+modprobe br_netfilter
+echo "br_netfilter" >> /etc/modules-load.d/br_netfilter.conf
+
+# Enable forwarding and bridge-nf for Kubernetes networking
 sysctl -w net.bridge.bridge-nf-call-iptables=1
+sysctl -w net.bridge.bridge-nf-call-ip6tables=1
 sysctl -w net.ipv4.ip_forward=1
+
+# Persist sysctl settings
+cat <<EOF >> /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward = 1
+EOF
+sysctl --system
 
 # Set internal DNS
 cp -a /etc/resolv.conf /etc/resolv.conf.bak.$(date +%F_%T)
@@ -34,7 +49,7 @@ nameserver ${DNS_SERVER}
 EOF
 chmod 644 /etc/resolv.conf
 
-# Restart containerd and kubelet
+# Restart containerd and kubelet to pick up network changes
 systemctl restart containerd || true
 systemctl restart kubelet || true
 
