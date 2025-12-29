@@ -105,22 +105,26 @@ kubectl -n ${AWX_NAMESPACE} create secret generic awx-admin-password --from-lite
 # 12. AWX Instance Deployment (WITH GOOGLE FIX)
 echo "==> Task 12/15: Deploying AWX with postgres_data_volume_init..."
 # 12. AWX Instance Deployment
-cat <<EOF | kubectl apply -n ${AWX_NAMESPACE} -f -
+cat <<EOF | kubectl apply -n awx -f -
 apiVersion: awx.ansible.com/v1beta1
 kind: AWX
 metadata:
-  name: ${AWX_NAME}
+  name: awx-prod
 spec:
-  service_type: LoadBalancer           # Change from NodePort to LoadBalancer
-  loadBalancerIP: 192.168.253.225      # Add this line to match your DNS
+  service_type: LoadBalancer
+  loadbalancer_ip: 192.168.253.225
   ingress_type: ingress
-  hostname: ${AWX_HOSTNAME}
+  hostname: awx-server-01.vgs.com
   admin_password_secret: awx-admin-password
   postgres_storage_class: longhorn
   postgres_data_volume_init: true
   postgres_resource_requirements:
-    requests: { cpu: "500m", memory: "2Gi" }
-    limits: { cpu: "2", memory: "4Gi" }
+    requests:
+      cpu: "500m"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
 EOF
 
 #kubectl patch svc awx-prod-service -n awx -p '{"spec": {"type": "LoadBalancer", "loadBalancerIP": "192.168.253.225"}}'
