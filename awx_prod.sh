@@ -27,6 +27,47 @@ dnf install -y sshpass
 
 echo "=== STARTING FULL 15-TASK DEPLOYMENT (v${AWX_OPERATOR_VERSION}) ==="
 
+echo "pre req commands"
+
+sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no root@awx-work-node-01 "
+# 1. Stop the services
+systemctl stop kubelet
+systemctl stop containerd
+
+# 2. Clean up the CNI artifacts that are likely causing the 'Pending' hang
+rm -rf /var/lib/cni/
+rm -rf /etc/cni/net.d/*
+rm -rf /run/flannel/
+
+# 3. Bring the interfaces down to force a reset
+ip link delete cni0
+ip link delete flannel.1
+
+# 4. Restart services
+systemctl start containerd
+systemctl start kubelet
+"
+
+sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no root@awx-work-node-02 "
+# 1. Stop the services
+systemctl stop kubelet
+systemctl stop containerd
+
+# 2. Clean up the CNI artifacts that are likely causing the 'Pending' hang
+rm -rf /var/lib/cni/
+rm -rf /etc/cni/net.d/*
+rm -rf /run/flannel/
+
+# 3. Bring the interfaces down to force a reset
+ip link delete cni0
+ip link delete flannel.1
+
+# 4. Restart services
+systemctl start containerd
+systemctl start kubelet
+"
+
+
 # 1. Cleanup Environment
 echo "==> Task 1/15: Cleaning up previous failed attempts..."
 kubectl delete awx --all -n $AWX_NAMESPACE --ignore-not-found || true
@@ -87,6 +128,11 @@ kubectl wait --namespace metallb-system \
 echo "==> Task 6/15: Deploying MetalLB..."
 kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml
 kubectl -n metallb-system wait --for=condition=Available deployment/controller --timeout=300s
+
+# --- NEW: Webhook Warmup ---
+echo "Waiting for MetalLB Webhook to warm up..."
+sleep 15
+kubectl wait --for=condition=Available deployment/controller -n metallb-system --timeout=60s
 
 # 7. MetalLB IP Pool
 echo "==> Task 7/15: Configuring MetalLB IP Address Pool..."
