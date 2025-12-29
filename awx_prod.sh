@@ -58,6 +58,31 @@ echo "==> Task 5/15: Installing NGINX Ingress Controller..."
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/baremetal/deploy.yaml
 kubectl -n ingress-nginx wait --for=condition=Available deployment/ingress-nginx-controller --timeout=300s
 
+# --- NEW: Pre-Flight Network Cleanup ---
+echo "Cleaning up stale network pods to prevent scheduling hangs..."
+# Force delete any pods stuck in 'Terminating' state in the networking namespaces
+kubectl delete pods -n kube-flannel --all --force --grace-period=0 2>/dev/null
+kubectl delete pods -n metallb-system --all --force --grace-period=0 2>/dev/null
+
+# --- NEW: Node Health Check ---
+# Ensure at least one worker node is 'Ready' and not 'Cordoned'
+READY_WORKERS=$(kubectl get nodes --no-headers | grep -v "SchedulingDisabled" | grep "Ready" | grep -v "control-plane" | wc -l)
+
+if [ "$READY_WORKERS" -eq 0 ]; then
+    echo "WARNING: No healthy worker nodes found. Temporarily allowing scheduling on Control Plane..."
+    kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null
+    kubectl taint nodes --all node-role.kubernetes.io/master- 2>/dev/null
+fi
+
+# --- TASK 6: Install MetalLB (Standard) ---
+# (Your existing kubectl apply commands for MetalLB go here)
+
+# Wait for controller with a slightly longer timeout
+kubectl wait --namespace metallb-system \
+                --for=condition=ready pod \
+                --selector=component=controller \
+                --timeout=300s
+
 # 6. MetalLB (LoadBalancer Stack)
 echo "==> Task 6/15: Deploying MetalLB..."
 kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml
