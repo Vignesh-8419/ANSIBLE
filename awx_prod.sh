@@ -118,7 +118,6 @@ spec:
   admin_password_secret: awx-admin-password
   postgres_storage_class: longhorn
   postgres_data_volume_init: true
-EOF
   postgres_resource_requirements:
     requests: { cpu: "500m", memory: "2Gi" }
     limits: { cpu: "2", memory: "4Gi" }
