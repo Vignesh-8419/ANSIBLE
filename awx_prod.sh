@@ -1,3 +1,4 @@
+
 #!/bin/bash
 set -euo pipefail
 
@@ -21,6 +22,9 @@ SSH_PASS="Root@123"
 # MetalLB Config
 METALLB_POOL_START="192.168.253.220"
 METALLB_POOL_END="192.168.253.230"
+
+echo "install req package"
+dnf install -y sshpass
 
 echo "=== STARTING FULL 15-TASK DEPLOYMENT (v${AWX_OPERATOR_VERSION}) ==="
 
