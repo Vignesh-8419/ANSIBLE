@@ -135,13 +135,19 @@ for i in {1..5}; do
   fi
 done
 
-# 14. Watch Migration
+# 14. Watch Migration (UPDATED FIX)
 echo "==> Task 14/15: Watching Database Migration..."
-until kubectl get job ${AWX_NAME}-migration -n ${AWX_NAMESPACE} >/dev/null 2>&1; do
-  echo "Waiting for migration job to be created..."
-  sleep 15
+# Wait for any pod that has the "migration" label to appear
+until kubectl get pods -n ${AWX_NAMESPACE} -l "app.kubernetes.io/component=migration" | grep -v "No resources found" >/dev/null 2>&1; do
+  echo "Waiting for migration pod to be created..."
+  sleep 10
 done
-kubectl logs -f job/${AWX_NAME}-migration -n ${AWX_NAMESPACE}
+
+# Get the actual name of the migration pod (whatever version it is)
+MIGRATION_POD=$(kubectl get pods -n ${AWX_NAMESPACE} -l "app.kubernetes.io/component=migration" -o jsonpath='{.items[0].metadata.name}')
+
+echo "Streaming logs from migration pod: $MIGRATION_POD"
+kubectl logs -f "$MIGRATION_POD" -n ${AWX_NAMESPACE}
 
 # 15. Final Health Check
 echo "==> Task 15/15: Final Service Check..."
