@@ -110,12 +110,11 @@ kind: AWX
 metadata:
   name: ${AWX_NAME}
 spec:
-  service_type: ClusterIP
+  service_type: NodePort      # <--- CHANGE THIS FROM ClusterIP TO NodePort
   ingress_type: ingress
   hostname: ${AWX_HOSTNAME}
   admin_password_secret: awx-admin-password
   postgres_storage_class: longhorn
-  # YOUR FIX: This tells the operator to fix permissions on the volume automatically
   postgres_data_volume_init: true
   postgres_resource_requirements:
     requests: { cpu: "500m", memory: "2Gi" }
@@ -153,3 +152,10 @@ echo "URL: http://${AWX_HOSTNAME}"
 echo "Admin Username: admin"
 echo "Admin Password: Root@123"
 echo "-----------------------------------------------------------------------"
+
+Run the edit command:
+
+Bash
+
+kubectl edit svc awx-prod-service -n awx
+Modify the file: Find the line that says type: ClusterIP and change it to type: NodePort. Save and exit (:wq).
