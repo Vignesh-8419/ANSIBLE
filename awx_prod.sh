@@ -158,3 +158,16 @@ echo "URL: http://${CONTROL_NODE_IP}:${NODE_PORT}"
 echo "Admin Username: admin"
 echo "Admin Password: Root@123"
 echo "-----------------------------------------------------------------------"
+
+# 16. Expose Longhorn UI
+echo "==> Task 16/16: Exposing Longhorn UI via MetalLB..."
+kubectl patch svc longhorn-frontend -n longhorn-system -p '{"spec": {"type": "LoadBalancer"}}'
+
+# Wait for IP assignment
+sleep 5
+LONGHORN_IP=$(kubectl get svc longhorn-frontend -n longhorn-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+echo "-----------------------------------------------------------------------"
+echo "Longhorn UI is ready!"
+echo "URL: http://${LONGHORN_IP}"
+echo "-----------------------------------------------------------------------"
