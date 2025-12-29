@@ -124,6 +124,8 @@ EOF
     limits: { cpu: "2", memory: "4Gi" }
 EOF
 
+#kubectl patch svc awx-prod-service -n awx -p '{"spec": {"type": "LoadBalancer", "loadBalancerIP": "192.168.253.225"}}'
+
 # 13. Stability Check for Postgres
 echo "==> Task 13/15: Waiting for Postgres and breaking Longhorn locks if needed..."
 until kubectl get pvc -n ${AWX_NAMESPACE} -l "app.kubernetes.io/component=database" | grep -i Bound; do sleep 5; done
