@@ -110,7 +110,7 @@ kind: AWX
 metadata:
   name: ${AWX_NAME}
 spec:
-  service_type: NodePort      # <--- CHANGE THIS FROM ClusterIP TO NodePort
+  service_type: NodePort      # <--- CHANGE THIS from ClusterIP
   ingress_type: ingress
   hostname: ${AWX_HOSTNAME}
   admin_password_secret: awx-admin-password
