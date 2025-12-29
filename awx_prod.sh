@@ -149,19 +149,12 @@ MIGRATION_POD=$(kubectl get pods -n ${AWX_NAMESPACE} -l "app.kubernetes.io/compo
 echo "Streaming logs from migration pod: $MIGRATION_POD"
 kubectl logs -f "$MIGRATION_POD" -n ${AWX_NAMESPACE}
 
-# 15. Final Health Check
+# 15. Final Health Check (UPDATED)
 echo "==> Task 15/15: Final Service Check..."
-kubectl get pods -n ${AWX_NAMESPACE}
+NODE_PORT=$(kubectl get svc ${AWX_NAME}-service -n ${AWX_NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}')
 echo "-----------------------------------------------------------------------"
 echo "AWX Installation Complete!"
-echo "URL: http://${AWX_HOSTNAME}"
+echo "URL: http://${CONTROL_NODE_IP}:${NODE_PORT}"
 echo "Admin Username: admin"
 echo "Admin Password: Root@123"
 echo "-----------------------------------------------------------------------"
-
-Run the edit command:
-
-Bash
-
-kubectl edit svc awx-prod-service -n awx
-Modify the file: Find the line that says type: ClusterIP and change it to type: NodePort. Save and exit (:wq).
