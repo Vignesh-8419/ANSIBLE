@@ -25,6 +25,32 @@ METALLB_POOL_END="192.168.253.230"
 echo "install req package"
 dnf install -y sshpass
 
+
+echo "=== TASK 0: FORCE REPAIR KERNEL NETWORKING ==="
+for IP in "$CONTROL_NODE_IP" "${WORKER_NODE_IPS[@]}"; do
+    echo "Fixing networking on $IP..."
+    sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no root@${IP} "
+        # 1. Enable IP Forwarding
+		systemctl stop firewalld
+		systemctl disable firewalld
+        sysctl -w net.ipv4.ip_forward=1
+        
+        # 2. Fix bridge-nf for Flannel
+        modprobe br_netfilter
+        echo 'net.bridge.bridge-nf-call-iptables = 1' >> /etc/sysctl.conf
+        echo 'net.ipv4.ip_forward = 1' >> /etc/sysctl.conf
+        
+        # 3. Disable Strict Reverse Path Filtering (Crucial for Flannel)
+        sysctl -w net.ipv4.conf.all.rp_filter=0
+        sysctl -w net.ipv4.conf.default.rp_filter=0
+        
+        # 4. Flush iptables just in case
+        iptables -F && iptables -t nat -F
+        
+        sysctl -p
+    "
+done
+
 echo "=== STARTING FULL 15-TASK DEPLOYMENT (v${AWX_OPERATOR_VERSION}) ==="
 
 echo "pre req commands"
