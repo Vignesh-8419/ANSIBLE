@@ -46,7 +46,7 @@ FLANNEL_IPMASQ=true
 EOF
         systemctl restart containerd
         systemctl start kubelet
-        yum install -y iscsi-initiator-utils nfs-utils &>/dev/null
+        yum install -y git iscsi-initiator-utils nfs-utils &>/dev/null
         systemctl enable --now iscsid
     "
 done
