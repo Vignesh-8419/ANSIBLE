@@ -5,7 +5,13 @@ systemctl disable firewalld
 sysctl -w net.bridge.bridge-nf-call-iptables=1
 sysctl -w net.ipv4.ip_forward=1
 sudo modprobe br_netfilter
-sudo sysctl --system"
+sudo sysctl --system
+# Manually verify if the Flannel CNI config file exists
+ls -l /etc/cni/net.d/10-flannel.conflist
+setenforce 0
+systemctl restart containerd
+systemctl restart kubelet"
+"
 
 sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@awx-work-node-01 "
 # Restart the container runtime and kubelet to clear the CNI error
