@@ -81,7 +81,7 @@ sudo rm -rf /etc/cni/net.d/* || true
 systemctl stop kubelet
 
 # Remove old CNI bridge
-ip link delete cni0 || true
+#ip link delete cni0 || true
 
 # Clean CNI state
 rm -rf /var/lib/cni/*
@@ -93,15 +93,15 @@ systemctl start kubelet
 
 kubectl delete pod -n kube-flannel -l app=flannel
 # Bring the interface down
-ip link set cni0 down
+#ip link set cni0 down
 
 # Delete the bridge and the flannel interface
-brctl delbr cni0 || ip link delete cni0
-ip link delete flannel.1
+#brctl delbr cni0 || ip link delete cni0
+#ip link delete flannel.1
 
 # Delete the local flannel subnet file to let it recreate
-rm -rf /var/lib/cni/flannel/*
-rm -rf /var/lib/cni/networks/cni0/*
+#rm -rf /var/lib/cni/flannel/*
+#rm -rf /var/lib/cni/networks/cni0/*
 
 
 sudo dnf install -y containernetworking-plugins
@@ -123,14 +123,42 @@ systemctl restart kubelet
 systemctl stop kubelet
 
 # Delete existing cni0, flannel.1 bridges
-ip link delete cni0
-ip link delete flannel.1
+#ip link delete cni0
+#ip link delete flannel.1
 
 # Remove old CNI state
-rm -rf /var/lib/cni/networks/*
-rm -rf /var/lib/cni/bin/*
-rm -rf /etc/cni/net.d/*
+#rm -rf /var/lib/cni/networks/*
+#rm -rf /var/lib/cni/bin/*
+#rm -rf /etc/cni/net.d/*
 systemctl start kubelet
+
+mkdir -p /opt/cni/bin
+cd /opt/cni/bin
+# Copy Flannel binary from control node (or re-download)
+curl -L -o flannel https://github.com/flannel-io/flannel/releases/download/v0.26.0/flannel-amd64
+chmod +x flannel
+curl -L -o cni-plugins-linux-amd64-v1.1.1.tgz https://github.com/containernetworking/plugins/releases/download/v1.1.1/cni-plugins-linux-amd64-v1.1.1.tgz
+tar -xzf cni-plugins-linux-amd64-v1.1.1.tgz -C /opt/cni/bin
+ls /opt/cni/bin
+# Should show: bridge, host-local, loopback, portmap, flannel, etc.
+mkdir -p /etc/cni/net.d
+cat <<EOF > /etc/cni/net.d/10-flannel.conflist
+{
+  "name": "cbr0",
+  "cniVersion": "0.3.1",
+  "plugins": [
+    {
+      "type": "flannel",
+      "delegate": {
+        "isDefaultGateway": true
+      }
+    }
+  ]
+}
+EOF
+systemctl restart kubelet
+systemctl status kubelet
+
 
 echo "[Step 11] Join Kubernetes cluster..."
 # ⚠️ Replace the line below with the actual join command from your control plane:
