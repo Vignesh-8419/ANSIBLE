@@ -76,6 +76,105 @@ Bash
 
 curl -vk https://awx-server-01.vgs.com/
 
+==================================================================================================
+
 kubectl patch svc longhorn-frontend -n longhorn-system -p '{"spec": {"type": "LoadBalancer"}}'
 
 kubectl get svc longhorn-frontend -n longhorn-system
+
+
+1. Enable strictARP in kube-proxy
+Run this command to automatically patch the configuration. It switches strictARP from false to true in the kube-proxy ConfigMap:
+
+Bash
+
+kubectl get configmap kube-proxy -n kube-system -o yaml | \
+sed -e "s/strictARP: false/strictARP: true/" | \
+kubectl apply -f - -n kube-system
+After patching, restart the kube-proxy pods to apply the change:
+
+Bash
+
+kubectl edit configmap -n kube-system kube-pr
+
+arp = true
+
+kubectl rollout restart daemonset kube-proxy -n kube-system
+2. Full Longhorn HTTPS Steps (Consolidated)
+Step A: Configure Ingress Service for IP Sharing
+
+Bash
+
+# Allow multiple IPs on the controller
+kubectl annotate svc ingress-nginx-controller -n ingress-nginx \
+  metallb.io/allow-shared-ip="awx-longhorn-shared" --overwrite
+
+# Bind both .220 and .225 to the controller
+kubectl patch svc ingress-nginx-controller -n ingress-nginx -p '{"spec":{"externalIPs":["192.168.253.220", "192.168.253.225"]}}'
+Step B: Issue the SSL Certificate
+
+Bash
+
+cat <<EOF | kubectl apply -n longhorn-system -f -
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: longhorn-server-cert
+spec:
+  secretName: longhorn-server-tls-secret
+  dnsNames:
+    - awx-longhorn-01.vgs.com
+  issuerRef:
+    name: awx-selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+EOF
+Step C: Create the Longhorn Ingress
+
+Bash
+
+cat <<EOF | kubectl apply -n longhorn-system -f -
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: longhorn-ingress-https
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10000m"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - awx-longhorn-01.vgs.com
+    secretName: longhorn-server-tls-secret
+  rules:
+  - host: awx-longhorn-01.vgs.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: longhorn-frontend
+            port:
+              number: 80
+EOF
+Step D: Final Network Refresh
+
+Bash
+
+# Ensure the backend service is internal only
+kubectl patch svc longhorn-frontend -n longhorn-system -p '{"spec": {"type": "ClusterIP"}}'
+
+# Clean local ARP and resolve the host
+ip neigh flush all
+echo "192.168.253.220 awx-longhorn-01.vgs.com" >> /etc/hosts
+Verification
+Wait about 60 seconds for the pods to restart and the IP to settle, then test:
+
+Bash
+
+curl -vk https://awx-longhorn-01.vgs.com
+
+
+
