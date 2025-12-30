@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ###############################################################################
-# AWX Production Setup - LATEST STABLE (2.19.1) WITH KERNEL/WEBHOOK FIX
+# AWX Production Setup - FINAL MASTER VERSION (RESILIENT NETWORKING)
 ###############################################################################
 
 AWX_NAMESPACE="awx"
@@ -22,81 +22,72 @@ SSH_PASS="Root@123"
 METALLB_POOL_START="192.168.253.220"
 METALLB_POOL_END="192.168.253.230"
 
-echo "=== TASK 0: FORCE REPAIR KERNEL NETWORKING ==="
+echo "=== TASK 0: CLUSTER-WIDE NETWORK RESET & KERNEL TUNING ==="
+dnf install -y sshpass git &>/dev/null
+
 for IP in "$CONTROL_NODE_IP" "${WORKER_NODE_IPS[@]}"; do
-    echo "Fixing networking on $IP..."
+    echo "Processing Node $IP..."
     sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no root@${IP} "
-        # 1. Enable IP Forwarding
-		systemctl stop firewalld
-		systemctl disable firewalld
-        sysctl -w net.ipv4.ip_forward=1
+        # 1. Stop services to unlock network interfaces
+        systemctl stop kubelet containerd || true
         
-        # 2. Fix bridge-nf for Flannel
-        modprobe br_netfilter
-        echo 'net.bridge.bridge-nf-call-iptables = 1' >> /etc/sysctl.conf
-        echo 'net.ipv4.ip_forward = 1' >> /etc/sysctl.conf
+        # 2. Deep clean CNI
+        ip link delete cni0 || true
+        ip link delete flannel.1 || true
+        rm -rf /var/lib/cni/*
+        rm -rf /etc/cni/net.d/*
         
-        # 3. Disable Strict Reverse Path Filtering (Crucial for Flannel)
-        sysctl -w net.ipv4.conf.all.rp_filter=0
-        sysctl -w net.ipv4.conf.default.rp_filter=0
-        
-        # 4. Flush iptables just in case
-        iptables -F && iptables -t nat -F
-        
-        sysctl -p
+        # 3. Kernel Tuning
+        modprobe br_netfilter overlay
+        cat <<EOF > /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
+net.ipv4.conf.all.rp_filter         = 0
+net.ipv4.conf.default.rp_filter     = 0
+EOF
+        sysctl --system &>/dev/null
+
+        # 4. Longhorn Dependencies
+        yum install -y iscsi-initiator-utils nfs-utils &>/dev/null
+        systemctl enable --now iscsid
+
+        # 5. Restart services
+        systemctl start containerd
+        systemctl start kubelet
     "
 done
 
+echo "Waiting for nodes to report Ready..."
+sleep 20
+
 # 1. Cleanup
-echo "==> Task 1: Cleaning up..."
-kubectl delete ns metallb-system --ignore-not-found --timeout=30s || true
-kubectl delete pods -n kube-flannel --all --force --grace-period=0 2>/dev/null || true
+echo "==> Task 1/16: Cleaning up..."
+kubectl delete awx --all -n $AWX_NAMESPACE --ignore-not-found || true
 
 # 2. Labeling Nodes
-echo "==> Task 2: Labeling nodes..."
+echo "==> Task 2/16: Labeling nodes..."
 for NODE in "${WORKERS[@]}"; do
     kubectl label nodes $NODE nodepool=workloads longhorn=storage --overwrite || true
 done
 
 # 4. Networking (Flannel)
-echo "==> Task 4: Deploying Flannel CNI..."
-kubectl delete ds kube-flannel-ds -n kube-flannel --ignore-not-found || true
-kubectl apply -f https://github.com/flannel-io/flannel/releases/download/v0.25.2/kube-flannel.yml
-sleep 10
+echo "==> Task 4/16: Deploying Flannel CNI..."
+kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
+# Force restart Flannel to pick up the clean state
+kubectl delete pods -n kube-flannel --all
 
-# 6. MetalLB (LoadBalancer Stack)
-echo "==> Task 6: Deploying MetalLB..."
+# 5. Ingress
+echo "==> Task 5/16: Installing NGINX Ingress..."
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/baremetal/deploy.yaml
+
+# 6. MetalLB
+echo "==> Task 6/16: Deploying MetalLB Stack..."
 kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml
+sleep 30
+kubectl delete validatingwebhookconfiguration metallb-webhook-configuration --ignore-not-found || true
 
-echo "Waiting for MetalLB Controller to stabilize..."
-# Use a loop to wait for the pod to stop crashing and go 1/1
-COUNT=0
-until kubectl get pods -n metallb-system -l component=controller | grep "1/1" || [ $COUNT -eq 30 ]; do
-    echo "Controller not ready yet... checking again in 5s ($COUNT/30)"
-    sleep 5
-    ((COUNT++))
-done
-
-# Webhook Warmup
-echo "Applying Webhook Warmup..."
-kubectl rollout status deployment/controller -n metallb-system --timeout=120s
-echo "Waiting for TLS and Endpoints..."
-sleep 20
-
-# ==> Task 7/15: Configuring MetalLB IP Address Pool
-echo "==> Task 7/15: Waiting for Controller and applying IP Pool..."
-
-# 1. Wait for the pod to be Ready (The 'Condition Met' check)
-kubectl wait --namespace metallb-system \
-                --for=condition=ready pod \
-                --selector=component=controller \
-                --timeout=120s
-
-# 2. Short pause to let the Webhook server inside the pod start up
-echo "Stabilizing Webhook..."
-sleep 15
-
-# 3. Apply the IP Pool and L2 Advertisement
+# 7. IP Pool
 cat <<EOF | kubectl apply -f -
 apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
@@ -112,41 +103,58 @@ kind: L2Advertisement
 metadata:
   name: awx-l2-adv
   namespace: metallb-system
+spec:
+  ipAddressPools:
+  - awx-static-pool
 EOF
 
-echo "Task 7 Complete: MetalLB is now ready to assign IPs."
-
-echo "==> MetalLB Configured Successfully!"
-# Rest of your AWX tasks follow...
-
-# 8. Cert-Manager
-echo "==> Task 8/15: Deploying Cert-Manager..."
+# 8. Cert-Manager (Force restart to prevent CrashLoop)
+echo "==> Task 8/16: Deploying Cert-Manager..."
 kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
-kubectl -n cert-manager wait --for=condition=Available deployment/cert-manager-webhook --timeout=300s
+sleep 10
+kubectl delete pods -n cert-manager --all
 
-# 9. Longhorn Storage
-echo "==> Task 9/15: Deploying Longhorn Storage..."
+# 9. Longhorn Storage & SC Wait Fix
+echo "==> Task 9/16: Deploying Longhorn..."
+if ! command -v helm &> /dev/null; then
+    curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+    chmod 700 get_helm.sh && ./get_helm.sh && rm get_helm.sh
+fi
+
 helm repo add longhorn https://charts.longhorn.io || true
-helm repo update
+helm repo update &>/dev/null
 helm upgrade --install longhorn longhorn/longhorn -n longhorn-system --create-namespace --set defaultSettings.defaultReplicaCount=1
+
+echo "Nudging Longhorn components..."
+# This solves the Init:0/1 hang
+sleep 20
+kubectl delete pods -n longhorn-system -l app=longhorn-manager || true
+kubectl delete pods -n longhorn-system -l app=longhorn-driver-deployer || true
+
+echo "Waiting for Longhorn StorageClass to be created..."
+until kubectl get storageclass longhorn >/dev/null 2>&1; do
+  echo "Still waiting for storageclass/longhorn..."
+  sleep 10
+done
+
 kubectl patch storageclass longhorn -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 
 # 10. AWX Operator
-echo "==> Task 10/15: Installing AWX Operator ${AWX_OPERATOR_VERSION}..."
+echo "==> Task 10/16: Installing AWX Operator..."
 kubectl create ns ${AWX_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
 [ -d "awx-operator" ] && rm -rf awx-operator
-git clone https://github.com/ansible/awx-operator.git
-cd awx-operator && git checkout ${AWX_OPERATOR_VERSION}
+git clone https://github.com/ansible/awx-operator.git &>/dev/null
+cd awx-operator && git checkout ${AWX_OPERATOR_VERSION} &>/dev/null
 kubectl apply -k config/default -n ${AWX_NAMESPACE}
+echo "Waiting for Operator to be ready..."
 kubectl -n ${AWX_NAMESPACE} rollout status deployment awx-operator-controller-manager --timeout=300s
 cd ..
 
-# 11. AWX Admin Secrets
-echo "==> Task 11/15: Creating Admin Secrets..."
+# 11. Secrets
 kubectl -n ${AWX_NAMESPACE} create secret generic awx-admin-password --from-literal=password='Root@123' --dry-run=client -o yaml | kubectl apply -f -
 
-# 12. AWX Instance Deployment
-echo "==> Task 12/15: Deploying AWX..."
+# 12. AWX Instance
+echo "==> Task 12/16: Deploying AWX Instance..."
 cat <<EOF | kubectl apply -n awx -f -
 apiVersion: awx.ansible.com/v1beta1
 kind: AWX
@@ -160,34 +168,24 @@ spec:
   admin_password_secret: awx-admin-password
   postgres_storage_class: longhorn
   postgres_data_volume_init: true
-  postgres_resource_requirements:
-    requests:
-      cpu: "500m"
-      memory: "2Gi"
-    limits:
-      cpu: "2"
-      memory: "4Gi"
 EOF
 
-# 13. Stability Check
-echo "==> Task 13/15: Waiting for Postgres..."
-until kubectl get pvc -n ${AWX_NAMESPACE} -l "app.kubernetes.io/component=database" | grep -i Bound; do sleep 5; done
-
-# 14. Watch Migration
-echo "==> Task 14/15: Watching Database Migration..."
-until kubectl get pods -n ${AWX_NAMESPACE} -l "app.kubernetes.io/component=migration" | grep -v "No resources found" >/dev/null 2>&1; do
-  sleep 10
+# 14. Migration Watch
+echo "==> Task 14/16: Database Migration starting..."
+echo "This step can take 5-10 minutes. Monitoring..."
+until kubectl get pods -n ${AWX_NAMESPACE} -l "app.kubernetes.io/component=migration" 2>/dev/null | grep -q "migration"; do 
+    echo "Waiting for migration pod to appear..."
+    sleep 15
 done
+
 MIGRATION_POD=$(kubectl get pods -n ${AWX_NAMESPACE} -l "app.kubernetes.io/component=migration" -o jsonpath='{.items[0].metadata.name}')
-kubectl logs -f "$MIGRATION_POD" -n ${AWX_NAMESPACE}
+kubectl logs -f "$MIGRATION_POD" -n ${AWX_NAMESPACE} --tail=100 || true
 
-# 15. Final Health Check
-echo "==> Task 15/15: Final Service Check..."
-echo "AWX Installation Complete!"
-echo "URL: http://192.168.253.225"
-echo "Admin Username: admin"
-echo "Admin Password: Root@123"
-
-# 16. Longhorn UI
-echo "==> Task 16/16: Exposing Longhorn UI..."
+# 16. Expose Longhorn
 kubectl patch svc longhorn-frontend -n longhorn-system -p '{"spec": {"type": "LoadBalancer"}}'
+
+echo "===================================================="
+echo "DEPLOYMENT FINISHED"
+echo "AWX: http://192.168.253.225"
+echo "Longhorn UI: $(kubectl get svc longhorn-frontend -n longhorn-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}')"
+echo "===================================================="
