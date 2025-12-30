@@ -60,6 +60,7 @@ done
 
 # 4. Networking (Flannel)
 echo "==> Task 4: Deploying Flannel CNI..."
+kubectl delete ds kube-flannel-ds -n kube-flannel --ignore-not-found || true
 kubectl apply -f https://github.com/flannel-io/flannel/releases/download/v0.25.2/kube-flannel.yml
 sleep 10
 
