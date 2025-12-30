@@ -23,3 +23,37 @@ setenforce 0
 "
 
 kubectl delete pod -n kube-flannel -l app=flannel
+
+
+
+sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@awx-work-node-01 <<'EOF'
+set -e
+
+echo "[INFO] Loading required kernel modules"
+modprobe br_netfilter
+modprobe overlay
+
+cat <<EOM >/etc/modules-load.d/k8s.conf
+br_netfilter
+overlay
+EOM
+
+echo "[INFO] Setting sysctl values for Kubernetes networking"
+cat <<EOM >/etc/sysctl.d/99-kubernetes-cri.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
+EOM
+
+sysctl --system
+
+echo "[INFO] Verifying settings"
+lsmod | egrep 'br_netfilter|overlay'
+sysctl net.bridge.bridge-nf-call-iptables
+sysctl net.ipv4.ip_forward
+
+echo "[INFO] Restarting kubelet"
+systemctl restart kubelet
+
+echo "[SUCCESS] Node awx-work-node-01 configured"
+EOF
