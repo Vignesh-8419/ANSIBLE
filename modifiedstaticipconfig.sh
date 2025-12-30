@@ -155,3 +155,4 @@ echo "✔ Default Gateway: $gateway"
 
 echo"After 10secs server will reboot"
 sleep 10
+reboot
