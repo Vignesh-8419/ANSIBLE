@@ -75,3 +75,7 @@ Wait 30 seconds for the Ingress to reload, then run:
 Bash
 
 curl -vk https://awx-server-01.vgs.com/
+
+kubectl patch svc longhorn-frontend -n longhorn-system -p '{"spec": {"type": "LoadBalancer"}}'
+
+kubectl get svc longhorn-frontend -n longhorn-system
