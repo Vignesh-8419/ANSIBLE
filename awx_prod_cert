@@ -1,16 +1,16 @@
+To fix the 404 error and the Certificate configuration while ensuring the .225 IP is correctly mapped to your Ingress, use the following sequence of commands.
 
-1. Install cert-manager
-First, the engine that handles the certificates:
+I have cleaned up your steps to ensure they execute in the correct order and include the missing ingressClassName fix.
 
+1. Install Cert-Manager
 Bash
 
 kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
-2. Create the ClusterIssuer (The "Passport Office")
-This tells the cluster how to sign the certificates.
-
+2. Create ClusterIssuer & Certificate
 Bash
 
-cat <<EOF > issuer.yaml
+# Create the Issuer
+cat <<EOF | kubectl apply -f -
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
@@ -19,12 +19,7 @@ spec:
   selfSigned: {}
 EOF
 
-kubectl apply -f issuer.yaml
-3. Create the Certificate Object
-This tells cert-manager to generate a specific certificate for your domain and store it in a Secret.
-
-Bash
-
+# Create the Certificate in the awx namespace
 cat <<EOF | kubectl apply -n awx -f -
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -32,19 +27,6 @@ metadata:
   name: awx-server-cert
 spec:
   secretName: awx-server-tls-secret
-  duration: 2160h 
-  renewBefore: 360h 
-  subject:
-    organizations:
-      - vgs
-  isCA: false
-  privateKey:
-    algorithm: RSA
-    encoding: PKCS1
-    size: 2048
-  usages:
-    - server auth
-    - client auth
   dnsNames:
     - awx-server-01.vgs.com
   issuerRef:
@@ -52,8 +34,21 @@ spec:
     kind: ClusterIssuer
     group: cert-manager.io
 EOF
-4. Update the AWX Deployment (The "Merge")
-This command updates the AWX Operator's configuration to enable the Ingress and point it to the secret we just created.
+3. Configure Networking (.225 IP Move)
+This moves the fixed IP from the AWX backend service to the NGINX Ingress Controller.
+
+Bash
+
+# 1. Make AWX service internal only
+kubectl patch svc awx-prod-service -n awx -p '{"spec":{"type":"ClusterIP","loadBalancerIP":null}}'
+
+# 2. Assign the .225 IP to the NGINX Ingress Controller
+kubectl patch svc ingress-nginx-controller -n ingress-nginx -p '{"spec":{"type":"LoadBalancer","loadBalancerIP":"192.168.253.225"}}'
+
+# 3. Force MetalLB to use the correct pool for Ingress
+kubectl annotate svc ingress-nginx-controller -n ingress-nginx metallb.io/address-pool=awx-fixed-ip --overwrite
+4. Update AWX Instance & Fix 404
+This ensures the AWX Operator knows to use the nginx class (fixing the 404) and the TLS secret.
 
 Bash
 
@@ -63,33 +58,20 @@ kind: AWX
 metadata:
   name: awx-prod
 spec:
-  service_type: NodePort
+  service_type: ClusterIP
   ingress_type: ingress
+  ingress_class_name: nginx
   hostname: awx-server-01.vgs.com
   ingress_tls_secret: awx-server-tls-secret
   admin_password_secret: awx-admin-password
   postgres_storage_class: longhorn
-  postgres_data_volume_init: true
-  postgres_resource_requirements:
-    requests:
-      cpu: "500m"
-      memory: "2Gi"
-    limits:
-      cpu: "2"
-      memory: "4Gi"
 EOF
-5. The "Glue" (Connecting Ingress to Nginx)
-Because the Operator sometimes leaves out the Ingress Class, we manually "pushed" it to Nginx:
+
+# Manual override fix for the Ingress Class (just in case)
+kubectl patch ingress awx-prod-ingress -n awx -p '{"spec":{"ingressClassName":"nginx"}}'
+5. Final Verification
+Wait 30 seconds for the Ingress to reload, then run:
 
 Bash
 
-kubectl patch ingress awx-prod-ingress -n awx -p '{"spec": {"ingressClassName": "nginx"}}'
-
-How to Verify the Whole Chain
-If you ever suspect a break in the "merging" of these components, run these three commands in order:
-
-Check the Secret: kubectl get secret awx-server-tls-secret -n awx (Does it exist?)
-
-Check the Certificate: kubectl get certificate -n awx (Is READY True?)
-
-Check the Ingress: kubectl get ingress -n awx (Does it show the hostname and an IP address?)
+curl -vk https://awx-server-01.vgs.com/
