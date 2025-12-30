@@ -1,3 +1,88 @@
+- name: 🛠 Static Network Configuration
+  hosts: all
+  become: true
+  gather_facts: false   # Facts not needed because IP may not exist yet
+
+  vars:
+    GATEWAY: "192.168.253.2"
+    DNS_SERVER: "192.168.253.151"
+    SEARCH_DOMAIN: "vgs.com"
+
+  tasks:
+    # 1. Detect primary physical interface (non-loopback)
+    - name: List all interfaces
+      command: ls /sys/class/net
+      register: interfaces
+      changed_when: false
+
+    - name: Set primary interface
+      set_fact:
+        primary_iface: "{{ interfaces.stdout_lines | reject('equalto','lo') | list | first }}"
+
+    - name: Debug primary interface
+      debug:
+        msg: "Primary interface detected: {{ primary_iface }}"
+
+    # 2. Check for existing default route
+    - name: Check for existing default route
+      command: ip route show default
+      register: existing_gateway
+      changed_when: false
+      ignore_errors: true
+
+    # 3. Add temporary default gateway if missing
+    - name: Add temporary default gateway if missing
+      command: ip route add default via {{ GATEWAY }} dev {{ primary_iface }}
+      when: existing_gateway.stdout == ""
+      register: temp_gw_result
+      changed_when: temp_gw_result.rc == 0
+      ignore_errors: true
+
+    # 4. Handle resolv.conf safely
+    - name: Check if /etc/resolv.conf is immutable
+      command: lsattr /etc/resolv.conf
+      register: resolv_attrs
+      changed_when: false
+      ignore_errors: true
+
+    - name: Remove immutable flag if present
+      command: chattr -i /etc/resolv.conf
+      when: resolv_attrs.stdout is search("i")
+      ignore_errors: true
+
+    - name: Configure resolv.conf with custom DNS
+      ansible.builtin.copy:
+        dest: /etc/resolv.conf
+        content: |
+          search {{ SEARCH_DOMAIN }}
+          nameserver {{ DNS_SERVER }}
+        owner: root
+        group: root
+        mode: '0644'
+
+    # Alternative: configure via systemd-resolved if available
+    - name: Configure DNS via systemd-resolved (if present)
+      command: resolvectl dns {{ primary_iface }} {{ DNS_SERVER }}
+      when: "'resolvectl' in ansible_facts.get('cmdline', '')"
+      ignore_errors: true
+
+    # 5. Download staticipconfig.sh from GitHub
+    - name: Download staticipconfig.sh
+      get_url:
+        url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/staticipconfig.sh"
+        dest: "/tmp/staticipconfig.sh"
+        mode: '0755'
+
+    # 6. Execute staticipconfig.sh and save output
+    - name: Execute staticipconfig.sh
+      command: /tmp/staticipconfig.sh
+      register: static_ip_result
+      ignore_errors: false
+
+    - name: Save script output to file
+      copy:
+        content: "{{ static_ip_result.stdout }}"
+        dest: /tmp/staticipconfig.txt
 #!/bin/bash
 
 ### =========================
