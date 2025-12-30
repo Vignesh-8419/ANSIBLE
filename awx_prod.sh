@@ -16,20 +16,15 @@ echo "===================================================="
 
 # 0. System & Helm Prep
 echo "[0/7] Preparing system packages and Helm..."
-# Ensure git and sshpass are present
 dnf install -y git sshpass
-
-# Install Helm if missing
 if ! command -v helm &> /dev/null; then
     curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
     chmod 700 get_helm.sh && ./get_helm.sh
     rm -f get_helm.sh
-else
-    echo "Helm is already installed."
 fi
 
 # 1. Prepare Nodes
-echo "[1/7] Preparing Worker Nodes (This takes a moment)..."
+echo "[1/7] Preparing Worker Nodes..."
 prepare_node() {
   local IP=$1
   sshpass -p "${ADMIN_PASS}" ssh -o StrictHostKeyChecking=no root@${IP} "
@@ -46,7 +41,7 @@ prepare_node $WORKER2
 kubectl label nodes awx-work-node-01.vgs.com nodepool=workloads longhorn=storage --overwrite
 kubectl label nodes awx-work-node-02.vgs.com nodepool=workloads longhorn=storage --overwrite
 
-# 2. Networking (MetalLB & Ingress)
+# 2. Networking
 echo "[2/7] Installing Networking (Ingress & MetalLB)..."
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/baremetal/deploy.yaml
 kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml
@@ -88,10 +83,18 @@ EOF
 echo "[3/7] Installing Longhorn Storage..."
 helm repo add longhorn https://charts.longhorn.io && helm repo update
 helm upgrade --install longhorn longhorn/longhorn -n longhorn-system --create-namespace --set defaultSettings.defaultReplicaCount=1
-kubectl patch storageclass longhorn -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 
-echo "--> Longhorn components are starting. Waiting 10 minutes..."
+echo "--> Longhorn installation initiated. Waiting 10 minutes for CSI and Engines..."
 sleep 600
+
+echo "Checking for StorageClass 'longhorn'..."
+until kubectl get storageclass longhorn >/dev/null 2>&1; do
+  echo "Still waiting for StorageClass... Longhorn is finishing initialization..."
+  sleep 20
+done
+
+echo "StorageClass found! Setting as default..."
+kubectl patch storageclass longhorn -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 
 # 4. AWX Operator
 echo "[4/7] Deploying AWX Operator 2.19.1..."
@@ -102,7 +105,7 @@ git clone https://github.com/ansible/awx-operator.git
 cd awx-operator && git checkout 2.19.1
 kubectl apply -k config/default -n awx
 
-echo "--> Operator is deploying. Waiting 7 minutes..."
+echo "--> Operator is deploying. Waiting 7 minutes for Operator Pods..."
 sleep 420
 
 # 5. AWX Instance
@@ -127,11 +130,12 @@ spec:
 EOF
 
 # 6. Final Wait for Migration
-echo "[6/7] AWX Instance Created. Waiting 15 minutes for DB migrations..."
+echo "[6/7] AWX Instance Created. Waiting 15 minutes for DB migrations and Pod readiness..."
 sleep 900
 
 # 7. Cleanup & Verify
 echo "[7/7] Finalizing..."
+# Bounce operator to ensure it picks up the service/IP configuration
 kubectl delete pod -n awx -l control-plane=controller-manager
 
 echo "===================================================="
