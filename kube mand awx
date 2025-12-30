@@ -10,8 +10,9 @@ sudo sysctl --system
 ls -l /etc/cni/net.d/10-flannel.conflist
 setenforce 0
 systemctl restart containerd
-systemctl restart kubelet"
-"
+systemctl restart kubelet
+systemctl restart iscsi"
+
 
 sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@awx-work-node-01 "
 # Restart the container runtime and kubelet to clear the CNI error
