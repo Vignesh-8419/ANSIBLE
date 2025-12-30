@@ -1,0 +1,25 @@
+sshpass -p "Root@123" ssh -o  StrictHostKeyChecking=no root@awx-work-node-01 "
+# Disable the firewall entirely on the workers
+systemctl stop firewalld
+systemctl disable firewalld
+sysctl -w net.bridge.bridge-nf-call-iptables=1
+sysctl -w net.ipv4.ip_forward=1
+sudo modprobe br_netfilter
+sudo sysctl --system"
+
+sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@awx-work-node-01 "
+# Restart the container runtime and kubelet to clear the CNI error
+systemctl restart containerd
+systemctl restart kubelet"
+
+# Manually verify if the Flannel CNI config file exists
+ls -l /etc/cni/net.d/10-flannel.conflist
+setenforce 0
+"
+
+sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@awx-work-node-02 "
+systemctl restart systemctl restart kubelet
+setenforce 0
+"
+
+kubectl delete pod -n kube-flannel -l app=flannel
