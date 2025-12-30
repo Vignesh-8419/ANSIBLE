@@ -145,6 +145,8 @@ spec:
   loadbalancer_ip: 192.168.253.225
   ingress_type: ingress
   hostname: awx-server-01.vgs.com
+ # ingress_type: none
+ #service_type: LoadBalancer
 
   # Credentials
   admin_password_secret: awx-admin-password
@@ -171,7 +173,7 @@ kubectl get pods -n awx -w
 kubectl logs -f -n awx -l "app.kubernetes.io/component=migration"
 
 
-#=========XXXX NOT REQ IF MENTIONED ABOVE=========
+=========XXXX=========
 
 cat <<EOF | kubectl apply -f -
 apiVersion: metallb.io/v1beta1
@@ -184,4 +186,4 @@ spec:
   - 192.168.253.220-192.168.253.224
   - 192.168.253.226-192.168.253.230
 EOF
-#=========XXXX=========
+=========XXXX=========
