@@ -91,3 +91,4 @@ ls /opt/cni/bin || true
 
 echo "[Step 13] Ready to join cluster..."
 echo "👉 Run the kubeadm join command from your control plane here."
+
