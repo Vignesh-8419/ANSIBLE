@@ -8,7 +8,7 @@ echo "installed GIT"
 
 echo "downloading git"
 
-git clone --depth 1 https://github.com/pi-hole/pi-hole.git Pi-hole
+git clone --depth 1 https://github.com/Vignesh-8419/pihole Pi-hole
 
 cd Pi-hole/automated\ install/
 
