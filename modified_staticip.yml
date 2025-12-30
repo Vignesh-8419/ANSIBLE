@@ -1,85 +1,150 @@
-- name: 🛠 Static Network Configuration
-  hosts: all
-  become: true
-  gather_facts: false   # Facts not needed because IP may not exist yet
+#!/bin/bash
 
-  vars:
-    GATEWAY: "192.168.253.2"
-    DNS_SERVER: "192.168.253.151"
-    SEARCH_DOMAIN: "vgs.com"
+### =========================
+### Detect primary interface first
+### =========================
+iface=$(ip -o -4 addr show up primary scope global | awk '{print $2}' | head -n1)
 
-  tasks:
-    # 1. Detect primary physical interface (non-loopback)
-    - name: List all interfaces
-      command: ls /sys/class/net
-      register: interfaces
-      changed_when: false
+if [ -z "$iface" ]; then
+    echo "ERROR: No active interface found. Exiting."
+    exit 1
+fi
 
-    - name: Set primary interface
-      set_fact:
-        primary_iface: "{{ interfaces.stdout_lines | reject('equalto','lo') | list | first }}"
+echo "Detected interface: $iface"
 
-    - name: Debug primary interface
-      debug:
-        msg: "Primary interface detected: {{ primary_iface }}"
+### =========================
+### Ensure default route via 192.168.253.2
+### =========================
+default_gw_required="192.168.253.2"
+current_default=$(ip route | awk '/default/ {print $3}')
 
-    # 2. Check for existing default route
-    - name: Check for existing default route
-      command: ip route show default
-      register: existing_gateway
-      changed_when: false
-      ignore_errors: true
+if [ "$current_default" != "$default_gw_required" ]; then
+    echo "Default route via $default_gw_required not found → adding"
+    ip route add default via $default_gw_required dev "$iface"
+    echo "Default route added via $default_gw_required dev $iface"
+else
+    echo "Default route via $default_gw_required already exists"
+fi
 
-    # 3. Add temporary default gateway if missing
-    - name: Add temporary default gateway if missing
-      command: ip route add default via {{ GATEWAY }} dev {{ primary_iface }}
-      when: existing_gateway.stdout == ""
-      register: temp_gw_result
-      changed_when: temp_gw_result.rc == 0
-      ignore_errors: true
+### =========================
+### Detect ALTNAME (if present) for NetworkManager profile
+### =========================
+altname=$(ip -o link show "$iface" | grep -o 'altname [^ ]*' | awk '{print $2}')
+if [ -n "$altname" ]; then
+    profilename="$altname"
+else
+    profilename="$iface"
+fi
+echo "NetworkManager profile name will be: $profilename"
 
-    # 4. Handle resolv.conf safely
-    - name: Check if /etc/resolv.conf is immutable
-      command: lsattr /etc/resolv.conf
-      register: resolv_attrs
-      changed_when: false
-      ignore_errors: true
+### =========================
+### Detect IP, CIDR, Gateway
+### =========================
+ip_full=$(ip -4 addr show "$iface" | awk '/inet /{print $2}')
+ip_addr=${ip_full%/*}
+cidr=${ip_full#*/}
 
-    - name: Remove immutable flag if present
-      command: chattr -i /etc/resolv.conf
-      when: resolv_attrs.stdout is search("i")
-      ignore_errors: true
+gateway=$default_gw_required
 
-    - name: Configure resolv.conf with custom DNS
-      ansible.builtin.copy:
-        dest: /etc/resolv.conf
-        content: |
-          search {{ SEARCH_DOMAIN }}
-          nameserver {{ DNS_SERVER }}
-        owner: root
-        group: root
-        mode: '0644'
+### =========================
+### CIDR → Netmask conversion
+### =========================
+cidr2mask() {
+    local i mask=""
+    local full=$(($1/8))
+    local remain=$(($1%8))
 
-    # Alternative: configure via systemd-resolved if available
-    - name: Configure DNS via systemd-resolved (if present)
-      command: resolvectl dns {{ primary_iface }} {{ DNS_SERVER }}
-      when: "'resolvectl' in ansible_facts.get('cmdline', '')"
-      ignore_errors: true
+    for i in {0..3}; do
+        if [ $i -lt $full ]; then
+            mask+="255"
+        elif [ $i -eq $full ]; then
+            mask+="$((256 - 2**(8-remain)))"
+        else
+            mask+="0"
+        fi
+        [[ $i -lt 3 ]] && mask+="."
+    done
+    echo $mask
+}
 
-    # 5. Download staticipconfig.sh from GitHub
-    - name: Download staticipconfig.sh
-      get_url:
-        url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/staticipconfig.sh"
-        dest: "/tmp/staticipconfig.sh"
-        mode: '0755'
+netmask=$(cidr2mask "$cidr")
 
-    # 6. Execute staticipconfig.sh and save output
-    - name: Execute staticipconfig.sh
-      command: /tmp/staticipconfig.sh
-      register: static_ip_result
-      ignore_errors: false
+### =========================
+### Remove old ifcfg file to prevent conflicts
+### =========================
+cfg="/etc/sysconfig/network-scripts/ifcfg-${iface}"
+if [ -f "$cfg" ]; then
+    echo "Removing old ifcfg file: $cfg"
+    rm -f "$cfg"
+fi
 
-    - name: Save script output to file
-      copy:
-        content: "{{ static_ip_result.stdout }}"
-        dest: /tmp/staticipconfig.txt
+### =========================
+### Update resolv.conf
+### =========================
+chattr -i /etc/resolv.conf 2>/dev/null
+cat > /etc/resolv.conf <<EOF
+search vgs.com
+nameserver 192.168.253.151
+EOF
+echo "Updated /etc/resolv.conf"
+
+### =========================
+### Set hostname from /etc/hosts or hostnamectl
+### =========================
+hostname_from_hosts=$(awk -v ip="$ip_addr" '$1==ip {print $2}' /etc/hosts)
+if [ -n "$hostname_from_hosts" ]; then
+    echo "Setting hostname to: $hostname_from_hosts"
+    hostnamectl set-hostname "$hostname_from_hosts"
+else
+    echo "No hostname found in /etc/hosts for $ip_addr. Using hostname -f"
+    fqdn=$(hostname -f)
+    if ! grep -q "$fqdn" /etc/hosts; then
+        echo "Adding entry to /etc/hosts: $ip_addr $fqdn"
+        echo "$ip_addr $fqdn" >> /etc/hosts
+    fi
+    hostnamectl set-hostname "$fqdn"
+fi
+
+### =========================
+### Check if NM connection exists
+### =========================
+existing_con=$(nmcli -t -f NAME,DEVICE con show | grep ":${iface}" | cut -d: -f1)
+
+if [ -z "$existing_con" ]; then
+    echo "No NetworkManager connection found → Creating new profile"
+    nmcli con add type ethernet ifname "$iface" con-name "$profilename" \
+        ipv4.method manual \
+        ipv4.addresses "$ip_addr/$cidr" \
+        ipv4.gateway "$gateway" \
+        ipv4.dns "192.168.253.151" \
+        ipv4.dns-search "vgs.com" \
+        connection.autoconnect yes
+else
+    echo "NetworkManager connection exists: $existing_con"
+    echo "Renaming → $profilename"
+    nmcli con modify "$existing_con" connection.id "$profilename"
+
+    ### Update existing connection with proper settings
+    nmcli con modify "$profilename" \
+        ipv4.method manual \
+        ipv4.addresses "$ip_addr/$cidr" \
+        ipv4.gateway "$gateway" \
+        ipv4.dns "192.168.253.151" \
+        ipv4.dns-search "vgs.com" \
+        connection.autoconnect yes
+fi
+
+### =========================
+### Apply the connection
+### =========================
+nmcli con up "$profilename" || nmcli con reload
+
+### =========================
+### Restart NetworkManager to ensure changes take effect
+### =========================
+systemctl restart NetworkManager
+
+echo "✔ Configuration applied successfully."
+echo "✔ Network profile: $profilename"
+echo "✔ Hostname: $(hostname -f)"
+echo "✔ IP: $ip_addr"
