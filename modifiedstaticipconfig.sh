@@ -1,16 +1,16 @@
 #!/bin/bash
 
 ### =========================
-### Detect primary interface (UP, non-loopback)
+### Detect first ens* interface (UP or down)
 ### =========================
-iface=$(ip -o -4 addr show up scope global | awk '!/lo/ {print $2}' | head -n1)
+iface=$(ip -o link show | awk -F: '/ ens/ {print $2; exit}' | tr -d ' ')
 
 if [ -z "$iface" ]; then
-    echo "ERROR: No active interface found. Exiting."
+    echo "ERROR: No ens* interface found. Exiting."
     exit 1
 fi
 
-echo "Detected primary interface: $iface"
+echo "Detected interface: $iface"
 
 ### =========================
 ### Ensure default route via 192.168.253.2
@@ -38,9 +38,14 @@ fi
 echo "NetworkManager profile name will be: $profilename"
 
 ### =========================
-### Detect IP, CIDR, Gateway
+### Detect IP, CIDR
 ### =========================
 ip_full=$(ip -4 addr show "$iface" | awk '/inet /{print $2}')
+if [ -z "$ip_full" ]; then
+    echo "ERROR: No IPv4 address found on $iface. Exiting."
+    exit 1
+fi
+
 ip_addr=${ip_full%/*}
 cidr=${ip_full#*/}
 
@@ -89,7 +94,7 @@ EOF
 echo "Updated /etc/resolv.conf"
 
 ### =========================
-### Set hostname from /etc/hosts or hostnamectl
+### Set hostname and ensure /etc/hosts entry
 ### =========================
 fqdn=$(hostname -f)
 
