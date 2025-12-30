@@ -152,3 +152,6 @@ echo "✔ Network profile: $profilename"
 echo "✔ Hostname: $(hostname -f)"
 echo "✔ IP: $ip_addr"
 echo "✔ Default Gateway: $gateway"
+
+echo"After 10secs server will reboot"
+sleep 10
