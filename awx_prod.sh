@@ -11,6 +11,16 @@ echo "===================================================="
 echo "Starting AWX Infrastructure Deployment"
 echo "===================================================="
 
+# 0. Install Helm (New Fix)
+if ! command -v helm &> /dev/null; then
+    echo "[0/7] Helm not found. Installing Helm..."
+    curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+    chmod 700 get_helm.sh && ./get_helm.sh
+    rm -f get_helm.sh
+else
+    echo "[0/7] Helm is already installed."
+fi
+
 # 1. Prepare Nodes
 echo "[1/7] Preparing Worker Nodes..."
 prepare_node() {
@@ -73,17 +83,20 @@ helm repo add longhorn https://charts.longhorn.io && helm repo update
 helm upgrade --install longhorn longhorn/longhorn -n longhorn-system --create-namespace --set defaultSettings.defaultReplicaCount=1
 kubectl patch storageclass longhorn -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 
-echo "--> Longhorn components are starting. Waiting 10 minutes for full readiness..."
+echo "--> Longhorn components are starting. This takes about 10 minutes. Waiting..."
 sleep 600
 
 # 4. AWX Operator
 echo "[4/7] Deploying AWX Operator 2.19.1..."
 kubectl create ns awx || true
-git clone https://github.com/ansible/awx-operator.git || true
+# Navigate to home or a temp dir to clone
+cd ~
+rm -rf awx-operator
+git clone https://github.com/ansible/awx-operator.git
 cd awx-operator && git checkout 2.19.1
 kubectl apply -k config/default -n awx
 
-echo "--> Operator is deploying. Waiting 7 minutes for Operator Pods to be Ready..."
+echo "--> Operator is deploying. This takes about 7 minutes. Waiting..."
 sleep 420
 
 # 5. AWX Instance
@@ -108,12 +121,12 @@ spec:
 EOF
 
 # 6. Final Wait for Migration
-echo "[6/7] AWX Instance Created. Waiting 15 minutes for Database Migration & Pod Start..."
+echo "[6/7] AWX Instance Created. This takes 15+ minutes for migrations and pods. Waiting..."
 sleep 900
 
 # 7. Cleanup & Verify
 echo "[7/7] Finalizing..."
-kubectl delete pod -n awx -l control-plane=controller-manager # Final bounce to ensure IP binds
+kubectl delete pod -n awx -l control-plane=controller-manager
 
 echo "===================================================="
 echo "DEPLOYMENT COMPLETE"
