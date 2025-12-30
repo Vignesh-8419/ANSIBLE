@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ###############################################################################
-# AWX Production Setup - FINAL MASTER VERSION (RECOVERY ENHANCED)
+# AWX Production Setup - FINAL MASTER VERSION (FIXED & COMPLETE)
 ###############################################################################
 
 AWX_NAMESPACE="awx"
@@ -34,14 +34,12 @@ for IP in "$CONTROL_NODE_IP" "${WORKER_NODE_IPS[@]}"; do
         rm -rf /var/lib/cni/*
         rm -rf /etc/cni/net.d/*
         
-        # 2. Kernel Parameters (The Networking Secret Sauce)
+        # 2. Kernel Parameters (Networking Fixes)
         modprobe br_netfilter overlay
         sysctl -w net.ipv4.ip_forward=1
         sysctl -w net.bridge.bridge-nf-call-iptables=1
         sysctl -w net.ipv4.conf.all.rp_filter=0
         sysctl -w net.ipv4.conf.default.rp_filter=0
-        echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/k8s.conf
-        echo 'net.bridge.bridge-nf-call-iptables=1' >> /etc/sysctl.d/k8s.conf
         
         # 3. Flannel Runtime Environment Fix
         mkdir -p /run/flannel/
@@ -74,9 +72,8 @@ for NODE in "${WORKERS[@]}"; do
 done
 
 # 4. Networking (Flannel)
-echo "==> Task 4/16: Deploying Flannel CNI (Binding to ens192)..."
+echo "==> Task 4/16: Deploying Flannel CNI..."
 kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
-# Patch Flannel to use the correct interface
 kubectl -n kube-flannel patch ds kube-flannel-ds --type='json' -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--iface=ens192"}]'
 
 # 5. Ingress Controller
@@ -87,7 +84,7 @@ kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main
 echo "==> Task 6/16: Deploying MetalLB Stack..."
 kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml
 echo "Waiting for MetalLB controllers..."
-kubectl -n metallb-system wait --for=condition=ready pod -l app=metallb --timeout=90s
+sleep 20
 kubectl delete validatingwebhookconfiguration metallb-webhook-configuration --ignore-not-found || true
 
 # 7. MetalLB IP Pool
@@ -112,16 +109,24 @@ spec:
   - awx-static-pool
 EOF
 
-# REFRESH CORE SERVICES (The "Fix" for 0/1 pods)
-echo "==> Refreshing CoreDNS to pick up new network..."
+# REFRESH CORE SERVICES
+echo "==> Refreshing CoreDNS..."
 kubectl rollout restart deployment coredns -n kube-system
 
 # 8. Cert-Manager
 echo "==> Task 8/16: Deploying Cert-Manager..."
 kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
 
-# 9. Longhorn Storage
-echo "==> Task 9/16: Deploying Longhorn..."
+# 9. Longhorn Storage & Helm Fix
+echo "==> Task 9/16: Installing Helm & Deploying Longhorn..."
+if ! command -v helm &> /dev/null; then
+    echo "Helm not found. Installing now..."
+    curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+    chmod 700 get_helm.sh
+    ./get_helm.sh
+    rm get_helm.sh
+fi
+
 helm repo add longhorn https://charts.longhorn.io || true
 helm repo update
 helm upgrade --install longhorn longhorn/longhorn -n longhorn-system --create-namespace --set defaultSettings.defaultReplicaCount=1
@@ -158,7 +163,7 @@ spec:
 EOF
 
 # 14. Watch Migration
-echo "==> Task 14/16: Database Migration starting (this takes ~10 mins)..."
+echo "==> Task 14/16: Database Migration starting..."
 until kubectl get pods -n ${AWX_NAMESPACE} -l "app.kubernetes.io/component=migration" | grep -v "No resources found" >/dev/null 2>&1; do 
     echo "Waiting for migration pod to spawn..."
     sleep 10
@@ -170,8 +175,15 @@ kubectl logs -f "$MIGRATION_POD" -n ${AWX_NAMESPACE} --tail=100 || true
 echo "==> Task 16/16: Exposing Longhorn UI..."
 kubectl patch svc longhorn-frontend -n longhorn-system -p '{"spec": {"type": "LoadBalancer"}}'
 
+# Final URL Retrieval
+echo "Waiting for LoadBalancer IPs to bind..."
+sleep 10
+AWX_IP="192.168.253.225"
+LH_IP=$(kubectl get svc longhorn-frontend -n longhorn-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || echo "Pending")
+
 echo "===================================================="
 echo "DEPLOYMENT COMPLETE"
-echo "AWX URL: http://192.168.253.225"
-echo "Longhorn UI: http://$(kubectl get svc longhorn-frontend -n longhorn-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}')"
+echo "AWX URL: http://${AWX_IP}"
+echo "Longhorn UI: http://${LH_IP}"
+echo "Credentials: admin / Root@123"
 echo "===================================================="
