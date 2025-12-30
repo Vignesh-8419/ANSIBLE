@@ -1,95 +1,43 @@
 #!/bin/bash
-# ==============================================================================
-# AWX PRODUCTION DEPLOYMENT - FULL 16-STEP MASTER SCRIPT
-# ==============================================================================
-# Target: RHEL/CentOS/Rocky Linux 8/9
-# Includes: Flannel, MetalLB, Cert-Manager, Longhorn, NGINX Ingress, AWX Operator
-# ==============================================================================
 
-set -e
-
-# --- 1. CONFIGURATION VARIABLES ---
-AWX_NAMESPACE="awx"
-AWX_NAME="awx-prod"
-AWX_OPERATOR_VERSION="2.19.1"
+# --- Configuration Variables ---
+ADMIN_PASS="Root@123"
+AWX_IP="192.168.253.225"
 AWX_HOSTNAME="awx-server-01.vgs.com"
-CONTROL_NODE="awx-control-node-01.vgs.com"
-WORKERS=("awx-work-node-01.vgs.com" "awx-work-node-02.vgs.com")
-WORKER_IPS=("192.168.253.136" "192.168.253.137")
-SSH_PASS="Root@123"
-METALLB_START="192.168.253.220"
-METALLB_END="192.168.253.230"
-AWX_LB_IP="192.168.253.225"
+WORKER1="192.168.253.136"
+WORKER2="192.168.253.137"
 
-echo "Starting AWX Infrastructure Deployment..."
+echo "===================================================="
+echo "Starting AWX Infrastructure Deployment"
+echo "===================================================="
 
-# --- 2. TASK 1: SYSTEM DEPENDENCIES ---
-echo "==> Task 1/16: Installing local control tools..."
-dnf install -y sshpass git openssl curl &>/dev/null
-echo "Done."
+# 1. Prepare Nodes
+echo "[1/7] Preparing Worker Nodes..."
+prepare_node() {
+  local IP=$1
+  sshpass -p "${ADMIN_PASS}" ssh -o StrictHostKeyChecking=no root@${IP} "
+    modprobe br_netfilter overlay
+    echo -e 'net.bridge.bridge-nf-call-iptables = 1\nnet.bridge.bridge-nf-call-ip6tables = 1\nnet.ipv4.ip_forward = 1\nnet.ipv4.conf.all.rp_filter = 0\nnet.ipv4.conf.default.rp_filter = 0' > /etc/sysctl.d/k8s.conf
+    sysctl --system
+    yum install -y iscsi-initiator-utils nfs-utils
+    systemctl enable --now iscsid
+  "
+}
+prepare_node $WORKER1
+prepare_node $WORKER2
 
-# --- 3. TASK 2: HELM INSTALLATION ---
-echo "==> Task 2/16: Checking/Installing Helm..."
-if ! command -v helm &> /dev/null; then
-    curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-    chmod 700 get_helm.sh
-    ./get_helm.sh
-    rm get_helm.sh
-fi
-helm version --short
-echo "Done."
+kubectl label nodes awx-work-node-01.vgs.com nodepool=workloads longhorn=storage --overwrite
+kubectl label nodes awx-work-node-02.vgs.com nodepool=workloads longhorn=storage --overwrite
 
-# --- 4. TASK 3: NODE PREPARATION (REMOTE) ---
-echo "==> Task 3/16: Preparing Remote Worker Nodes (ISCSI/Kernel)..."
-for IP in "${WORKER_IPS[@]}"; do
-    echo "Configuring $IP..."
-    sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no root@${IP} "
-        # Install storage requirements for Longhorn
-        yum install -y iscsi-initiator-utils nfs-utils &>/dev/null
-        systemctl enable --now iscsid
-        # Enable kernel modules
-        modprobe br_netfilter overlay || true
-        # Enable IP Forwarding
-        echo '1' > /proc/sys/net/ipv4/ip_forward
-        # Refresh Kubelet
-        systemctl restart containerd kubelet
-    "
-done
-
-# --- 5. TASK 4: NODE LABELING ---
-echo "==> Task 4/16: Labeling Workers for Workloads and Storage..."
-for NODE in "${WORKERS[@]}"; do
-    kubectl label nodes $NODE nodepool=workloads --overwrite || true
-    kubectl label nodes $NODE longhorn=storage --overwrite || true
-done
-
-# --- 6. TASK 5: NETWORK CNI (FLANNEL) ---
-echo "==> Task 5/16: Deploying Flannel CNI..."
-kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
-echo "Waiting for Flannel pods..."
-kubectl rollout status ds kube-flannel-ds -n kube-flannel --timeout=120s
-
-# --- 7. TASK 6: NGINX INGRESS CONTROLLER ---
-echo "==> Task 6/16: Deploying NGINX Ingress..."
+# 2. Networking (MetalLB & Ingress)
+echo "[2/7] Installing Networking (Ingress & MetalLB)..."
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/baremetal/deploy.yaml
-# Critical Fix: Remove the admission webhook that blocks pod scheduling
-echo "Unblocking Ingress Admission Webhook..."
-kubectl delete validatingwebhookconfiguration ingress-nginx-admission --ignore-not-found || true
-
-# --- 8. TASK 7: METALLB DEPLOYMENT ---
-echo "==> Task 7/16: Deploying MetalLB LoadBalancer..."
 kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml
 
-# --- 9. TASK 8: METALLB SECRET & WEBHOOK FIX ---
-echo "==> Task 8/16: Configuring MetalLB Security & Webhooks..."
-if ! kubectl get secret memberlist -n metallb-system &>/dev/null; then
-    kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey="$(openssl rand -base64 128)"
-fi
-# Critical Fix: Remove the MetalLB webhook that causes Pending status
-kubectl delete validatingwebhookconfiguration metallb-webhook-configuration --ignore-not-found || true
+echo "Waiting 60s for MetalLB pods to initialize..."
+sleep 60
+kubectl delete validatingwebhookconfiguration metallb-webhook-configuration --ignore-not-found
 
-# --- 10. TASK 9: METALLB IP ADDRESS POOL ---
-echo "==> Task 9/16: Applying L2 Advertisement and IP Pool..."
 cat <<EOF | kubectl apply -f -
 apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
@@ -98,92 +46,79 @@ metadata:
   namespace: metallb-system
 spec:
   addresses:
-  - ${METALLB_START}-${METALLB_END}
+  - 192.168.253.220-192.168.253.224
+  - 192.168.253.226-192.168.253.230
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: awx-fixed-ip
+  namespace: metallb-system
+spec:
+  addresses:
+  - ${AWX_IP}/32
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
 metadata:
-  name: awx-l2-adv
+  name: awx-combined-adv
   namespace: metallb-system
 spec:
-  ipAddressPools:
-  - awx-static-pool
+  ipAddressPools: [awx-static-pool, awx-fixed-ip]
 EOF
 
-# --- 11. TASK 10: CERT-MANAGER ---
-echo "==> Task 10/16: Deploying Cert-Manager..."
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
-echo "Waiting for Cert-Manager..."
-sleep 20
-
-# --- 12. TASK 11: LONGHORN STORAGE ---
-echo "==> Task 11/16: Deploying Longhorn Storage..."
-helm repo add longhorn https://charts.longhorn.io || true
-helm repo update
-helm upgrade --install longhorn longhorn/longhorn -n longhorn-system --create-namespace \
-  --set defaultSettings.defaultReplicaCount=1 \
-  --set defaultSettings.storageOverProvisioningPercentage=200
-  
-echo "Waiting for Longhorn StorageClass..."
-until kubectl get storageclass longhorn &>/dev/null; do 
-    echo "...still waiting for longhorn storageclass..."
-    sleep 10
-done
-# Set as default storage
+# 3. Longhorn
+echo "[3/7] Installing Longhorn Storage..."
+helm repo add longhorn https://charts.longhorn.io && helm repo update
+helm upgrade --install longhorn longhorn/longhorn -n longhorn-system --create-namespace --set defaultSettings.defaultReplicaCount=1
 kubectl patch storageclass longhorn -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 
-# --- 13. TASK 12: AWX OPERATOR INSTALLATION ---
-echo "==> Task 12/16: Deploying AWX Operator..."
-kubectl create ns ${AWX_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
-if [ -d "awx-operator" ]; then rm -rf awx-operator; fi
-git clone https://github.com/ansible/awx-operator.git
-cd awx-operator
-git checkout ${AWX_OPERATOR_VERSION}
-export NAMESPACE=${AWX_NAMESPACE}
-make deploy
-echo "Waiting for Operator pod to be ready..."
-kubectl rollout status deployment awx-operator-controller-manager -n ${AWX_NAMESPACE} --timeout=300s
-cd ..
+echo "--> Longhorn components are starting. Waiting 10 minutes for full readiness..."
+sleep 600
 
-# --- 14. TASK 13: AWX ADMIN SECRETS ---
-echo "==> Task 13/16: Creating AWX Admin Password Secret..."
-kubectl -n ${AWX_NAMESPACE} create secret generic awx-admin-password \
-    --from-literal=password='Root@123' \
-    --dry-run=client -o yaml | kubectl apply -f -
+# 4. AWX Operator
+echo "[4/7] Deploying AWX Operator 2.19.1..."
+kubectl create ns awx || true
+git clone https://github.com/ansible/awx-operator.git || true
+cd awx-operator && git checkout 2.19.1
+kubectl apply -k config/default -n awx
 
-# --- 15. TASK 14: AWX INSTANCE DEPLOYMENT ---
-echo "==> Task 14/16: Deploying AWX Custom Resource (Instance)..."
-cat <<EOF | kubectl apply -n ${AWX_NAMESPACE} -f -
+echo "--> Operator is deploying. Waiting 7 minutes for Operator Pods to be Ready..."
+sleep 420
+
+# 5. AWX Instance
+echo "[5/7] Creating AWX Instance (awx-prod)..."
+kubectl -n awx create secret generic awx-admin-password --from-literal=password="${ADMIN_PASS}" --dry-run=client -o yaml | kubectl apply -f -
+
+cat <<EOF | kubectl apply -n awx -f -
 apiVersion: awx.ansible.com/v1beta1
 kind: AWX
 metadata:
-  name: ${AWX_NAME}
+  name: awx-prod
 spec:
   service_type: LoadBalancer
-  loadbalancer_ip: ${AWX_LB_IP}
-  ingress_type: ingress
+  service_annotations: "metallb.io/address-pool: awx-fixed-ip"
+  loadbalancer_ip: ${AWX_IP}
   hostname: ${AWX_HOSTNAME}
   admin_password_secret: awx-admin-password
   postgres_storage_class: longhorn
-  postgres_resource_requirements:
-    requests:
-      cpu: "500m"
-      memory: "1Gi"
-    limits:
-      cpu: "1000m"
-      memory: "2Gi"
+  postgres_data_volume_init: true
+  web_resource_requirements: { requests: { cpu: "500m", memory: "1Gi" } }
+  task_resource_requirements: { requests: { cpu: "500m", memory: "1Gi" } }
 EOF
 
-# --- 16. TASK 15: STORAGE FRONTEND EXPOSURE ---
-echo "==> Task 15/16: Exposing Longhorn Dashboard..."
-kubectl patch svc longhorn-frontend -n longhorn-system -p '{"spec": {"type": "LoadBalancer"}}' || true
+# 6. Final Wait for Migration
+echo "[6/7] AWX Instance Created. Waiting 15 minutes for Database Migration & Pod Start..."
+sleep 900
 
-# --- 17. TASK 16: VERIFICATION & LOGS ---
-echo "==> Task 16/16: Final Cluster Health Check..."
-echo "--------------------------------------------------------"
-kubectl get nodes
-echo "--------------------------------------------------------"
-kubectl get pods -A
-echo "--------------------------------------------------------"
-echo "Check AWX Status with: kubectl get awx -n ${AWX_NAMESPACE}"
-echo "Deployment Finished."
+# 7. Cleanup & Verify
+echo "[7/7] Finalizing..."
+kubectl delete pod -n awx -l control-plane=controller-manager # Final bounce to ensure IP binds
+
+echo "===================================================="
+echo "DEPLOYMENT COMPLETE"
+echo "AWX URL: http://${AWX_HOSTNAME}"
+echo "Admin User: admin"
+echo "Admin Pass: ${ADMIN_PASS}"
+echo "===================================================="
+kubectl get pods -n awx
