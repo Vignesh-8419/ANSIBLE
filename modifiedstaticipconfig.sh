@@ -1,16 +1,16 @@
 #!/bin/bash
 
 ### =========================
-### Detect primary interface first
+### Detect primary interface (UP, non-loopback)
 ### =========================
-iface=$(ip -o -4 addr show up primary scope global | awk '{print $2}' | head -n1)
+iface=$(ip -o -4 addr show up scope global | awk '!/lo/ {print $2}' | head -n1)
 
 if [ -z "$iface" ]; then
     echo "ERROR: No active interface found. Exiting."
     exit 1
 fi
 
-echo "Detected interface: $iface"
+echo "Detected primary interface: $iface"
 
 ### =========================
 ### Ensure default route via 192.168.253.2
@@ -91,19 +91,17 @@ echo "Updated /etc/resolv.conf"
 ### =========================
 ### Set hostname from /etc/hosts or hostnamectl
 ### =========================
-hostname_from_hosts=$(awk -v ip="$ip_addr" '$1==ip {print $2}' /etc/hosts)
-if [ -n "$hostname_from_hosts" ]; then
-    echo "Setting hostname to: $hostname_from_hosts"
-    hostnamectl set-hostname "$hostname_from_hosts"
-else
-    echo "No hostname found in /etc/hosts for $ip_addr. Using hostname -f"
-    fqdn=$(hostname -f)
-    if ! grep -q "$fqdn" /etc/hosts; then
-        echo "Adding entry to /etc/hosts: $ip_addr $fqdn"
-        echo "$ip_addr $fqdn" >> /etc/hosts
-    fi
-    hostnamectl set-hostname "$fqdn"
+fqdn=$(hostname -f)
+
+# Add FQDN entry to /etc/hosts if missing
+if ! grep -q "$fqdn" /etc/hosts; then
+    echo "Adding entry to /etc/hosts: $ip_addr $fqdn"
+    echo "$ip_addr $fqdn" >> /etc/hosts
 fi
+
+# Set hostname
+hostnamectl set-hostname "$fqdn"
+echo "Hostname set to: $fqdn"
 
 ### =========================
 ### Check if NM connection exists
@@ -148,3 +146,4 @@ echo "✔ Configuration applied successfully."
 echo "✔ Network profile: $profilename"
 echo "✔ Hostname: $(hostname -f)"
 echo "✔ IP: $ip_addr"
+echo "✔ Default Gateway: $gateway"
