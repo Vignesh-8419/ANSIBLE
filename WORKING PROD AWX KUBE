@@ -1,0 +1,187 @@
+dnf install -y sshpass git
+
+# Repeat for 192.168.253.135, 136, and 137
+sshpass -p "Root@123" ssh root@<NODE_IP>
+
+# 1. Local Node Prep
+modprobe br_netfilter overlay
+cat <<EOF > /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
+net.ipv4.conf.all.rp_filter         = 0
+net.ipv4.conf.default.rp_filter     = 0
+EOF
+sysctl --system
+yum install -y iscsi-initiator-utils nfs-utils
+systemctl enable --now iscsid
+
+# Prepare Worker 01
+sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@192.168.253.136 "modprobe br_netfilter overlay; echo -e 'net.bridge.bridge-nf-call-iptables = 1\nnet.bridge.bridge-nf-call-ip6tables = 1\nnet.ipv4.ip_forward = 1\nnet.ipv4.conf.all.rp_filter = 0\nnet.ipv4.conf.default.rp_filter = 0' > /etc/sysctl.d/k8s.conf; sysctl --system; yum install -y iscsi-initiator-utils nfs-utils; systemctl enable --now iscsid"
+
+# Prepare Worker 02
+sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@192.168.253.137 "modprobe br_netfilter overlay; echo -e 'net.bridge.bridge-nf-call-iptables = 1\nnet.bridge.bridge-nf-call-ip6tables = 1\nnet.ipv4.ip_forward = 1\nnet.ipv4.conf.all.rp_filter = 0\nnet.ipv4.conf.default.rp_filter = 0' > /etc/sysctl.d/k8s.conf; sysctl --system; yum install -y iscsi-initiator-utils nfs-utils; systemctl enable --now iscsid"
+
+
+kubectl label nodes awx-work-node-01.vgs.com nodepool=workloads longhorn=storage --overwrite
+kubectl label nodes awx-work-node-02.vgs.com nodepool=workloads longhorn=storage --overwrite
+
+
+# Ingress
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/baremetal/deploy.yaml
+
+# MetalLB
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml
+
+# Wait 30 seconds for MetalLB to start, then run the config below:
+cat <<EOF | kubectl apply -f -
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: awx-static-pool
+  namespace: metallb-system
+spec:
+  addresses:
+  - 192.168.253.220-192.168.253.230
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: awx-l2-adv
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+  - awx-static-pool
+EOF
+
+kubectl delete validatingwebhookconfiguration metallb-webhook-configuration --ignore-not-found
+
+cat <<EOF | kubectl apply -f -
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: awx-static-pool
+  namespace: metallb-system
+spec:
+  # This pool covers the range BUT skips .225
+  addresses:
+  - 192.168.253.220-192.168.253.224
+  - 192.168.253.226-192.168.253.230
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: awx-fixed-ip
+  namespace: metallb-system
+spec:
+  # This pool ONLY contains .225
+  addresses:
+  - 192.168.253.225/32
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: awx-combined-adv
+  namespace: metallb-system
+spec:
+  # This advertises both pools to the local network
+  ipAddressPools:
+  - awx-static-pool
+  - awx-fixed-ip
+EOF
+
+
+# 1. Install Helm (if not already installed)
+curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+chmod 700 get_helm.sh && ./get_helm.sh
+
+# 2. Add Longhorn Repository
+helm repo add longhorn https://charts.longhorn.io
+helm repo update
+
+#===========tooks 10+ mins=========== once all longhorn-system started can run the next command and csi instance no need to wait
+
+# 3. Install Longhorn
+# We set replica count to 1 since we are testing and have 2 workers. 
+# Production usually uses 3, but 1 or 2 is fine for your current setup.
+helm upgrade --install longhorn longhorn/longhorn \
+  -n longhorn-system \
+  --create-namespace \
+  --set defaultSettings.defaultReplicaCount=1
+
+# 4. Set Longhorn as the Default StorageClass
+# This is critical so AWX doesn't have to "ask" for Longhorn by name.
+kubectl patch storageclass longhorn -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+
+# 1. Create the dedicated namespace
+kubectl create ns awx
+
+# 2. Clone the operator repository
+git clone https://github.com/ansible/awx-operator.git
+cd awx-operator
+
+# 3. Switch to the stable version you wanted
+git checkout 2.19.1
+
+#===========tooks 7+ mins===========
+
+# 4. Deploy the operator
+kubectl apply -k config/default -n awx
+
+
+kubectl -n awx create secret generic awx-admin-password \
+  --from-literal=password='Root@123'
+  
+
+cat <<EOF | kubectl apply -n awx -f -
+apiVersion: awx.ansible.com/v1beta1
+kind: AWX
+metadata:
+  name: awx-prod
+spec:
+  # Networking
+  service_type: LoadBalancer
+  loadbalancer_ip: 192.168.253.225
+  ingress_type: ingress
+  hostname: awx-server-01.vgs.com
+
+  # Credentials
+  admin_password_secret: awx-admin-password
+
+  # Storage (Uses your Longhorn default)
+  postgres_storage_class: longhorn
+  postgres_data_volume_init: true
+  
+  # Resource requests (Ensures stability)
+  web_resource_requirements:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  task_resource_requirements:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+EOF
+
+#===========tooks 15+ mins===========
+
+kubectl get pods -n awx -w
+
+kubectl logs -f -n awx -l "app.kubernetes.io/component=migration"
+
+
+=========XXXX=========
+
+cat <<EOF | kubectl apply -f -
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: awx-static-pool
+  namespace: metallb-system
+spec:
+  addresses:
+  - 192.168.253.220-192.168.253.224
+  - 192.168.253.226-192.168.253.230
+EOF
+=========XXXX=========
