@@ -139,6 +139,9 @@ kubectl logs -n metallb-system -l component=controller --all-containers
 
 kubectl get svc awx-prod-service -n awx -w
 
+XXXXXXXXXXXXXXXXXXXXXXXXX IP TROUBLESHOOING CMD XXXXXXXXXXXXXXXXXXXXXXXXX
+kubectl get ipaddresspool -n metallb-system
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ==========================================================================================================================================================================================================
 ==============================================================================================REPLICA===============================================================================================
 ==========================================================================================================================================================================================================
