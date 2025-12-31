@@ -5,7 +5,7 @@ set -e
 
 # --- Configuration Variables ---
 ADMIN_PASS="Root@123"
-AWX_IP="192.168.253.225"
+AWX_IP="192.168.253.226"
 AWX_HOSTNAME="awx-server-01.vgs.com"
 WORKER1="192.168.253.138"
 WORKER2="192.168.253.139"
