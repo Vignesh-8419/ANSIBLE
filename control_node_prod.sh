@@ -4,7 +4,7 @@ set -euo pipefail
 # ========================
 # 1️⃣ System Preparation
 # ========================
-dnf update -y
+#dnf update -y
 
 # Disable firewall and SELinux
 systemctl stop firewalld
