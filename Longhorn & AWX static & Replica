@@ -143,6 +143,32 @@ XXXXXXXXXXXXXXXXXXXXXXXXX IP TROUBLESHOOING CMD XXXXXXXXXXXXXXXXXXXXXXXXX
 kubectl get ipaddresspool -n metallb-system
 kubectl logs -n metallb-system -l component=controller | grep -i "overlap"
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+
+
+XXXXXXXXXXXXXXXXXXXXXXXXX EXACT IP CHANGE STEPS XXXXXXXXXXXXXXXXXXXXXXXXX
+
+kubectl patch ipaddresspool awx-fixed-ip -n metallb-system --type='merge' -p '{"spec": {"addresses": ["192.168.253.226/32"]}}'
+
+kubectl annotate svc awx-prod-service -n awx metallb.universe.tf/loadBalancerIPs=192.168.253.226 --overwrite
+
+kubectl get svc awx-prod-service -n awx -w
+
+kubectl rollout restart deployment controller -n metallb-system
+
+kubectl describe svc awx-prod-service -n awx
+
+kubectl patch svc awx-prod-service -n awx --type='json' -p='[{"op": "remove", "path": "/spec/loadBalancerIP"}]'
+
+# Clear the problematic annotations first
+kubectl annotate svc awx-prod-service -n awx metallb.universe.tf/loadBalancerIPs- metallb.universe.tf/address-pool-
+
+# Re-apply them cleanly
+kubectl annotate svc awx-prod-service -n awx metallb.universe.tf/address-pool=awx-fixed-ip
+kubectl annotate svc awx-prod-service -n awx metallb.universe.tf/loadBalancerIPs=192.168.253.226
+
+kubectl get svc awx-prod-service -n awx
+
 ==========================================================================================================================================================================================================
 ==============================================================================================REPLICA===============================================================================================
 ==========================================================================================================================================================================================================
