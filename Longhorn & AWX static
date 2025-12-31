@@ -34,8 +34,56 @@ kubectl annotate svc longhorn-frontend -n longhorn-system metallb.universe.tf/ad
 kubectl rollout restart deployment controller -n metallb-system
 
 # Watch Longhorn service until it gets the external IP
+kubectl get svc longhorn-frontend -n longhorn-system -w
 
-`kubectl get svc longhorn-frontend -n longhorn-system -w`
+
+==========================================================================================================================================================================================================
+==========================================================================================================================================================================================================
+==========================================================================================================================================================================================================
+ vi awx-static-pool.yaml
+
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: awx-static-pool
+  namespace: metallb-system
+spec:
+  addresses:
+  - 192.168.253.220-192.168.253.224
+  - 192.168.253.227-192.168.253.230
+  autoAssign: true
+  avoidBuggyIPs: false
+
+ kubectl apply -f awx-static-pool.yaml
+
+ vi awx-fixed-ip.yaml
+
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: awx-fixed-ip
+  namespace: metallb-system
+spec:
+  addresses:
+  - 192.168.253.226/32
+  autoAssign: true
+  avoidBuggyIPs: false
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: awx-fixed-adv
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+  - awx-fixed-ip
 
 
-==================================================================================
+ kubectl apply -f awx-fixed-ip.yaml
+
+ kubectl annotate svc awx-prod-service -n awx metallb.universe.tf/address-pool=awx-fixed-ip --overwrite
+
+ kubectl rollout restart deployment controller -n metallb-system
+
+ kubectl get svc awx-prod-service -n awx -w
+
