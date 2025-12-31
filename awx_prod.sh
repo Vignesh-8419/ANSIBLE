@@ -7,8 +7,8 @@ set -e
 ADMIN_PASS="Root@123"
 AWX_IP="192.168.253.225"
 AWX_HOSTNAME="awx-server-01.vgs.com"
-WORKER1="192.168.253.136"
-WORKER2="192.168.253.137"
+WORKER1="192.168.253.138"
+WORKER2="192.168.253.139"
 
 echo "===================================================="
 echo "Starting AWX Infrastructure Deployment"
