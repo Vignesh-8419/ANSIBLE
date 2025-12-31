@@ -90,7 +90,19 @@ spec:
 
  kubectl get svc awx-prod-service -n awx -w
 
+FORCE
 
+kubectl patch svc awx-prod-service -n awx -p '{"spec": {"loadBalancerIP": "192.168.253.225"}}'
+
+kubectl rollout restart daemonset speaker -n metallb-system
+
+kubectl get svc awx-prod-service -n awx
+
+kubectl patch svc awx-prod-service -n awx -p '{"spec": {"type": "ClusterIP"}}'
+# Wait 5 seconds
+kubectl patch svc awx-prod-service -n awx -p '{"spec": {"type": "LoadBalancer"}}'
+
+kubectl get svc awx-prod-service -n awx
 ==========================================================================================================================================================================================================
 ==============================================================================================REPLICA===============================================================================================
 ==========================================================================================================================================================================================================
