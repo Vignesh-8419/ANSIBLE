@@ -34,4 +34,8 @@ kubectl annotate svc longhorn-frontend -n longhorn-system metallb.universe.tf/ad
 kubectl rollout restart deployment controller -n metallb-system
 
 # Watch Longhorn service until it gets the external IP
-kubectl get svc longhorn-frontend -n longhorn-system -w
+
+`kubectl get svc longhorn-frontend -n longhorn-system -w`
+
+
+==================================================================================
