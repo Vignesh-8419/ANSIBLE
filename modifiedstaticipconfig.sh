@@ -123,10 +123,12 @@ fi
 # Ensure NetworkManager ignores auto DNS
 nmcli con modify "$profilename" ipv4.ignore-auto-dns yes
 
+
+sed -i 's/^ONBOOT=.*/ONBOOT=yes/' /etc/sysconfig/network-scripts/$existing_con
+
 # Apply connection
 nmcli con up "$profilename" || nmcli con reload
 
-sed -i 's/^ONBOOT=.*/ONBOOT=yes/' /etc/sysconfig/network-scripts/$existing_con
 
 # Restart NetworkManager
 systemctl restart NetworkManager
