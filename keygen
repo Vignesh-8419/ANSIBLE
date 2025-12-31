@@ -1,28 +1,44 @@
 #!/bin/bash
 
+# Ensure sshpass is installed
 dnf install -y sshpass
 
-# Generate SSH key on 137 (remote)
+# === Step 1: Generate SSH key on 137 ===
 sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@192.168.253.137 "
   mkdir -p /root/.ssh
   ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa <<< y
   cp /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys
 "
 
-# Fetch the public key from 137
+# === Step 2: Fetch 137's public key to control node ===
 sshpass -p "Root@123" scp -o StrictHostKeyChecking=no root@192.168.253.137:/root/.ssh/id_rsa.pub /tmp/id_rsa_137.pub
 
-# Push 137's public key into 138 and 139 authorized_keys
+# === Step 3: Push 137's public key into 138 and 139 ===
 for NODE in 192.168.253.138 192.168.253.139; do
+  echo "Configuring $NODE..."
   sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@$NODE "
     mkdir -p /root/.ssh
     touch /root/.ssh/authorized_keys
   "
   sshpass -p "Root@123" scp -o StrictHostKeyChecking=no /tmp/id_rsa_137.pub root@$NODE:/root/.ssh/
   sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@$NODE "
-    cat /root/.ssh/id_rsa_137.pub >> /root/.ssh/authorized_keys
-    rm -f /root/.ssh/id_rsa_137.pub
+    cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
+    rm -f /root/.ssh/id_rsa.pub
   "
 done
 
-echo "✅ Key from 137 has been added to authorized_keys on 138 and 139."
+# === Step 4: Fetch public keys from 138 and 139 ===
+for NODE in 192.168.253.138 192.168.253.139; do
+  sshpass -p "Root@123" scp -o StrictHostKeyChecking=no root@$NODE:/root/.ssh/id_rsa.pub /tmp/id_rsa_${NODE##*.}.pub
+done
+
+# === Step 5: Append 138 and 139 keys into 137's authorized_keys ===
+for PUBKEY in /tmp/id_rsa_138.pub /tmp/id_rsa_139.pub; do
+  sshpass -p "Root@123" scp -o StrictHostKeyChecking=no $PUBKEY root@192.168.253.137:/root/.ssh/
+  sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@192.168.253.137 "
+    cat /root/.ssh/$(basename $PUBKEY) >> /root/.ssh/authorized_keys
+    rm -f /root/.ssh/$(basename $PUBKEY)
+  "
+done
+
+echo "✅ Bidirectional SSH trust established between 137, 138, and 139."
