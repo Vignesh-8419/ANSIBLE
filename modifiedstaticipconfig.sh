@@ -4,25 +4,34 @@
 ### Detect first ens* interface
 ### =========================
 iface=$(ip -o link show | awk -F: '/ ens/ {print $2; exit}' | tr -d ' ')
-
 if [ -z "$iface" ]; then
     echo "ERROR: No ens* interface found. Exiting."
     exit 1
 fi
-
 echo "Detected interface: $iface"
 
 ### =========================
-### Detect IP, CIDR
+### Detect first IPv4 address
 ### =========================
-ip_full=$(ip -4 addr show "$iface" | awk '/inet /{print $2}')
+ip_full=$(ip -4 addr show "$iface" | awk '/inet /{print $2; exit}')
 if [ -z "$ip_full" ]; then
     echo "ERROR: No IPv4 address found on $iface. Exiting."
     exit 1
 fi
-
 ip_addr=${ip_full%/*}
 cidr=${ip_full#*/}
+echo "Using IP: $ip_addr/$cidr"
+
+### =========================
+### Remove secondary IPs (avoid duplicates)
+### =========================
+existing_ips=$(ip -4 addr show "$iface" | awk '/inet /{print $2}')
+for ip in $existing_ips; do
+    if [[ "$ip" != "$ip_addr/$cidr" ]]; then
+        echo "Removing secondary IP: $ip"
+        ip addr del $ip dev $iface
+    fi
+done
 
 ### =========================
 ### CIDR → Netmask conversion
@@ -35,7 +44,7 @@ cidr2mask() {
         if [ $i -lt $full ]; then
             mask+="255"
         elif [ $i -eq $full ]; then
-            mask+="$((256 - 2**(8-remain)))"
+            mask+=$((256 - 2**(8-remain)))
         else
             mask+="0"
         fi
@@ -44,12 +53,12 @@ cidr2mask() {
     echo $mask
 }
 netmask=$(cidr2mask "$cidr")
+echo "Netmask: $netmask"
 
 ### =========================
 ### Default Gateway
 ### =========================
 gateway="192.168.253.2"
-# Replace default route to avoid duplicates
 ip route replace default via $gateway dev "$iface"
 echo "Default route set via $gateway dev $iface"
 
@@ -120,15 +129,15 @@ else
         connection.autoconnect yes
 fi
 
-# Ensure NetworkManager ignores auto DNS
 nmcli con modify "$profilename" ipv4.ignore-auto-dns yes
 
-
-sed -i 's/^ONBOOT=.*/ONBOOT=yes/' /etc/sysconfig/network-scripts/$existing_con
+# Update ONBOOT in ifcfg
+if [ -f "/etc/sysconfig/network-scripts/ifcfg-$profilename" ]; then
+    sed -i 's/^ONBOOT=.*/ONBOOT=yes/' /etc/sysconfig/network-scripts/ifcfg-$profilename
+fi
 
 # Apply connection
 nmcli con up "$profilename" || nmcli con reload
-
 
 # Restart NetworkManager
 systemctl restart NetworkManager
