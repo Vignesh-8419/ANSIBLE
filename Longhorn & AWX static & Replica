@@ -141,6 +141,7 @@ kubectl get svc awx-prod-service -n awx -w
 
 XXXXXXXXXXXXXXXXXXXXXXXXX IP TROUBLESHOOING CMD XXXXXXXXXXXXXXXXXXXXXXXXX
 kubectl get ipaddresspool -n metallb-system
+kubectl logs -n metallb-system -l component=controller | grep -i "overlap"
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ==========================================================================================================================================================================================================
 ==============================================================================================REPLICA===============================================================================================
