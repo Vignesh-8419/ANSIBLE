@@ -36,7 +36,6 @@ kubectl rollout restart deployment controller -n metallb-system
 # Watch Longhorn service until it gets the external IP
 kubectl get svc longhorn-frontend -n longhorn-system -w
 
-
 ==========================================================================================================================================================================================================
 ==========================================================================================================================================================================================================
 ==========================================================================================================================================================================================================
@@ -87,3 +86,60 @@ spec:
 
  kubectl get svc awx-prod-service -n awx -w
 
+
+==========================================================================================================================================================================================================
+==========================================================================================================================================================================================================
+==========================================================================================================================================================================================================
+
+
+kubectl patch settings.longhorn.io storage-network-for-rwx-volume-enabled \
+  -n longhorn-system --type=merge \
+  -p '{"value":"true"}'
+
+
+kubectl patch settings.longhorn.io rwx-volume-fast-failover \
+  -n longhorn-system --type=merge \
+  -p '{"value":"true"}'
+
+
+kubectl get settings.longhorn.io -n longhorn-system | grep rwx
+
+
+kubectl apply -f - <<EOF
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-rwx
+provisioner: driver.longhorn.io
+parameters:
+  numberOfReplicas: "3"
+  staleReplicaTimeout: "30"
+  fsType: ext4
+  accessMode: ReadWriteMany
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+EOF
+
+
+kubectl get sc
+
+kubectl edit awx awx-prod -n awx
+
+spec:
+  projects_storage_class: longhorn-rwx
+
+kubectl get pods -n awx -w
+
+
+kubectl edit awx awx-prod -n awx
+
+
+replicas: 2              # web pods
+task_replicas: 1         # task pods (production safe)
+projects_storage_class: longhorn-rwx
+postgres_storage_class: longhorn
+projects_storage_access_mode: ReadWriteMany
+service_type: LoadBalancer
+loadbalancer_ip: 192.168.253.225
+
+kubectl edit awx awx-prod -n awx
