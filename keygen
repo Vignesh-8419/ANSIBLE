@@ -2,23 +2,27 @@
 
 dnf install -y sshpass
 
-# Generate SSH key (press enter 3 times automatically)
-ssh-keygen -t rsa -N "" -f /root/.ssh/id_rsa <<< y
-
-# Copy public key into authorized_keys locally
-cd /root/.ssh
-cp id_rsa.pub authorized_keys
-
-# Configure first remote node
-sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@192.168.253.138 "
+# Generate SSH key on 137 (remote)
+sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@192.168.253.137 "
   mkdir -p /root/.ssh
-  touch /root/.ssh/authorized_keys
+  ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa <<< y
+  cp /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys
 "
-sshpass -p "Root@123" scp -o StrictHostKeyChecking=no /root/.ssh/authorized_keys root@192.168.253.138:/root/.ssh/
 
-# Configure second remote node
-sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@192.168.253.139 "
-  mkdir -p /root/.ssh
-  touch /root/.ssh/authorized_keys
-"
-sshpass -p "Root@123" scp -o StrictHostKeyChecking=no /root/.ssh/authorized_keys root@192.168.253.139:/root/.ssh/
+# Fetch the public key from 137
+sshpass -p "Root@123" scp -o StrictHostKeyChecking=no root@192.168.253.137:/root/.ssh/id_rsa.pub /tmp/id_rsa_137.pub
+
+# Push 137's public key into 138 and 139 authorized_keys
+for NODE in 192.168.253.138 192.168.253.139; do
+  sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@$NODE "
+    mkdir -p /root/.ssh
+    touch /root/.ssh/authorized_keys
+  "
+  sshpass -p "Root@123" scp -o StrictHostKeyChecking=no /tmp/id_rsa_137.pub root@$NODE:/root/.ssh/
+  sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@$NODE "
+    cat /root/.ssh/id_rsa_137.pub >> /root/.ssh/authorized_keys
+    rm -f /root/.ssh/id_rsa_137.pub
+  "
+done
+
+echo "✅ Key from 137 has been added to authorized_keys on 138 and 139."
