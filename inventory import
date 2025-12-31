@@ -1,4 +1,12 @@
-awx login --conf.host https://192.168.253.137/ --conf.username admin --conf.password 'redhat123' -k
+ssh awx-control-node-01
+# Install pip if not already installed
+dnf install -y python3-pip
+# Install awxkit (the AWX CLI Python package)
+pip3 install --user awxkit
+echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+awx --version
+awx login --conf.host http://192.168.253.226/ --conf.username admin --conf.password 'Root@123'
 
 awx inventory create \
   --name "VGS-CLUSTER" \
