@@ -134,8 +134,8 @@ kubectl get pods -n awx -w
 kubectl edit awx awx-prod -n awx
 
 
-replicas: 2              # web pods
-task_replicas: 1         # task pods (production safe)
+replicas: 3              # web pods
+task_replicas: 3         # task pods (production safe)
 projects_storage_class: longhorn-rwx
 postgres_storage_class: longhorn
 projects_storage_access_mode: ReadWriteMany
