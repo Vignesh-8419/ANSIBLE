@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Ensure sshpass is installed
 dnf install -y sshpass
 
 # Ensure 137 has a keypair
@@ -25,8 +24,8 @@ for NODE in 192.168.253.138 192.168.253.139; do
   "
   sshpass -p "Root@123" scp -o StrictHostKeyChecking=no /tmp/id_rsa_137.pub root@$NODE:/root/.ssh/
   sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@$NODE "
-    cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
-    rm -f /root/.ssh/id_rsa.pub
+    cat /root/.ssh/id_rsa_137.pub >> /root/.ssh/authorized_keys
+    rm -f /root/.ssh/id_rsa_137.pub
     chmod 600 /root/.ssh/authorized_keys
   "
 done
