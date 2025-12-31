@@ -120,6 +120,8 @@ else
         connection.autoconnect yes
 fi
 
+sed -i 's/^ONBOOT=.*/ONBOOT=yes/' /etc/sysconfig/network-scripts/$existing_con
+
 # Ensure NetworkManager ignores auto DNS
 nmcli con modify "$profilename" ipv4.ignore-auto-dns yes
 
