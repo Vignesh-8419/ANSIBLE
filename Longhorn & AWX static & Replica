@@ -103,6 +103,42 @@ kubectl patch svc awx-prod-service -n awx -p '{"spec": {"type": "ClusterIP"}}'
 kubectl patch svc awx-prod-service -n awx -p '{"spec": {"type": "LoadBalancer"}}'
 
 kubectl get svc awx-prod-service -n awx
+
+kubectl patch l2advertisement awx-fixed-adv -n metallb-system --type='merge' -p '{"spec": {"interfaces": ["ens192"]}}'
+
+# Remove the old deprecated spec field
+kubectl patch svc awx-prod-service -n awx --type='json' -p='[{"op": "remove", "path": "/spec/loadBalancerIP"}]'
+
+# Apply the specific IP request annotation (this is the modern way)
+kubectl annotate svc awx-prod-service -n awx metallb.universe.tf/loadBalancerIPs=192.168.253.225 --overwrite
+
+# Ensure the pool is also targeted
+kubectl annotate svc awx-prod-service -n awx metallb.universe.tf/address-pool=awx-fixed-ip --overwrite
+
+kubectl rollout restart deployment controller -n metallb-system
+
+kubectl get svc awx-prod-service -n awx -w
+
+kubectl describe deployment controller -n metallb-system
+
+kubectl patch svc awx-prod-service -n awx --type=merge -p '{"status": {"loadBalancer": {}}}'
+
+kubectl logs -n metallb-system -l component=controller --tail=50
+
+kubectl exec -n metallb-system $(kubectl get pod -n metallb-system -l component=controller -o name) -- /controller --dump-config 2>/dev/null | grep -A 5 "awx-fixed-ip"
+
+kubectl scale deployment controller -n metallb-system --replicas=0
+# Wait 5 seconds
+kubectl scale deployment controller -n metallb-system --replicas=1
+
+kubectl edit ipaddresspool awx-static-pool -n metallb-system
+
+Change the start range from .220 to .221.
+
+kubectl logs -n metallb-system -l component=controller --all-containers
+
+kubectl get svc awx-prod-service -n awx -w
+
 ==========================================================================================================================================================================================================
 ==============================================================================================REPLICA===============================================================================================
 ==========================================================================================================================================================================================================
