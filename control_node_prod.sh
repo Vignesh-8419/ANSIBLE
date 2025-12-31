@@ -1,143 +1,98 @@
 #!/bin/bash
 set -euo pipefail
 
-# ========================
-# 1️⃣ System Preparation
-# ========================
-#dnf update -y
+echo "[Step 1] Disable swap..."
+sudo sed -i '/swap/d' /etc/fstab
+sudo swapoff -a
 
-# Disable firewall and SELinux
-systemctl stop firewalld
-systemctl disable firewalld
-setenforce 0
-getenforce
+echo "[Step 2] Enable kernel modules..."
+sudo modprobe overlay
+sudo modprobe br_netfilter
 
-# Install required utilities
-dnf install -y yum-utils git curl wget jq vim net-tools
+echo "[Step 3] Set sysctl params..."
+cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.ipv4.ip_forward                 = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+EOF
+sudo sysctl --system
 
-# ========================
-# 2️⃣ Install Docker
-# ========================
-dnf config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo
-dnf install -y docker-ce docker-ce-cli containerd.io
-systemctl start docker
-systemctl enable docker
-
-# ========================
-# 3️⃣ Install Kubernetes Components
-# ========================
-cat <<EOF > /etc/yum.repos.d/kubernetes.repo
+echo "[Step 4] Add Kubernetes repo..."
+cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
 [kubernetes]
 name=Kubernetes
-baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-\$basearch
+baseurl=https://pkgs.k8s.io/core:/stable:/v1.30/rpm/
 enabled=1
-gpgcheck=0
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v1.30/rpm/repodata/repomd.xml.key
 EOF
 
-dnf install -y kubelet kubeadm kubectl
-systemctl enable --now kubelet
+echo "[Step 5] Install kubeadm, kubelet, kubectl..."
+sudo dnf install -y kubelet kubeadm kubectl --disableexcludes=kubernetes
+sudo systemctl enable --now kubelet
 
-# ========================
-# 4️⃣ Apply Kernel & Networking Fixes (Flannel) to All Nodes
-# ========================
-WORKER_NODES=("worker-01" "worker-02") # Replace with your worker node hostnames/IPs
+echo "[Step 6] Install native containerd..."
+sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+yum remove runc -y
+sudo dnf remove -y containerd.io || true
+sudo dnf install -y containerd iproute-tc
 
-# Apply on control plane
-modprobe br_netfilter
-echo "br_netfilter" >> /etc/modules-load.d/br_netfilter.conf
-sysctl -w net.bridge.bridge-nf-call-iptables=1
-sysctl -w net.bridge.bridge-nf-call-ip6tables=1
-sysctl -w net.ipv4.ip_forward=1
-cat <<EOF >> /etc/sysctl.d/k8s.conf
-net.bridge.bridge-nf-call-iptables = 1
-net.bridge.bridge-nf-call-ip6tables = 1
-net.ipv4.ip_forward = 1
+echo "[Step 7] Configure containerd..."
+sudo mkdir -p /etc/containerd
+sudo rm -f /etc/containerd/config.toml
+sudo containerd config default | sudo tee /etc/containerd/config.toml >/dev/null
+
+# Patch config for Kubernetes
+sudo sed -i 's|sandbox_image = .*|sandbox_image = "registry.k8s.io/pause:3.9"|' /etc/containerd/config.toml
+sudo sed -i 's|systemd_cgroup = true|systemd_cgroup = false|' /etc/containerd/config.toml
+sudo sed -i 's|runtime_type = ""|runtime_type = "io.containerd.runc.v2"|' /etc/containerd/config.toml
+sudo sed -i 's|SystemdCgroup = false|SystemdCgroup = true|' /etc/containerd/config.toml
+
+# Systemd override to force config usage
+sudo mkdir -p /etc/systemd/system/containerd.service.d
+cat <<'EOF' | sudo tee /etc/systemd/system/containerd.service.d/override.conf
+[Service]
+ExecStart=
+ExecStart=/usr/bin/containerd -c /etc/containerd/config.toml
 EOF
-sysctl --system
 
-# Apply on workers
-for NODE in "${WORKER_NODES[@]}"; do
-  ssh root@"$NODE" bash -s <<'EOF'
-modprobe br_netfilter
-echo "br_netfilter" >> /etc/modules-load.d/br_netfilter.conf
-sysctl -w net.bridge.bridge-nf-call-iptables=1
-sysctl -w net.bridge.bridge-nf-call-ip6tables=1
-sysctl -w net.ipv4.ip_forward=1
-cat <<EOT >> /etc/sysctl.d/k8s.conf
-net.bridge.bridge-nf-call-iptables = 1
-net.bridge.bridge-nf-call-ip6tables = 1
-net.ipv4.ip_forward = 1
-EOT
-sysctl --system
-systemctl restart kubelet
+sudo systemctl daemon-reload
+sudo systemctl enable --now containerd
+sudo systemctl restart containerd
+
+echo "[Step 8] Configure crictl..."
+cat <<EOF | sudo tee /etc/crictl.yaml
+runtime-endpoint: unix:///run/containerd/containerd.sock
+image-endpoint: unix:///run/containerd/containerd.sock
+timeout: 10
+debug: false
 EOF
-done
 
-# ========================
-# 5️⃣ Initialize Kubernetes
-# ========================
-kubeadm init --pod-network-cidr=10.244.0.0/16
+sudo crictl info
 
-# Configure kubectl for root
-export KUBECONFIG=/etc/kubernetes/admin.conf
+echo "[Step 9] Configure firewall..."
+systemctl stop firewalld
+systemctl disable firewalld
 
-# Allow scheduling pods on the control-plane node
-kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+echo "[Step 10] Reset previous kube state..."
+sudo kubeadm reset -f || true
+sudo rm -rf /etc/cni/net.d/* || true
 
-# ========================
-# 6️⃣ Install Flannel CNI
-# ========================
+echo "[Step 11] Initialize Kubernetes cluster..."
+sudo kubeadm init --pod-network-cidr=10.244.0.0/16
+
+echo "[Step 12] Configure kubectl..."
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown "$(id -u)":"$(id -g)" $HOME/.kube/config
+
+echo "[Step 13] Deploy Flannel CNI..."
 kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
 
-# Wait until Flannel pods are ready
-echo "Waiting for Flannel pods..."
-for i in {1..30}; do
-    NOT_READY=$(kubectl get pods -n kube-flannel -o jsonpath='{.items[*].status.containerStatuses[*].ready}' | grep false || true)
-    if [[ -z "$NOT_READY" ]]; then
-        echo "Flannel is Ready"
-        break
-    fi
-    echo "Waiting for Flannel... (${i}/30)"
-    sleep 5
-done
-
+echo "[Step 14] Verify cluster..."
+kubectl get nodes
 kubectl get pods -n kube-flannel -o wide
+kubectl get pods -A
+setenforce 0
 
-# ========================
-# 7️⃣ Install Local Path Storage
-# ========================
-kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
-kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
-kubectl get storageclass
-
-# ========================
-# 8️⃣ Deploy AWX Operator
-# ========================
-kubectl create namespace awx
-kubectl apply -f https://raw.githubusercontent.com/ansible/awx-operator/devel/deploy/awx-operator.yaml
-kubectl get pods -n awx
-
-# ========================
-# 9️⃣ Deploy AWX Instance
-# ========================
-cat <<EOF | kubectl apply -f -
-apiVersion: awx.ansible.com/v1beta1
-kind: AWX
-metadata:
-  name: awx-demo
-  namespace: awx
-spec:
-  service_type: NodePort
-EOF
-
-kubectl get pods -n awx -o wide
-kubectl get svc -n awx
-
-# ========================
-# 🔟 Optional: Longhorn (Persistent Storage)
-# ========================
-kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/master/deploy/longhorn.yaml
-kubectl get pods -n longhorn-system
-
-# Port-forward Longhorn UI
-kubectl port-forward svc/longhorn-frontend -n longhorn-system 8080:80
+echo "✅ Kubernetes setup completed successfully!"
