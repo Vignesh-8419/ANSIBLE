@@ -292,3 +292,51 @@ readinessProbe:
 
 kubectl -n longhorn-system delete pods --all--grace-period=0 --force
 
+
+==========================================================================================================================================================================================================
+===============================================================================================ENGINE NOT DEPLOYED=============================================================================================
+==========================================================================================================================================================================================================
+
+
+
+
+
+Engine not deployed
+
+# 1. Restart the Manager on Node-03
+kubectl delete -n longhorn-system $(kubectl get pods -n longhorn-system --field-selector spec.nodeName=awx-work-node-03.vgs.com -l app=longhorn-manager -o name)
+
+# 2. Restart the Instance Managers on Node-03
+kubectl delete -n longhorn-system $(kubectl get pods -n longhorn-system --field-selector spec.nodeName=awx-work-node-03.vgs.com -l longhorn.io/component=instance-manager -o name)
+
+kubectl patch volumes.longhorn.io pvc-514260df-ab6b-41e8-8a79-38e16533b81e -n longhorn-system --type merge -p '{"spec":{"numberOfReplicas":3}}'
+
+kubectl describe volumes.longhorn.io pvc-514260df-ab6b-41e8-8a79-38e16533b81e -n longhorn-system | tail -n 20
+
+
+kubectl patch volumes.longhorn.io pvc-514260df-ab6b-41e8-8a79-38e16533b81e -n longhorn-system --type merge -p '{"spec":{"numberOfReplicas":2}}'
+Wait 10 seconds.
+
+Set back to 3:
+
+
+kubectl patch volumes.longhorn.io pvc-514260df-ab6b-41e8-8a79-38e16533b81e -n longhorn-system --type merge -p '{"spec":{"numberOfReplicas":3}}'
+
+# On RHEL/CentOS/Rocky Linux (based on your 'rl-root' mapper name earlier)
+yum install -y nfs-utils
+
+kubectl delete -n longhorn-system $(kubectl get pods -n longhorn-system --field-selector spec.nodeName=awx-work-node-03.vgs.com -l app=longhorn-manager -o name)
+
+kubectl patch volumes.longhorn.io pvc-514260df-ab6b-41e8-8a79-38e16533b81e -n longhorn-system --type merge -p '{"spec":{"numberOfReplicas":3}}'
+
+kubectl patch volumes.longhorn.io pvc-514260df-ab6b-41e8-8a79-38e16533b81e -n longhorn-system --type merge -p '{"spec":{"numberOfReplicas":2}}'
+
+kubectl patch volumes.longhorn.io pvc-514260df-ab6b-41e8-8a79-38e16533b81e -n longhorn-system --type merge -p '{"spec":{"numberOfReplicas":3}}'
+
+kubectl get replicas.longhorn.io -n longhorn-system | grep "awx-work-node-03"
+
+kubectl describe volumes.longhorn.io pvc-514260df-ab6b-41e8-8a79-38e16533b81e -n longhorn-system | grep -A 20 "Events:"
+
+kubectl get nodes.longhorn.io awx-work-node-03.vgs.com -n longhorn-system -o jsonpath='{.status.diskStatus}'
+
+kubectl get volumes.longhorn.io pvc-514260df-ab6b-41e8-8a79-38e16533b81e -n longhorn-system -o yaml | grep -i "Affinity"
