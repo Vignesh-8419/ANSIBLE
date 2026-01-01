@@ -303,6 +303,12 @@ kubectl -n longhorn-system delete pods --all--grace-period=0 --force
 
 Engine not deployed
 
+[root@awx-control-node-01 ~]# kubectl get volumes.longhorn.io -n longhorn-system
+NAME                                       DATA ENGINE   STATE      ROBUSTNESS   SCHEDULED   SIZE         NODE                       AGE
+pvc-514260df-ab6b-41e8-8a79-38e16533b81e   v1            attached   degraded                 8589934592   awx-work-node-02.vgs.com   6h41m
+[root@awx-control-node-01 ~]#
+
+
 # 1. Restart the Manager on Node-03
 kubectl delete -n longhorn-system $(kubectl get pods -n longhorn-system --field-selector spec.nodeName=awx-work-node-03.vgs.com -l app=longhorn-manager -o name)
 
