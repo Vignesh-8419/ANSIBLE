@@ -23,19 +23,33 @@ cleanup_node() {
     echo "Cleaning $1 ..."
     run_ssh $1 "
         echo 'Stopping services...';
-        systemctl stop kubelet containerd docker || true;
+        systemctl stop kubelet || true;
+
+        # 1. FORCE KILL existing K8s processes (Prevents port 6443 staying open)
+        echo 'Killing orphan processes...';
+        killall -9 kube-apiserver kube-controller-manager kube-scheduler kube-proxy etcd containerd-shim 2>/dev/null || true;
+        lsof -t -i:6443 | xargs kill -9 2>/dev/null || true;
 
         echo 'Resetting kubeadm...';
         kubeadm reset -f || true;
 
+        # 2. UNMOUNT lingering filesystems (Prevents directory deletion errors)
+        echo 'Clearing mounts...';
+        for m in \$(mount | grep /var/lib/kubelet | awk '{print \$3}'); do umount -l \$m; done
+
         echo 'Removing Kubernetes packages...';
-        yum remove -y kubeadm kubelet kubectl kubernetes-cni containerd docker || true;
+        systemctl stop containerd docker 2>/dev/null || true;
+        yum remove -y kubeadm kubelet kubectl kubernetes-cni containerd.io docker-ce docker-ce-cli 2>/dev/null || true;
 
         echo 'Deleting configuration and data...';
-        rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd ~/.kube /etc/cni/net.d /opt/cni/bin /var/lib/containerd /var/lib/docker;
-
-        echo 'Flushing iptables...';
-        iptables -F; iptables -X; iptables -t nat -F; iptables -t nat -X; iptables -t mangle -F; iptables -t mangle -X;
+        rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd ~/.kube /etc/cni/net.d /opt/cni/bin /var/lib/containerd /var/lib/docker /var/run/kubernetes;
+        
+        # 3. CLEAN IPVS/IPTABLES (Prevents networking conflicts on reinstall)
+        echo 'Flushing network rules...';
+        iptables -F && iptables -t nat -F && iptables -t mangle -F && iptables -X;
+        ipvsadm --clear 2>/dev/null || true;
+        ip link delete cni0 2>/dev/null || true;
+        ip link delete flannel.1 2>/dev/null || true;
 
         echo 'Reloading systemd...';
         systemctl daemon-reload;
