@@ -363,9 +363,16 @@ kubectl delete replica.longhorn.io pvc-514260df-ab6b-41e8-8a79-38e16533b81e-r-c4
 kubectl scale statefulset awx-prod-postgres-15 -n awx --replicas=1
 
 ==========================================================================================================================================================================================================
-===============================================================================================IF WEB DIDN;T START=============================================================================================
+===============================================================================================IF IP NOT REACHABLE AND WEB DIDN;T START=============================================================================================
 ==========================================================================================================================================================================================================
 
+kubectl get endpoints awx-prod-service -n awx
+kubectl scale statefulset awx-prod-postgres-15 -n awx --replicas=1
+kubectl get pods -n awx -w
+kubectl logs -n awx deployment/awx-operator-controller-manager -c manager --tail=50
+kubectl logs -n awx deployment/awx-operator-controller-manager --all-containers --tail=50
+kubectl logs awx-prod-postgres-15-0 -n awx --tail=50
+kubectl delete pod -n awx -l control-plane=controller-manager
 
 kubectl get deployments -n awx
 
