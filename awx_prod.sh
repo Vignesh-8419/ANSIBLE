@@ -145,3 +145,10 @@ echo "Admin User: admin"
 echo "Admin Pass: ${ADMIN_PASS}"
 echo "===================================================="
 kubectl get pods -n awx
+
+
+kubectl patch awx awx-prod -n awx --type='merge' -p '
+> spec:
+>   web_replicas: 3
+>   task_replicas: 3
+> '
