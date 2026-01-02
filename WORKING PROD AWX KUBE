@@ -172,7 +172,22 @@ echo "Waiting for PVC to bind..."
 kubectl get pvc nfs-test-pvc -w
 
 
+#!/bin/bash
+set -euo pipefail
 
+echo "======================================"
+echo " STEP 4: VERIFY NFS + DEPLOY AWX"
+echo "======================================"
+
+AWX_NAMESPACE="awx"
+AWX_NAME="awx-prod"
+STORAGE_CLASS="truenas-nfs"
+PG_SIZE="20Gi"
+# Fixed URL below
+OPERATOR_URL="https://raw.githubusercontent.com/ansible/awx-operator/2.19.0/deploy/awx-operator.yaml"
+
+# 1. RUN NFS DEBUG POD (VFS VERIFICATION)
+echo "[1/8] Deploying nfs-debug pod to verify mount..."
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Pod
@@ -182,7 +197,7 @@ spec:
   containers:
   - name: nfs
     image: busybox
-    command: ["sleep", "3600"]
+    command: ["sh", "-c", "echo 'NFS IS WORKING' > /data/test.txt && sleep 3600"]
     volumeMounts:
     - mountPath: /data
       name: nfsvol
@@ -192,38 +207,40 @@ spec:
       claimName: nfs-test-pvc
 EOF
 
+echo "Waiting for nfs-debug pod to be Running..."
+kubectl wait --for=condition=Ready pod/nfs-debug --timeout=60s
 
-kubectl get pod nfs-debug -w
+echo "--- Debug Info ---"
+kubectl exec nfs-debug -- df -h /data
+kubectl exec nfs-debug -- ls -l /data/test.txt
+echo "NFS verification successful. Cleaning up debug pod..."
+kubectl delete pod nfs-debug --now
 
-kubectl exec -it nfs-debug -- sh
+# 2. INSTALL AWX OPERATOR
+echo "[2/8] Installing AWX Operator via Kustomize..."
+kubectl create namespace ${AWX_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
 
+# Create a temporary kustomization file
+cat <<EOF > kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - github.com/ansible/awx-operator/config/default?ref=2.19.0
+images:
+  - name: quay.io/ansible/awx-operator
+    newTag: 2.19.0
+namespace: ${AWX_NAMESPACE}
+EOF
 
-df -h
-mount | grep nfs
+# Apply using kustomize (built into kubectl)
+kubectl apply -k .
+rm kustomization.yaml
 
+echo "Waiting for Operator pod..."
+kubectl wait --for=condition=Ready pod -l control-plane=controller-manager -n ${AWX_NAMESPACE} --timeout=300s
 
-
-[root@awx-control-node-01 ~]# clear
-[root@awx-control-node-01 ~]# cat step_4.sh
-#!/bin/bash
-set -euo pipefail
-
-echo "======================================"
-echo " STEP 4: DEPLOY AWX WITH AUTO-PERMISSION FIX"
-echo "======================================"
-
-AWX_NAMESPACE="awx"
-AWX_NAME="awx-prod"
-STORAGE_CLASS="truenas-nfs"
-PG_SIZE="20Gi"
-
-# 1. CLEAN UP PREVIOUS ATTEMPT
-echo "[1/6] Cleaning up old AWX instance..."
-kubectl delete awx ${AWX_NAME} -n ${AWX_NAMESPACE} --ignore-not-found
-kubectl delete pvc -l "app.kubernetes.io/name=postgres-15" -n ${AWX_NAMESPACE} --ignore-not-found
-
-# 2. APPLY AWX CR
-echo "[2/6] Applying AWX Custom Resource..."
+# 3. APPLY AWX CUSTOM RESOURCE
+echo "[3/8] Deploying AWX Instance..."
 cat <<EOF | kubectl apply -n ${AWX_NAMESPACE} -f -
 apiVersion: awx.ansible.com/v1beta1
 kind: AWX
@@ -237,15 +254,15 @@ spec:
       storage: ${PG_SIZE}
 EOF
 
-# 3. WAIT FOR PVC TO BE CREATED
-echo "[3/6] Waiting for PVC to be created by Operator..."
+# 4. WAIT FOR POSTGRES PVC
+echo "[4/8] Waiting for Operator to create Postgres PVC..."
 until kubectl get pvc -n ${AWX_NAMESPACE} | grep -q "postgres-15"; do
   sleep 5
 done
 PVC_NAME=$(kubectl get pvc -n ${AWX_NAMESPACE} -o jsonpath='{.items[?(@.metadata.labels.app\.kubernetes\.io/name=="postgres-15")].metadata.name}')
 
-# 4. RUN PERMISSION FIXER JOB
-echo "[4/6] Running Permission Fixer Job for PVC: ${PVC_NAME}..."
+# 5. PERMISSION FIXER
+echo "[5/8] Running Permission Fixer Job (UID 26)..."
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
 kind: Job
@@ -258,7 +275,7 @@ spec:
       containers:
       - name: fixer
         image: busybox
-        command: ["sh", "-c", "chown -R 26:26 /data && chmod -R 770 /data && ls -ln /data"]
+        command: ["sh", "-c", "chown -R 26:26 /data && chmod -R 770 /data"]
         volumeMounts:
         - name: nfs-vol
           mountPath: /data
@@ -269,23 +286,84 @@ spec:
           claimName: ${PVC_NAME}
 EOF
 
-# Wait for Job to finish
 kubectl wait --for=condition=complete job/nfs-permission-fixer -n ${AWX_NAMESPACE} --timeout=60s
 kubectl delete job nfs-permission-fixer -n ${AWX_NAMESPACE}
 
-# 5. RESTART POSTGRES POD
-echo "[5/6] Restarting Postgres to pick up new permissions..."
+# 6. RESTART POSTGRES
+echo "[6/8] Restarting Postgres pod..."
 kubectl delete pod -l "app.kubernetes.io/name=postgres-15" -n ${AWX_NAMESPACE} --ignore-not-found
 
-# 6. FINAL STATUS
-echo "[6/6] Waiting for Postgres pod to be Ready..."
+# 7. FINAL WAIT
+echo "[7/8] Waiting for Postgres to be Ready..."
 kubectl wait --for=condition=Ready pod -l "app.kubernetes.io/name=postgres-15" -n ${AWX_NAMESPACE} --timeout=300s
 
+# 8. MONITOR AWX PROGRESS
+echo "[8/8] Postgres is up! Monitoring AWX task/web deployment..."
+kubectl get pods -n ${AWX_NAMESPACE}
+
+
+
+#!/bin/bash
+set -euo pipefail
+
 echo "======================================"
-echo " AWX POSTGRES IS RUNNING SUCCESSFULLY 🎉"
+echo " STEP 5: CONFIGURE HA VIRTUAL IP (MetalLB)"
 echo "======================================"
-[root@awx-control-node-01 ~]#
+
+VIRTUAL_IP="192.168.253.225"
+AWX_NAMESPACE="awx"
+AWX_SERVICE="awx-prod-service"
+
+# 1. INSTALL METALLB
+echo "[1/5] Installing MetalLB manifests..."
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml
+
+# 2. SCALE CONTROLLER FOR HA
+echo "[2/5] Scaling MetalLB Controller to 3 replicas..."
+kubectl scale deployment controller -n metallb-system --replicas=3
+
+# 3. WAIT FOR METALLB PODS
+echo "[3/5] Waiting for MetalLB speakers & controllers to be ready..."
+kubectl wait --namespace metallb-system \
+                --for=condition=ready pod \
+                --selector=app=metallb \
+                --timeout=120s
+
+# 4. CONFIGURE THE IP POOL AND L2 ADVERTISEMENT
+echo "[4/5] Assigning IP ${VIRTUAL_IP} to MetalLB pool..."
+cat <<EOF | kubectl apply -f -
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: awx-ip-pool
+  namespace: metallb-system
+spec:
+  addresses:
+  - ${VIRTUAL_IP}/32
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: awx-advertisement
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+  - awx-ip-pool
+EOF
+
+# 5. BIND AWX SERVICE TO THE VIRTUAL IP
+echo "[5/5] Patching AWX Service to use External IP..."
+kubectl patch svc ${AWX_SERVICE} -n ${AWX_NAMESPACE} -p "{\"spec\": {\"loadBalancerIP\": \"${VIRTUAL_IP}\", \"type\": \"LoadBalancer\"}}"
+
+echo "======================================"
+echo " HA ARCHITECTURE COMPLETE"
+echo "======================================"
+echo "URL: http://${VIRTUAL_IP}"
+echo -n "ADMIN PASSWORD: "
+kubectl get secret awx-prod-admin-password -n ${AWX_NAMESPACE} -o jsonpath="{.data.password}" | base64 --decode; echo
+echo "======================================"
 
 
 
 kubectl get secret awx-prod-admin-password -n awx -o jsonpath="{.data.password}" | base64 --decode; echo
+
