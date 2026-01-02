@@ -1,46 +1,59 @@
 #!/bin/bash
 
-# Exit on error
+# --- 1. Environment Setup ---
 set -e
+NAMESPACE="awx"
+OPERATOR_VERSION="2.19.1"
 
 echo "📦 Installing prerequisites..."
 dnf install -y git make curl gettext
+systemctl stop firewalld
+systemctl disable firewalld
 
-# 1. Install K3s
+# --- 2. K3s Installation ---
 echo "☸️ Installing K3s (Kubernetes)..."
-curl -sfL https://get.k3s.io | sh -
-mkdir -p ~/.kube
-sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-sudo chown $USER ~/.kube/config
-export KUBECONFIG=~/.kube/config
+if ! command -v k3s &> /dev/null; then
+    curl -sfL https://get.k3s.io | sh -
+    mkdir -p $HOME/.kube
+    sudo cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config
+    sudo chown $(chmod 600 $HOME/.kube/config)
+fi
 
-# Wait for K3s to be ready
-echo "⏳ Waiting for K3s to initialize..."
-sleep 20
+# --- 3. Critical Fix: Metrics Server Patch ---
+echo "⏳ Waiting for Metrics Server to initialize..."
+MAX_RETRIES=30
+COUNT=0
+while ! kubectl get deployment metrics-server -n kube-system >/dev/null 2>&1; do
+    sleep 5
+    COUNT=$((COUNT+1))
+    if [ $COUNT -ge $MAX_RETRIES ]; then echo "❌ Metrics server timeout"; exit 1; fi
+done
 
-# 2. Install Kustomize
+echo "🔧 Patching Metrics Server for API discovery..."
+kubectl patch deployment metrics-server -n kube-system --type='json' \
+  -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
+
+# --- 4. Kustomize Installation ---
 echo "🛠️ Installing Kustomize..."
-curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-chmod +x kustomize
-sudo mv kustomize /usr/local/bin/
+if ! command -v kustomize &> /dev/null; then
+    curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+    sudo mv kustomize /usr/local/bin/
+fi
 
-# 3. Deploy AWX Operator
-echo "🏗️ Deploying AWX Operator (v2.19.1)..."
-rm -rf awx-operator
-git clone https://github.com/ansible/awx-operator.git
+# --- 5. AWX Operator Deployment ---
+echo "🏗️ Deploying AWX Operator (v$OPERATOR_VERSION)..."
+if [ ! -d "awx-operator" ]; then
+    git clone https://github.com/ansible/awx-operator.git
+fi
+
 cd awx-operator
-git checkout 2.19.1
+git checkout $OPERATOR_VERSION
 
 # Create namespace and deploy
-export NAMESPACE=awx
-kubectl create namespace $NAMESPACE || true
-kubectl config set-context --current --namespace=$NAMESPACE
-make deploy
+kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+make deploy NAMESPACE=$NAMESPACE
 
-echo "⏳ Waiting for Operator pod to start..."
-sleep 60
-
-# 4. Deploy AWX Instance
+# --- 6. AWX Instance Creation ---
 echo "🚀 Creating AWX Instance..."
 cat <<EOF > awx-instance.yaml
 apiVersion: awx.ansible.com/v1beta1
@@ -50,24 +63,18 @@ metadata:
 spec:
   service_type: nodeport
   postgres_storage_class: local-path
-  web_resource_requirements:
-    requests:
-      cpu: "500m"
-      memory: "1Gi"
-    limits:
-      cpu: "1000m"
-      memory: "2Gi"
 EOF
 
-kubectl apply -f awx-instance.yaml
+kubectl apply -f awx-instance.yaml -n $NAMESPACE
 
+# --- 7. Final Instructions ---
 echo "-------------------------------------------------------"
-echo "✅ Installation commands sent!"
+echo "✅ Installation commands completed successfully!"
 echo "-------------------------------------------------------"
 echo "🕒 AWX takes 5-10 minutes to build its containers."
-echo "🔍 Check status with: kubectl get pods"
-echo "🔑 Once running, get your admin password with:"
-echo "   kubectl get secret awx-server-admin-password -o jsonpath='{.data.password}' | base64 --decode; echo"
-echo "🌐 Find your Web UI port with:"
-echo "   kubectl get svc awx-server-service"
+echo "🔍 Check status with: kubectl get pods -n $NAMESPACE -w"
+echo "🔑 Get admin password with:"
+echo "   kubectl get secret awx-server-admin-password -n $NAMESPACE -o jsonpath='{.data.password}' | base64 --decode; echo"
+echo "🌐 Find Web UI port with:"
+echo "   kubectl get svc awx-server-service -n $NAMESPACE"
 echo "-------------------------------------------------------"
