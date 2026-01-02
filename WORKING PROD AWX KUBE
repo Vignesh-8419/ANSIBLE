@@ -373,3 +373,15 @@ kubectl get secret awx-prod-admin-password -n awx -o jsonpath="{.data.password}"
 
 #kubectl scale deployment controller -n metallb-system --replicas=2
 #kubectl get pods -n metallb-system
+
+####TS#######
+#ssh root@awx-work-node-03.vgs.com
+#systemctl stop kubelet
+#systemctl stop containerd
+#rm -rf /var/lib/containerd/io.containerd.content.v1.content/blobs/sha256/*
+#rm -rf /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/*
+#systemctl start containerd
+#systemctl start kubelet
+#ctr image pull quay.io/ansible/awx-ee:24.6.0
+#kubectl delete pod awx-prod-task-57c4b44484-8n6hz -n awx
+
