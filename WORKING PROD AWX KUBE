@@ -367,3 +367,8 @@ echo "======================================"
 
 kubectl get secret awx-prod-admin-password -n awx -o jsonpath="{.data.password}" | base64 --decode; echo
 
+
+#kubectl patch awx awx-prod -n awx --type='merge' -p '{"spec":{"web_replicas": 3, "task_replicas": 3}}'
+#kubectl scale deployment awx-operator-controller-manager -n awx --replicas=3
+
+
