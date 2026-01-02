@@ -285,3 +285,7 @@ echo "======================================"
 echo " AWX POSTGRES IS RUNNING SUCCESSFULLY 🎉"
 echo "======================================"
 [root@awx-control-node-01 ~]#
+
+
+
+kubectl get secret awx-prod-admin-password -n awx -o jsonpath="{.data.password}" | base64 --decode; echo
