@@ -37,8 +37,9 @@ ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
 
 echo "📁 Cloning AWX installer..."
 if [ ! -d "awx" ]; then
-    git clone -b "17.1.0" https://github.com/ansible/awx.git
-fi
+   # git clone -b "17.1.0" https://github.com/ansible/awx.git
+    git clone -b "24.6.1" https://github.com/ansible/awx.git
+fi 
 cd awx/installer
 
 sed -i 's|ansible_python_interpreter="/usr/bin/env python3"|ansible_python_interpreter="/usr/bin/env python3.9"|' /root/awx/installer/inventory
