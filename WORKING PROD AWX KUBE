@@ -371,4 +371,5 @@ kubectl get secret awx-prod-admin-password -n awx -o jsonpath="{.data.password}"
 #kubectl patch awx awx-prod -n awx --type='merge' -p '{"spec":{"web_replicas": 3, "task_replicas": 3}}'
 #kubectl scale deployment awx-operator-controller-manager -n awx --replicas=3
 
-
+#kubectl scale deployment controller -n metallb-system --replicas=2
+#kubectl get pods -n metallb-system
