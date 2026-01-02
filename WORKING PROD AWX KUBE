@@ -1,190 +1,307 @@
-dnf install -y sshpass git
+iqn.2005-10.org.freenas.ctl4
 
-# Repeat for 192.168.253.137, 138, and 139
-sshpass -p "Root@123" ssh root@<NODE_IP>
+iscsiadm --mode discoverydb --type sendtargets --portal 192.168.253.141 --discover
 
-# 1. Local Node Prep
-modprobe br_netfilter overlay
-cat <<EOF > /etc/sysctl.d/k8s.conf
-net.bridge.bridge-nf-call-iptables  = 1
-net.bridge.bridge-nf-call-ip6tables = 1
-net.ipv4.ip_forward                 = 1
-net.ipv4.conf.all.rp_filter         = 0
-net.ipv4.conf.default.rp_filter     = 0
-EOF
-sysctl --system
-yum install -y iscsi-initiator-utils nfs-utils
-systemctl enable --now iscsid
+iscsiadm --mode node --targetname iqn.2005-10.org.freenas.ctl:truenas-nfs-postgres-kube --portal 192.168.253.141:3260 --login
 
-# Prepare Worker 01
-sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@192.168.253.138 "modprobe br_netfilter overlay; echo -e 'net.bridge.bridge-nf-call-iptables = 1\nnet.bridge.bridge-nf-call-ip6tables = 1\nnet.ipv4.ip_forward = 1\nnet.ipv4.conf.all.rp_filter = 0\nnet.ipv4.conf.default.rp_filter = 0' > /etc/sysctl.d/k8s.conf; sysctl --system; yum install -y iscsi-initiator-utils nfs-utils; systemctl enable --now iscsid"
+# Force a rescan of all active iSCSI sessions
+iscsiadm -m node -T iqn.2005-10.org.freenas.ctl:truenas-nfs-postgres-kube -p 192.168.253.141 --rescan
 
-# Prepare Worker 02
-sshpass -p "Root@123" ssh -o StrictHostKeyChecking=no root@192.168.253.139 "modprobe br_netfilter overlay; echo -e 'net.bridge.bridge-nf-call-iptables = 1\nnet.bridge.bridge-nf-call-ip6tables = 1\nnet.ipv4.ip_forward = 1\nnet.ipv4.conf.all.rp_filter = 0\nnet.ipv4.conf.default.rp_filter = 0' > /etc/sysctl.d/k8s.conf; sysctl --system; yum install -y iscsi-initiator-utils nfs-utils; systemctl enable --now iscsid"
+iscsiadm --mode node --targetname iqn.2005-10.org.freenas.ctl:truenas-nfs-postgres-kube \
+  --portal 192.168.253.141:3260 \
+  --op update -n node.startup -v automatic
+  
+iscsiadm --mode node --targetname iqn.2005-10.org.freenas.ctl:truenas-nfs-postgres-kube \
+  --portal 192.168.253.141:3260 \
+  --logout
 
 
-kubectl label nodes awx-work-node-01.vgs.com nodepool=workloads longhorn=storage --overwrite
-kubectl label nodes awx-work-node-02.vgs.com nodepool=workloads longhorn=storage --overwrite
+lsblk
+
+#!/bin/bash
+set -e
+
+# Detect non-boot pool automatically
+POOL=$(zpool list -H -o name | grep -v boot-pool | head -n1)
+DATASET="awx-postgres"
+FULL_DATASET="${POOL}/${DATASET}"
+MOUNTPOINT="/mnt/${POOL}/${DATASET}"
+
+echo "======================================"
+echo " TrueNAS NFS setup for Kubernetes AWX"
+echo " Pool detected: ${POOL}"
+echo "======================================"
+
+if [ -z "$POOL" ]; then
+  echo "ERROR: No ZFS pool detected!"
+  exit 1
+fi
+
+# 1️⃣ Create dataset if not exists
+if zfs list | grep -q "^${FULL_DATASET}"; then
+  echo "[1/5] Dataset already exists: ${FULL_DATASET}"
+else
+  echo "[1/5] Creating dataset ${FULL_DATASET}"
+  zfs create ${FULL_DATASET}
+fi
+
+# 2️⃣ Set mountpoint
+echo "[2/5] Setting mountpoint..."
+zfs set mountpoint=${MOUNTPOINT} ${FULL_DATASET}
+
+# 3️⃣ Ensure directory exists
+echo "[3/5] Ensuring directory..."
+mkdir -p ${MOUNTPOINT}
+
+# 4️⃣ Permissions (required for Kubernetes)
+echo "[4/5] Setting permissions..."
+chmod 777 ${MOUNTPOINT}
+
+# 5️⃣ Export NFS
+echo "[5/5] Configuring NFS..."
+grep -q "${MOUNTPOINT}" /etc/exports || \
+  echo "${MOUNTPOINT} *(rw,sync,no_subtree_check,no_root_squash)" >> /etc/exports
+
+exportfs -rav
+
+echo "======================================"
+echo " STEP 1 COMPLETE"
+echo " NFS Export: ${MOUNTPOINT}"
+echo "======================================"
 
 
-# Ingress
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/baremetal/deploy.yaml
-
-# MetalLB
-kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml
-
-# Wait 30 seconds for MetalLB to start, then run the config below:
-cat <<EOF | kubectl apply -f -
-apiVersion: metallb.io/v1beta1
-kind: IPAddressPool
-metadata:
-  name: awx-static-pool
-  namespace: metallb-system
-spec:
-  addresses:
-  - 192.168.253.220-192.168.253.230
----
-apiVersion: metallb.io/v1beta1
-kind: L2Advertisement
-metadata:
-  name: awx-l2-adv
-  namespace: metallb-system
-spec:
-  ipAddressPools:
-  - awx-static-pool
-EOF
-
-kubectl delete validatingwebhookconfiguration metallb-webhook-configuration --ignore-not-found
-
-cat <<EOF | kubectl apply -f -
-apiVersion: metallb.io/v1beta1
-kind: IPAddressPool
-metadata:
-  name: awx-static-pool
-  namespace: metallb-system
-spec:
-  # This pool covers the range BUT skips .225
-  addresses:
-  - 192.168.253.220-192.168.253.224
-  - 192.168.253.226-192.168.253.230
----
-apiVersion: metallb.io/v1beta1
-kind: IPAddressPool
-metadata:
-  name: awx-fixed-ip
-  namespace: metallb-system
-spec:
-  # This pool ONLY contains .225
-  addresses:
-  - 192.168.253.225/32
----
-apiVersion: metallb.io/v1beta1
-kind: L2Advertisement
-metadata:
-  name: awx-combined-adv
-  namespace: metallb-system
-spec:
-  # This advertises both pools to the local network
-  ipAddressPools:
-  - awx-static-pool
-  - awx-fixed-ip
-EOF
 
 
-# 1. Install Helm (if not already installed)
-curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-chmod 700 get_helm.sh && ./get_helm.sh
+root@truenas[~]# vi script_1.sh
+root@truenas[~]# ./script_1.sh
+======================================
+ TrueNAS NFS setup for Kubernetes AWX
+ Pool detected: truenas-nfs-postgres-kube
+======================================
+[1/5] Creating dataset truenas-nfs-postgres-kube/awx-postgres
+[2/5] Setting mountpoint...
+[3/5] Ensuring directory...
+[4/5] Setting permissions...
+[5/5] Configuring NFS...
+exporting *:/mnt/truenas-nfs-postgres-kube/awx-postgres
+======================================
+ STEP 1 COMPLETE
+ NFS Export: /mnt/truenas-nfs-postgres-kube/awx-postgres
+======================================
+root@truenas[~]#
 
-# 2. Add Longhorn Repository
-helm repo add longhorn https://charts.longhorn.io
+
+
+#!/bin/bash
+set -e
+
+echo "======================================"
+echo "Step 2: Installing NFS CSI Driver via Helm"
+echo "======================================"
+
+# Add CSI NFS Helm repository
+helm repo add csi-driver-nfs https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts
 helm repo update
 
-#===========tooks 10+ mins=========== once all longhorn-system started can run the next command and csi instance no need to wait
+# Install the CSI NFS Driver into kube-system
+helm upgrade --install csi-driver-nfs csi-driver-nfs/csi-driver-nfs \
+  --namespace kube-system \
+  --create-namespace
 
-# 3. Install Longhorn
-# We set replica count to 1 since we are testing and have 2 workers. 
-# Production usually uses 3, but 1 or 2 is fine for your current setup.
-helm upgrade --install longhorn longhorn/longhorn \
-  -n longhorn-system \
-  --create-namespace \
-  --set defaultSettings.defaultReplicaCount=1
+echo "Waiting 30s for CSI NFS driver pods to start..."
+sleep 30
 
-# 4. Set Longhorn as the Default StorageClass
-# This is critical so AWX doesn't have to "ask" for Longhorn by name.
-kubectl patch storageclass longhorn -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+echo "Checking pods..."
+kubectl get pods -n kube-system | grep csi-driver-nfs
 
-
-# 1. Create the dedicated namespace
-kubectl create ns awx
-
-# 2. Clone the operator repository
-#git clone https://github.com/ansible/awx-operator.git
-git clone https://github.com/Vignesh-8419/awx-operator.git
-cd awx-operator
-
-# 3. Switch to the stable version you wanted
-git checkout 2.19.1
-
-#===========tooks 7+ mins===========
-
-# 4. Deploy the operator
-kubectl apply -k config/default -n awx
+echo "======================================"
+echo "STEP 2 COMPLETE — NFS CSI Installed"
+echo "======================================"
 
 
-kubectl -n awx create secret generic awx-admin-password \
-  --from-literal=password='Root@123'
-  
+root@truenas[~]# midclt call sharing.nfs.create '{
+  "path": "/mnt/truenas-nfs-postgres-kube/awx-postgres",
+  "enabled": true,
+  "ro": false,
+  "maproot_user": "root",
+  "maproot_group": "wheel",
+  "hosts": []
+}'
 
-cat <<EOF | kubectl apply -n awx -f -
+{"id": 1, "path": "/mnt/truenas-nfs-postgres-kube/awx-postgres", "aliases": [], "comment": "", "networks": [], "hosts": [], "ro": false, "maproot_user": "root", "maproot_group": "wheel", "mapall_user": null, "mapall_group": null, "security": [], "enabled": true, "locked": false, "expose_snapshots": false}
+root@truenas[~]# midclt call service.restart nfs
+
+True
+root@truenas[~]# showmount -e 127.0.0.1
+
+Export list for 127.0.0.1:
+/mnt/truenas-nfs-postgres-kube/awx-postgres *
+root@truenas[~]# exit
+Connection to 192.168.253.141 closed.
+[root@awx-control-node-01 ~]# showmount -e 192.168.253.141
+Export list for 192.168.253.141:
+/mnt/truenas-nfs-postgres-kube/awx-postgres *
+[root@awx-control-node-01 ~]#
+
+
+
+#!/bin/bash
+set -e
+
+echo "======================================"
+echo "Step 3: Create NFS StorageClass + Test PVC"
+echo "======================================"
+
+NFS_SERVER="192.168.253.141"
+NFS_PATH="/mnt/truenas-nfs-postgres-kube/awx-postgres"
+
+cat <<EOF | kubectl apply -f -
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: truenas-nfs
+provisioner: nfs.csi.k8s.io
+parameters:
+  server: ${NFS_SERVER}
+  share: ${NFS_PATH}
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+EOF
+
+echo "StorageClass created"
+
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-test-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: truenas-nfs
+  resources:
+    requests:
+      storage: 5Gi
+EOF
+
+echo "PVC created"
+
+echo "Waiting for PVC to bind..."
+kubectl get pvc nfs-test-pvc -w
+
+
+
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nfs-debug
+spec:
+  containers:
+  - name: nfs
+    image: busybox
+    command: ["sleep", "3600"]
+    volumeMounts:
+    - mountPath: /data
+      name: nfsvol
+  volumes:
+  - name: nfsvol
+    persistentVolumeClaim:
+      claimName: nfs-test-pvc
+EOF
+
+
+kubectl get pod nfs-debug -w
+
+kubectl exec -it nfs-debug -- sh
+
+
+df -h
+mount | grep nfs
+
+
+
+[root@awx-control-node-01 ~]# clear
+[root@awx-control-node-01 ~]# cat step_4.sh
+#!/bin/bash
+set -euo pipefail
+
+echo "======================================"
+echo " STEP 4: DEPLOY AWX WITH AUTO-PERMISSION FIX"
+echo "======================================"
+
+AWX_NAMESPACE="awx"
+AWX_NAME="awx-prod"
+STORAGE_CLASS="truenas-nfs"
+PG_SIZE="20Gi"
+
+# 1. CLEAN UP PREVIOUS ATTEMPT
+echo "[1/6] Cleaning up old AWX instance..."
+kubectl delete awx ${AWX_NAME} -n ${AWX_NAMESPACE} --ignore-not-found
+kubectl delete pvc -l "app.kubernetes.io/name=postgres-15" -n ${AWX_NAMESPACE} --ignore-not-found
+
+# 2. APPLY AWX CR
+echo "[2/6] Applying AWX Custom Resource..."
+cat <<EOF | kubectl apply -n ${AWX_NAMESPACE} -f -
 apiVersion: awx.ansible.com/v1beta1
 kind: AWX
 metadata:
-  name: awx-prod
+  name: ${AWX_NAME}
 spec:
-  # Networking
   service_type: LoadBalancer
-  loadbalancer_ip: 192.168.253.225
-  ingress_type: ingress
-  hostname: awx-server-01.vgs.com
- # ingress_type: none
- #service_type: LoadBalancer
-
-  # Credentials
-  admin_password_secret: awx-admin-password
-
-  # Storage (Uses your Longhorn default)
-  postgres_storage_class: longhorn
-  postgres_data_volume_init: true
-  
-  # Resource requests (Ensures stability)
-  web_resource_requirements:
+  postgres_storage_class: ${STORAGE_CLASS}
+  postgres_storage_requirements:
     requests:
-      cpu: 500m
-      memory: 1Gi
-  task_resource_requirements:
-    requests:
-      cpu: 500m
-      memory: 1Gi
+      storage: ${PG_SIZE}
 EOF
 
-#===========tooks 15+ mins===========
+# 3. WAIT FOR PVC TO BE CREATED
+echo "[3/6] Waiting for PVC to be created by Operator..."
+until kubectl get pvc -n ${AWX_NAMESPACE} | grep -q "postgres-15"; do
+  sleep 5
+done
+PVC_NAME=$(kubectl get pvc -n ${AWX_NAMESPACE} -o jsonpath='{.items[?(@.metadata.labels.app\.kubernetes\.io/name=="postgres-15")].metadata.name}')
 
-kubectl get pods -n awx -w
-
-kubectl logs -f -n awx -l "app.kubernetes.io/component=migration"
-
-
-=========XXXX=========
-
+# 4. RUN PERMISSION FIXER JOB
+echo "[4/6] Running Permission Fixer Job for PVC: ${PVC_NAME}..."
 cat <<EOF | kubectl apply -f -
-apiVersion: metallb.io/v1beta1
-kind: IPAddressPool
+apiVersion: batch/v1
+kind: Job
 metadata:
-  name: awx-static-pool
-  namespace: metallb-system
+  name: nfs-permission-fixer
+  namespace: ${AWX_NAMESPACE}
 spec:
-  addresses:
-  - 192.168.253.220-192.168.253.224
-  - 192.168.253.226-192.168.253.230
+  template:
+    spec:
+      containers:
+      - name: fixer
+        image: busybox
+        command: ["sh", "-c", "chown -R 26:26 /data && chmod -R 770 /data && ls -ln /data"]
+        volumeMounts:
+        - name: nfs-vol
+          mountPath: /data
+      restartPolicy: Never
+      volumes:
+      - name: nfs-vol
+        persistentVolumeClaim:
+          claimName: ${PVC_NAME}
 EOF
-=========XXXX=========
+
+# Wait for Job to finish
+kubectl wait --for=condition=complete job/nfs-permission-fixer -n ${AWX_NAMESPACE} --timeout=60s
+kubectl delete job nfs-permission-fixer -n ${AWX_NAMESPACE}
+
+# 5. RESTART POSTGRES POD
+echo "[5/6] Restarting Postgres to pick up new permissions..."
+kubectl delete pod -l "app.kubernetes.io/name=postgres-15" -n ${AWX_NAMESPACE} --ignore-not-found
+
+# 6. FINAL STATUS
+echo "[6/6] Waiting for Postgres pod to be Ready..."
+kubectl wait --for=condition=Ready pod -l "app.kubernetes.io/name=postgres-15" -n ${AWX_NAMESPACE} --timeout=300s
+
+echo "======================================"
+echo " AWX POSTGRES IS RUNNING SUCCESSFULLY 🎉"
+echo "======================================"
+[root@awx-control-node-01 ~]#
