@@ -411,4 +411,28 @@ To start Forcelly
 
 
 
+ssh root@$NODE <<'EOF'
+set -e
+
+echo "Stopping services..."
+systemctl stop kubelet
+systemctl stop containerd
+
+echo "Cleaning containerd storage..."
+rm -rf /var/lib/containerd/io.containerd.content.v1.content/*
+rm -rf /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/*
+rm -rf /var/lib/containerd/tmp/*
+
+echo "Starting services..."
+systemctl start containerd
+sleep 5
+systemctl start kubelet
+
+echo "Pre-pulling required images..."
+ctr image pull registry.k8s.io/pause:3.9
+ctr image pull quay.io/ansible/awx:24.6.0
+ctr image pull quay.io/ansible/awx-ee:24.6.0
+
+echo "Node cleanup completed successfully"
+EOF
 
