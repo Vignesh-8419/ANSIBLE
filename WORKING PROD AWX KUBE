@@ -376,7 +376,10 @@ kubectl get secret awx-prod-admin-password -n awx -o jsonpath="{.data.password}"
 #kubectl scale deployment controller -n metallb-system --replicas=2
 #kubectl get pods -n metallb-system
 
-####TS#######
+####Troubleshooting Steps#######
+
+Top stop Forcefully
+
 #ssh root@awx-work-node-03.vgs.com
 #systemctl stop kubelet
 #systemctl stop containerd
@@ -386,4 +389,26 @@ kubectl get secret awx-prod-admin-password -n awx -o jsonpath="{.data.password}"
 #systemctl start kubelet
 #ctr image pull quay.io/ansible/awx-ee:24.6.0
 #kubectl delete pod awx-prod-task-57c4b44484-8n6hz -n awx
+
+To start Forcelly
+
+#kubectl exec -it -n awx deploy/awx-prod-task -- bash
+#awx-manage list_instances
+#awx-prod-task-57c4b44484-wwdrh
+#awx-manage deprovision_instance \
+  --hostname awx-prod-task-57c4b44484-wwdrh
+#awx-manage unregister_queue \
+  --queuename awx-prod-task-57c4b44484-wwdrh
+#awx-manage provision_instance \
+  --hostname awx-prod-task-57c4b44484-wwdrh \
+  --node-type execution
+#awx-manage register_queue \
+  --queuename awx-prod-task-57c4b44484-wwdrh
+#awx-manage list_instances
+#exit
+#kubectl rollout restart deployment awx-prod-task -n awx
+#kubectl get pods -n awx -w
+
+
+
 
