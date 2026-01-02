@@ -160,26 +160,30 @@ kubectl scale deployment awx-operator-controller-manager -n awx --replicas=3
 set -euo pipefail
 
 echo "======================================"
-echo " STEP 5: CONFIGURE VIRTUAL IP (MetalLB)"
+echo " STEP 5: CONFIGURE HA VIRTUAL IP (MetalLB)"
 echo "======================================"
 
 VIRTUAL_IP="192.168.253.225"
 AWX_NAMESPACE="awx"
 AWX_SERVICE="awx-prod-service"
 
-# 1. INSTALL METALLB MANIFESTS
-echo "[1/4] Installing MetalLB manifests..."
+# 1. INSTALL METALLB
+echo "[1/5] Installing MetalLB manifests..."
 kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml
 
-# 2. WAIT FOR METALLB TO BE READY
-echo "[2/4] Waiting for MetalLB speakers to start..."
+# 2. SCALE CONTROLLER FOR HA
+echo "[2/5] Scaling MetalLB Controller to 3 replicas..."
+kubectl scale deployment controller -n metallb-system --replicas=3
+
+# 3. WAIT FOR METALLB PODS
+echo "[3/5] Waiting for MetalLB speakers & controllers to be ready..."
 kubectl wait --namespace metallb-system \
                 --for=condition=ready pod \
                 --selector=app=metallb \
                 --timeout=120s
 
-# 3. CONFIGURE THE IP POOL AND L2 ADVERTISEMENT
-echo "[3/4] Assigning IP ${VIRTUAL_IP} to MetalLB pool..."
+# 4. CONFIGURE THE IP POOL AND L2 ADVERTISEMENT
+echo "[4/5] Assigning IP ${VIRTUAL_IP} to MetalLB pool..."
 cat <<EOF | kubectl apply -f -
 apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
@@ -200,21 +204,14 @@ spec:
   - awx-ip-pool
 EOF
 
-# 4. BIND AWX SERVICE TO THE VIRTUAL IP
-echo "[4/4] Patching AWX Service to use External IP..."
+# 5. BIND AWX SERVICE TO THE VIRTUAL IP
+echo "[5/5] Patching AWX Service to use External IP..."
 kubectl patch svc ${AWX_SERVICE} -n ${AWX_NAMESPACE} -p "{\"spec\": {\"loadBalancerIP\": \"${VIRTUAL_IP}\", \"type\": \"LoadBalancer\"}}"
 
 echo "======================================"
-echo " SUCCESS! VERIFYING ACCESS..."
+echo " HA ARCHITECTURE COMPLETE"
 echo "======================================"
-
-# Final Check
-sleep 5
-kubectl get svc ${AWX_SERVICE} -n ${AWX_NAMESPACE}
-
-echo "--------------------------------------"
 echo "URL: http://${VIRTUAL_IP}"
-echo -n "ADMIN USER: admin"
 echo -n "ADMIN PASSWORD: "
 kubectl get secret awx-prod-admin-password -n ${AWX_NAMESPACE} -o jsonpath="{.data.password}" | base64 --decode; echo
-echo "--------------------------------------"
+echo "======================================"
