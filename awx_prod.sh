@@ -152,3 +152,69 @@ kubectl patch awx awx-prod -n awx --type='merge' -p '
 >   web_replicas: 3
 >   task_replicas: 3
 > '
+
+kubectl scale deployment awx-operator-controller-manager -n awx --replicas=3
+
+
+#!/bin/bash
+set -euo pipefail
+
+echo "======================================"
+echo " STEP 5: CONFIGURE VIRTUAL IP (MetalLB)"
+echo "======================================"
+
+VIRTUAL_IP="192.168.253.225"
+AWX_NAMESPACE="awx"
+AWX_SERVICE="awx-prod-service"
+
+# 1. INSTALL METALLB MANIFESTS
+echo "[1/4] Installing MetalLB manifests..."
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml
+
+# 2. WAIT FOR METALLB TO BE READY
+echo "[2/4] Waiting for MetalLB speakers to start..."
+kubectl wait --namespace metallb-system \
+                --for=condition=ready pod \
+                --selector=app=metallb \
+                --timeout=120s
+
+# 3. CONFIGURE THE IP POOL AND L2 ADVERTISEMENT
+echo "[3/4] Assigning IP ${VIRTUAL_IP} to MetalLB pool..."
+cat <<EOF | kubectl apply -f -
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: awx-ip-pool
+  namespace: metallb-system
+spec:
+  addresses:
+  - ${VIRTUAL_IP}/32
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: awx-advertisement
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+  - awx-ip-pool
+EOF
+
+# 4. BIND AWX SERVICE TO THE VIRTUAL IP
+echo "[4/4] Patching AWX Service to use External IP..."
+kubectl patch svc ${AWX_SERVICE} -n ${AWX_NAMESPACE} -p "{\"spec\": {\"loadBalancerIP\": \"${VIRTUAL_IP}\", \"type\": \"LoadBalancer\"}}"
+
+echo "======================================"
+echo " SUCCESS! VERIFYING ACCESS..."
+echo "======================================"
+
+# Final Check
+sleep 5
+kubectl get svc ${AWX_SERVICE} -n ${AWX_NAMESPACE}
+
+echo "--------------------------------------"
+echo "URL: http://${VIRTUAL_IP}"
+echo -n "ADMIN USER: admin"
+echo -n "ADMIN PASSWORD: "
+kubectl get secret awx-prod-admin-password -n ${AWX_NAMESPACE} -o jsonpath="{.data.password}" | base64 --decode; echo
+echo "--------------------------------------"
