@@ -4,6 +4,7 @@
 set -e
 NAMESPACE="awx"
 OPERATOR_VERSION="2.19.1"
+VIP="192.168.253.225"
 
 echo "📦 Installing prerequisites..."
 dnf install -y git make curl gettext
@@ -16,7 +17,7 @@ if ! command -v k3s &> /dev/null; then
     curl -sfL https://get.k3s.io | sh -
     mkdir -p $HOME/.kube
     sudo cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config
-    sudo chown $(chmod 600 $HOME/.kube/config)
+    sudo chmod 600 $HOME/.kube/config
 fi
 
 # --- 3. Critical Fix: Metrics Server Patch ---
@@ -53,15 +54,17 @@ git checkout $OPERATOR_VERSION
 kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
 make deploy NAMESPACE=$NAMESPACE
 
-# --- 6. AWX Instance Creation ---
-echo "🚀 Creating AWX Instance..."
+# --- 6. AWX Instance Creation (Updated for Virtual IP) ---
+echo "🚀 Creating AWX Instance with VIP $VIP..."
 cat <<EOF > awx-instance.yaml
 apiVersion: awx.ansible.com/v1beta1
 kind: AWX
 metadata:
   name: awx-server
 spec:
-  service_type: nodeport
+  service_type: loadbalancer
+  external_ips:
+    - $VIP
   postgres_storage_class: local-path
 EOF
 
@@ -71,10 +74,7 @@ kubectl apply -f awx-instance.yaml -n $NAMESPACE
 echo "-------------------------------------------------------"
 echo "✅ Installation commands completed successfully!"
 echo "-------------------------------------------------------"
-echo "🕒 AWX takes 5-10 minutes to build its containers."
-echo "🔍 Check status with: kubectl get pods -n $NAMESPACE -w"
-echo "🔑 Get admin password with:"
+echo "🌐 AWX URL: http://$VIP"
+echo "🔑 Admin Password Command:"
 echo "   kubectl get secret awx-server-admin-password -n $NAMESPACE -o jsonpath='{.data.password}' | base64 --decode; echo"
-echo "🌐 Find Web UI port with:"
-echo "   kubectl get svc awx-server-service -n $NAMESPACE"
 echo "-------------------------------------------------------"
