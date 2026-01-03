@@ -89,8 +89,7 @@
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
-    - name: 5. Force Hostname and Gather Facts from VM
-      # Use the IP directly as the target
+    - name: 5. Gather Facts from VM
       ansible.builtin.setup:
       delegate_to: "{{ item.ip }}"
       vars:
@@ -100,7 +99,7 @@
       loop: "{{ vm_list }}"
       register: guest_facts
 
-    - name: 6. Manually Set Hostname via SSH (Fixes Console/Putty)
+    - name: 6. Set Hostname inside OS (Fixes Console/Putty)
       ansible.builtin.hostname:
         name: "{{ item.name }}"
       delegate_to: "{{ item.ip }}"
@@ -110,11 +109,23 @@
         ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
       loop: "{{ vm_list }}"
 
-    - name: 7. Final Summary Output
+    - name: 7. Update /etc/hosts to prevent sudo delays
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "127.0.0.1 {{ item.name }} {{ item.name }}.{{ guest_domain }}"
+        regexp: "^127.0.0.1"
+      delegate_to: "{{ item.ip }}"
+      vars:
+        ansible_user: "{{ vm_root_user }}"
+        ansible_password: "{{ vm_root_password }}"
+        ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+      loop: "{{ vm_list }}"
+
+    - name: 8. Final Summary Output
       ansible.builtin.debug:
         msg: 
           - "VM Name: {{ item.0.name }}"
           - "Static IP: {{ item.0.ip }}"
-          - "OS Found: {{ item.1.ansible_facts.ansible_distribution }}"
-          - "Status: Hostname set to {{ item.0.name }} via SSH"
+          - "Detected OS: {{ item.1.ansible_facts.ansible_distribution }}"
+          - "Status: Hostname forced via SSH"
       loop: "{{ vm_list | zip(guest_facts.results) | list }}"
