@@ -38,6 +38,7 @@
         name: "{{ vm_name }}"
         state: poweredon
         template: "{{ template_name }}"
+        guest_id = "rhel8_64Guest"
         networks:
           - name: "{{ vm_network }}"
             ip: "{{ vm_ip }}"
