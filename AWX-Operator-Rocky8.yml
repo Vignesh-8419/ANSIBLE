@@ -1,118 +1,88 @@
 ---
-- name: Provision RockyOS VMs with static IPs
+- name: Provision RockyOS VM and Set Hostname
   hosts: localhost
   connection: local
   gather_facts: no
 
   vars:
+    # vCenter Details
     vcenter_hostname: "192.168.253.129"
     vcenter_username: "administrator@vsphere.local"
     vcenter_password: "Vigneshv12$"
-    datacenter_name: "Datacenter"
-    folder: "vm"
-    datastore_name: "datastore1"
-    template_name: "GOLDENTEMPLATE_ROCKYOS_08"
-    vm_network: "VM Network"
-    netmask: "255.255.255.0"
-    gateway: "192.168.253.2"
-    esxi_hostname: "192.168.253.128"
-    guest_domain: "vgs.com"
-
-    # Guest Credentials
+    
+    # VM Details
+    vm_name: "rocky-08-02"
+    vm_ip: "192.168.253.134"
     vm_root_user: "root"
     vm_root_password: "Root@123"
-
-    # Inputs
-    vm_name: "rocky-08-01"
-    vm_ip: "192.168.253.133"
+    guest_domain: "vgs.com"
 
   tasks:
-    - name: 1. Build vm_list
-      set_fact:
-        vm_list: "{{ vm_list | default([]) + [ {'name': item.0, 'ip': item.1} ] }}"
-      loop: "{{ vm_name.split(',') | zip(vm_ip.split(',')) | list }}"
-
-    - name: 2. Create and power on VM
+    - name: 1. Create and Power On VM in vCenter
       community.vmware.vmware_guest:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
         validate_certs: false
-        datacenter: "{{ datacenter_name }}"
-        folder: "{{ folder }}"
-        esxi_hostname: "{{ esxi_hostname }}"
-        name: "{{ item.name }}"
+        datacenter: "Datacenter"
+        name: "{{ vm_name }}"
         state: poweredon
-        template: "{{ template_name }}"
-        # Keeping hardware to match your working run
-        hardware:
-          memory_mb: 4096
-          num_cpus: 4
-          boot_firmware: efi
-          secure_boot: false
+        template: "GOLDENTEMPLATE_ROCKYOS_08"
         networks:
-          - name: "{{ vm_network }}"
-            ip: "{{ item.ip }}"
-            netmask: "{{ netmask }}"
-            gateway: "{{ gateway }}"
+          - name: "VM Network"
+            ip: "{{ vm_ip }}"
+            netmask: "255.255.255.0"
+            gateway: "192.168.253.2"
             start_connected: true
-        customization:
-          domain: "{{ guest_domain }}"
-          hostname: "{{ item.name }}"
         wait_for_customization: no
         wait_for_ip_address: no
-      loop: "{{ vm_list }}"
 
-    - name: 3. FORCE NIC CONNECTION (Ansible 2.15 Flat Syntax)
+    - name: 2. Force NIC Connection
       community.vmware.vmware_guest_network:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
         validate_certs: false
-        datacenter: "{{ datacenter_name }}"
-        name: "{{ item.name }}"
-        network_name: "{{ vm_network }}"
+        datacenter: "Datacenter"
+        name: "{{ vm_name }}"
+        network_name: "VM Network"
         connected: true
-        start_connected: true
         state: present
-        gather_network_info: false
-      loop: "{{ vm_list }}"
-      ignore_errors: yes
 
-    - name: 4. Wait for SSH (Verify Connectivity)
+    - name: 3. Wait for SSH to become available
       ansible.builtin.wait_for:
-        host: "{{ item.ip }}"
+        host: "{{ vm_ip }}"
         port: 22
         state: started
-        delay: 20
-        timeout: 400
-      loop: "{{ vm_list }}"
-      delegate_to: localhost
+        delay: 10
+        timeout: 300
 
-    - name: 5. LOGIN AND SET HOSTNAME MANUALLY
-      ansible.builtin.shell: |
-        hostnamectl set-hostname {{ item.name }}.{{ guest_domain }}
-        echo "{{ item.name }}" > /etc/hostname
-      delegate_to: "{{ item.ip }}"
-      vars:
+    - name: 4. Define VM for SSH Login
+      ansible.builtin.add_host:
+        name: "target_vm"
+        ansible_host: "{{ vm_ip }}"
         ansible_user: "{{ vm_root_user }}"
         ansible_password: "{{ vm_root_password }}"
-        ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-      loop: "{{ vm_list }}"
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+        groups: "temp_group"
 
-    - name: 6. Update /etc/hosts for Local Resolution
+- name: Phase 2 - Login to Server via IP and Configure
+  hosts: temp_group
+  gather_facts: yes
+  tasks:
+    - name: 5. Set Hostname inside the VM
+      ansible.builtin.hostname:
+        name: "{{ hostvars['localhost']['vm_name'] }}"
+
+    - name: 6. Update /etc/hosts
       ansible.builtin.lineinfile:
         path: /etc/hosts
-        line: "127.0.0.1 {{ item.name }} {{ item.name }}.{{ guest_domain }} localhost"
+        line: "127.0.0.1 {{ hostvars['localhost']['vm_name'] }} localhost"
         regexp: "^127.0.0.1"
-      delegate_to: "{{ item.ip }}"
-      vars:
-        ansible_user: "{{ vm_root_user }}"
-        ansible_password: "{{ vm_root_password }}"
-        ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-      loop: "{{ vm_list }}"
 
-    - name: 7. Final Summary
+    - name: 7. Final Verification
       ansible.builtin.debug:
-        msg: "VM {{ item.name }} is ready with IP {{ item.ip }} and hostname verified."
-      loop: "{{ vm_list }}"
+        msg: 
+          - "Successfully logged into: {{ ansible_host }}"
+          - "Current Hostname: {{ ansible_hostname }}"
+          - "OS Distribution: {{ ansible_distribution }}"
