@@ -12,7 +12,7 @@ awx inventory create \
   --name "VGS-CLUSTER" \
   --organization "Default" \
   --conf.host https://192.168.253.145/ \
-  --conf.token "y7g8YtjpFGM95gGQbTFUds84NFoXo9" \
+  --conf.token "vSF5G5BHO52YpaJEnol3oSMiqu8nH2" \
   -k
 
 
