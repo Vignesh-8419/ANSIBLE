@@ -37,3 +37,52 @@ test-pxe01.vgs.com ansible_host=192.168.253.191
 test-pxe02.vgs.com ansible_host=192.168.253.192
 tftp-server-01.vgs.com ansible_host=192.168.253.160
 tftp-server-02.vgs.com ansible_host=192.168.253.170
+
+
+
+Latest Kube
+
+
+#!/bin/bash
+TOKEN="vSF5G5BHO52YpaJEnol3oSMiqu8nH2"
+HOST="http://192.168.253.145"
+INV_NAME="VGS-CLUSTER"
+
+# 1. Create or Get Inventory ID
+echo "Checking for inventory: $INV_NAME..."
+# We try to create it; if it exists, it will fail harmlessly but we can then grab the ID
+awx inventories create --name "$INV_NAME" --organization 1 --conf.host "$HOST" --conf.token "$TOKEN" -k &>/dev/null
+
+# Get the ID (using a simpler grep/awk method to avoid jq issues)
+INV_ID=$(awx inventories list --name "$INV_NAME" --conf.host "$HOST" --conf.token "$TOKEN" -k --format json | grep -m 1 '"id":' | awk -F: '{print $2}' | tr -d ' ,')
+
+if [ -z "$INV_ID" ]; then
+    echo "❌ Error: Could not find or create inventory ID."
+    exit 1
+fi
+
+echo "✅ Using Inventory ID: $INV_ID"
+
+# 2. Process the hosts.ini
+while read -r line || [ -n "$line" ]; do
+    [[ -z "$line" || "$line" =~ ^# ]] && continue
+
+    # Extract hostname and the IP
+    HOSTNAME=$(echo "$line" | awk '{print $1}')
+    IP_ADDR=$(echo "$line" | grep -oP 'ansible_host=\K[0-9.]+')
+    
+    # Construct a simple YAML variable string
+    VARS="ansible_host: $IP_ADDR"
+
+    echo "Updating host: $HOSTNAME ($IP_ADDR)..."
+    
+    awx hosts create --name "$HOSTNAME" \
+      --inventory "$INV_ID" \
+      --variables "$VARS" \
+      --conf.host "$HOST" \
+      --conf.token "$TOKEN" \
+      -k --update &>/dev/null
+      
+done < /root/hosts.ini
+
+echo "🏁 Import Complete! All hosts are now in VGS-CLUSTER with their IP addresses."
