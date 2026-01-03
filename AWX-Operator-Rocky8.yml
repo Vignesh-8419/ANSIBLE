@@ -27,6 +27,17 @@
     vm_ip: "192.168.253.133"
 
   tasks:
+
+    - name: Validate survey input lengths
+      fail:
+        msg: "Number of VM names ({{ vm_name.split(',')|length }}) does not match number of IPs ({{ vm_ip.split(',')|length }})"
+      when: vm_name.split(',')|length != vm_ip.split(',')|length
+
+    - name: Build vm_list from survey inputs
+      set_fact:
+        vm_list: "{{ vm_list | default([]) + [ {'name': item.0, 'ip': item.1} ] }}"
+      loop: "{{ vm_name.split(',') | zip(vm_ip.split(',')) | list }}"
+
     - name: 1. Create and Power On VM in vCenter
       community.vmware.vmware_guest:
         hostname: "{{ vcenter_hostname }}"
