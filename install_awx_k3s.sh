@@ -54,8 +54,11 @@ git checkout $OPERATOR_VERSION
 kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
 make deploy NAMESPACE=$NAMESPACE
 
-# --- 6. AWX Instance Creation (Updated for Virtual IP) ---
-echo "🚀 Creating AWX Instance with VIP $VIP..."
+# --- 6. AWX Instance Creation (Final VIP Logic) ---
+echo "🚀 Creating AWX Instance..."
+# Ensure the VIP is active on the host
+ip addr add 192.168.253.225/32 dev lo || true
+
 cat <<EOF > awx-instance.yaml
 apiVersion: awx.ansible.com/v1beta1
 kind: AWX
@@ -64,7 +67,8 @@ metadata:
 spec:
   service_type: loadbalancer
   external_ips:
-    - $VIP
+    - 192.168.253.225
+    - 192.168.253.145
   postgres_storage_class: local-path
 EOF
 
