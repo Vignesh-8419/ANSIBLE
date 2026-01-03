@@ -50,8 +50,8 @@
         state: poweredon
         template: "{{ template_name }}"
         hardware:
-          memory_mb: 2048
-          num_cpus: 2
+          memory_mb: 4096
+          num_cpus: 4
         networks:
           - name: "{{ vm_network }}"
             ip: "{{ item.ip }}"
