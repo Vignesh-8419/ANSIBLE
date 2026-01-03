@@ -54,18 +54,18 @@
             type: thin
             datastore: "{{ datastore_name }}"
         hardware:
+        hardware:
           memory_mb: 4096
           num_cpus: 4
           num_cpu_cores_per_socket: 1
-          firmware: efi
-          secure_boot_enabled: false
+          boot_firmware: efi
+          secure_boot: false
         networks:
           - name: "{{ vm_network }}"
             type: static
             ip: "{{ item.ip }}"
             gateway: "{{ gateway }}"
             netmask: "{{ netmask }}"
-            device_type: vmxnet3
             connected: true
             start_connected: true
         customization:
@@ -74,6 +74,8 @@
             - "192.168.253.151"
           hostname: "{{ item.name }}"
         wait_for_ip_address: true
+        wait_for_customization: true        # Add this line
+        wait_for_customization_timeout: 600 # Add this line (10 mins)
       loop: "{{ vm_list }}"
       register: rocky_vms
 
