@@ -5,13 +5,20 @@ set -e
 NAMESPACE="awx"
 OPERATOR_VERSION="2.19.1"
 VIP="192.168.253.225"
+ADMIN_PASSWORD="Root@123"
 
 echo "📦 Installing prerequisites..."
-dnf install -y git make curl gettext
+dnf install -y git make curl gettext net-tools
 systemctl stop firewalld
 systemctl disable firewalld
 
-# --- 2. K3s Installation ---
+# --- 2. Virtual IP Assignment ---
+echo "🌐 Assigning Virtual IP $VIP to interface..."
+# Automatically detects the active interface (e.g., ens192) and adds the VIP to loopback
+# This allows the server to accept traffic for the VIP without ARP conflicts
+ip addr add $VIP/32 dev lo || echo "VIP already assigned to lo"
+
+# --- 3. K3s Installation ---
 echo "☸️ Installing K3s (Kubernetes)..."
 if ! command -v k3s &> /dev/null; then
     curl -sfL https://get.k3s.io | sh -
@@ -20,7 +27,7 @@ if ! command -v k3s &> /dev/null; then
     sudo chmod 600 $HOME/.kube/config
 fi
 
-# --- 3. Critical Fix: Metrics Server Patch ---
+# --- 4. Critical Fix: Metrics Server Patch ---
 echo "⏳ Waiting for Metrics Server to initialize..."
 MAX_RETRIES=30
 COUNT=0
@@ -34,13 +41,6 @@ echo "🔧 Patching Metrics Server for API discovery..."
 kubectl patch deployment metrics-server -n kube-system --type='json' \
   -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
 
-# --- 4. Kustomize Installation ---
-echo "🛠️ Installing Kustomize..."
-if ! command -v kustomize &> /dev/null; then
-    curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-    sudo mv kustomize /usr/local/bin/
-fi
-
 # --- 5. AWX Operator Deployment ---
 echo "🏗️ Deploying AWX Operator (v$OPERATOR_VERSION)..."
 if [ ! -d "awx-operator" ]; then
@@ -50,15 +50,20 @@ fi
 cd awx-operator
 git checkout $OPERATOR_VERSION
 
-# Create namespace and deploy
+# Create namespace
 kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+
+# Pre-create the admin password secret
+echo "🔑 Setting Admin Password to $ADMIN_PASSWORD..."
+kubectl create secret generic awx-server-admin-password \
+  --from-literal=password=$ADMIN_PASSWORD \
+  -n $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+
+# Deploy the operator
 make deploy NAMESPACE=$NAMESPACE
 
-# --- 6. AWX Instance Creation (Final VIP Logic) ---
-echo "🚀 Creating AWX Instance..."
-# Ensure the VIP is active on the host
-ip addr add 192.168.253.225/32 dev lo || true
-
+# --- 6. AWX Instance Creation ---
+echo "🚀 Creating AWX Instance on $VIP..."
 cat <<EOF > awx-instance.yaml
 apiVersion: awx.ansible.com/v1beta1
 kind: AWX
@@ -67,18 +72,19 @@ metadata:
 spec:
   service_type: loadbalancer
   external_ips:
-    - 192.168.253.225
-    - 192.168.253.145
+    - $VIP
+  admin_password_secret: awx-server-admin-password
   postgres_storage_class: local-path
 EOF
 
 kubectl apply -f awx-instance.yaml -n $NAMESPACE
 
-# --- 7. Final Instructions ---
+# --- 7. Final Summary ---
 echo "-------------------------------------------------------"
-echo "✅ Installation commands completed successfully!"
+echo "✅ AWX Installation Started!"
 echo "-------------------------------------------------------"
-echo "🌐 AWX URL: http://$VIP"
-echo "🔑 Admin Password Command:"
-echo "   kubectl get secret awx-server-admin-password -n $NAMESPACE -o jsonpath='{.data.password}' | base64 --decode; echo"
+echo "🌐 URL: http://$VIP"
+echo "👤 User: admin"
+echo "🔑 Password: $ADMIN_PASSWORD"
 echo "-------------------------------------------------------"
+echo "🔍 Monitor progress: kubectl get pods -n $NAMESPACE -w"
