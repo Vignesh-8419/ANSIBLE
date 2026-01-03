@@ -5,6 +5,7 @@
   gather_facts: no
 
   vars:
+    # vCenter Details
     vcenter_hostname: "192.168.253.129"
     vcenter_username: "administrator@vsphere.local"
     vcenter_password: "Vigneshv12$"
@@ -18,7 +19,11 @@
     esxi_hostname: "192.168.253.128"
     guest_domain: "vgs.com"
 
-    # Inputs
+    # Guest Credentials
+    vm_root_user: "root"
+    vm_root_password: "Root@123"
+
+    # Inputs (Usually from AWX Survey)
     vm_name: "rocky-08-01"
     vm_ip: "192.168.253.133"
 
@@ -28,7 +33,7 @@
         vm_list: "{{ vm_list | default([]) + [ {'name': item.0, 'ip': item.1} ] }}"
       loop: "{{ vm_name.split(',') | zip(vm_ip.split(',')) | list }}"
 
-    - name: Create and power on VM
+    - name: 1. Create and Power On VM
       community.vmware.vmware_guest:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -54,12 +59,11 @@
         customization:
           domain: "{{ guest_domain }}"
           hostname: "{{ item.name }}"
-        # Disable waiting to let the next task force the connection
         wait_for_customization: no
         wait_for_ip_address: no
       loop: "{{ vm_list }}"
 
-    - name: FORCE NIC CONNECTION (Ansible 2.15 Flat Syntax)
+    - name: 2. Force NIC Connection (Ansible 2.15 Syntax)
       community.vmware.vmware_guest_network:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -74,14 +78,32 @@
         gather_network_info: false
       loop: "{{ vm_list }}"
       register: force_nic_output
-      ignore_errors: yes
 
-    - name: Wait for SSH (Verify connectivity)
+    - name: 3. Wait for SSH to become reachable
       ansible.builtin.wait_for:
         host: "{{ item.ip }}"
         port: 22
         state: started
-        delay: 20
+        delay: 15
         timeout: 300
       loop: "{{ vm_list }}"
       delegate_to: localhost
+
+    - name: 4. Verify Guest OS Networking
+      ansible.builtin.setup:
+      delegate_to: "{{ item.ip }}"
+      vars:
+        ansible_user: "{{ vm_root_user }}"
+        ansible_password: "{{ vm_root_password }}"
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+      loop: "{{ vm_list }}"
+      register: guest_facts
+
+    - name: 5. Display Provisioning Summary
+      ansible.builtin.debug:
+        msg: 
+          - "VM Name: {{ item.name }}"
+          - "Status: SUCCESS"
+          - "IP Address: {{ item.ip }}"
+          - "Hostname set: {{ hostvars[item.ip]['ansible_hostname'] }}"
+      loop: "{{ vm_list }}"
