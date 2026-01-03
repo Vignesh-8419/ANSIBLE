@@ -19,7 +19,7 @@
     esxi_hostname: "192.168.253.128"
     guest_domain: "vgs.com"
 
-    # Inputs usually passed via AWX Survey
+    # Inputs (Comma separated if multiple)
     vm_name: "rocky-08-01"
     vm_ip: "192.168.253.133"
 
@@ -29,7 +29,7 @@
         vm_list: "{{ vm_list | default([]) + [ {'name': item.0, 'ip': item.1} ] }}"
       loop: "{{ vm_name.split(',') | zip(vm_ip.split(',')) | list }}"
 
-    - name: Create and power on VM
+    - name: Create and power on VM with static IP
       community.vmware.vmware_guest:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -67,7 +67,19 @@
             - "192.168.253.151"
           hostname: "{{ item.name }}"
           hwclockUTC: true
-        wait_for_customization: true
-        wait_for_customization_timeout: 600
+        # Setting wait_for_customization to 'no' prevents the task from failing 
+        # while the OS is still processing the network change.
+        wait_for_customization: no
+        wait_for_ip_address: yes
       loop: "{{ vm_list }}"
-      register: vm_provision_results
+      register: rocky_vms
+
+    - name: Wait for SSH to become available
+      ansible.builtin.wait_for:
+        host: "{{ item.ip }}"
+        port: 22
+        state: started
+        delay: 10
+        timeout: 300
+      loop: "{{ vm_list }}"
+      delegate_to: localhost
