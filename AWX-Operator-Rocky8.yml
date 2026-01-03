@@ -18,6 +18,10 @@
     esxi_hostname: "192.168.253.128"
     guest_domain: "vgs.com"
 
+    # Guest Credentials
+    vm_root_user: "root"
+    vm_root_password: "Root@123"
+
     # Inputs
     vm_name: "rocky-08-01"
     vm_ip: "192.168.253.133"
@@ -28,7 +32,7 @@
         vm_list: "{{ vm_list | default([]) + [ {'name': item.0, 'ip': item.1} ] }}"
       loop: "{{ vm_name.split(',') | zip(vm_ip.split(',')) | list }}"
 
-    - name: Create and power on VM
+    - name: 2. Create and power on VM
       community.vmware.vmware_guest:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -40,6 +44,7 @@
         name: "{{ item.name }}"
         state: poweredon
         template: "{{ template_name }}"
+        # Keeping hardware to match your working run
         hardware:
           memory_mb: 4096
           num_cpus: 4
@@ -54,12 +59,11 @@
         customization:
           domain: "{{ guest_domain }}"
           hostname: "{{ item.name }}"
-        # Disable waiting to let the next task force the connection
         wait_for_customization: no
         wait_for_ip_address: no
       loop: "{{ vm_list }}"
 
-    - name: 2. FORCE NIC CONNECTION (Ansible 2.15 Flat Syntax)
+    - name: 3. FORCE NIC CONNECTION (Ansible 2.15 Flat Syntax)
       community.vmware.vmware_guest_network:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -73,10 +77,9 @@
         state: present
         gather_network_info: false
       loop: "{{ vm_list }}"
-      register: force_nic_output
       ignore_errors: yes
 
-    - name: 3. Wait for SSH (Verify Connectivity)
+    - name: 4. Wait for SSH (Verify Connectivity)
       ansible.builtin.wait_for:
         host: "{{ item.ip }}"
         port: 22
@@ -86,7 +89,7 @@
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
-    - name: 4. Verify Guest OS Networking (Gather Facts)
+    - name: 5. Verify Guest OS Networking (Gather Facts)
       ansible.builtin.setup:
       delegate_to: "{{ item.ip }}"
       vars:
@@ -96,11 +99,16 @@
       loop: "{{ vm_list }}"
       register: guest_facts
 
-    - name: 5. Final Summary Output
+    - name: 6. Final Summary Output
       ansible.builtin.debug:
         msg: 
-          - "VM: {{ item.name }}"
-          - "IP: {{ item.ip }}"
-          - "OS Found: {{ hostvars[item.ip]['ansible_distribution'] | default('Unknown') }}"
-          - "Hostname confirmed: {{ hostvars[item.ip]['ansible_hostname'] | default('N/A') }}"
-      loop: "{{ vm_list }}"
+          - "VM Name: {{ item.name }}"
+          - "Static IP: {{ item.ip }}"
+          - "Detected OS: {{ item_fact.ansible_facts.ansible_distribution }}"
+          - "Verified Hostname: {{ item_fact.ansible_facts.ansible_hostname }}"
+      loop: "{{ vm_list | zip(guest_facts.results) | list }}"
+      loop_control:
+        loop_var: fact_pair
+      vars:
+        item: "{{ fact_pair.0 }}"
+        item_fact: "{{ fact_pair.1 }}"
