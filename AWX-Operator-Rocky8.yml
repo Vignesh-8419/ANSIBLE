@@ -1,21 +1,26 @@
 ---
-- name: Provision RockyOS VM and Set Hostname
+- name: Provision RockyOS VMs with static IPs
   hosts: localhost
   connection: local
   gather_facts: no
 
   vars:
-    # vCenter Details
     vcenter_hostname: "192.168.253.129"
     vcenter_username: "administrator@vsphere.local"
     vcenter_password: "Vigneshv12$"
-    
-    # VM Details
-    vm_name: "rocky-08-02"
-    vm_ip: "192.168.253.134"
-    vm_root_user: "root"
-    vm_root_password: "Root@123"
+    datacenter_name: "Datacenter"
+    folder: "vm"
+    datastore_name: "datastore1"
+    template_name: "GOLDENTEMPLATE_ROCKYOS_08"
+    vm_network: "VM Network"
+    netmask: "255.255.255.0"
+    gateway: "192.168.253.2"
+    esxi_hostname: "192.168.253.128"
     guest_domain: "vgs.com"
+
+    # Inputs
+    vm_name: "rocky-08-01"
+    vm_ip: "192.168.253.133"
 
   tasks:
     - name: 1. Create and Power On VM in vCenter
