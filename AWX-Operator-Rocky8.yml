@@ -1,5 +1,5 @@
 ---
-- name: Provision RockyOS VMs with static IPs
+- name: Provision VMs with static IPs
   hosts: localhost
   connection: local
   gather_facts: no
@@ -12,7 +12,11 @@
     datacenter_name: "Datacenter"
     folder: "vm"
     datastore_name: "datastore1"
-    template_name: "GOLDENTEMPLATE_ROCKYOS_08"
+    
+    # Toggle this based on which template you are testing
+    template_name: "GOLDENTEMPLATE_CENTOS_07" 
+    # template_name: "GOLDENTEMPLATE_ROCKYOS_08"
+
     vm_network: "VM Network"
     netmask: "255.255.255.0"
     gateway: "192.168.253.2"
@@ -23,9 +27,9 @@
     vm_root_user: "root"
     vm_root_password: "Root@123"
 
-    # Inputs (Usually from AWX Survey)
-    vm_name: "rocky-08-01"
-    vm_ip: "192.168.253.133"
+    # Inputs
+    vm_name: "centos-07-01"
+    vm_ip: "192.168.253.134"
 
   tasks:
     - name: Build vm_list
@@ -46,10 +50,8 @@
         state: poweredon
         template: "{{ template_name }}"
         hardware:
-          memory_mb: 4096
-          num_cpus: 4
-          boot_firmware: efi
-          secure_boot: false
+          memory_mb: 2048
+          num_cpus: 2
         networks:
           - name: "{{ vm_network }}"
             ip: "{{ item.ip }}"
@@ -63,7 +65,7 @@
         wait_for_ip_address: no
       loop: "{{ vm_list }}"
 
-    - name: 2. Force NIC Connection (Ansible 2.15 Syntax)
+    - name: 2. Force NIC Connection
       community.vmware.vmware_guest_network:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -77,33 +79,33 @@
         state: present
         gather_network_info: false
       loop: "{{ vm_list }}"
-      register: force_nic_output
 
-    - name: 3. Wait for SSH to become reachable
+    - name: 3. Wait for SSH (Wait for OS to finish booting)
       ansible.builtin.wait_for:
         host: "{{ item.ip }}"
         port: 22
         state: started
-        delay: 15
+        delay: 20
         timeout: 300
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
-    - name: 4. Verify Guest OS Networking
+    - name: 4. Verify Guest OS Networking (Gather Facts)
       ansible.builtin.setup:
       delegate_to: "{{ item.ip }}"
       vars:
         ansible_user: "{{ vm_root_user }}"
         ansible_password: "{{ vm_root_password }}"
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+        # This prevents hanging on the "Accept SSH Key" prompt
+        ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
       loop: "{{ vm_list }}"
       register: guest_facts
 
-    - name: 5. Display Provisioning Summary
+    - name: 5. Final Summary Output
       ansible.builtin.debug:
         msg: 
-          - "VM Name: {{ item.name }}"
-          - "Status: SUCCESS"
-          - "IP Address: {{ item.ip }}"
-          - "Hostname set: {{ hostvars[item.ip]['ansible_hostname'] }}"
+          - "VM: {{ item.name }}"
+          - "IP: {{ item.ip }}"
+          - "OS Found: {{ hostvars[item.ip]['ansible_distribution'] }}"
+          - "Hostname confirmed: {{ hostvars[item.ip]['ansible_hostname'] }}"
       loop: "{{ vm_list }}"
