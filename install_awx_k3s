@@ -1,0 +1,51 @@
+kubectl patch awx awx-server -n awx --type=merge -p '{
+  "spec": {
+    "task_resource_requirements": {
+      "requests": {
+        "cpu": "1",
+        "memory": "2Gi"
+      },
+      "limits": {
+        "cpu": "2",
+        "memory": "3Gi"
+      }
+    }
+  }
+}'
+
+
+kubectl patch awx awx-server -n awx --type=merge -p '{
+  "spec": {
+    "projects_persistence": true
+  }
+}'
+
+
+kubectl patch awx awx-server -n awx --type=merge -p '{
+   "spec": {
+     "projects_storage_access_mode": "ReadWriteOnce"
+   }
+ }'
+
+
+kubectl delete pvc awx-server-projects-claim -n awx
+kubectl get pvc -n awx -w
+
+
+kubectl patch awx awx-server -n awx --type=merge -p '{
+  "spec": {
+    "projects": [
+      {
+        "name": "ANSIBLE",
+        "scm_type": "git",
+        "scm_url": "https://github.com/Vignesh-8419/ANSIBLE",
+        "scm_branch": "main",
+        "scm_clean": true,
+        "scm_delete_on_update": true,
+        "scm_update_on_launch": true,
+        "scm_depth": 1
+      }
+    ],
+    "projects_persistence": true
+  }
+}'
