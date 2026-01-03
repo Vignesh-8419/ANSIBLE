@@ -5,14 +5,17 @@
   gather_facts: no
 
   vars:
-    # vCenter Details
+    # vCenter Connectivity
     vcenter_hostname: "192.168.253.129"
     vcenter_username: "administrator@vsphere.local"
     vcenter_password: "Vigneshv12$"
     datacenter_name: "Datacenter"
     folder: "vm"
     datastore_name: "datastore1"
+    
+    # Template Selection (Switch as needed)
     template_name: "GOLDENTEMPLATE_CENTOS_07"
+
     vm_network: "VM Network"
     netmask: "255.255.255.0"
     gateway: "192.168.253.2"
@@ -24,16 +27,16 @@
     vm_root_password: "Root@123"
 
     # Inputs (Survey)
-    vm_name: "centos-07-01"
-    vm_ip: "192.168.253.134"
+    vm_name: "rocky-08-01"
+    vm_ip: "192.168.253.133"
 
   tasks:
-    - name: Build vm_list
+    - name: 1. Build vm_list
       set_fact:
         vm_list: "{{ vm_list | default([]) + [ {'name': item.0, 'ip': item.1} ] }}"
       loop: "{{ vm_name.split(',') | zip(vm_ip.split(',')) | list }}"
 
-    - name: 1. Create and Power On CentOS 7 VM
+    - name: 2. Create and power on VM
       community.vmware.vmware_guest:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -45,10 +48,11 @@
         name: "{{ item.name }}"
         state: poweredon
         template: "{{ template_name }}"
-        # CentOS 7 usually uses BIOS by default, but check your template
         hardware:
-          memory_mb: 2048
-          num_cpus: 2
+          memory_mb: 4096
+          num_cpus: 4
+          boot_firmware: efi
+          secure_boot: false
         networks:
           - name: "{{ vm_network }}"
             ip: "{{ item.ip }}"
@@ -58,13 +62,11 @@
         customization:
           domain: "{{ guest_domain }}"
           hostname: "{{ item.name }}"
-          dns_servers:
-            - "192.168.253.151"
         wait_for_customization: no
         wait_for_ip_address: no
       loop: "{{ vm_list }}"
 
-    - name: 2. Force NIC Connection (CentOS 7 Hardware Re-assert)
+    - name: 3. FORCE NIC CONNECTION
       community.vmware.vmware_guest_network:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -78,31 +80,35 @@
         state: present
         gather_network_info: false
       loop: "{{ vm_list }}"
+      ignore_errors: yes
 
-    - name: 3. Wait for SSH (CentOS 7 may take longer to boot)
+    - name: 4. Wait for SSH (Verify Connectivity)
       ansible.builtin.wait_for:
         host: "{{ item.ip }}"
         port: 22
         state: started
-        delay: 30
+        delay: 20
         timeout: 400
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
-    - name: 4. Verify CentOS 7 OS Networking
+    - name: 5. Verify Guest OS Networking (Gather Facts)
       ansible.builtin.setup:
       delegate_to: "{{ item.ip }}"
       vars:
         ansible_user: "{{ vm_root_user }}"
         ansible_password: "{{ vm_root_password }}"
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+        ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
       loop: "{{ vm_list }}"
-      register: centos_facts
+      register: guest_facts
 
-    - name: 5. Display Summary
+    - name: 6. Final Summary Output
       ansible.builtin.debug:
         msg: 
-          - "CentOS VM Name: {{ item.name }}"
-          - "IP Address: {{ item.ip }}"
-          - "OS: {{ hostvars[item.ip]['ansible_distribution'] }} {{ hostvars[item.ip]['ansible_distribution_version'] }}"
-      loop: "{{ vm_list }}"
+          - "VM Name: {{ fact_pair.0.name }}"
+          - "IP Address: {{ fact_pair.0.ip }}"
+          - "Detected OS: {{ fact_pair.1.ansible_facts.ansible_distribution }}"
+          - "Verified Hostname: {{ fact_pair.1.ansible_facts.ansible_hostname }}"
+      loop: "{{ vm_list | zip(guest_facts.results) | list }}"
+      loop_control:
+        loop_var: fact_pair
