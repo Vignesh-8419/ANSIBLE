@@ -14,7 +14,6 @@ systemctl disable firewalld
 
 # --- 2. Virtual IP Assignment ---
 echo "🌐 Assigning Virtual IP $VIP to loopback..."
-# Adding to lo (loopback) allows the OS to accept traffic for this IP
 ip addr add $VIP/32 dev lo || echo "VIP already assigned to lo"
 
 # --- 3. K3s Installation ---
@@ -26,73 +25,79 @@ if ! command -v k3s &> /dev/null; then
     sudo chmod 600 $HOME/.kube/config
 fi
 
-# --- 4. Install Kustomize (Required for AWX Operator) ---
+# --- 4. Install Kustomize ---
 if ! command -v kustomize &> /dev/null; then
     echo "🛠️ Installing Kustomize..."
     curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
     sudo mv kustomize /usr/local/bin/
 fi
 
-# --- 5. Critical Fix: Metrics Server Patch ---
-echo "⏳ Waiting for Metrics Server to initialize..."
-MAX_RETRIES=30
-COUNT=0
-while ! kubectl get deployment metrics-server -n kube-system >/dev/null 2>&1; do
-    sleep 5
-    COUNT=$((COUNT+1))
-    if [ $COUNT -ge $MAX_RETRIES ]; then echo "❌ Metrics server timeout"; exit 1; fi
-done
-
-echo "🔧 Patching Metrics Server for API discovery..."
+# --- 5. Metrics Server Patch ---
+echo "⏳ Waiting for Metrics Server..."
+until kubectl get deployment metrics-server -n kube-system >/dev/null 2>&1; do sleep 5; done
 kubectl patch deployment metrics-server -n kube-system --type='json' \
   -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
 
 # --- 6. AWX Operator Deployment ---
-echo "🏗️ Deploying AWX Operator (v$OPERATOR_VERSION)..."
+echo "🏗️ Deploying AWX Operator..."
 if [ ! -d "awx-operator" ]; then
     git clone https://github.com/ansible/awx-operator.git
 fi
-
 cd awx-operator
 git checkout $OPERATOR_VERSION
 
-# Create namespace
 kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
-
-# Pre-create the admin password secret
-echo "🔑 Setting Admin Password to $ADMIN_PASSWORD..."
 kubectl create secret generic awx-server-admin-password \
   --from-literal=password=$ADMIN_PASSWORD \
   -n $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
 
-# Deploy the operator
 make deploy NAMESPACE=$NAMESPACE
 
 # --- 7. AWX Instance Creation ---
-echo "🚀 Creating AWX Instance on $VIP..."
-# NOTE: Fields must be CamelCase (externalIPs, serviceType)
+echo "🚀 Creating AWX Instance..."
+# We use NodePort here because the AWX CRD is strict about its allowed fields
 cat <<EOF > awx-instance.yaml
 apiVersion: awx.ansible.com/v1beta1
 kind: AWX
 metadata:
   name: awx-server
 spec:
-  service_type: LoadBalancer
-  externalIPs:
-    - $VIP
+  service_type: nodeport
+  nodeport_port: 31133
   admin_password_secret: awx-server-admin-password
   postgres_storage_class: local-path
 EOF
 
 kubectl apply -f awx-instance.yaml -n $NAMESPACE
 
-# --- 8. Final Summary ---
+# --- 8. VIP Forwarding (The "Secret Sauce") ---
+# Since the AWX CRD doesn't support externalIPs directly, we create a side-service 
+# that maps your VIP to the AWX pods on port 80.
+echo "🔗 Mapping VIP $VIP to AWX..."
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: awx-vip-service
+  namespace: $NAMESPACE
+spec:
+  type: LoadBalancer
+  externalIPs:
+    - $VIP
+  ports:
+    - port: 80
+      targetPort: 8052
+      protocol: TCP
+  selector:
+    app.kubernetes.io/component: web
+    app.kubernetes.io/managed-by: awx-operator
+    app.kubernetes.io/name: awx-server
+EOF
+
 echo "-------------------------------------------------------"
-echo "✅ AWX Installation Started!"
-echo "-------------------------------------------------------"
-echo "🌐 URL: http://$VIP"
+echo "✅ AWX Reinstall Initialized!"
+echo "🌐 URL: http://$VIP (Port 80)"
 echo "👤 User: admin"
 echo "🔑 Password: $ADMIN_PASSWORD"
 echo "-------------------------------------------------------"
-echo "🔍 Monitor progress with the command below:"
-echo "kubectl get pods -n $NAMESPACE -w"
+echo "🔍 Monitor with: kubectl get pods -n $NAMESPACE -w"
