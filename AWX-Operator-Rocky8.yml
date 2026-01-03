@@ -83,7 +83,7 @@
   tasks:
     - name: 5. Set Hostname inside the VM
       ansible.builtin.hostname:
-        name: "{{ hostvars['localhost']['vm_name'] }}.{{ guest_domain }}"
+        name: "{{ inventory_hostname }}.{{ hostvars['localhost']['guest_domain'] }}"
 
     - name: 6. Final Verification
       ansible.builtin.debug:
