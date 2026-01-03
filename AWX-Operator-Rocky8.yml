@@ -84,13 +84,7 @@
       ansible.builtin.hostname:
         name: "{{ hostvars['localhost']['vm_name'] }}"
 
-    - name: 6. Update /etc/hosts
-      ansible.builtin.lineinfile:
-        path: /etc/hosts
-        line: "127.0.0.1 {{ hostvars['localhost']['vm_name'] }} {{ hostvars['localhost']['vm_name'] }}.{{ hostvars['localhost']['guest_domain'] }} localhost"
-        regexp: "^127.0.0.1"
-
-    - name: 7. Final Verification
+    - name: 6. Final Verification
       ansible.builtin.debug:
         msg: 
           - "Successfully logged into: {{ ansible_host }}"
