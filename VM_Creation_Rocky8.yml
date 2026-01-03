@@ -54,20 +54,19 @@
             type: thin
             datastore: "{{ datastore_name }}"
         hardware:
-        hardware:
           memory_mb: 4096
           num_cpus: 4
           num_cpu_cores_per_socket: 1
           boot_firmware: efi
           secure_boot: false
         networks:
-          - name: "{{ vm_network }}"
-            type: static
-            ip: "{{ item.ip }}"
-            gateway: "{{ gateway }}"
-            netmask: "{{ netmask }}"
-            connected: true
-            start_connected: true
+         - name: "{{ vm_network }}"
+           ip: "{{ item.ip }}"
+           netmask: "{{ netmask }}"
+           gateway: "{{ gateway }}"
+           device_type: vmxnet3
+           start_connected: true  # Tells vCenter to attempt connection
+           connected: true        # Tells vCenter the desired state is 'On'
         customization:
           domain: "{{ guest_domain }}"
           dns_servers:
