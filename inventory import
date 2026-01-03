@@ -6,12 +6,12 @@ pip3 install --user awxkit
 echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc
 source ~/.bashrc
 awx --version
-awx login --conf.host http://192.168.253.226/ --conf.username admin --conf.password 'Root@123'
+awx login --conf.host http://192.168.253.145/ --conf.username admin --conf.password 'Root@123'
 
 awx inventory create \
   --name "VGS-CLUSTER" \
   --organization "Default" \
-  --conf.host https://192.168.253.137/ \
+  --conf.host https://192.168.253.145/ \
   --conf.token "y7g8YtjpFGM95gGQbTFUds84NFoXo9" \
   -k
 
@@ -31,7 +31,7 @@ cent-07-02.vgs.com ansible_host=192.168.253.132
 rocky-08-01.vgs.com ansible_host=192.168.253.133
 rocky-08-02.vgs.com ansible_host=192.168.253.134
 dns-server-01.vgs.com ansible_host=192.168.253.151
-ansible-server-01.vgs.com ansible_host=192.168.253.135
+ansible-server-01.vgs.com ansible_host=192.168.253.145
 http-server-01.vgs.com ansible_host=192.168.253.136
 test-pxe01.vgs.com ansible_host=192.168.253.191
 test-pxe02.vgs.com ansible_host=192.168.253.192
