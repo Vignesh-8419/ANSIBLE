@@ -13,7 +13,7 @@
     folder: "vm"
     datastore_name: "datastore1"
     
-    # Toggle this based on which template you are testing
+    # Set this to your desired template
     template_name: "GOLDENTEMPLATE_CENTOS_07" 
     # template_name: "GOLDENTEMPLATE_ROCKYOS_08"
 
@@ -27,7 +27,7 @@
     vm_root_user: "root"
     vm_root_password: "Root@123"
 
-    # Inputs
+    # Inputs (Survey)
     vm_name: "centos-07-01"
     vm_ip: "192.168.253.134"
 
@@ -49,9 +49,7 @@
         name: "{{ item.name }}"
         state: poweredon
         template: "{{ template_name }}"
-        hardware:
-          memory_mb: 4096
-          num_cpus: 4
+        # HARDWARE BLOCK REMOVED: To inherit CPU/RAM from template and avoid HotRemove error
         networks:
           - name: "{{ vm_network }}"
             ip: "{{ item.ip }}"
@@ -61,11 +59,13 @@
         customization:
           domain: "{{ guest_domain }}"
           hostname: "{{ item.name }}"
+          dns_servers:
+            - "192.168.253.151"
         wait_for_customization: no
         wait_for_ip_address: no
       loop: "{{ vm_list }}"
 
-    - name: 2. Force NIC Connection
+    - name: 2. Force NIC Connection (Ansible 2.15 Syntax)
       community.vmware.vmware_guest_network:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -80,13 +80,13 @@
         gather_network_info: false
       loop: "{{ vm_list }}"
 
-    - name: 3. Wait for SSH (Wait for OS to finish booting)
+    - name: 3. Wait for SSH (Verify Connectivity)
       ansible.builtin.wait_for:
         host: "{{ item.ip }}"
         port: 22
         state: started
         delay: 20
-        timeout: 300
+        timeout: 400
       loop: "{{ vm_list }}"
       delegate_to: localhost
 
@@ -96,7 +96,6 @@
       vars:
         ansible_user: "{{ vm_root_user }}"
         ansible_password: "{{ vm_root_password }}"
-        # This prevents hanging on the "Accept SSH Key" prompt
         ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
       loop: "{{ vm_list }}"
       register: guest_facts
@@ -106,6 +105,6 @@
         msg: 
           - "VM: {{ item.name }}"
           - "IP: {{ item.ip }}"
-          - "OS Found: {{ hostvars[item.ip]['ansible_distribution'] }}"
-          - "Hostname confirmed: {{ hostvars[item.ip]['ansible_hostname'] }}"
+          - "OS Found: {{ hostvars[item.ip]['ansible_distribution'] | default('Unknown') }}"
+          - "Hostname confirmed: {{ hostvars[item.ip]['ansible_hostname'] | default('N/A') }}"
       loop: "{{ vm_list }}"
