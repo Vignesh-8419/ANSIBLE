@@ -6,6 +6,8 @@ NAMESPACE="awx"
 OPERATOR_VERSION="2.19.1"
 VIP="192.168.253.225"
 ADMIN_PASSWORD="Root@123"
+# Automate finding the primary interface (usually ens192 or eth0)
+INTERFACE=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
 
 echo "📦 Installing prerequisites..."
 dnf install -y git make curl gettext net-tools
@@ -13,8 +15,11 @@ systemctl stop firewalld
 systemctl disable firewalld
 
 # --- 2. Virtual IP Assignment ---
-echo "🌐 Assigning Virtual IP $VIP to loopback..."
-ip addr add $VIP/32 dev lo || echo "VIP already assigned to lo"
+echo "🌐 Assigning Virtual IP $VIP to $INTERFACE..."
+# Removing from loopback if it exists there from previous runs
+ip addr del $VIP/32 dev lo 2>/dev/null || true
+# Adding to physical interface so it's reachable on the network
+ip addr add $VIP/24 dev $INTERFACE 2>/dev/null || echo "VIP already assigned"
 
 # --- 3. K3s Installation ---
 echo "☸️ Installing K3s (Kubernetes)..."
@@ -55,48 +60,45 @@ make deploy NAMESPACE=$NAMESPACE
 
 # --- 7. AWX Instance Creation ---
 echo "🚀 Creating AWX Instance..."
-# We use NodePort here because the AWX CRD is strict about its allowed fields
 cat <<EOF > awx-instance.yaml
 apiVersion: awx.ansible.com/v1beta1
 kind: AWX
 metadata:
   name: awx-server
 spec:
-  service_type: nodeport
-  nodeport_port: 31133
+  service_type: ClusterIP
   admin_password_secret: awx-server-admin-password
   postgres_storage_class: local-path
 EOF
 
 kubectl apply -f awx-instance.yaml -n $NAMESPACE
 
-# --- 8. VIP Forwarding (The "Secret Sauce") ---
-# Since the AWX CRD doesn't support externalIPs directly, we create a side-service 
-# that maps your VIP to the AWX pods on port 80.
-echo "🔗 Mapping VIP $VIP to AWX..."
+# --- 8. Ingress Configuration (The "Secret Sauce") ---
+echo "🔗 Creating Ingress for VIP $VIP..."
 cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Service
+apiVersion: networking.k8s.io/v1
+kind: Ingress
 metadata:
-  name: awx-vip-service
+  name: awx-ingress
   namespace: $NAMESPACE
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:
-  type: LoadBalancer
-  externalIPs:
-    - $VIP
-  ports:
-    - port: 80
-      targetPort: 8052
-      protocol: TCP
-  selector:
-    app.kubernetes.io/component: web
-    app.kubernetes.io/managed-by: awx-operator
-    app.kubernetes.io/name: awx-server
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: awx-server-service
+            port:
+              number: 80
 EOF
 
 echo "-------------------------------------------------------"
-echo "✅ AWX Reinstall Initialized!"
-echo "🌐 URL: http://$VIP (Port 80)"
+echo "✅ AWX Configuration Updated!"
+echo "🌐 URL: http://$VIP"
 echo "👤 User: admin"
 echo "🔑 Password: $ADMIN_PASSWORD"
 echo "-------------------------------------------------------"
