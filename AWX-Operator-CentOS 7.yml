@@ -38,7 +38,7 @@
         name: "{{ vm_name }}"
         state: poweredon
         template: "{{ template_name }}"
-        guest_id: "centos7_64Guest"
+        guest_id: "rhel7_64Guest"
         networks:
           - name: "{{ vm_network }}"
             ip: "{{ vm_ip }}"
