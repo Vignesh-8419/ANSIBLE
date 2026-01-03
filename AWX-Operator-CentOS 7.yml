@@ -48,6 +48,7 @@
         name: "{{ item.name }}"
         state: poweredon
         template: "{{ template_name }}"
+        guest_id: "rhel8_64Guest"
         hardware:
           memory_mb: 4096
           num_cpus: 4
