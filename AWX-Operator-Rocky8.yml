@@ -1,0 +1,73 @@
+---
+- name: Provision RockyOS VMs with static IPs
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars:
+    vcenter_hostname: "192.168.253.129"
+    vcenter_username: "administrator@vsphere.local"
+    vcenter_password: "Vigneshv12$"
+    datacenter_name: "Datacenter"
+    folder: "vm"
+    datastore_name: "datastore1"
+    template_name: "GOLDENTEMPLATE_ROCKYOS_08"
+    guest_id: "rhel8_64Guest"
+    vm_network: "VM Network"
+    netmask: "255.255.255.0"
+    gateway: "192.168.253.2"
+    esxi_hostname: "192.168.253.128"
+    guest_domain: "vgs.com"
+
+    # Inputs usually passed via AWX Survey
+    vm_name: "rocky-08-01"
+    vm_ip: "192.168.253.133"
+
+  tasks:
+    - name: Build vm_list from survey inputs
+      set_fact:
+        vm_list: "{{ vm_list | default([]) + [ {'name': item.0, 'ip': item.1} ] }}"
+      loop: "{{ vm_name.split(',') | zip(vm_ip.split(',')) | list }}"
+
+    - name: Create and power on VM
+      community.vmware.vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        datacenter: "{{ datacenter_name }}"
+        folder: "{{ folder }}"
+        esxi_hostname: "{{ esxi_hostname }}"
+        name: "{{ item.name }}"
+        state: poweredon
+        guest_id: "{{ guest_id }}"
+        datastore: "{{ datastore_name }}"
+        template: "{{ template_name }}"
+        disk:
+          - size_gb: 100
+            type: thin
+            datastore: "{{ datastore_name }}"
+        hardware:
+          memory_mb: 4096
+          num_cpus: 4
+          num_cpu_cores_per_socket: 1
+          boot_firmware: efi
+          secure_boot: false
+        networks:
+          - name: "{{ vm_network }}"
+            ip: "{{ item.ip }}"
+            netmask: "{{ netmask }}"
+            gateway: "{{ gateway }}"
+            device_type: vmxnet3
+            start_connected: true
+            connected: true
+        customization:
+          domain: "{{ guest_domain }}"
+          dns_servers:
+            - "192.168.253.151"
+          hostname: "{{ item.name }}"
+          hwclockUTC: true
+        wait_for_customization: true
+        wait_for_customization_timeout: 600
+      loop: "{{ vm_list }}"
+      register: vm_provision_results
