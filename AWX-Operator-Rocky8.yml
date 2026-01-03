@@ -12,19 +12,18 @@
     folder: "vm"
     datastore_name: "datastore1"
     template_name: "GOLDENTEMPLATE_ROCKYOS_08"
-    guest_id: "rhel8_64Guest"
     vm_network: "VM Network"
     netmask: "255.255.255.0"
     gateway: "192.168.253.2"
     esxi_hostname: "192.168.253.128"
     guest_domain: "vgs.com"
 
-    # Survey inputs
+    # Inputs
     vm_name: "rocky-08-01"
     vm_ip: "192.168.253.133"
 
   tasks:
-    - name: Build vm_list from survey inputs
+    - name: Build vm_list
       set_fact:
         vm_list: "{{ vm_list | default([]) + [ {'name': item.0, 'ip': item.1} ] }}"
       loop: "{{ vm_name.split(',') | zip(vm_ip.split(',')) | list }}"
@@ -40,67 +39,49 @@
         esxi_hostname: "{{ esxi_hostname }}"
         name: "{{ item.name }}"
         state: poweredon
-        guest_id: "{{ guest_id }}"
-        datastore: "{{ datastore_name }}"
         template: "{{ template_name }}"
-        disk:
-          - size_gb: 100
-            type: thin
-            datastore: "{{ datastore_name }}"
         hardware:
           memory_mb: 4096
           num_cpus: 4
-          num_cpu_cores_per_socket: 1
           boot_firmware: efi
           secure_boot: false
         networks:
           - name: "{{ vm_network }}"
-            type: static
             ip: "{{ item.ip }}"
             netmask: "{{ netmask }}"
             gateway: "{{ gateway }}"
-            device_type: vmxnet3
             start_connected: true
-            connected: true
         customization:
           domain: "{{ guest_domain }}"
-          dns_servers:
-            - "192.168.253.151"
           hostname: "{{ item.name }}"
-          hwclockUTC: true
-        wait_for_customization: false
-        wait_for_ip_address: false
+        # Disable waiting to let the next task force the connection
+        wait_for_customization: no
+        wait_for_ip_address: no
       loop: "{{ vm_list }}"
-      register: deploy_results
 
-    - name: Force connect network adapter (Fixes the 'Disconnected' state)
+    - name: FORCE NIC CONNECTION (Ansible 2.15 Flat Syntax)
       community.vmware.vmware_guest_network:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
         validate_certs: false
+        datacenter: "{{ datacenter_name }}"
         name: "{{ item.name }}"
+        network_name: "{{ vm_network }}"
+        connected: true
+        start_connected: true
+        state: present
         gather_network_info: false
-        networks:
-          - name: "{{ vm_network }}"
-            connected: true
-            start_connected: true
       loop: "{{ vm_list }}"
-      ignore_errors: true
+      register: force_nic_output
+      ignore_errors: yes
 
-    - name: Wait for VM to respond to SSH
+    - name: Wait for SSH (Verify connectivity)
       ansible.builtin.wait_for:
         host: "{{ item.ip }}"
         port: 22
         state: started
         delay: 20
-        timeout: 400
-      loop: "{{ vm_list }}"
-      delegate_to: localhost
-
-    - name: Final Connectivity Ping
-      ansible.builtin.ping:
-      vars:
-        ansible_host: "{{ item.ip }}"
+        timeout: 300
       loop: "{{ vm_list }}"
       delegate_to: localhost
