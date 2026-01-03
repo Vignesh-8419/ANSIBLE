@@ -18,6 +18,10 @@
     esxi_hostname: "192.168.253.128"
     guest_domain: "vgs.com"
 
+    # Guest Credentials for SSH Login
+    vm_root_user: "root"
+    vm_root_password: "Root@123"
+
     # Inputs
     vm_name: "rocky-08-01"
     vm_ip: "192.168.253.133"
@@ -29,15 +33,16 @@
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
         validate_certs: false
-        datacenter: "Datacenter"
+        datacenter: "{{ datacenter_name }}"
+        folder: "{{ folder }}"  # <--- Added this to fix your error
         name: "{{ vm_name }}"
         state: poweredon
-        template: "GOLDENTEMPLATE_ROCKYOS_08"
+        template: "{{ template_name }}"
         networks:
-          - name: "VM Network"
+          - name: "{{ vm_network }}"
             ip: "{{ vm_ip }}"
-            netmask: "255.255.255.0"
-            gateway: "192.168.253.2"
+            netmask: "{{ netmask }}"
+            gateway: "{{ gateway }}"
             start_connected: true
         wait_for_customization: no
         wait_for_ip_address: no
@@ -48,9 +53,9 @@
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
         validate_certs: false
-        datacenter: "Datacenter"
+        datacenter: "{{ datacenter_name }}"
         name: "{{ vm_name }}"
-        network_name: "VM Network"
+        network_name: "{{ vm_network }}"
         connected: true
         state: present
 
@@ -62,7 +67,7 @@
         delay: 10
         timeout: 300
 
-    - name: 4. Define VM for SSH Login
+    - name: 4. Define VM for SSH Login (Bridge to IP)
       ansible.builtin.add_host:
         name: "target_vm"
         ansible_host: "{{ vm_ip }}"
@@ -82,12 +87,12 @@
     - name: 6. Update /etc/hosts
       ansible.builtin.lineinfile:
         path: /etc/hosts
-        line: "127.0.0.1 {{ hostvars['localhost']['vm_name'] }} localhost"
+        line: "127.0.0.1 {{ hostvars['localhost']['vm_name'] }} {{ hostvars['localhost']['vm_name'] }}.{{ hostvars['localhost']['guest_domain'] }} localhost"
         regexp: "^127.0.0.1"
 
     - name: 7. Final Verification
       ansible.builtin.debug:
         msg: 
           - "Successfully logged into: {{ ansible_host }}"
-          - "Current Hostname: {{ ansible_hostname }}"
+          - "Current Hostname inside OS: {{ ansible_hostname }}"
           - "OS Distribution: {{ ansible_distribution }}"
