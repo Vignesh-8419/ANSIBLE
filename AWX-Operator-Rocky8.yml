@@ -66,6 +66,7 @@
         ansible_password: "{{ vm_root_password }}"
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
         vm_short_name: "{{ item.name }}"
+        vm_domain: "{{ guest_domain }}"  # <-- Pass the domain variable here
         groups: "temp_group"
       loop: "{{ vm_list }}"
 
@@ -83,7 +84,7 @@
 
     - name: 6. Set Hostname inside the VM
       ansible.builtin.hostname:
-        name: "{{ vm_short_name }}.{{ hostvars['localhost']['guest_domain'] }}"
+        name: "{{ vm_short_name }}.{{ vm_domain }}"  # <-- Use the local host variable
 
     - name: 7. Final Verification
       ansible.builtin.debug:
