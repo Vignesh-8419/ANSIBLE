@@ -75,6 +75,8 @@
         ansible_user: "{{ vm_root_user }}"
         ansible_password: "{{ vm_root_password }}"
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+        guest_domain: "{{ guest_domain }}"
+        vm_short_name: "{{ vm_name }}"
         groups: "temp_group"
 
 - name: Phase 2 - Login to Server via IP and Configure
@@ -83,7 +85,7 @@
   tasks:
     - name: 5. Set Hostname inside the VM
       ansible.builtin.hostname:
-        name: "{{ inventory_hostname }}.{{ hostvars['localhost']['guest_domain'] }}"
+        name: "{{ vm_short_name }}.{{ guest_domain }}"
 
     - name: 6. Final Verification
       ansible.builtin.debug:
