@@ -61,10 +61,11 @@ kubectl patch deployment metrics-server -n kube-system --type='json' \
 
 # --- 6. AWX Operator Deployment ---
 echo "🏗️ Deploying AWX Operator..."
-# Clear old failed data to ensure a clean reconcile
-kubectl delete awx awx-server -n $NAMESPACE --ignore-not-found=true
-rm -rf awx-operator
 
+# FIXED LINE: We check if the CRD exists first or just allow the command to fail gracefully
+kubectl delete awx awx-server -n $NAMESPACE --ignore-not-found=true 2>/dev/null || true
+
+rm -rf awx-operator
 git clone https://github.com/ansible/awx-operator.git
 cd awx-operator
 git checkout $OPERATOR_VERSION
