@@ -32,7 +32,17 @@
         vm_list: "{{ vm_list | default([]) + [ {'name': item.0.strip(), 'ip': item.1.strip()} ] }}"
       loop: "{{ vm_name.split(',') | zip(vm_ip.split(',')) | list }}"
 
-    - name: 1. Create and Power On VMs in vCenter
+    - name: Phase 1 - Register DNS entries on Pi-hole
+      hosts: dns-server-01.vgs.com
+      become: yes
+      vars:
+        guest_domain: "vgs.com"
+      tasks:
+        - name: Execute Pi-hole script for each new VM
+          ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ item.name }}.{{ guest_domain }} {{ item.ip }}"
+          loop: "{{ hostvars['localhost']['vm_list'] }}"
+
+    - name: Phase 2 - Create and Power On VMs in vCenter
       community.vmware.vmware_guest:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -70,7 +80,7 @@
         groups: "temp_group"
       loop: "{{ vm_list }}"
 
-- name: Phase 2 - Login to Servers via IP and Configure
+- name: Phase 3 - Login to Servers via IP and Configure
   hosts: temp_group
   gather_facts: no
   tasks:
