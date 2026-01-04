@@ -8,8 +8,15 @@ VIP="192.168.253.145"
 ADMIN_PASSWORD="Root@123"
 INTERFACE=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
 
-echo "📦 Installing prerequisites..."
-dnf install -y git make curl gettext net-tools
+echo "📦 Installing prerequisites & SELinux support..."
+dnf install -y git make curl gettext net-tools container-selinux selinux-policy-base
+# Install K3s SELinux policy specifically for RHEL/Rocky 8
+dnf install -y https://rpm.rancher.io/k3s/stable/common/centos/8/noarch/k3s-selinux-1.5-1.el8.noarch.rpm || true
+
+# Set SELinux to Permissive for the installation duration to prevent 'event runner' errors
+setenforce 0
+sed -i 's/^SELINUX=.*/SELINUX=permissive/' /etc/selinux/config
+
 systemctl stop firewalld || true
 systemctl disable firewalld || true
 
@@ -23,16 +30,17 @@ fi
 # --- 3. K3s Installation & Path Fixes ---
 echo "☸️ Installing K3s (Kubernetes)..."
 if ! command -v k3s &> /dev/null; then
-    curl -sfL https://get.k3s.io | sh -
+    curl -sfL https://get.k3s.io | sh -s - --write-kubeconfig-mode 644
 fi
 
-# IMPORTANT: Link kubectl and export paths immediately
+# Link kubectl and set paths
 ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl
 export PATH=$PATH:/usr/local/bin
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
-echo "⏳ Waiting for k3s.yaml to be generated..."
-until [ -f /etc/rancher/k3s/k3s.yaml ]; do sleep 2; done
+# Wait for K3s to be fully ready
+echo "⏳ Waiting for K3s Node to be Ready..."
+until kubectl get nodes | grep -q "Ready"; do sleep 5; done
 
 mkdir -p $HOME/.kube
 cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config
@@ -46,17 +54,17 @@ if ! command -v kustomize &> /dev/null; then
 fi
 
 # --- 5. Metrics Server Patch ---
-echo "⏳ Waiting for K3s Node and Metrics Server..."
-until kubectl get nodes | grep -q "Ready"; do sleep 5; done
+echo "⏳ Waiting for Metrics Server..."
 until kubectl get deployment metrics-server -n kube-system >/dev/null 2>&1; do sleep 5; done
-
 kubectl patch deployment metrics-server -n kube-system --type='json' \
   -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
 
 # --- 6. AWX Operator Deployment ---
 echo "🏗️ Deploying AWX Operator..."
-# Clean up old clone if it exists to avoid git checkout errors
+# Clear old failed data to ensure a clean reconcile
+kubectl delete awx awx-server -n $NAMESPACE --ignore-not-found=true
 rm -rf awx-operator
+
 git clone https://github.com/ansible/awx-operator.git
 cd awx-operator
 git checkout $OPERATOR_VERSION
@@ -66,6 +74,7 @@ kubectl create secret generic awx-server-admin-password \
   --from-literal=password=$ADMIN_PASSWORD \
   -n $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
 
+# Deploy the operator using the recommended kustomize method
 make deploy NAMESPACE=$NAMESPACE
 
 # --- 7. AWX Instance Creation ---
@@ -106,14 +115,18 @@ spec:
 EOF
 
 # --- 9. The Wait Loop ---
-echo "⏳ Waiting for AWX UI to be ready at http://$VIP..."
-echo "This takes 5-10 mins. Migrations are running in the background."
+echo "⏳ Waiting for AWX UI at http://$VIP..."
+echo "Monitoring database & migration status..."
 
-# Loop until we get a 200 OK from the web service
-# Note: Added -m 5 to curl to avoid hanging on slow responses
+# Loop until we get a 200 OK
 until [ "$(curl -s -L -o /dev/null -w "%{http_code}" http://$VIP --connect-timeout 5)" == "200" ]; do
     printf "."
-    sleep 10
+    # Check if pods are stuck in ImagePullBackOff or Error
+    STATUS=$(kubectl get pods -n $NAMESPACE | grep "awx-server-postgres" | awk '{print $3}' || echo "Pending")
+    if [[ "$STATUS" == *"Error"* ]] || [[ "$STATUS" == *"CrashLoop"* ]]; then
+        echo -e "\n⚠️  Postgres pod is in $STATUS state. Check logs with: kubectl logs -n $NAMESPACE -l app.kubernetes.io/name=postgres"
+    fi
+    sleep 15
 done
 
 echo -e "\n-------------------------------------------------------"
