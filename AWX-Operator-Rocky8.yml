@@ -85,6 +85,8 @@
 - name: Phase 3 - Login to Servers via IP and Configure
   hosts: temp_group
   gather_facts: no
+  vars:
+   dns_server_target: "192.168.253.151"
   tasks:
     - name: 1. Wait for SSH connection
       ansible.builtin.wait_for_connection:
