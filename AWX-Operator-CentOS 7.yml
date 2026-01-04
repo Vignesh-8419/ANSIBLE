@@ -102,19 +102,19 @@
 
     - name: 4. Rename Connection and Configure DNS
       ansible.builtin.shell: |
-        # 1. Get the current active connection name (e.g., "System ens192")
+        # 1. Get the current active connection name (e.g., "System ens32")
         OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
         
-        # 2. Rename the connection profile to "ens192"
-        nmcli connection modify "$OLD_NAME" connection.id "ens192"
+        # 2. Rename the connection profile to "ens32"
+        nmcli connection modify "$OLD_NAME" connection.id "ens32"
         
         # 3. Apply DNS settings using the new name
-        nmcli connection modify "ens192" ipv4.dns "{{ dns_server_target }}"
-        nmcli connection modify "ens192" ipv4.dns-search "{{ vm_domain }}"
-        nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
+        nmcli connection modify "ens32" ipv4.dns "{{ dns_server_target }}"
+        nmcli connection modify "ens32" ipv4.dns-search "{{ vm_domain }}"
+        nmcli connection modify "ens32" ipv4.ignore-auto-dns yes
         
         # 4. Refresh the connection to apply changes
-        nmcli connection up "ens192"
+        nmcli connection up "ens32"
       become: yes
 
     - name: 5. Verify DNS configuration
