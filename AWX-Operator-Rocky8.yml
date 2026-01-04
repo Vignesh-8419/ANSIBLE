@@ -81,12 +81,13 @@
         groups: "temp_group"
       loop: "{{ vm_list }}"
 
+
 # --- PHASE 3: GUEST CONFIGURATION ---
 - name: Phase 3 - Login to Servers via IP and Configure
   hosts: temp_group
   gather_facts: no
   vars:
-   dns_server_target: "192.168.253.151"
+    dns_server_target: "192.168.253.151"
   tasks:
     - name: 1. Wait for SSH connection
       ansible.builtin.wait_for_connection:
@@ -101,21 +102,21 @@
         name: "{{ vm_short_name }}.{{ vm_domain }}"
 
     - name: 4. Rename Connection and Configure DNS
-          ansible.builtin.shell: |
-            # 1. Get the current active connection name (e.g., "System ens192")
-            OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
-            
-            # 2. Rename the connection profile to "ens192"
-            nmcli connection modify "$OLD_NAME" connection.id "ens192"
-            
-            # 3. Apply DNS settings using the new name
-            nmcli connection modify "ens192" ipv4.dns "{{ dns_server_target }}"
-            nmcli connection modify "ens192" ipv4.dns-search "{{ vm_domain }}"
-            nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
-            
-            # 4. Refresh the connection to apply changes
-            nmcli connection up "ens192"
-          become: yes
+      ansible.builtin.shell: |
+        # 1. Get the current active connection name (e.g., "System ens192")
+        OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
+        
+        # 2. Rename the connection profile to "ens192"
+        nmcli connection modify "$OLD_NAME" connection.id "ens192"
+        
+        # 3. Apply DNS settings using the new name
+        nmcli connection modify "ens192" ipv4.dns "{{ dns_server_target }}"
+        nmcli connection modify "ens192" ipv4.dns-search "{{ vm_domain }}"
+        nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
+        
+        # 4. Refresh the connection to apply changes
+        nmcli connection up "ens192"
+      become: yes
 
     - name: 5. Verify DNS configuration
       ansible.builtin.command: cat /etc/resolv.conf
