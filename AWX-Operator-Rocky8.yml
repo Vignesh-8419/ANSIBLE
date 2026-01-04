@@ -100,19 +100,22 @@
       ansible.builtin.hostname:
         name: "{{ vm_short_name }}.{{ vm_domain }}"
 
-    - name: 4. Configure DNS and Search Domain via NetworkManager
-      ansible.builtin.shell: |
-        # Get the primary interface name (e.g., ens192 or eth0)
-        DEVICE=$(nmcli -t -f DEVICE connection show --active | head -n 1)
-        # Set the DNS server
-        nmcli connection modify "$DEVICE" ipv4.dns "{{ dns_server_target }}"
-        # Set the DNS search domain
-        nmcli connection modify "$DEVICE" ipv4.dns-search "{{ vm_domain }}"
-        # Set DNS priority/method to manual to ensure it persists
-        nmcli connection modify "$DEVICE" ipv4.ignore-auto-dns yes
-        # Reapply changes
-        nmcli connection up "$DEVICE"
-      become: yes
+    - name: 4. Rename Connection and Configure DNS
+          ansible.builtin.shell: |
+            # 1. Get the current active connection name (e.g., "System ens192")
+            OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
+            
+            # 2. Rename the connection profile to "ens192"
+            nmcli connection modify "$OLD_NAME" connection.id "ens192"
+            
+            # 3. Apply DNS settings using the new name
+            nmcli connection modify "ens192" ipv4.dns "{{ dns_server_target }}"
+            nmcli connection modify "ens192" ipv4.dns-search "{{ vm_domain }}"
+            nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
+            
+            # 4. Refresh the connection to apply changes
+            nmcli connection up "ens192"
+          become: yes
 
     - name: 5. Verify DNS configuration
       ansible.builtin.command: cat /etc/resolv.conf
