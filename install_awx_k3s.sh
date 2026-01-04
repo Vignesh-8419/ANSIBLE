@@ -6,7 +6,6 @@ NAMESPACE="awx"
 OPERATOR_VERSION="2.19.1"
 VIP="192.168.253.145"
 ADMIN_PASSWORD="Root@123"
-# Automate finding the primary interface (usually ens192)
 INTERFACE=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
 
 echo "📦 Installing prerequisites..."
@@ -21,37 +20,52 @@ if ! ip addr show $INTERFACE | grep -q "$VIP"; then
     ip addr add $VIP/24 dev $INTERFACE
 fi
 
-# --- 3. K3s Installation ---
+# --- 3. K3s Installation & Path Fixes ---
 echo "☸️ Installing K3s (Kubernetes)..."
 if ! command -v k3s &> /dev/null; then
     curl -sfL https://get.k3s.io | sh -
-    mkdir -p $HOME/.kube
-    sudo cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config
-    sudo chmod 600 $HOME/.kube/config
 fi
+
+# IMPORTANT: Link kubectl and export paths immediately
+ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl
+export PATH=$PATH:/usr/local/bin
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
+echo "⏳ Waiting for k3s.yaml to be generated..."
+until [ -f /etc/rancher/k3s/k3s.yaml ]; do sleep 2; done
+
+mkdir -p $HOME/.kube
+cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config
+chmod 600 $HOME/.kube/config
 
 # --- 4. Install Kustomize ---
 if ! command -v kustomize &> /dev/null; then
     echo "🛠️ Installing Kustomize..."
     curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-    sudo mv kustomize /usr/local/bin/
+    mv kustomize /usr/local/bin/
 fi
 
 # --- 5. Metrics Server Patch ---
-echo "⏳ Waiting for Metrics Server..."
+echo "⏳ Waiting for K3s Node and Metrics Server..."
+until kubectl get nodes | grep -q "Ready"; do sleep 5; done
 until kubectl get deployment metrics-server -n kube-system >/dev/null 2>&1; do sleep 5; done
+
 kubectl patch deployment metrics-server -n kube-system --type='json' \
   -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
 
 # --- 6. AWX Operator Deployment ---
 echo "🏗️ Deploying AWX Operator..."
-[ -d "awx-operator" ] || git clone https://github.com/ansible/awx-operator.git
+# Clean up old clone if it exists to avoid git checkout errors
+rm -rf awx-operator
+git clone https://github.com/ansible/awx-operator.git
 cd awx-operator
 git checkout $OPERATOR_VERSION
+
 kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic awx-server-admin-password \
   --from-literal=password=$ADMIN_PASSWORD \
   -n $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+
 make deploy NAMESPACE=$NAMESPACE
 
 # --- 7. AWX Instance Creation ---
@@ -93,10 +107,11 @@ EOF
 
 # --- 9. The Wait Loop ---
 echo "⏳ Waiting for AWX UI to be ready at http://$VIP..."
-echo "This usually takes 5-8 minutes while migrations run..."
+echo "This takes 5-10 mins. Migrations are running in the background."
 
-# Loop until the VIP returns a 200 or 302 status code
-until [ "$(curl -s -L -o /dev/null -w "%{http_code}" http://$VIP)" == "200" ]; do
+# Loop until we get a 200 OK from the web service
+# Note: Added -m 5 to curl to avoid hanging on slow responses
+until [ "$(curl -s -L -o /dev/null -w "%{http_code}" http://$VIP --connect-timeout 5)" == "200" ]; do
     printf "."
     sleep 10
 done
