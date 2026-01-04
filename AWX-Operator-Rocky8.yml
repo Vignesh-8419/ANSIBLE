@@ -62,6 +62,8 @@
             ip: "{{ item.ip }}"
             netmask: "{{ netmask }}"
             gateway: "{{ gateway }}"
+            dns_servers:
+             - 192.168.253.151
             start_connected: true
         wait_for_customization: no
         wait_for_ip_address: no
