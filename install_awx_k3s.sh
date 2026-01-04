@@ -4,7 +4,7 @@
 set -e
 NAMESPACE="awx"
 OPERATOR_VERSION="2.19.1"
-VIP="192.168.253.225"
+VIP="192.168.253.145"
 ADMIN_PASSWORD="Root@123"
 # Automate finding the primary interface (usually ens192)
 INTERFACE=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
