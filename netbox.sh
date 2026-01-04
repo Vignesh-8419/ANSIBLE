@@ -269,6 +269,16 @@ sed -i -E 's/listen[[:space:]]+80[[:space:]]+default_server;/listen 80;/; s/list
 systemctl start nginx
 nginx -t && systemctl reload nginx
 
+# 1. Remove the extra config file that conflicts with the main one
+rm -f /etc/nginx/conf.d/netbox.conf
+
+# 2. Update ALLOWED_HOSTS to be more permissive for testing
+sed -i "s/ALLOWED_HOSTS = .*/ALLOWED_HOSTS = ['*']/" /opt/netbox/netbox/netbox/configuration.py
+
+# 3. Restart the services
+systemctl restart netbox
+systemctl restart nginx
+
 # ✅ Done
 echo "=== ✅ NetBox installation completed successfully! ==="
 echo "Access NetBox via: http://<your_server_ip>/"
