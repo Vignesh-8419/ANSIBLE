@@ -44,7 +44,7 @@ Latest Kube
 
 
 #!/bin/bash
-TOKEN="vSF5G5BHO52YpaJEnol3oSMiqu8nH2"
+TOKEN="eHUkWYP0lj273vhM03ZTTlvUDxMQW3"
 HOST="http://192.168.253.145"
 INV_NAME="VGS-CLUSTER"
 
