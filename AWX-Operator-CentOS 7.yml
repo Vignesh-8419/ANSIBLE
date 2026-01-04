@@ -41,6 +41,8 @@
     vm_network: "VM Network"
     netmask: "255.255.255.0"
     gateway: "192.168.253.2"
+    dns_servers:
+     - 192.168.253.151
     guest_domain: "vgs.com"
     vm_root_user: "root"
     vm_root_password: "Root@123"
