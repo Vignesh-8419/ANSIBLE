@@ -1,0 +1,5 @@
+- hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Test NetBox Execution Environment
+      command: python3 -c "import pynetbox; print('NetBox EE OK')"
