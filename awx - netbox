@@ -60,3 +60,52 @@ pyvmomi
 
 
 ansible-builder build -t awx-ee-netbox:latest
+
+
+podman run -d \
+  --name local-registry \
+  -p 5000:5000 \
+  --restart=always \
+  registry:2
+
+
+
+podman tag localhost/awx-ee-netbox:latest \
+  192.168.253.145:5000/awx-ee-netbox:latest
+
+
+mkdir -p /etc/containers/registries.conf.d
+vi /etc/containers/registries.conf.d/local-registry.conf
+[[registry]]
+location = "192.168.253.145:5000"
+insecure = true
+
+podman push 192.168.253.145:5000/awx-ee-netbox:latest
+
+mkdir -p /etc/rancher/k3s
+vi /etc/rancher/k3s/registries.yaml
+mirrors:
+  "192.168.253.145:5000":
+    endpoint:
+      - "http://192.168.253.145:5000"
+
+
+🔵 FINAL STEP: Add Execution Environment in AWX (UI)
+
+Open your AWX Web UI in the browser.
+
+Go to:
+Administration → Execution Environments → Add
+
+Fill in exactly:
+
+Name: awx-ee-netbox
+
+Image:
+
+192.168.253.145:5000/awx-ee-netbox:latest
+
+
+Pull Policy: Always (for the first run)
+
+Click Save.
