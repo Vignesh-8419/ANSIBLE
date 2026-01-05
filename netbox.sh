@@ -259,6 +259,8 @@ if command -v firewall-cmd >/dev/null 2>&1; then
     firewall-cmd --reload || true
 fi
 
+mkdir -p /etc/nginx/ssl
+
 openssl req -newkey rsa:2048 -nodes -keyout /etc/nginx/ssl/netbox.key -x509 -days 365 -out /etc/nginx/ssl/netbox.crt -subj "/C=IN/ST=Chennai/L=Chennai/O=VGS/OU=VGS/CN=rocky-08-02.vgs.com"
 
 # 14️⃣ Final Nginx restart
