@@ -1,0 +1,14 @@
+plugin: netbox.netbox.netbox
+
+api_endpoint: https://rocky-08-02.vgs.com/
+token: "e3b30f093150844cb025c4b5b91c49f4b8285092"
+
+query_filters:
+  - status: active
+
+group_by:
+  - clusters
+  - platforms
+
+compose:
+  ansible_host: 192.168.253.145
