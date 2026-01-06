@@ -1,178 +1,116 @@
 #!/bin/bash
 
-NETBOX_URL="https://192.168.253.134//api"
-NETBOX_TOKEN="e3ee4eda03d81a42b07de1d20064b89bba21e041"
+# --- CONFIGURATION ---
+NETBOX_URL="https://192.168.253.134/api"
+NETBOX_TOKEN="e3b30f093150844cb025c4b5b91c49f4b8285092"
 HDR="Content-Type: application/json"
 
-# Fixed IDs
-MANUFACTURER_ID=1
-DEVICETYPE_ID=1
+# Fixed IDs from your environment
 SITE_ID=1
-DEVICEROLE_ID=1   # Server
+DEVICETYPE_ID=1
+DEVICEROLE_ID=1
 
 # === User Inputs ===
 read -p "Hostname: " HOSTNAME
-read -p "Interface name (e.g. eth0): " IFACE
-read -p "IP Address (CIDR) (e.g. 192.168.253.44/24): " IPADDR
-read -p "MAC Address (e.g. AA:BB:CC:DD:EE:FF): " MAC
-read -p "Tags (comma-separated, e.g. rocky,production): " TAGS
-
+read -p "Interface name: " IFACE
+read -p "IP Address (CIDR): " IPADDR
+read -p "MAC Address: " MAC
+read -p "Cluster Type (e.g. VMware/Physical): " TYPE_NAME
+read -p "Cluster Group (e.g. Production): " GROUP_NAME
+read -p "Cluster Name (e.g. rocky-8-servers): " CLUSTER_NAME
 
 # ---------------------------------------------------------
-# Convert tags to JSON array and auto-create missing tags
+# 1. Handle Cluster Type (Check/Create)
 # ---------------------------------------------------------
-TAG_IDS=()
+echo "=== Checking Cluster Type: $TYPE_NAME ==="
+TYPE_CHECK=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/virtualization/cluster-types/?name=$TYPE_NAME")
+CLUSTER_TYPE_ID=$(echo "$TYPE_CHECK" | jq -r '.results[0].id // empty')
 
-IFS=',' read -ra TAGLIST <<< "$TAGS"
+if [ -z "$CLUSTER_TYPE_ID" ] || [ "$CLUSTER_TYPE_ID" == "null" ]; then
+    echo "Creating new Cluster Type: $TYPE_NAME..."
+    TYPE_SLUG=$(echo "$TYPE_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | sed 's/[^a-z0-9-]//g')
+    CLUSTER_TYPE_ID=$(curl -sk -X POST "$NETBOX_URL/virtualization/cluster-types/" \
+        -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+        -d "{\"name\":\"$TYPE_NAME\",\"slug\":\"$TYPE_SLUG\"}" | jq -r '.id')
+fi
 
-for TAG in "${TAGLIST[@]}"; do
-    TAG=$(echo "$TAG" | xargs)   # trim spaces
+# ---------------------------------------------------------
+# 2. Handle Cluster Group (Check/Create)
+# ---------------------------------------------------------
+echo "=== Checking Cluster Group: $GROUP_NAME ==="
+GROUP_CHECK=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/virtualization/cluster-groups/?name=$GROUP_NAME")
+GROUP_ID=$(echo "$GROUP_CHECK" | jq -r '.results[0].id // empty')
 
-    # Check if tag exists
-    EXISTING=$(curl -s -H "Authorization: Token $NETBOX_TOKEN" \
-        "$NETBOX_URL/extras/tags/?name=$TAG" | jq '.results | length')
+if [ -z "$GROUP_ID" ] || [ "$GROUP_ID" == "null" ]; then
+    echo "Creating new Cluster Group: $GROUP_NAME..."
+    GROUP_SLUG=$(echo "$GROUP_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | sed 's/[^a-z0-9-]//g')
+    GROUP_ID=$(curl -sk -X POST "$NETBOX_URL/virtualization/cluster-groups/" \
+        -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+        -d "{\"name\":\"$GROUP_NAME\",\"slug\":\"$GROUP_SLUG\"}" | jq -r '.id')
+fi
 
-    if [[ "$EXISTING" -eq 0 ]]; then
-        echo "Creating tag: $TAG"
+# ---------------------------------------------------------
+# 3. Handle Cluster (Check/Create)
+# ---------------------------------------------------------
+echo "=== Checking Cluster: $CLUSTER_NAME ==="
+EXISTING_CLUSTER=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/virtualization/clusters/?name=$CLUSTER_NAME")
+CLUSTER_ID=$(echo "$EXISTING_CLUSTER" | jq -r '.results[0].id // empty')
 
-        NEW_TAG_PAYLOAD=$(cat <<EOF
-{ "name": "$TAG", "slug": "$TAG" }
+if [ -z "$CLUSTER_ID" ] || [ "$CLUSTER_ID" == "null" ]; then
+    echo "Creating new cluster: $CLUSTER_NAME..."
+    CLUSTER_SLUG=$(echo "$CLUSTER_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | sed 's/[^a-z0-9-]//g')
+
+    CLUSTER_PAYLOAD=$(cat <<EOF
+{
+  "name": "$CLUSTER_NAME",
+  "slug": "$CLUSTER_SLUG",
+  "type": $CLUSTER_TYPE_ID,
+  "group": $GROUP_ID,
+  "site": $SITE_ID
+}
 EOF
 )
-
-        TAG_RESPONSE=$(curl -s -X POST "$NETBOX_URL/extras/tags/" \
-            -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
-            -d "$NEW_TAG_PAYLOAD")
-
-        TAG_ID=$(echo "$TAG_RESPONSE" | jq -r '.id')
-    else
-        TAG_ID=$(curl -s -H "Authorization: Token $NETBOX_TOKEN" \
-            "$NETBOX_URL/extras/tags/?name=$TAG" | jq -r '.results[0].id')
-    fi
-
-    TAG_IDS+=("$TAG_ID")
-done
-
-# Build JSON array
-TAG_JSON="[ $(printf '%s\n' "${TAG_IDS[@]}" | sed 's/^/"/;s/$/"/' | paste -sd ', ' -) ]"
-
+    CLUSTER_ID=$(curl -sk -X POST "$NETBOX_URL/virtualization/clusters/" \
+        -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+        -d "$CLUSTER_PAYLOAD" | jq -r '.id // empty')
+fi
 
 # ---------------------------------------------------------
-# Create Device
+# 4. Create Device
 # ---------------------------------------------------------
-echo "=== Creating device ==="
-
+echo "=== Creating device: $HOSTNAME ==="
 DEVICE_PAYLOAD=$(cat <<EOF
 {
   "name": "$HOSTNAME",
   "device_type": $DEVICETYPE_ID,
   "role": $DEVICEROLE_ID,
   "site": $SITE_ID,
-  "tags": $TAG_JSON
+  "cluster": $CLUSTER_ID
 }
 EOF
 )
+DEVICE_RESPONSE=$(curl -sk -X POST "$NETBOX_URL/dcim/devices/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "$DEVICE_PAYLOAD")
+DEVICE_ID=$(echo "$DEVICE_RESPONSE" | jq -r '.id // empty')
 
-DEVICE_RESPONSE=$(curl -s -X POST "$NETBOX_URL/dcim/devices/" \
-     -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
-     -d "$DEVICE_PAYLOAD")
-
-DEVICE_ID=$(echo "$DEVICE_RESPONSE" | jq -r '.id')
-
-if [[ "$DEVICE_ID" == "null" ]]; then
-    echo "❌ Failed to create device"
-    echo "$DEVICE_RESPONSE"
+if [ -z "$DEVICE_ID" ] || [ "$DEVICE_ID" == "null" ]; then
+    echo "❌ Failed to create device. Response: $DEVICE_RESPONSE"
     exit 1
 fi
 
-echo "✔ Device created ID: $DEVICE_ID"
-
-
-
 # ---------------------------------------------------------
-# Create Interface
+# 5. Network Setup (Interface & IP)
 # ---------------------------------------------------------
-echo "=== Creating interface ==="
+echo "=== Finalizing Network Configuration ==="
+INTERFACE_ID=$(curl -sk -X POST "$NETBOX_URL/dcim/interfaces/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+    -d "{\"device\":$DEVICE_ID,\"name\":\"$IFACE\",\"type\":\"1000base-t\",\"mac_address\":\"$MAC\"}" | jq -r '.id // empty')
 
-INTERFACE_PAYLOAD=$(cat <<EOF
-{
-  "device": $DEVICE_ID,
-  "name": "$IFACE",
-  "type": "1000base-t",
-  "mac_address": "$MAC"
-}
-EOF
-)
+IP_ID=$(curl -sk -X POST "$NETBOX_URL/ipam/ip-addresses/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+    -d "{\"address\":\"$IPADDR\",\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID,\"status\":\"active\"}" | jq -r '.id // empty')
 
-INTERFACE_RESPONSE=$(curl -s -X POST "$NETBOX_URL/dcim/interfaces/" \
-    -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
-    -d "$INTERFACE_PAYLOAD")
+# Set Primary IP
+curl -sk -X PATCH "$NETBOX_URL/dcim/devices/$DEVICE_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"primary_ip4\": $IP_ID}" > /dev/null
 
-INTERFACE_ID=$(echo "$INTERFACE_RESPONSE" | jq -r '.id')
-
-if [[ "$INTERFACE_ID" == "null" ]]; then
-    echo "❌ Failed to create interface"
-    echo "$INTERFACE_RESPONSE"
-    exit 1
-fi
-
-echo "✔ Interface created ID: $INTERFACE_ID"
-
-
-# ---------------------------------------------------------
-# Create IP Address
-# ---------------------------------------------------------
-echo "=== Creating IP address ==="
-
-IP_PAYLOAD=$(cat <<EOF
-{
-  "address": "$IPADDR",
-  "assigned_object_type": "dcim.interface",
-  "assigned_object_id": $INTERFACE_ID,
-  "status": "active"
-}
-EOF
-)
-
-IP_RESPONSE=$(curl -s -X POST "$NETBOX_URL/ipam/ip-addresses/" \
-    -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
-    -d "$IP_PAYLOAD")
-
-IP_ID=$(echo "$IP_RESPONSE" | jq -r '.id')
-
-if [[ "$IP_ID" == "null" ]]; then
-    echo "❌ Failed to create IP"
-    echo "$IP_RESPONSE"
-    exit 1
-fi
-
-echo "✔ IP address created ID: $IP_ID"
-
-
-# ---------------------------------------------------------
-# Assign Primary IP
-# ---------------------------------------------------------
-echo "=== Assigning primary IP ==="
-
-PRIMARY_PAYLOAD=$(cat <<EOF
-{
-  "primary_ip4": $IP_ID
-}
-EOF
-)
-
-curl -s -X PATCH "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
-    -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
-    -d "$PRIMARY_PAYLOAD" >/dev/null
-
-echo "✔ Primary IP assigned"
-
-
-echo
-echo "=== 🎉 Completed Successfully ==="
-echo "Device: $HOSTNAME"
-echo "Interface: $IFACE"
-echo "IP: $IPADDR"
-echo "MAC: $MAC"
-echo "Tags: $TAGS"
-echo "--------------------------------"
+echo "------------------------------------------------"
+echo "✅ SUCCESS: $HOSTNAME created!"
+echo "Type: $TYPE_NAME | Group: $GROUP_NAME | Cluster: $CLUSTER_NAME"
+echo "------------------------------------------------"
