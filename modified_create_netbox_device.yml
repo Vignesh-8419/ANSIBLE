@@ -178,27 +178,17 @@
     validate_certs: no
   register: existing_device
 
-- name: Set existing_device_id
+# ---------- 12. Determine Method (POST for New, PATCH for Existing) ----------
+- name: Set Device API details
   set_fact:
-    existing_device_id: "{{ existing_device.json.results[0].id }}"
-  when: existing_device.json.results | length > 0
+    device_api_url: "{{ (existing_device.json.count > 0) | ternary(netbox_url ~ '/api/dcim/devices/' ~ existing_device.json.results[0].id ~ '/', netbox_url ~ '/api/dcim/devices/') }}"
+    device_api_method: "{{ (existing_device.json.count > 0) | ternary('PATCH', 'POST') }}"
 
-# ---------- 12. DELETE device if exists (overwrite mode) ----------
-- name: Delete existing device (overwrite mode)
+# ---------- 13. Create or Update device (Preserves History) ----------
+- name: Create or Update device
   uri:
-    url: "{{ netbox_url }}/api/dcim/devices/{{ existing_device_id }}/"
-    method: DELETE
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    status_code: [204, 404]
-    validate_certs: no
-  when: existing_device_id is defined
-
-# ---------- 13. Create NEW device ----------
-- name: Create new device
-  uri:
-    url: "{{ netbox_url }}/api/dcim/devices/"
-    method: POST
+    url: "{{ device_api_url }}"
+    method: "{{ device_api_method }}"
     headers:
       Authorization: "Token {{ netbox_token }}"
     body_format: json
@@ -219,13 +209,19 @@
   set_fact:
     device_id: "{{ device_response.json.id }}"
 
-# ---------- 14. Create interface ----------
-- name: Create interface
+# ---------- 14. Get or Create interface ----------
+- name: Check if interface exists
   uri:
-    url: "{{ netbox_url }}/api/dcim/interfaces/"
-    method: POST
-    headers:
-      Authorization: "Token {{ netbox_token }}"
+    url: "{{ netbox_url }}/api/dcim/interfaces/?device_id={{ device_id }}&name={{ item.interface }}"
+    method: GET
+    headers: { Authorization: "Token {{ netbox_token }}" }
+  register: existing_interface
+
+- name: Create interface if missing
+  uri:
+    url: "{{ netbox_url }}/api/dcim/interfaces/{{ (existing_interface.json.count > 0) | ternary(existing_interface.json.results[0].id ~ '/', '') }}"
+    method: "{{ (existing_interface.json.count > 0) | ternary('PATCH', 'POST') }}"
+    headers: { Authorization: "Token {{ netbox_token }}" }
     body_format: json
     body:
       device: "{{ device_id }}"
@@ -233,19 +229,26 @@
       type: "1000base-t"
       mac_address: "{{ item.mac }}"
     status_code: [200, 201]
-    return_content: yes
-    validate_certs: no
   register: interface_response
 
 - name: Set interface_id
   set_fact:
-    interface_id: "{{ interface_response.json.id }}"
+    interface_id: "{{ interface_response.json.id if existing_interface.json.count == 0 else existing_interface.json.results[0].id }}"
 
-# ---------- 15. Assign IP ----------
+# ---------- 15. Get or Create IP address ----------
+- name: Check if IP exists
+  uri:
+    url: "{{ netbox_url }}/api/ipam/ip-addresses/?address={{ item.ip }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    validate_certs: no
+  register: existing_ip
+
 - name: Assign IP address
   uri:
-    url: "{{ netbox_url }}/api/ipam/ip-addresses/"
-    method: POST
+    url: "{{ netbox_url }}/api/ipam/ip-addresses/{{ (existing_ip.json.count > 0) | ternary(existing_ip.json.results[0].id ~ '/', '') }}"
+    method: "{{ (existing_ip.json.count > 0) | ternary('PATCH', 'POST') }}"
     headers:
       Authorization: "Token {{ netbox_token }}"
     body_format: json
@@ -258,6 +261,11 @@
     validate_certs: no
   register: ip_response
 
+- name: Set final IP ID
+  set_fact:
+    # Use the ID from the creation response, or the ID from the pre-check if we just patched it
+    final_ip_id: "{{ ip_response.json.id if existing_ip.json.count == 0 else existing_ip.json.results[0].id }}"
+
 # ---------- 16. Set primary IP ----------
 - name: Set primary IP for device
   uri:
@@ -267,6 +275,6 @@
       Authorization: "Token {{ netbox_token }}"
     body_format: json
     body:
-      primary_ip4: "{{ ip_response.json.id }}"
+      primary_ip4: "{{ final_ip_id }}"
     status_code: [200, 201]
     validate_certs: no
