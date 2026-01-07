@@ -215,6 +215,7 @@
     url: "{{ netbox_url }}/api/dcim/interfaces/?device_id={{ device_id }}&name={{ item.interface }}"
     method: GET
     headers: { Authorization: "Token {{ netbox_token }}" }
+    validate_certs: no  # <--- ADD THIS
   register: existing_interface
 
 - name: Create interface if missing
@@ -229,6 +230,7 @@
       type: "1000base-t"
       mac_address: "{{ item.mac }}"
     status_code: [200, 201]
+    validate_certs: no  # <--- ADD THIS
   register: interface_response
 
 - name: Set interface_id
@@ -240,17 +242,15 @@
   uri:
     url: "{{ netbox_url }}/api/ipam/ip-addresses/?address={{ item.ip }}"
     method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    validate_certs: no
+    headers: { Authorization: "Token {{ netbox_token }}" }
+    validate_certs: no  # <--- ADD THIS
   register: existing_ip
 
 - name: Assign IP address
   uri:
     url: "{{ netbox_url }}/api/ipam/ip-addresses/{{ (existing_ip.json.count > 0) | ternary(existing_ip.json.results[0].id ~ '/', '') }}"
     method: "{{ (existing_ip.json.count > 0) | ternary('PATCH', 'POST') }}"
-    headers:
-      Authorization: "Token {{ netbox_token }}"
+    headers: { Authorization: "Token {{ netbox_token }}" }
     body_format: json
     body:
       address: "{{ item.ip }}"
@@ -258,13 +258,8 @@
       assigned_object_type: "dcim.interface"
       assigned_object_id: "{{ interface_id }}"
     status_code: [200, 201]
-    validate_certs: no
+    validate_certs: no  # <--- ADD THIS
   register: ip_response
-
-- name: Set final IP ID
-  set_fact:
-    # Use the ID from the creation response, or the ID from the pre-check if we just patched it
-    final_ip_id: "{{ ip_response.json.id if existing_ip.json.count == 0 else existing_ip.json.results[0].id }}"
 
 # ---------- 16. Set primary IP ----------
 - name: Set primary IP for device
