@@ -98,7 +98,8 @@
   uri:
     #url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster }}"
     #url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ item.cluster | lower | regex_replace('[^a-z0-9]+','-') }}"
-    url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ cluster_name | lower | regex_replace('[^a-z0-9]+','-') }}"
+    #url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ cluster_name | lower | regex_replace('[^a-z0-9]+','-') }}"
+    url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ item.cluster | lower | regex_replace('[^a-z0-9]+','-') }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -115,8 +116,8 @@
       Authorization: "Token {{ netbox_token }}"
     body_format: json
     body:
-      #name: "{{ item.cluster }}"
-      name: "{{ cluster_name }}"
+      name: "{{ item.cluster }}"
+      #name: "{{ cluster_name }}"
       type: "{{ cluster_type_id }}"
       site: "{{ site_id }}"
     status_code: [200, 201]
@@ -127,8 +128,8 @@
 - name: Refresh cluster lookup
   uri:
     #url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster }}"
-    #url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ item.cluster | lower | regex_replace('[^a-z0-9]+','-') }}"
-    url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ cluster_name | lower | regex_replace('[^a-z0-9]+','-') }}"
+    url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ item.cluster | lower | regex_replace('[^a-z0-9]+','-') }}"
+    #url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ cluster_name | lower | regex_replace('[^a-z0-9]+','-') }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -138,7 +139,8 @@
 
 - name: Set cluster_id
   set_fact:
-    cluster_id: "{{ (cluster_response.json.results | first).id }}"
+    #cluster_id: "{{ (cluster_response.json.results | first).id }}"
+    cluster_id: "{{ cluster_response.json.results[0].id }}"
   #when: cluster_response.json.results | length > 0
   when: cluster_response.json.count > 0
 
@@ -154,6 +156,7 @@
       site: "{{ site_id }}"
     status_code: [200, 201]
     validate_certs: no
+  when: cluster_response.json.results[0].site is none
 
 # ---------- 11. Check if device already exists ----------
 - name: Check if device exists
