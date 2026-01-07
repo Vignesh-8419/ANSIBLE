@@ -124,7 +124,8 @@
 # ---------- 9. Refresh cluster lookup ----------
 - name: Refresh cluster lookup
   uri:
-    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster }}"
+    #url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster }}"
+    url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ item.cluster | lower | regex_replace('[^a-z0-9]+','-') }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -135,7 +136,8 @@
 - name: Set cluster_id
   set_fact:
     cluster_id: "{{ (cluster_response.json.results | first).id }}"
-  when: cluster_response.json.results | length > 0
+  #when: cluster_response.json.results | length > 0
+  when: cluster_response.json.count > 0
 
 # ---------- 10. Patch cluster site (for existing clusters) ----------
 - name: Ensure cluster has correct site
