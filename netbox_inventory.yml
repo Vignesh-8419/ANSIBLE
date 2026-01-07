@@ -13,6 +13,7 @@ config_context: true
 # Grouping: This is how your hosts will appear in AWX
 # Devices will be grouped by their Role, Site, and Platform
 group_by:
+  - clusters
   - device_roles
   - sites
   - platforms
