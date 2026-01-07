@@ -1,6 +1,11 @@
 # ============================================================
 # NetBox device creation with overwrite mode + cluster + site
 # ============================================================
+- name: Reset per-loop variables
+  set_fact:
+    existing_device_id: !!null
+    cluster_id: !!null
+    site_id: !!null
 
 # ---------- 1. Get cluster type ----------
 - name: Get cluster type
@@ -117,12 +122,13 @@
     body_format: json
     body:
       name: "{{ item.cluster }}"
-      #name: "{{ cluster_name }}"
+      # ADD THIS LINE: It ensures the slug matches your search in Task 7 and 9
+      slug: "{{ item.cluster | lower | regex_replace('[^a-z0-9]+','-') }}"
       type: "{{ cluster_type_id }}"
       site: "{{ site_id }}"
     status_code: [200, 201]
     validate_certs: no
-  when: cluster_check.json.results | length == 0
+  when: cluster_check.json.count == 0  # Use .count for consistency
 
 # ---------- 9. Refresh cluster lookup ----------
 - name: Refresh cluster lookup
@@ -156,7 +162,10 @@
       site: "{{ site_id }}"
     status_code: [200, 201]
     validate_certs: no
-  when: cluster_response.json.results[0].site is none
+  # Check if the cluster exists and if the site is either missing or wrong
+  when: 
+    - cluster_response.json.count > 0
+    - cluster_response.json.results[0].site is none or cluster_response.json.results[0].site.id != site_id | int
 
 # ---------- 11. Check if device already exists ----------
 - name: Check if device exists
