@@ -5,7 +5,8 @@
 # ---------- 1. Get cluster type ----------
 - name: Get cluster type
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ cluster_type }}"
+    #url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ cluster_type }}"
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ cluster_type | lower | regex_replace('[^a-z0-9]+','-') }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -44,7 +45,8 @@
 
 - name: Set cluster_type_id
   set_fact:
-    cluster_type_id: "{{ (cluster_type_response.json.results | first).id }}"
+    #cluster_type_id: "{{ (cluster_type_response.json.results | first).id }}"
+    cluster_type_id: "{{ cluster_type_response.json.results[0].id }}"
   when: cluster_type_response.json.results | length > 0
 
 # ---------- 4. Get site ----------
