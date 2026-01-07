@@ -261,6 +261,10 @@
     validate_certs: no  # <--- ADD THIS
   register: ip_response
 
+- name: Set final IP ID for primary assignment
+  set_fact:
+    final_ip_id: "{{ ip_response.json.id if existing_ip.json.count == 0 else existing_ip.json.results[0].id }}"
+
 # ---------- 16. Set primary IP ----------
 - name: Set primary IP for device
   uri:
