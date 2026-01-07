@@ -17,7 +17,8 @@
       set_fact:
         server_info:
           name: "{{ ansible_hostname }}.vgs.com"
-          ip: "{{ ansible_default_ipv4.address }}/{{ (ansible_default_ipv4.address ~ '/' ~ ansible_default_ipv4.netmask) | ipaddr('prefix') }}"
+          #ip: "{{ ansible_default_ipv4.address }}/{{ (ansible_default_ipv4.address ~ '/' ~ ansible_default_ipv4.netmask) | ipaddr('prefix') }}"
+          ip: "{{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.prefix }}"
           mac: "{{ ansible_default_ipv4.macaddress }}"
           interface: "{{ ansible_default_ipv4.interface }}"
           serial: "{{ ansible_product_serial | regex_replace('[^a-zA-Z0-9]', '') | truncate(50, True, '') }}"
