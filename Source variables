@@ -1,0 +1,4 @@
+---
+device_query_filters:
+  - cluster: 'rocky-8-servers'
+  - status: 'active'
