@@ -1,0 +1,35 @@
+- name: Provision servers via PXE
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    hostnames: ""
+    ips: ""
+    macs: ""
+
+  tasks:
+    - name: Normalize survey inputs
+      set_fact:
+        host_list: "{{ hostnames.replace('\"','').strip().split(',') }}"
+        ip_list: "{{ ips.replace('\"','').strip().split(',') }}"
+        mac_list: "{{ macs.replace('\"','').strip().split(',') }}"
+
+    - name: Validate input lengths
+      assert:
+        that:
+          - host_list | length == ip_list | length
+          - host_list | length == mac_list | length
+        fail_msg: "Survey input count mismatch"
+
+    - name: Build servers list
+      set_fact:
+        servers: "{{ servers | default([]) + [ {
+          'hostname': item.0.strip(),
+          'ip': item.1.strip(),
+          'mac': item.2.strip() | lower
+        } ] }}"
+      loop: "{{ host_list | zip(ip_list, mac_list) | list }}"
+
+    - name: Run PXE provisioning role
+      include_role:
+        name: centos_roles/pxe_provision
