@@ -94,7 +94,8 @@
 # ---------- 7. Check if cluster exists ----------
 - name: Check if cluster exists
   uri:
-    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster }}"
+    #url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster }}"
+    url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ item.cluster | lower | regex_replace('[^a-z0-9]+','-') }}"
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
