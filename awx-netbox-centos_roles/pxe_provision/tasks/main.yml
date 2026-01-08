@@ -1,7 +1,13 @@
+- name: Fail if no PXE servers provided
+  assert:
+    that:
+      - servers | length > 0
+    fail_msg: "No PXE servers found. Please check NetBox tags or survey input."
+
 - name: Ensure GRUB dispatcher exists
   template:
     src: grub-dispatcher.j2
-    dest: /var/lib/tftpboot/grub2/grub.cfg
+    dest: "{{ pxe_folder }}/grub2/grub.cfg"
     mode: '0644'
   delegate_to: tftp-server-01
   run_once: true
@@ -11,3 +17,6 @@
   loop: "{{ servers }}"
   loop_control:
     loop_var: server
+
+- name: Restart DHCP after all reservations added
+  meta: flush_handlers
