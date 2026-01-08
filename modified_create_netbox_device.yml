@@ -1,5 +1,5 @@
 # ============================================================
-# NetBox device creation: Hierarchy with Cluster Groups & SSL Fix
+# NetBox device creation: URL Encoded for Spaces & SSL Fixed
 # ============================================================
 
 # ---------- 0. Reset per-loop variables ----------
@@ -11,12 +11,11 @@
     cluster_id: !!null
     device_id: !!null
     interface_id: !!null
-    existing_device_obj: {}
 
 # ---------- 1. Get/Create Cluster Type ----------
 - name: 1. Get cluster type
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-types/?name={{ cluster_type }}"
+    url: "{{ netbox_url }}/api/virtualization/cluster-types/?name={{ cluster_type | urlencode }}"
     method: GET
     headers: { Authorization: "Token {{ netbox_token }}" }
     validate_certs: no
@@ -42,7 +41,7 @@
 # ---------- 2. Get/Create Site ----------
 - name: 4. Get site
   uri:
-    url: "{{ netbox_url }}/api/dcim/sites/?name={{ item.site }}"
+    url: "{{ netbox_url }}/api/dcim/sites/?name={{ item.site | urlencode }}"
     method: GET
     headers: { Authorization: "Token {{ netbox_token }}" }
     validate_certs: no
@@ -52,10 +51,10 @@
   set_fact:
     site_id: "{{ site_response.json.results[0].id | int }}"
 
-# ---------- 3. Cluster Group (From Survey) ----------
+# ---------- 3. Cluster Group (URL ENCODED) ----------
 - name: 6. Get cluster group
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-groups/?name={{ cluster_group_name }}"
+    url: "{{ netbox_url }}/api/virtualization/cluster-groups/?name={{ cluster_group_name | urlencode }}"
     method: GET
     headers: { Authorization: "Token {{ netbox_token }}" }
     validate_certs: no
@@ -76,7 +75,7 @@
 
 - name: 8. Refresh and Set cluster_group_id
   uri:
-    url: "{{ netbox_url }}/api/virtualization/cluster-groups/?name={{ cluster_group_name }}"
+    url: "{{ netbox_url }}/api/virtualization/cluster-groups/?name={{ cluster_group_name | urlencode }}"
     method: GET
     headers: { Authorization: "Token {{ netbox_token }}" }
     validate_certs: no
@@ -89,7 +88,7 @@
 # ---------- 4. Cluster (Linked to Group) ----------
 - name: 10. Check if cluster exists
   uri:
-    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster }}"
+    url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster | urlencode }}"
     method: GET
     headers: { Authorization: "Token {{ netbox_token }}" }
     validate_certs: no
@@ -118,7 +117,7 @@
 # ---------- 5. Device (Forced Update) ----------
 - name: 13. Check if device exists
   uri:
-    url: "{{ netbox_url }}/api/dcim/devices/?name={{ item.name }}"
+    url: "{{ netbox_url }}/api/dcim/devices/?name={{ item.name | urlencode }}"
     method: GET
     headers: { Authorization: "Token {{ netbox_token }}" }
     validate_certs: no
