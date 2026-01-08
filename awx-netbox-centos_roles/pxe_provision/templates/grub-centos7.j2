@@ -11,11 +11,10 @@ menuentry "Install CentOS 7" {
         ip=dhcp \
         inst.repo=http://{{ http_server }}/repo/centos/ \
         inst.stage2=http://{{ http_server }}/repo/centos/ \
-        inst.ks=http://{{ http_server }}/{{ kickstart_path }} \
+        inst.ks={{ kickstart_url }} \
         inst.text \
         inst.default_fstype=ext4 \
         hostname={{ server.hostname }} \
         console=tty0
     initrdefi centos/initrd.img
 }
-
