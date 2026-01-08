@@ -1,5 +1,5 @@
 # ============================================================
-# NetBox device creation: Full Hierarchy with Cluster Groups
+# NetBox device creation: Hierarchy with Cluster Groups & SSL Fix
 # ============================================================
 
 # ---------- 0. Reset per-loop variables ----------
@@ -19,6 +19,7 @@
     url: "{{ netbox_url }}/api/virtualization/cluster-types/?name={{ cluster_type }}"
     method: GET
     headers: { Authorization: "Token {{ netbox_token }}" }
+    validate_certs: no
   register: cluster_type_response
 
 - name: 2. Create cluster type if missing
@@ -31,6 +32,7 @@
       name: "{{ cluster_type }}"
       slug: "{{ cluster_type | lower | regex_replace('[^a-z0-9]+','-') }}"
     status_code: [201]
+    validate_certs: no
   when: cluster_type_response.json.count == 0
 
 - name: 3. Set cluster_type_id
@@ -43,18 +45,20 @@
     url: "{{ netbox_url }}/api/dcim/sites/?name={{ item.site }}"
     method: GET
     headers: { Authorization: "Token {{ netbox_token }}" }
+    validate_certs: no
   register: site_response
 
 - name: 5. Set site_id
   set_fact:
     site_id: "{{ site_response.json.results[0].id | int }}"
 
-# ---------- 3. Cluster Group (Using Survey Variable) ----------
+# ---------- 3. Cluster Group (From Survey) ----------
 - name: 6. Get cluster group
   uri:
     url: "{{ netbox_url }}/api/virtualization/cluster-groups/?name={{ cluster_group_name }}"
     method: GET
     headers: { Authorization: "Token {{ netbox_token }}" }
+    validate_certs: no
   register: cluster_group_response
 
 - name: 7. Create cluster group if missing
@@ -67,6 +71,7 @@
       name: "{{ cluster_group_name }}"
       slug: "{{ cluster_group_name | lower | regex_replace('[^a-z0-9]+','-') }}"
     status_code: [201]
+    validate_certs: no
   when: cluster_group_response.json.count == 0
 
 - name: 8. Refresh and Set cluster_group_id
@@ -74,6 +79,7 @@
     url: "{{ netbox_url }}/api/virtualization/cluster-groups/?name={{ cluster_group_name }}"
     method: GET
     headers: { Authorization: "Token {{ netbox_token }}" }
+    validate_certs: no
   register: group_refresh
 
 - name: 9. Set cluster_group_id fact
@@ -86,6 +92,7 @@
     url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster }}"
     method: GET
     headers: { Authorization: "Token {{ netbox_token }}" }
+    validate_certs: no
   register: cluster_check
 
 - name: 11. Create or Update cluster
@@ -101,6 +108,7 @@
       group: "{{ cluster_group_id | int }}"
       site: "{{ site_id | int }}"
     status_code: [200, 201]
+    validate_certs: no
   register: cluster_res
 
 - name: 12. Set cluster_id
@@ -108,9 +116,17 @@
     cluster_id: "{{ cluster_res.json.id | default(cluster_check.json.results[0].id) | int }}"
 
 # ---------- 5. Device (Forced Update) ----------
-- name: 13. Create or Update device
+- name: 13. Check if device exists
   uri:
-    url: "{{ (existing_device.json.count > 0) | ternary(netbox_url ~ '/api/dcim/devices/' ~ existing_device.json.results[0].id ~ '/', netbox_url ~ '/api/dcim/devices/') }}"
+    url: "{{ netbox_url }}/api/dcim/devices/?name={{ item.name }}"
+    method: GET
+    headers: { Authorization: "Token {{ netbox_token }}" }
+    validate_certs: no
+  register: existing_device
+
+- name: 14. Create or Update device
+  uri:
+    url: "{{ (existing_device.json.count > 0) | ternary(netbox_url ~ '/api/dcim/devices/' ~ (existing_device.json.results[0].id | default('')) ~ '/', netbox_url ~ '/api/dcim/devices/') }}"
     method: "{{ (existing_device.json.count > 0) | ternary('PATCH', 'POST') }}"
     headers: { Authorization: "Token {{ netbox_token }}" }
     body_format: json
@@ -122,16 +138,15 @@
       cluster: "{{ cluster_id | int }}"
       status: "active"
     status_code: [200, 201]
+    validate_certs: no
   register: device_response
 
-# ... [Remaining Tasks for Interface/IP as per previous logic] ...
-
-- name: 14. Set device_id
+- name: 15. Set device_id
   set_fact:
-    device_id: "{{ device_response.json.id | default(existing_device_obj.id) | int }}"
+    device_id: "{{ device_response.json.id | default(existing_device.json.results[0].id) | int }}"
 
-# ---------- 5. Interface & IP Logic (REMAINDING) ----------
-- name: 15. Create or Update interface
+# ---------- 6. Interface ----------
+- name: 16. Get/Create Interface
   uri:
     url: "{{ netbox_url }}/api/dcim/interfaces/"
     method: POST
@@ -142,11 +157,11 @@
       name: "{{ item.interface }}"
       type: "1000base-t"
       mac_address: "{{ item.mac }}"
-    status_code: [201, 400] # 400 if already exists
+    status_code: [201, 400]
     validate_certs: no
   register: interface_res
 
-- name: 16. Get Interface ID (if already exists)
+- name: 17. Set interface_id
   uri:
     url: "{{ netbox_url }}/api/dcim/interfaces/?device_id={{ device_id }}&name={{ item.interface }}"
     method: GET
@@ -154,11 +169,12 @@
     validate_certs: no
   register: iface_lookup
 
-- name: 17. Set interface_id
+- name: 18. Set fact interface_id
   set_fact:
     interface_id: "{{ iface_lookup.json.results[0].id | int }}"
 
-- name: 18. Assign IP address
+# ---------- 7. IP Address & Primary Assignment ----------
+- name: 19. Get/Create IP Address
   uri:
     url: "{{ netbox_url }}/api/ipam/ip-addresses/"
     method: POST
@@ -173,7 +189,7 @@
     validate_certs: no
   register: ip_res
 
-- name: 19. Get IP ID
+- name: 20. Get IP ID
   uri:
     url: "{{ netbox_url }}/api/ipam/ip-addresses/?address={{ item.ip }}"
     method: GET
@@ -181,7 +197,7 @@
     validate_certs: no
   register: ip_lookup
 
-- name: 20. Set primary IP for device
+- name: 21. Set primary IP for device
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
     method: PATCH
