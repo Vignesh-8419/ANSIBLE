@@ -9,12 +9,12 @@ dhcp
 menuentry "Install CentOS 7" {
     linuxefi centos/vmlinuz \
         ip=dhcp \
-        inst.repo=http://{{ http_server }}/repo/centos/ \
-        inst.stage2=http://{{ http_server }}/repo/centos/ \
-        inst.ks={{ kickstart_url }} \
+        inst.repo=http://{{ nb_ctx.http_server }}/repo/centos/ \
+        inst.stage2=http://{{ nb_ctx.http_server }}/repo/centos/ \
+        inst.ks={{ nb_ctx.kickstart_url }} \
         inst.text \
         inst.default_fstype=ext4 \
-        hostname={{ server.hostname }} \
+        hostname={{ server.hostname }}.{{ nb_ctx.guest_domain }} \
         console=tty0
     initrdefi centos/initrd.img
 }
