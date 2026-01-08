@@ -1,202 +1,143 @@
 # ============================================================
-# NetBox device creation with overwrite mode + cluster + site
+# NetBox device creation: Safe, Idempotent, and Multi-Host Ready
 # ============================================================
-- name: Reset per-loop variables
-  set_fact:
-    existing_device_id: !!null
-    cluster_id: !!null
-    site_id: !!null
 
-# ---------- 1. Get cluster type ----------
-- name: Get cluster type
+# ---------- 0. Reset per-loop variables ----------
+- name: 0. Reset per-loop variables
+  set_fact:
+    cluster_type_id: !!null
+    site_id: !!null
+    cluster_id: !!null
+    device_id: !!null
+    interface_id: !!null
+    final_ip_id: !!null
+    existing_device_obj: {}
+    existing_iface_obj: {}
+    existing_ip_obj: {}
+
+# ---------- 1. Cluster Type Logic ----------
+- name: 1. Get cluster type
   uri:
-    #url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ cluster_type }}"
     url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ cluster_type | lower | regex_replace('[^a-z0-9]+','-') }}"
     method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    return_content: yes
+    headers: { Authorization: "Token {{ netbox_token }}" }
     validate_certs: no
   register: cluster_type_response
 
-# ---------- 2. Create cluster type if missing ----------
-- name: Create cluster type if missing
+- name: 2. Create cluster type if missing
   uri:
     url: "{{ netbox_url }}/api/virtualization/cluster-types/"
     method: POST
-    headers:
-      Authorization: "Token {{ netbox_token }}"
+    headers: { Authorization: "Token {{ netbox_token }}" }
     body_format: json
     body:
       name: "{{ cluster_type }}"
-      #slug: "{{ cluster_type }}"
       slug: "{{ cluster_type | lower | regex_replace('[^a-z0-9]+','-') }}"
-    status_code: [200, 201]
+    status_code: [201]
     validate_certs: no
-  #when: cluster_type_response.json.results | length == 0
   when: cluster_type_response.json.count == 0
 
-# ---------- 3. Refresh cluster type lookup ----------
-- name: Refresh cluster type lookup
+- name: 3. Refresh cluster type lookup
   uri:
-    #url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ cluster_type }}"
     url: "{{ netbox_url }}/api/virtualization/cluster-types/?slug={{ cluster_type | lower | regex_replace('[^a-z0-9]+','-') }}"
     method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    return_content: yes
+    headers: { Authorization: "Token {{ netbox_token }}" }
     validate_certs: no
-  register: cluster_type_response
+  register: cluster_type_refresh
 
-- name: Set cluster_type_id
+- name: 4. Set cluster_type_id
   set_fact:
-    #cluster_type_id: "{{ (cluster_type_response.json.results | first).id }}"
-    cluster_type_id: "{{ cluster_type_response.json.results[0].id }}"
-  when: cluster_type_response.json.results | length > 0
+    cluster_type_id: "{{ cluster_type_refresh.json.results[0].id }}"
 
-# ---------- 4. Get site ----------
-- name: Get site
+# ---------- 2. Site Logic ----------
+- name: 5. Get site
   uri:
-    #url: "{{ netbox_url }}/api/dcim/sites/?name={{ item.site }}"
     url: "{{ netbox_url }}/api/dcim/sites/?slug={{ item.site | lower | regex_replace('[^a-z0-9]+','-') }}"
     method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    return_content: yes
+    headers: { Authorization: "Token {{ netbox_token }}" }
     validate_certs: no
   register: site_response
 
-# ---------- 5. Create site if missing ----------
-- name: Create site if missing
+- name: 6. Create site if missing
   uri:
     url: "{{ netbox_url }}/api/dcim/sites/"
     method: POST
-    headers:
-      Authorization: "Token {{ netbox_token }}"
+    headers: { Authorization: "Token {{ netbox_token }}" }
     body_format: json
     body:
       name: "{{ item.site }}"
-      #slug: "{{ item.site | lower | regex_replace('[^a-z0-9]+','-') }}"
       slug: "{{ item.site | lower | regex_replace('[^a-z0-9]+','-') }}"
-    status_code: [200, 201]
+    status_code: [201]
     validate_certs: no
-  when: site_response.json.results | length == 0
+  when: site_response.json.count == 0
 
-# ---------- 6. Refresh site lookup ----------
-- name: Refresh site lookup
+- name: 7. Refresh site lookup
   uri:
-    url: "{{ netbox_url }}/api/dcim/sites/?name={{ item.site }}"
+    url: "{{ netbox_url }}/api/dcim/sites/?slug={{ item.site | lower | regex_replace('[^a-z0-9]+','-') }}"
     method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    return_content: yes
+    headers: { Authorization: "Token {{ netbox_token }}" }
     validate_certs: no
-  register: site_response
+  register: site_refresh
 
-- name: Set site_id
+- name: 8. Set site_id
   set_fact:
-    site_id: "{{ (site_response.json.results | first).id }}"
-  when: site_response.json.results | length > 0
+    site_id: "{{ site_refresh.json.results[0].id }}"
 
-# ---------- 7. Check if cluster exists ----------
-- name: Check if cluster exists
+# ---------- 3. Cluster Logic ----------
+- name: 9. Check if cluster exists
   uri:
-    #url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster }}"
-    #url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ item.cluster | lower | regex_replace('[^a-z0-9]+','-') }}"
-    #url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ cluster_name | lower | regex_replace('[^a-z0-9]+','-') }}"
     url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ item.cluster | lower | regex_replace('[^a-z0-9]+','-') }}"
     method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    return_content: yes
+    headers: { Authorization: "Token {{ netbox_token }}" }
     validate_certs: no
   register: cluster_check
 
-# ---------- 8. Create cluster only if missing ----------
-- name: Create cluster (only if missing)
+- name: 10. Create cluster if missing
   uri:
     url: "{{ netbox_url }}/api/virtualization/clusters/"
     method: POST
-    headers:
-      Authorization: "Token {{ netbox_token }}"
+    headers: { Authorization: "Token {{ netbox_token }}" }
     body_format: json
     body:
       name: "{{ item.cluster }}"
-      # ADD THIS LINE: It ensures the slug matches your search in Task 7 and 9
       slug: "{{ item.cluster | lower | regex_replace('[^a-z0-9]+','-') }}"
       type: "{{ cluster_type_id }}"
       site: "{{ site_id }}"
-    status_code: [200, 201]
+    status_code: [201]
     validate_certs: no
-  when: cluster_check.json.count == 0  # Use .count for consistency
+  when: cluster_check.json.count == 0
 
-# ---------- 9. Refresh cluster lookup ----------
-- name: Refresh cluster lookup
+- name: 11. Refresh cluster lookup
   uri:
-    #url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ item.cluster }}"
     url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ item.cluster | lower | regex_replace('[^a-z0-9]+','-') }}"
-    #url: "{{ netbox_url }}/api/virtualization/clusters/?slug={{ cluster_name | lower | regex_replace('[^a-z0-9]+','-') }}"
     method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    return_content: yes
+    headers: { Authorization: "Token {{ netbox_token }}" }
     validate_certs: no
-  register: cluster_response
+  register: cluster_refresh
 
-- name: Set cluster_id
+- name: 12. Set cluster_id
   set_fact:
-    #cluster_id: "{{ (cluster_response.json.results | first).id }}"
-    cluster_id: "{{ cluster_response.json.results[0].id }}"
-  #when: cluster_response.json.results | length > 0
-  when: cluster_response.json.count > 0
+    cluster_id: "{{ cluster_refresh.json.results[0].id }}"
 
-# ---------- 10. Patch cluster site (for existing clusters) ----------
-- name: Ensure cluster has correct site
-  uri:
-    url: "{{ netbox_url }}/api/virtualization/clusters/{{ cluster_id }}/"
-    method: PATCH
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    body_format: json
-    body:
-      site: "{{ site_id }}"
-    status_code: [200, 201]
-    validate_certs: no
-  # Check if the cluster exists and if the site is either missing or wrong
-  when: 
-    - cluster_response.json.count > 0
-    - cluster_response.json.results[0].site is none or cluster_response.json.results[0].site.id != site_id | int
-
-# ---------- 11. Check if device already exists ----------
-- name: Check if device exists
+# ---------- 4. Device Logic ----------
+- name: 13. Check if device exists
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/?name={{ item.name }}"
     method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-    return_content: yes
+    headers: { Authorization: "Token {{ netbox_token }}" }
     validate_certs: no
   register: existing_device
 
-# ---------- 12. Determine Method (POST for New, PATCH for Existing) ----------
-- name: Set Device API details
+- name: 14. Set Device API details
   set_fact:
-    # Safely get the first result or an empty dictionary
     existing_device_obj: "{{ existing_device.json.results | first | default({}) }}"
     device_exists: "{{ existing_device.json.count > 0 }}"
 
-- name: Set Device API URL and Method
-  set_fact:
-    device_api_url: "{{ (device_exists) | ternary(netbox_url ~ '/api/dcim/devices/' ~ (existing_device_obj.id | default('')) ~ '/', netbox_url ~ '/api/dcim/devices/') }}"
-    device_api_method: "{{ (device_exists) | ternary('PATCH', 'POST') }}"
-
-# ---------- 13. Create or Update device ----------
-- name: Create or Update device
+- name: 15. Create or Update device
   uri:
-    url: "{{ device_api_url }}"
-    method: "{{ device_api_method }}"
-    headers:
-      Authorization: "Token {{ netbox_token }}"
+    url: "{{ (device_exists) | ternary(netbox_url ~ '/api/dcim/devices/' ~ (existing_device_obj.id | default('')) ~ '/', netbox_url ~ '/api/dcim/devices/') }}"
+    method: "{{ (device_exists) | ternary('PATCH', 'POST') }}"
+    headers: { Authorization: "Token {{ netbox_token }}" }
     body_format: json
     body:
       name: "{{ item.name }}"
@@ -207,18 +148,15 @@
       cluster: "{{ cluster_id }}"
       serial: "{{ item.serial | default('') }}"
     status_code: [200, 201]
-    return_content: yes
     validate_certs: no
   register: device_response
 
-- name: Set device_id
+- name: 16. Set device_id
   set_fact:
-    # Use the ID from the response if we just created/updated it, 
-    # or fall back to the existing ID
     device_id: "{{ device_response.json.id | default(existing_device_obj.id) }}"
 
-# ---------- 14. Get or Create interface ----------
-- name: Check if interface exists
+# ---------- 5. Interface Logic ----------
+- name: 17. Check if interface exists
   uri:
     url: "{{ netbox_url }}/api/dcim/interfaces/?device_id={{ device_id }}&name={{ item.interface }}"
     method: GET
@@ -226,16 +164,10 @@
     validate_certs: no
   register: existing_interface
 
-- name: Set Interface API details
-  set_fact:
-    # Safely get the first result or an empty dictionary
-    existing_iface_obj: "{{ existing_interface.json.results | first | default({}) }}"
-    iface_exists: "{{ existing_interface.json.count > 0 }}"
-
-- name: Create or Update interface
+- name: 18. Create or Update interface
   uri:
-    url: "{{ (iface_exists) | ternary(netbox_url ~ '/api/dcim/interfaces/' ~ (existing_iface_obj.id | default('')) ~ '/', netbox_url ~ '/api/dcim/interfaces/') }}"
-    method: "{{ (iface_exists) | ternary('PATCH', 'POST') }}"
+    url: "{{ (existing_interface.json.count > 0) | ternary(netbox_url ~ '/api/dcim/interfaces/' ~ (existing_interface.json.results[0].id | default('')) ~ '/', netbox_url ~ '/api/dcim/interfaces/') }}"
+    method: "{{ (existing_interface.json.count > 0) | ternary('PATCH', 'POST') }}"
     headers: { Authorization: "Token {{ netbox_token }}" }
     body_format: json
     body:
@@ -247,12 +179,12 @@
     validate_certs: no
   register: interface_response
 
-- name: Set interface_id
+- name: 19. Set interface_id
   set_fact:
-    interface_id: "{{ interface_response.json.id | default(existing_iface_obj.id) }}"
+    interface_id: "{{ interface_response.json.id | default(existing_interface.json.results[0].id if existing_interface.json.count > 0 else none) }}"
 
-# ---------- 15. Get or Create IP address ----------
-- name: Check if IP exists
+# ---------- 6. IP Logic ----------
+- name: 20. Check if IP exists
   uri:
     url: "{{ netbox_url }}/api/ipam/ip-addresses/?address={{ item.ip }}"
     method: GET
@@ -260,16 +192,10 @@
     validate_certs: no
   register: existing_ip
 
-- name: Set IP API details
-  set_fact:
-    # Safely handle empty results
-    existing_ip_obj: "{{ existing_ip.json.results | first | default({}) }}"
-    ip_exists: "{{ existing_ip.json.count > 0 }}"
-
-- name: Assign IP address
+- name: 21. Assign IP address
   uri:
-    url: "{{ (ip_exists) | ternary(netbox_url ~ '/api/ipam/ip-addresses/' ~ (existing_ip_obj.id | default('')) ~ '/', netbox_url ~ '/api/ipam/ip-addresses/') }}"
-    method: "{{ (ip_exists) | ternary('PATCH', 'POST') }}"
+    url: "{{ (existing_ip.json.count > 0) | ternary(netbox_url ~ '/api/ipam/ip-addresses/' ~ (existing_ip.json.results[0].id | default('')) ~ '/', netbox_url ~ '/api/ipam/ip-addresses/') }}"
+    method: "{{ (existing_ip.json.count > 0) | ternary('PATCH', 'POST') }}"
     headers: { Authorization: "Token {{ netbox_token }}" }
     body_format: json
     body:
@@ -281,23 +207,15 @@
     validate_certs: no
   register: ip_response
 
-- name: Set final IP ID for primary assignment
-  set_fact:
-    # Get ID from either the response or the existing object
-    final_ip_id: "{{ ip_response.json.id | default(existing_ip_obj.id) }}"
-
-# ---------- 16. Set primary IP ----------
-- name: Set primary IP for device
+# ---------- 7. Final Association ----------
+- name: 22. Set primary IP for device
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
     method: PATCH
-    headers:
-      Authorization: "Token {{ netbox_token }}"
+    headers: { Authorization: "Token {{ netbox_token }}" }
     body_format: json
     body:
-      primary_ip4: "{{ final_ip_id }}"
-    status_code: [200, 201]
+      primary_ip4: "{{ ip_response.json.id | default(existing_ip.json.results[0].id if existing_ip.json.count > 0 else none) }}"
+    status_code: [200]
     validate_certs: no
-  when: 
-    - device_id is defined
-    - final_ip_id is defined
+  when: device_id is defined
