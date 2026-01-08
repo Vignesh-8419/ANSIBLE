@@ -1,24 +1,16 @@
 ---
-# This line tells Ansible which plugin to use
 plugin: netbox.netbox.nb_inventory
-
-# Connection settings
-# Note: We use the IP of your NetBox server
 api_endpoint: https://192.168.253.134
 validate_certs: false
-
-# This tells the plugin to fetch extra data like 'Config Contexts'
 config_context: true
 
-# Grouping: This is how your hosts will appear in AWX
-# Devices will be grouped by their Role, Site, and Platform
+# This organizes hosts into groups automatically based on their cluster name
 group_by:
   - cluster
-  - device_roles
-  - sites
-  - platforms
 
-# (Optional) Filter: Only pull devices that are 'Active'
-# This prevents pulling in 'Offline' or 'Decommissioned' devices
+# Filter logic: (Active AND Rocky) OR (Active AND CentOS)
 device_query_filters:
   - status: 'active'
+    cluster: 'rocky-8-servers'
+  - status: 'active'
+    cluster: 'centos-07-servers'
