@@ -9,7 +9,7 @@ group_by:
 
 device_query_filters:
   - status: 'active'
-    cluster: 'rocky-8-servers'  # Hardcoded only for this specific Inventory Source
+  - cluster_id: '6'  # Use ID 6 for Rocky
 
 compose:
   ansible_host: primary_ip4.address.split('/')[0]
