@@ -16,7 +16,7 @@
         mode: '0644'
 
     - name: Execute uefi-http-08.sh on remote host
-      shell: /tmp/uefi-http-08.sh > /tmp/pxe-rocky-08-logs.txt 2>&1
+      shell: /tmp/uefi_http-08.sh > /tmp/pxe-rocky-08-logs.txt 2>&1
       register: pxe_run
 
     - name: Print Rocky PXE Setup log
