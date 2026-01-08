@@ -7,10 +7,9 @@ config_context: true
 group_by:
   - status
 
-# AUTOMATION SECRET: Use a variable here instead of a hardcoded name
 device_query_filters:
   - status: 'active'
-    cluster: "{{ target_cluster_slug | default('all') }}"
+    cluster: 'rocky-8-servers'  # Hardcoded only for this specific Inventory Source
 
 compose:
   ansible_host: primary_ip4.address.split('/')[0]
