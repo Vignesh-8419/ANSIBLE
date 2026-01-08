@@ -6,7 +6,7 @@
     - name: Download uefi-http-08.sh from GitHub to remote host
       get_url:
         url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/uefi-http-08.sh"
-        dest: "/tmp/uefi-http-08.sh"
+        dest: "/tmp/uefi_http-08.sh"
         mode: '0755'
 
     - name: Ensure log file exists
