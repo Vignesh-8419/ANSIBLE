@@ -4,13 +4,21 @@ api_endpoint: https://192.168.253.134
 validate_certs: false
 config_context: true
 
-# This organizes hosts into groups automatically based on their cluster name
+# If you don't want extra groups, remove 'cluster' from group_by.
+# This keeps the inventory list flat and clean.
 group_by:
-  - cluster
+  - status
 
-# Filter logic: (Active AND Rocky) OR (Active AND CentOS)
+# This logic ensures ONLY these two clusters are imported.
+# Block 1: (Active AND Rocky) 
+# OR 
+# Block 2: (Active AND CentOS)
 device_query_filters:
   - status: 'active'
     cluster: 'rocky-8-servers'
   - status: 'active'
     cluster: 'centos-07-servers'
+
+# This ensures the 'ansible_host' is automatically set to the Primary IP from NetBox
+compose:
+  ansible_host: primary_ip4.address.split('/')[0]
