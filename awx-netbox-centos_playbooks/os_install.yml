@@ -1,25 +1,36 @@
-- name: PXE Provision CentOS Servers from NetBox
+---
+- name: Provision CentOS servers via PXE using NetBox
   hosts: localhost
   gather_facts: false
 
   vars:
-    # You can override these in AWX survey if needed
-    servers: []
+    hostnames: ""
+    ips: ""
+    macs: ""
 
   tasks:
+    - name: Normalize survey inputs
+      set_fact:
+        host_list: "{{ hostnames.replace('\"','').split(',') }}"
+        ip_list: "{{ ips.replace('\"','').split(',') }}"
+        mac_list: "{{ macs.replace('\"','').split(',') }}"
 
-    - name: Debug NetBox Config Context variables
-      debug:
-        msg:
-          http_server: "{{ http_server }}"
-          vm_network: "{{ vm_network }}"
-          pxe_folder: "{{ pxe_folder }}"
-          default_memory_mb: "{{ default_memory_mb }}"
-          default_cpus: "{{ default_cpus }}"
-          disk_size_gb: "{{ disk_size_gb }}"
+    - name: Validate input lengths
+      assert:
+        that:
+          - host_list | length == ip_list | length
+          - host_list | length == mac_list | length
+        fail_msg: "Survey input count mismatch"
 
-    - name: Include PXE provisioning role
+    - name: Build servers list
+      set_fact:
+        servers: "{{ servers | default([]) + [ {
+          'hostname': item.0 | trim,
+          'ip': item.1 | trim,
+          'mac': item.2 | trim | lower
+        } ] }}"
+      loop: "{{ host_list | zip(ip_list, mac_list) | list }}"
+
+    - name: Run PXE provisioning role
       include_role:
-        name: awx-netbox-centos_roles
-      vars:
-        servers: "{{ servers }}"
+        name: awx-netbox-centos_roles/pxe_provision
