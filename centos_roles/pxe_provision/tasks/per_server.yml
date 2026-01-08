@@ -9,11 +9,12 @@
     state: present
     guest_id: "otherGuest64"
     hardware:
-#      memory_mb: 4096
-#      num_cpus: 2
-      network:
-        - name: "VM Network"
-          mac: "{{ server.mac }}"
+      memory_mb: 4096
+      num_cpus: 2
+    networks:
+      - name: "VM Network"
+        mac: "{{ server.mac }}"
+        device_type: vmxnet3
     disk:
       - size_gb: 100
         type: thin
