@@ -1,0 +1,15 @@
+---
+plugin: netbox.netbox.nb_inventory
+api_endpoint: https://192.168.253.134
+validate_certs: false
+config_context: true
+
+group_by:
+  - status
+
+device_query_filters:
+  - status: 'active'
+  - cluster_id: '5'  # Use ID 6 for Rocky
+
+compose:
+  ansible_host: primary_ip4.address.split('/')[0]
