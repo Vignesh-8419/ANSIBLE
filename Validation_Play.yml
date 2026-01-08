@@ -1,18 +1,97 @@
-- name: Validate NetBox PXE + VMware context
-  hosts: ansible-server-01.vgs.com
+---
+- name: Validate NetBox inventory data for PXE provisioning
+  hosts: all
   gather_facts: false
 
   tasks:
-    - name: Show PXE variables
-      debug:
-        msg:
-          http_server: "{{ config_context[0].http_server }}"
-          kickstart_url: "{{ config_context[0].kickstart_url }}"
-          pxe_folder: "{{ config_context[0].pxe_folder }}"
+    # -----------------------------
+    # 1. Validate Config Context
+    # -----------------------------
+    - name: Validate NetBox config_context exists
+      assert:
+        that:
+          - config_context is defined
+          - config_context | length > 0
+        fail_msg: >
+          NetBox config_context missing for {{ inventory_hostname }}.
+          PXE provisioning cannot continue.
 
-    - name: Show VMware variables
+    - name: Normalize NetBox config context
+      set_fact:
+        nb_ctx: "{{ config_context | first }}"
+
+    # -----------------------------
+    # 2. Validate Required PXE Vars
+    # -----------------------------
+    - name: Validate PXE-related variables from NetBox
+      assert:
+        that:
+          - nb_ctx.http_server is defined
+          - nb_ctx.kickstart_url is defined
+          - nb_ctx.pxe_folder is defined
+        fail_msg: >
+          Missing PXE variables in NetBox config_context for {{ inventory_hostname }}.
+          Required: http_server, kickstart_url, pxe_folder
+
+    # -----------------------------
+    # 3. Validate VMware Vars
+    # -----------------------------
+    - name: Validate VMware variables from NetBox
+      assert:
+        that:
+          - nb_ctx.vcenter_hostname is defined
+          - nb_ctx.vcenter_username is defined
+          - nb_ctx.vm_network is defined
+          - nb_ctx.datastore is defined
+        fail_msg: >
+          Missing VMware variables in NetBox config_context for {{ inventory_hostname }}.
+
+    # -----------------------------
+    # 4. Validate Host Identity
+    # -----------------------------
+    - name: Validate hostname
+      assert:
+        that:
+          - inventory_hostname is defined
+          - inventory_hostname | length > 0
+        fail_msg: "Hostname is invalid or empty"
+
+    - name: Validate primary IP address
+      assert:
+        that:
+          - primary_ip4 is defined
+          - primary_ip4 | regex_search('^([0-9]{1,3}\\.){3}[0-9]{1,3}$')
+        fail_msg: >
+          Invalid or missing primary_ip4 for {{ inventory_hostname }}
+
+    # -----------------------------
+    # 5. Validate Interface & MAC
+    # -----------------------------
+    - name: Validate interfaces exist
+      assert:
+        that:
+          - interfaces is defined
+          - interfaces | length > 0
+        fail_msg: >
+          No interfaces found in NetBox for {{ inventory_hostname }}
+
+    - name: Validate MAC address
+      assert:
+        that:
+          - interfaces[0].mac_address is defined
+          - interfaces[0].mac_address | regex_search('^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$')
+        fail_msg: >
+          Invalid or missing MAC address for {{ inventory_hostname }}
+
+    # -----------------------------
+    # 6. Summary Output (SAFE)
+    # -----------------------------
+    - name: PXE validation summary
       debug:
         msg:
-          vcenter_hostname: "{{ config_context[0].vcenter_hostname }}"
-          vcenter_username: "{{ config_context[0].vcenter_username }}"
-          datastore: "{{ config_context[0].datastore }}"
+          hostname: "{{ inventory_hostname }}"
+          ip: "{{ primary_ip4 }}"
+          mac: "{{ interfaces[0].mac_address }}"
+          http_server: "{{ nb_ctx.http_server }}"
+          kickstart_url: "{{ nb_ctx.kickstart_url }}"
+          vcenter: "{{ nb_ctx.vcenter_hostname }}"
