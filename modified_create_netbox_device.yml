@@ -1,5 +1,5 @@
 # ============================================================
-# NetBox device creation: Forced Cluster Alignment Logic
+# NetBox device creation: Final Refinement for Cluster Migration
 # ============================================================
 
 # ---------- 0. Reset per-loop variables ----------
@@ -117,7 +117,7 @@
   set_fact:
     cluster_id: "{{ cluster_refresh.json.results[0].id | int }}"
 
-# ---------- 4. Device Logic (THE FIX) ----------
+# ---------- 4. Device Logic (Migration Fix) ----------
 - name: 13. Check if device already exists
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/?name={{ item.name }}"
@@ -144,12 +144,11 @@
       site: "{{ site_id | int }}"
       cluster: "{{ cluster_id | int }}"
       status: "active"
-      serial: "{{ item.serial | default('') }}"
     status_code: [200, 201]
     validate_certs: no
   register: device_response
 
-- name: 16. Set device_id for subsequent tasks
+- name: 16. Set device_id
   set_fact:
     device_id: "{{ device_response.json.id | default(existing_device_obj.id) | int }}"
 
@@ -179,7 +178,7 @@
 
 - name: 19. Set interface_id
   set_fact:
-    interface_id: "{{ interface_response.json.id | default(existing_interface.json.results[0].id) | int }}"
+    interface_id: "{{ interface_response.json.id | default(existing_interface.json.results[0].id | default(0)) | int }}"
 
 # ---------- 6. IP Logic ----------
 - name: 20. Check if IP exists
@@ -205,6 +204,7 @@
     validate_certs: no
   register: ip_response
 
+# ---------- 7. Final Association ----------
 - name: 22. Set primary IP for device
   uri:
     url: "{{ netbox_url }}/api/dcim/devices/{{ device_id }}/"
@@ -212,7 +212,6 @@
     headers: { Authorization: "Token {{ netbox_token }}" }
     body_format: json
     body:
-      primary_ip4: "{{ ip_response.json.id | default(existing_ip.json.results[0].id) | int }}"
+      primary_ip4: "{{ ip_response.json.id | default(existing_ip.json.results[0].id | default(0)) | int }}"
     status_code: [200]
     validate_certs: no
-  when: device_id is defined
