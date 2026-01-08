@@ -181,10 +181,16 @@
 # ---------- 12. Determine Method (POST for New, PATCH for Existing) ----------
 - name: Set Device API details
   set_fact:
-    device_api_url: "{{ (existing_device.json.count > 0) | ternary(netbox_url ~ '/api/dcim/devices/' ~ existing_device.json.results[0].id ~ '/', netbox_url ~ '/api/dcim/devices/') }}"
-    device_api_method: "{{ (existing_device.json.count > 0) | ternary('PATCH', 'POST') }}"
+    # Safely get the first result or an empty dictionary
+    existing_device_obj: "{{ existing_device.json.results | first | default({}) }}"
+    device_exists: "{{ existing_device.json.count > 0 }}"
 
-# ---------- 13. Create or Update device (Preserves History) ----------
+- name: Set Device API URL and Method
+  set_fact:
+    device_api_url: "{{ (device_exists) | ternary(netbox_url ~ '/api/dcim/devices/' ~ (existing_device_obj.id | default('')) ~ '/', netbox_url ~ '/api/dcim/devices/') }}"
+    device_api_method: "{{ (device_exists) | ternary('PATCH', 'POST') }}"
+
+# ---------- 13. Create or Update device ----------
 - name: Create or Update device
   uri:
     url: "{{ device_api_url }}"
@@ -207,7 +213,9 @@
 
 - name: Set device_id
   set_fact:
-    device_id: "{{ device_response.json.id }}"
+    # Use the ID from the response if we just created/updated it, 
+    # or fall back to the existing ID
+    device_id: "{{ device_response.json.id | default(existing_device_obj.id) }}"
 
 # ---------- 14. Get or Create interface ----------
 - name: Check if interface exists
@@ -277,3 +285,6 @@
       primary_ip4: "{{ final_ip_id }}"
     status_code: [200, 201]
     validate_certs: no
+  when: 
+    - device_id is defined
+    - final_ip_id is defined
