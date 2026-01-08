@@ -1,0 +1,21 @@
+{
+    "datacenter_name": "Datacenter",
+    "datastore": "datastore1",
+    "default_cpus": 2,
+    "default_memory_mb": 4096,
+    "disk_size_gb": 100,
+    "dns_servers": [
+        "192.168.253.151"
+    ],
+    "folder": "vm",
+    "gateway": "192.168.253.2",
+    "guest_domain": "vgs.com",
+    "http_server": "192.168.253.136",
+    "kickstart_url": "http://192.168.253.136/repo/centos/kickstart/centos.cfg",
+    "netmask": "255.255.255.0",
+    "pxe_folder": "/var/lib/tftpboot",
+    "vcenter_hostname": "192.168.253.129",
+    "vcenter_username": "administrator@vsphere.local",
+    "vm_network": "VM Network",
+    "vm_root_user": "root"
+}
