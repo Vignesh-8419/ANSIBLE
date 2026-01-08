@@ -6,13 +6,12 @@
     - name: Show PXE variables
       debug:
         msg:
-          http_server: "{{ http_server }}"
-          kickstart_url: "{{ kickstart_url }}"
-          pxe_folder: "{{ pxe_folder }}"
+          http_server: "{{ config_context.http_server }}"
+          kickstart_url: "{{ config_context.kickstart_url }}"
+          pxe_folder: "{{ config_context.pxe_folder }}"
 
     - name: Show VMware variables
       debug:
         msg:
-          vcenter_hostname: "{{ vcenter_hostname }}"
-          vcenter_username: "{{ vcenter_username }}"
-          vm_network: "{{ vm_network }}"
+          vcenter_hostname: "{{ config_context.vcenter_hostname }}"
+          vcenter_username: "{{ config_context.vcenter_username }}"
