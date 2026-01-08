@@ -14,7 +14,6 @@
     networks:
       - name: "VM Network"
         mac: "{{ server.mac }}"
-        device_type: vmxnet3
     disk:
       - size_gb: 100
         type: thin
