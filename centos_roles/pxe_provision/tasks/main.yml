@@ -3,7 +3,7 @@
     src: grub-dispatcher.j2
     dest: /var/lib/tftpboot/grub2/grub.cfg
     mode: '0644'
-  delegate_to: tftp-server-02
+  delegate_to: tftp-server-01
   run_once: true
 
 - name: Provision PXE servers
