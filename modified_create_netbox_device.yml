@@ -257,13 +257,19 @@
     url: "{{ netbox_url }}/api/ipam/ip-addresses/?address={{ item.ip }}"
     method: GET
     headers: { Authorization: "Token {{ netbox_token }}" }
-    validate_certs: no  # <--- ADD THIS
+    validate_certs: no
   register: existing_ip
+
+- name: Set IP API details
+  set_fact:
+    # Safely handle empty results
+    existing_ip_obj: "{{ existing_ip.json.results | first | default({}) }}"
+    ip_exists: "{{ existing_ip.json.count > 0 }}"
 
 - name: Assign IP address
   uri:
-    url: "{{ netbox_url }}/api/ipam/ip-addresses/{{ (existing_ip.json.count > 0) | ternary(existing_ip.json.results[0].id ~ '/', '') }}"
-    method: "{{ (existing_ip.json.count > 0) | ternary('PATCH', 'POST') }}"
+    url: "{{ (ip_exists) | ternary(netbox_url ~ '/api/ipam/ip-addresses/' ~ (existing_ip_obj.id | default('')) ~ '/', netbox_url ~ '/api/ipam/ip-addresses/') }}"
+    method: "{{ (ip_exists) | ternary('PATCH', 'POST') }}"
     headers: { Authorization: "Token {{ netbox_token }}" }
     body_format: json
     body:
@@ -272,12 +278,13 @@
       assigned_object_type: "dcim.interface"
       assigned_object_id: "{{ interface_id }}"
     status_code: [200, 201]
-    validate_certs: no  # <--- ADD THIS
+    validate_certs: no
   register: ip_response
 
 - name: Set final IP ID for primary assignment
   set_fact:
-    final_ip_id: "{{ ip_response.json.id if existing_ip.json.count == 0 else existing_ip.json.results[0].id }}"
+    # Get ID from either the response or the existing object
+    final_ip_id: "{{ ip_response.json.id | default(existing_ip_obj.id) }}"
 
 # ---------- 16. Set primary IP ----------
 - name: Set primary IP for device
