@@ -223,13 +223,19 @@
     url: "{{ netbox_url }}/api/dcim/interfaces/?device_id={{ device_id }}&name={{ item.interface }}"
     method: GET
     headers: { Authorization: "Token {{ netbox_token }}" }
-    validate_certs: no  # <--- ADD THIS
+    validate_certs: no
   register: existing_interface
 
-- name: Create interface if missing
+- name: Set Interface API details
+  set_fact:
+    # Safely get the first result or an empty dictionary
+    existing_iface_obj: "{{ existing_interface.json.results | first | default({}) }}"
+    iface_exists: "{{ existing_interface.json.count > 0 }}"
+
+- name: Create or Update interface
   uri:
-    url: "{{ netbox_url }}/api/dcim/interfaces/{{ (existing_interface.json.count > 0) | ternary(existing_interface.json.results[0].id ~ '/', '') }}"
-    method: "{{ (existing_interface.json.count > 0) | ternary('PATCH', 'POST') }}"
+    url: "{{ (iface_exists) | ternary(netbox_url ~ '/api/dcim/interfaces/' ~ (existing_iface_obj.id | default('')) ~ '/', netbox_url ~ '/api/dcim/interfaces/') }}"
+    method: "{{ (iface_exists) | ternary('PATCH', 'POST') }}"
     headers: { Authorization: "Token {{ netbox_token }}" }
     body_format: json
     body:
@@ -238,12 +244,12 @@
       type: "1000base-t"
       mac_address: "{{ item.mac }}"
     status_code: [200, 201]
-    validate_certs: no  # <--- ADD THIS
+    validate_certs: no
   register: interface_response
 
 - name: Set interface_id
   set_fact:
-    interface_id: "{{ interface_response.json.id if existing_interface.json.count == 0 else existing_interface.json.results[0].id }}"
+    interface_id: "{{ interface_response.json.id | default(existing_iface_obj.id) }}"
 
 # ---------- 15. Get or Create IP address ----------
 - name: Check if IP exists
