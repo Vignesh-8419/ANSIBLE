@@ -9,6 +9,7 @@
     cluster_name: "{{ cluster_name }}"     # passed from Tower/AWX survey
     site_name: "{{ site_name }}"           # passed from Tower/AWX survey
     cluster_type: "{{ cluster_type }}"     # passed from Tower/AWX survey
+    cluster_group_name: "{{ cluster_group_name }}"
 
   tasks:
     - name: Build server_info from facts
