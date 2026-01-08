@@ -1,12 +1,10 @@
 # ============================================================
 # 1. Collect facts from all target hosts
 # ============================================================
-
 - name: Collect facts from all servers
   hosts: "{{ target_hosts.split(',') | map('trim') | list }}"
   gather_facts: yes
   become: yes
-
   vars:
     cluster_name: "{{ cluster_name }}"     # passed from Tower/AWX survey
     site_name: "{{ site_name }}"           # passed from Tower/AWX survey
@@ -15,25 +13,18 @@
   tasks:
     - name: Build server_info from facts
       set_fact:
-        cluster_slug: "{{ cluster_name | lower | regex_replace('[^a-z0-9]+','-') }}"
         server_info:
           name: "{{ ansible_hostname }}.vgs.com"
-          #ip: "{{ ansible_default_ipv4.address }}/{{ (ansible_default_ipv4.address ~ '/' ~ ansible_default_ipv4.netmask) | ipaddr('prefix') }}"
           ip: "{{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.prefix }}"
           mac: "{{ ansible_default_ipv4.macaddress }}"
           interface: "{{ ansible_default_ipv4.interface }}"
-          serial: "{{ ansible_product_serial | regex_replace('[^a-zA-Z0-9]', '') | truncate(50, True, '') }}"
-          cluster: "{{ cluster_name }}"
-          site: "{{ site_name }}"
-
-    - name: Debug IP format
-      debug:
-        msg: "IP for {{ inventory_hostname }} is {{ server_info.ip }}"
+          serial: "{{ ansible_product_serial | default('') | regex_replace('[^a-zA-Z0-9]', '') | truncate(50, True, '') }}"
+          cluster: "{{ cluster_name }}"  # From Tower/AWX Survey
+          site: "{{ site_name }}"       # From Tower/AWX Survey
 
 # ============================================================
 # 2. Push collected servers into NetBox
 # ============================================================
-
 - name: Push collected servers into NetBox
   hosts: rocky-08-02
   gather_facts: no
@@ -41,8 +32,6 @@
   vars:
     netbox_url: "https://192.168.253.134"
     netbox_token: "e3b30f093150844cb025c4b5b91c49f4b8285092"
-
-    # Still using IDs for these; can be converted to slug lookups later
     device_type_id: 1
     role_id: 1
 
@@ -51,11 +40,7 @@
       set_fact:
         servers_list: "{{ target_hosts.split(',') | map('trim') | map('extract', hostvars, 'server_info') | list }}"
 
-    - name: Debug servers_list
-      debug:
-        var: servers_list
-
-    - name: Loop through servers and include device creation tasks
+    - name: Loop through servers
       include_tasks: modified_create_netbox_device.yml
       loop: "{{ servers_list }}"
       loop_control:
