@@ -1,33 +1,44 @@
 ---
-# Step 1: Create the Virtual Machine
-# We use the python interpreter override to find the 'requests' library in AWX
-- name: Create and Power On VM
-  community.vmware.vmware_guest:
-    hostname: "{{ nb_ctx.vcenter_hostname }}"
-    username: "{{ nb_ctx.vcenter_username }}"
-    password: "{{ nb_ctx.vcenter_password }}"
-    validate_certs: false
-    datacenter: "{{ nb_ctx.datacenter_name }}"
-    folder: "{{ nb_ctx.folder }}"
-    name: "{{ server.hostname }}"
-    state: poweredon
-    guest_id: centos7_64Guest
-    hardware:
-      memory_mb: "{{ nb_ctx.default_memory_mb }}"
-      num_cpus: "{{ nb_ctx.default_cpus }}"
-    networks:
-      - name: "{{ nb_ctx.vm_network }}"
-        mac: "{{ server.mac }}"
-    disk:
-      - size_gb: "{{ nb_ctx.disk_size_gb }}"
-        type: thin
-        datastore: "{{ nb_ctx.datastore }}"
+# Step 1: Create and Power On VM via vCenter REST API
+- name: Create and Power On VM (Bypassing Python/Requests issues)
+  shell: |
+    # 1. Get Authentication Token
+    SESSION_ID=$(curl -k -s -X POST \
+      -u "{{ nb_ctx.vcenter_username }}:{{ nb_ctx.vcenter_password }}" \
+      https://{{ nb_ctx.vcenter_hostname }}/api/session | tr -d '"')
+
+    # 2. Create the VM 
+    # This creates a VM with the network and hardware specs from NetBox
+    curl -k -s -X POST https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm \
+      -H "vmware-api-session-id: $SESSION_ID" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "{{ server.hostname }}",
+        "guest_OS": "CENTOS_7_64",
+        "placement": { "folder": "vm", "datastore": "datastore1" },
+        "cpu": { "count": {{ nb_ctx.default_cpus }} },
+        "memory": { "size_MiB": {{ nb_ctx.default_memory_mb }} },
+        "nics": [{
+            "backing": { "type": "STANDARD_PORTGROUP", "network": "{{ nb_ctx.vm_network }}" },
+            "mac_address": "{{ server.mac }}",
+            "mac_type": "MANUAL",
+            "start_connected": true
+        }],
+        "disks": [{
+            "new_vmdk": { "capacity": {{ nb_ctx.disk_size_gb | int * 1024 * 1024 * 1024 }} }
+        }]
+      }'
+
+    # 3. Power On the VM
+    # We find the VM ID by name, then send the 'start' action
+    VM_ID=$(curl -k -s -H "vmware-api-session-id: $SESSION_ID" \
+      "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm?names={{ server.hostname }}" | grep -o 'vm-[0-9]*' | head -1)
+    
+    curl -k -s -X POST "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm/$VM_ID/power?action=start" \
+      -H "vmware-api-session-id: $SESSION_ID"
   delegate_to: localhost
-  vars:
-    ansible_python_interpreter: /usr/bin/python3
 
 # Step 2: Generate per-host GRUB config on TFTP server
-# Using the SSH pipe logic to bypass SFTP/Permissions issues
 - name: Generate per-host GRUB config via SSH pipe
   shell: |
     sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 "cat > /var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') | lower }}" <<EOF
@@ -35,13 +46,11 @@
     EOF
   delegate_to: localhost
 
-# Step 3: Add DHCP reservation and restart DHCP service
+# Step 3: Add DHCP reservation and restart service
 - name: Add DHCP reservation and restart service
   shell: |
     sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 <<EOF
-    # Remove old entries to prevent duplicates
     sed -i '/# BEGIN ANSIBLE {{ server.hostname }}/,/# END ANSIBLE {{ server.hostname }}/d' /etc/dhcp/dhcpd.conf
-    # Append new host configuration
     cat >> /etc/dhcp/dhcpd.conf <<DHCP_EOF
     # BEGIN ANSIBLE {{ server.hostname }}
     host {{ server.hostname }} {
@@ -52,7 +61,6 @@
     }
     # END ANSIBLE {{ server.hostname }}
     DHCP_EOF
-    # Restart the service immediately
     systemctl restart dhcpd
     EOF
   delegate_to: localhost
