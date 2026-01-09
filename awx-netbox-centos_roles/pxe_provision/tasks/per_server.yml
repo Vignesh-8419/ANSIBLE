@@ -32,11 +32,10 @@
     dest: "{{ nb_ctx.pxe_folder }}/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') }}"
     mode: '0644'
   delegate_to: tftp-server-01
-  become: true
   vars:
-    ansible_become_exe: /usr/bin/sudo
+    ansible_user: root # Bypass sudo
 
-# Step 3: Add DHCP reservation and notify restart
+# Step 3: Add DHCP reservation
 - name: Add DHCP reservation
   blockinfile:
     path: /etc/dhcp/dhcpd.conf
@@ -49,7 +48,6 @@
         filename "grub2/grubx64.efi"; 
       }
   delegate_to: tftp-server-01
-  become: true
   vars:
-    ansible_become_exe: /usr/bin/sudo
+    ansible_user: root # Bypass sudo
   notify: restart dhcpd
