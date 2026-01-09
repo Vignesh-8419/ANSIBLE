@@ -2,6 +2,7 @@
 - name: PXE Provision CentOS servers via NetBox
   hosts: all
   gather_facts: false
+  connection: local  # <--- Add this line
 
   tasks:
     - name: Fail if host is not tagged for PXE
