@@ -10,7 +10,7 @@
     name: "{{ server.hostname }}"
     state: poweredon
     guest_id: centos7_64Guest
-    boot_order: [ "ethernet0" ]
+    # boot_order removed to fix "Unsupported Parameter" error
     hardware:
       memory_mb: "{{ nb_ctx.default_memory_mb }}"
       num_cpus: "{{ nb_ctx.default_cpus }}"
@@ -26,13 +26,14 @@
 
 - name: Generate per-host GRUB config via SSH pipe
   shell: |
-    echo "{{ lookup('template', 'grub-centos7.j2') }}" | \
-    ssh -o StrictHostKeyChecking=no root@192.168.253.160 "cat > /var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') | lower }}"
+    sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 "cat > /var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') | lower }}" <<EOF
+    {{ lookup('template', 'grub-centos7.j2') }}
+    EOF
   delegate_to: localhost
 
-- name: Add DHCP reservation via SSH pipe
+- name: Add DHCP reservation and restart service
   shell: |
-    ssh -o StrictHostKeyChecking=no root@192.168.253.160 <<EOF
+    sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 <<EOF
     sed -i '/# BEGIN ANSIBLE {{ server.hostname }}/,/# END ANSIBLE {{ server.hostname }}/d' /etc/dhcp/dhcpd.conf
     cat >> /etc/dhcp/dhcpd.conf <<DHCP_EOF
     # BEGIN ANSIBLE {{ server.hostname }}
