@@ -1,0 +1,82 @@
+---
+# --- PRE-PHASE: GENERATE THE LIST ---
+- name: Prepare VM data
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars:
+    # Inputs
+    vm_name: "http-server-01,tftp-server-01,tftp-server-02"
+    vm_ip: "192.168.253.136,192.168.253.160,192.168.253.170"
+  tasks:
+    - name: Build vm_list from survey inputs
+      set_fact:
+        vm_list: "{{ vm_list | default([]) + [ {'name': item.0.strip(), 'ip': item.1.strip()} ] }}"
+      loop: "{{ vm_name.split(',') | zip(vm_ip.split(',')) | list }}"
+      run_once: true
+
+# --- PHASE 1: DNS REGISTRATION ---
+- name: Phase 1 - Register DNS entries on Pi-hole
+  hosts: dns-server-01
+  become: yes
+  vars:
+    guest_domain: "vgs.com"
+  tasks:
+    - name: Execute Pi-hole script for each new VM
+      ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ item.name }}.{{ guest_domain }} {{ item.ip }}"
+      loop: "{{ hostvars['localhost']['vm_list'] }}"
+
+# --- PHASE 2: VCENTER PROVISIONING ---
+- name: Phase 2 - Create and Power On VMs in vCenter
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars:
+    vcenter_hostname: "192.168.253.129"
+    vcenter_username: "administrator@vsphere.local"
+    vcenter_password: "Vigneshv12$"
+    datacenter_name: "Datacenter"
+    folder: "vm"
+    template_name: "GOLDENTEMPLATE_ROCKYOS_08"
+    vm_network: "VM Network"
+    netmask: "255.255.255.0"
+    gateway: "192.168.253.2"
+    guest_domain: "vgs.com"
+    vm_root_user: "root"
+    vm_root_password: "Root@123"
+  tasks:
+    - name: Create and Power On VMs in vCenter
+      community.vmware.vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        datacenter: "{{ datacenter_name }}"
+        folder: "{{ folder }}"
+        name: "{{ item.name }}"
+        state: poweredon
+        template: "{{ template_name }}"
+        guest_id: "rhel8_64Guest"
+        networks:
+          - name: "{{ vm_network }}"
+            ip: "{{ item.ip }}"
+            netmask: "{{ netmask }}"
+            gateway: "{{ gateway }}"
+            dns_servers:
+             - 192.168.253.151
+            start_connected: true
+        wait_for_customization: no
+        wait_for_ip_address: no
+      loop: "{{ vm_list }}"
+
+    - name: Add VMs to temporary inventory for Phase 3
+      ansible.builtin.add_host:
+        name: "{{ item.name }}"
+        ansible_host: "{{ item.ip }}"
+        ansible_user: "{{ vm_root_user }}"
+        ansible_password: "{{ vm_root_password }}"
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+        vm_short_name: "{{ item.name }}"
+        vm_domain: "{{ guest_domain }}"
+        groups: "temp_group"
+      loop: "{{ vm_list }}"
