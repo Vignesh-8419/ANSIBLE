@@ -23,7 +23,7 @@
       assert:
         that:
           - nb_ctx.http_server is defined
-          - nb_ctx.kickstart_url is defined
+          - nb_ctx.centos_kickstart_url is defined
           - nb_ctx.pxe_folder is defined
           - nb_ctx.vcenter_hostname is defined
           - nb_ctx.vcenter_username is defined
