@@ -1,9 +1,11 @@
 ---
-# STEP 1: PREPARE THE NETWORK INFRASTRUCTURE
+# STEP 1: PREPARE THE NETWORK INFRASTRUCTURE (DHCP & TFTP)
 - name: Add DHCP reservation and restart service
   shell: |
     sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 <<EOF
+    # Clean up existing reservation for this host
     sed -i '/# BEGIN ANSIBLE {{ server.hostname }}/,/# END ANSIBLE {{ server.hostname }}/d' /etc/dhcp/dhcpd.conf
+    # Add new reservation
     cat >> /etc/dhcp/dhcpd.conf <<DHCP_EOF
     # BEGIN ANSIBLE {{ server.hostname }}
     host {{ server.hostname }} {
@@ -25,50 +27,70 @@
     EOF
   delegate_to: localhost
 
-# STEP 2: CONFIGURE VM HARDWARE AND POWER ON
+# STEP 2: VM CONFIGURATION & POWER MANAGEMENT
 - name: Configure and Power On existing VM
   shell: |
-    # 1. Get Authentication Token
-    SESSION_ID=$(curl -k -s -X POST -u "{{ nb_ctx.vcenter_username }}:{{ nb_ctx.vcenter_password }}" https://{{ nb_ctx.vcenter_hostname }}/api/session | tr -d '"')
-    if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" == "null" ]; then echo "Auth Failed"; exit 1; fi
+    # 1. Get Authentication Token (Single quotes protect the $ in your password)
+    SESSION_ID=$(curl -k -s -X POST \
+      -u '{{ nb_ctx.vcenter_username }}':'{{ nb_ctx.vcenter_password }}' \
+      https://{{ nb_ctx.vcenter_hostname }}/api/session | tr -d '"')
+
+    if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" == "null" ]; then 
+      echo "Auth Failed: Check credentials or vCenter connectivity"
+      exit 1
+    fi
 
     # 2. Get the VM ID by name
-    VM_ID=$(curl -k -s -H "vmware-api-session-id: $SESSION_ID" "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm?filter.names={{ server.hostname }}" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['value'][0]['vm']) if data.get('value') else print('')")
-    if [ -z "$VM_ID" ]; then echo "VM Not Found: {{ server.hostname }}"; exit 1; fi
+    VM_ID=$(curl -k -s -H "vmware-api-session-id: $SESSION_ID" \
+      "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm?filter.names={{ server.hostname }}" | \
+      python3 -c "import sys, json; data=json.load(sys.stdin); print(data['value'][0]['vm']) if data.get('value') else print('')")
 
-    # 3. Set Firmware to EFI and Boot Order to include Network
-    # Using a simpler JSON structure
+    if [ -z "$VM_ID" ]; then 
+      echo "VM Not Found: {{ server.hostname }}"
+      exit 1
+    fi
+
+    # 3. Force Firmware to EFI and Boot Protocol to IPV4
     curl -k -s -X PATCH "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm/$VM_ID" \
       -H "vmware-api-session-id: $SESSION_ID" \
       -H "Content-Type: application/json" \
       -d '{"boot": {"type": "EFI", "network_protocol": "IPV4"}}'
 
-    # 4. Check Power State and Start if necessary
-    POWER_STATE=$(curl -k -s -H "vmware-api-session-id: $SESSION_ID" "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm/$VM_ID/power" | python3 -c "import sys, json; print(json.load(sys.stdin)['value']['state'])")
+    # 4. Check Current Power State
+    POWER_JSON=$(curl -k -s -H "vmware-api-session-id: $SESSION_ID" "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm/$VM_ID/power")
+    POWER_STATE=$(echo $POWER_JSON | python3 -c "import sys, json; print(json.load(sys.stdin)['value']['state'])")
     
     if [ "$POWER_STATE" == "POWERED_OFF" ]; then
+        # Start the VM
         curl -k -s -X POST "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm/$VM_ID/power?action=start" -H "vmware-api-session-id: $SESSION_ID"
     else
-        # If already on, we reset it to trigger PXE
+        # Force a Reset so the VM re-boots into PXE with the new EFI settings
         curl -k -s -X POST "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm/$VM_ID/power?action=reset" -H "vmware-api-session-id: $SESSION_ID"
     fi
 
-    # 5. Wait for PXE to pick up
+    # 5. Wait for PXE boot process to begin
     sleep 20
 
-    # 6. Set next boot to DISK
+    # 6. Revert Boot Order to DISK for the next reboot
+    # This prevents an infinite PXE loop after the OS installation finishes
     curl -k -s -X PATCH "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm/$VM_ID" \
       -H "vmware-api-session-id: $SESSION_ID" \
       -H "Content-Type: application/json" \
       -d '{"boot_devices": [{"type": "DISK"}]}'
   delegate_to: localhost
+  register: vm_mgmt_result
 
-# STEP 3: MONITOR
+# STEP 3: MONITOR INSTALLATION
+
 - name: Wait for OS installation to complete (SSH check)
   wait_for:
     host: "{{ server.ip }}"
     port: 22
     state: started
-    delay: 60
-    timeout: 1200
+    delay: 60      # Wait 1 minute before first check
+    timeout: 1500  # 25 minute timeout for OS installation
   delegate_to: localhost
+
+- name: Final Provisioning Status
+  debug:
+    msg: "SUCCESS: {{ server.hostname }} has been provisioned and is reachable at {{ server.ip }}."
