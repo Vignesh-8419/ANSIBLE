@@ -62,4 +62,10 @@ sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
 
 chmod 755 -R /var/lib/tftpboot/rockyos
 
+setenforce 0
+
+systemctl enable dhcpd --now
+systemctl enable tftp.service --now
+systemctl enable tftp.socket --now
+
 echo "PXE/GRUB2 setup complete."
