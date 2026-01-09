@@ -28,5 +28,3 @@
     - name: Run PXE provisioning role
       include_role:
         name: awx-netbox-centos_roles/pxe_provision
-      vars:
-        vcenter_password: "{{ vmware_password }}"   # <-- inject AWX VMware credential
