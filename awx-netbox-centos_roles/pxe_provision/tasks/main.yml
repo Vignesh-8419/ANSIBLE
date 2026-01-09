@@ -1,12 +1,18 @@
 ---
+# Ensure the directory structure exists on the TFTP server
 - name: Ensure GRUB directory exists
   file:
     path: "{{ nb_ctx.pxe_folder }}/grub2"
     state: directory
     mode: '0755'
+    owner: root
+    group: root
   delegate_to: tftp-server-01
-  become: true # <--- This will now work because sudo is present and configured
+  become: true
+  vars:
+    ansible_become_exe: /usr/bin/sudo
 
+# Place the main GRUB dispatcher file
 - name: Ensure GRUB dispatcher exists
   template:
     src: grub-dispatcher.j2
@@ -15,7 +21,10 @@
   delegate_to: tftp-server-01
   become: true
   run_once: true
+  vars:
+    ansible_become_exe: /usr/bin/sudo
 
+# Provision PXE servers
 - name: Provision PXE servers
   include_tasks: per_server.yml
   loop: "{{ servers }}"
