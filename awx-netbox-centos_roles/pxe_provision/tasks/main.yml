@@ -1,23 +1,10 @@
 ---
-# Ensure the directory exists (just in case)
-- name: Ensure GRUB directory exists
-  file:
-    path: "/var/lib/tftpboot/grub2"
-    state: directory
-    mode: '0755'
-  delegate_to: "192.168.253.136"
-  vars:
-    ansible_user: root
-
-# Place the main dispatcher
-- name: Ensure GRUB dispatcher exists
-  template:
-    src: grub-dispatcher.j2
-    dest: "/var/lib/tftpboot/grub2/grub.cfg"
-    mode: '0644'
-  delegate_to: "192.168.253.136"
-  vars:
-    ansible_user: root
+# Main logic: Using a standard SSH pipe to bypass SFTP/Permissions issues
+- name: Force write GRUB dispatcher via SSH pipe
+  shell: |
+    echo "{{ lookup('template', 'grub-dispatcher.j2') }}" | \
+    ssh -o StrictHostKeyChecking=no root@192.168.253.160 "cat > /var/lib/tftpboot/grub2/grub.cfg"
+  delegate_to: localhost
   run_once: true
 
 - name: Provision PXE servers
