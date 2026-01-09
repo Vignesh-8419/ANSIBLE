@@ -5,12 +5,9 @@
     path: "{{ nb_ctx.pxe_folder }}/grub2"
     state: directory
     mode: '0755'
-    owner: root
-    group: root
   delegate_to: tftp-server-01
-  become: true
   vars:
-    ansible_become_exe: /usr/bin/sudo
+    ansible_user: root  # Connect directly as root to bypass sudo path issues
 
 # Place the main GRUB dispatcher file
 - name: Ensure GRUB dispatcher exists
@@ -19,10 +16,9 @@
     dest: "{{ nb_ctx.pxe_folder }}/grub2/grub.cfg"
     mode: '0644'
   delegate_to: tftp-server-01
-  become: true
-  run_once: true
   vars:
-    ansible_become_exe: /usr/bin/sudo
+    ansible_user: root
+  run_once: true
 
 # Provision PXE servers
 - name: Provision PXE servers
