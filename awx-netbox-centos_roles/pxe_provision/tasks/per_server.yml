@@ -1,10 +1,10 @@
 ---
-# Create VM in vCenter if it does not exist
+# awx-netbox-centos_roles/pxe_provision/tasks/per_server.yml
 - name: Create VM if not exists
-  vmware_guest:
+  community.vmware.vmware_guest: # Using full collection name is best practice
     hostname: "{{ nb_ctx.vcenter_hostname }}"
     username: "{{ nb_ctx.vcenter_username }}"
-    vcenter_password: "admin$22"
+    password: "{{ nb_ctx.vcenter_password }}" # Use the var from your context
     validate_certs: false
     datacenter: "{{ nb_ctx.datacenter_name }}"
     folder: "{{ nb_ctx.folder }}"
@@ -21,6 +21,7 @@
       - size_gb: "{{ nb_ctx.disk_size_gb }}"
         type: thin
         datastore: "{{ nb_ctx.datastore }}"
+  delegate_to: localhost  # <--- CRITICAL: Runs on AWX, not the target IP
 
 # Generate per-host GRUB config
 - name: Generate per-host GRUB config
