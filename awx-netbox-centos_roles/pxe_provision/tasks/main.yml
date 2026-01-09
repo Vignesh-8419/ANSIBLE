@@ -1,16 +1,19 @@
 ---
-- name: Reality Check
-  shell: |
-    echo "Hostname: $(hostname)"
-    echo "User: $(whoami)"
-    echo "Current Dir: $(pwd)"
-    ls -la /var/lib/tftpboot/grub2 || echo "FOLDER NOT FOUND"
-    df -h /var/lib/tftpboot
-  delegate_to: tftp-server-01
+# awx-netbox-centos_roles/pxe_provision/tasks/main.yml
+
+- name: Ensure GRUB dispatcher exists
+  template:
+    src: grub-dispatcher.j2
+    dest: "{{ nb_ctx.pxe_folder }}/grub2/grub.cfg"
+    mode: '0644'
+  # Use the IP here if the hostname isn't in your AWX inventory
+  delegate_to: "192.168.253.136" 
   vars:
     ansible_user: root
-  register: reality_check
+  run_once: true
 
-- name: Show Reality Check
-  debug:
-    var: reality_check.stdout_lines
+- name: Provision PXE servers
+  include_tasks: per_server.yml
+  loop: "{{ servers }}"
+  loop_control:
+    loop_var: server
