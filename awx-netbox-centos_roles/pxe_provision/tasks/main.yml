@@ -1,15 +1,15 @@
 ---
 # awx-netbox-centos_roles/pxe_provision/tasks/main.yml
 
-- name: Ensure GRUB dispatcher exists
-  template:
-    src: grub-dispatcher.j2
-    # HARDCODED PATH to test if NetBox variables are the issue
-    dest: "/var/lib/tftpboot/grub2/grub.cfg"
-    mode: '0644'
+- name: Force write GRUB dispatcher via shell pipe
+  shell: |
+    cat <<EOF > /var/lib/tftpboot/grub2/grub.cfg
+    {{ lookup('template', 'grub-dispatcher.j2') }}
+    EOF
   delegate_to: tftp-server-01
   vars:
     ansible_user: root
+  run_once: true
 
 - name: Provision PXE servers
   include_tasks: per_server.yml
