@@ -1,5 +1,5 @@
-# Handlers for PXE provisioning
-
+---
+# Restart DHCP after reservations are added
 - name: restart dhcpd
   service:
     name: dhcpd
