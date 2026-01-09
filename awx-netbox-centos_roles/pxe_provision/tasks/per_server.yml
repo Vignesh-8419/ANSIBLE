@@ -84,15 +84,27 @@
     host: "{{ server.ip }}"
     port: 22
     state: started
-    delay: 60
-    timeout: 1800
+    delay: 60      # Wait 1 minute before first check
+    timeout: 1800  # 30 minute limit for the installer to finish
   delegate_to: localhost
 
-- name: Verify Kernel Version
-  shell: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@{{ server.ip }} 'uname -r'"
+- name: Capture Kernel Version (Non-blocking)
+  shell: |
+    sshpass -p '{{ nb_ctx.vm_root_password | default("root_password_here") }}' \
+    ssh -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    -o ConnectTimeout=10 \
+    root@{{ server.ip }} 'uname -r'
   register: kernel_version
+  until: kernel_version.rc == 0
+  retries: 5
+  delay: 10
   delegate_to: localhost
 
-- name: Summary
+- name: Final Provisioning Summary
   debug:
-    msg: "Provisioning successful. Kernel: {{ kernel_version.stdout }}"
+    msg: 
+      - "Hostname: {{ server.hostname }}"
+      - "IP: {{ server.ip }}"
+      - "Kernel: {{ kernel_version.stdout }}"
+      - "Status: SUCCESS"
