@@ -6,6 +6,7 @@
     dest: "{{ nb_ctx.pxe_folder }}/grub2/grub.cfg"
     mode: '0644'
   delegate_to: tftp-server-01
+  become: true  # <--- Add this
   run_once: true
 
 # Provision PXE servers
