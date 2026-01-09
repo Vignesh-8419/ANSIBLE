@@ -1,9 +1,12 @@
 ---
-# STEP 1: PREPARE THE NETWORK INFRASTRUCTURE (DHCP & TFTP)
+# STEP 1: PREPARE THE NETWORK INFRASTRUCTURE
+# We do this first so the server is "caught" by DHCP the moment it turns on.
 - name: Add DHCP reservation and restart service
   shell: |
     sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 <<EOF
+    # Remove old entries to prevent duplicates
     sed -i '/# BEGIN ANSIBLE {{ server.hostname }}/,/# END ANSIBLE {{ server.hostname }}/d' /etc/dhcp/dhcpd.conf
+    # Append new host configuration
     cat >> /etc/dhcp/dhcpd.conf <<DHCP_EOF
     # BEGIN ANSIBLE {{ server.hostname }}
     host {{ server.hostname }} {
@@ -25,7 +28,8 @@
     EOF
   delegate_to: localhost
 
-# STEP 2: CONFIGURE VM HARDWARE AND BOOT ORDER
+# STEP 2: CONFIGURE VM HARDWARE AND POWER ON
+# Using curl to bypass the missing 'requests' library in AWX
 - name: Configure and Power On existing VM
   shell: |
     # 1. Get Authentication Token
@@ -33,45 +37,53 @@
       -u "{{ nb_ctx.vcenter_username }}:{{ nb_ctx.vcenter_password }}" \
       https://{{ nb_ctx.vcenter_hostname }}/api/session | tr -d '"')
 
+    if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" == "null" ]; then echo "Auth Failed"; exit 1; fi
+
     # 2. Get the VM ID by name
+    # We use python3 (built into the runner) to parse the JSON response safely
     VM_ID=$(curl -k -s -H "vmware-api-session-id: $SESSION_ID" \
-      "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm?names={{ server.hostname }}" | grep -o 'vm-[0-9]*' | head -1)
+      "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm?filter.names={{ server.hostname }}" | \
+      python3 -c "import sys, json; data=json.load(sys.stdin); print(data['value'][0]['vm']) if data['value'] else print('')")
 
-    # 3. Set Firmware to UEFI (Required for grubx64.efi)
+    if [ -z "$VM_ID" ]; then echo "VM Not Found: {{ server.hostname }}"; exit 1; fi
+
+    # 3. Set Firmware to UEFI and Boot Protocol to IPV4
     curl -k -s -X PATCH "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm/$VM_ID" \
       -H "vmware-api-session-id: $SESSION_ID" \
       -H "Content-Type: application/json" \
-      -d '{ "boot": { "type": "EFI" } }'
+      -d '{"boot": {"type": "EFI", "network_protocol": "IPV4"}}'
 
-    # 4. Set Boot Order to ETHERNET first
-    curl -k -s -X PATCH "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm/$VM_ID" \
-      -H "vmware-api-session-id: $SESSION_ID" \
-      -H "Content-Type: application/json" \
-      -d '{ "boot": { "network_protocol": "IPV4" } }'
-
-    # 5. Power On the VM
+    # 4. Power On the VM
+    # We ignore errors here in case the VM is already powered on
     curl -k -s -X POST "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm/$VM_ID/power?action=start" \
       -H "vmware-api-session-id: $SESSION_ID"
 
-    # 6. Wait 15 seconds to ensure PXE process has started, then revert boot order to DISK
-    # This ensures that when the OS install reboots the VM, it boots from the HD, not PXE again.
+    # 5. Wait for PXE boot process to engage (15 seconds)
     sleep 15
+
+    # 6. Revert Boot Order to DISK first
+    # This prevents the VM from re-entering PXE after the OS installation reboots
     curl -k -s -X PATCH "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm/$VM_ID" \
       -H "vmware-api-session-id: $SESSION_ID" \
       -H "Content-Type: application/json" \
-      -d '{ "boot": { "type": "EFI" }, "boot_devices": [ { "type": "DISK" }, { "type": "ETHERNET" } ] }'
+      -d '{
+          "boot": { "type": "EFI" },
+          "boot_devices": [ { "type": "DISK" }, { "type": "ETHERNET" } ]
+      }'
   delegate_to: localhost
+  register: vm_mgmt_result
 
 # STEP 3: MONITOR FOR COMPLETION
-- name: Wait for OS installation to complete (Ping check)
+
+- name: Wait for OS installation to complete (Ping/SSH check)
   wait_for:
     host: "{{ server.ip }}"
     port: 22
     state: started
-    delay: 60      # Wait 1 min before first check
-    timeout: 1200  # Give it up to 20 mins for full CentOS install
+    delay: 60      # Wait 1 min before checking
+    timeout: 1200  # 20 minute timeout for full OS install
   delegate_to: localhost
 
-- name: Final status
+- name: Final Provisioning Status
   debug:
-    msg: "Server {{ server.hostname }} is now online and reachable at {{ server.ip }}"
+    msg: "SUCCESS: {{ server.hostname }} is online at {{ server.ip }}."
