@@ -1,5 +1,5 @@
 ---
-# STEP 1: PREPARE NETWORK (DHCP & TFTP)
+# STEP 1: PREPARE NETWORK INFRASTRUCTURE (DHCP & TFTP)
 - name: Add DHCP reservation and restart service
   shell: |
     sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 <<EOF
@@ -18,67 +18,68 @@
     EOF
   delegate_to: localhost
 
-- name: Generate per-host GRUB config
+- name: Generate per-host GRUB config via SSH pipe
   shell: |
     sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 "cat > /var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') | lower }}" <<EOF
     {{ lookup('template', 'grub-centos7.j2') }}
     EOF
   delegate_to: localhost
 
-# STEP 2: MANAGE ESXi VM (Using vim-cmd and vmx editing)
+# STEP 2: ESXi DIRECT VM MANAGEMENT (Using SSH/vim-cmd)
 - name: Configure and Power On VM on ESXi host
   shell: |
     # 1. Find the VMID on the ESXi host
-    VMID=$(sshpass -p '{{ exsi_password }}' ssh -o StrictHostKeyChecking=no root@{{ exsi_hostname }} "vim-cmd vmsvc/getallvms | grep '{{ server.hostname }}' | awk '{print \$1}'")
+    VMID=$(sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/getallvms | grep '{{ server.hostname }}' | awk '{print \$1}'")
     
     if [ -z "$VMID" ]; then echo "VM Not Found on ESXi"; exit 1; fi
 
-    # 2. Power Off the VM if it is running
-    sshpass -p '{{ exsi_password }}' ssh -o StrictHostKeyChecking=no root@{{ exsi_hostname }} "vim-cmd vmsvc/power.off $VMID" || true
+    # 2. Power Off if running (required to modify .vmx file)
+    sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/power.off $VMID" || true
 
-    # 3. Set EFI Firmware and PXE Boot order via .vmx modification
-    # This finds the .vmx path and ensures firmware is efi and boot order is network
-    VMX_PATH=$(sshpass -p '{{ exsi_password }}' ssh -o StrictHostKeyChecking=no root@{{ exsi_hostname }} "vim-cmd vmsvc/get.config $VMID | grep -i 'vmxPath' | awk -F'\"' '{print \$2}'")
+    # 3. Identify VMX path and set Boot Order / Firmware
+    VMX_PATH=$(sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/get.config $VMID | grep -i 'vmxPath' | awk -F'\"' '{print \$2}'")
     
-    sshpass -p '{{ exsi_password }}' ssh -o StrictHostKeyChecking=no root@{{ exsi_hostname }} <<EOF
-      sed -i '/firmware/d' $VMX_PATH
-      echo 'firmware = "efi"' >> $VMX_PATH
-      sed -i '/bios.bootOrder/d' $VMX_PATH
-      echo 'bios.bootOrder = "ethernet,disk"' >> $VMX_PATH
+    sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} <<EOF
+      # Ensure UEFI firmware is set
+      sed -i '/firmware/d' "$VMX_PATH"
+      echo 'firmware = "efi"' >> "$VMX_PATH"
+      # Set Network as first boot device
+      sed -i '/bios.bootOrder/d' "$VMX_PATH"
+      echo 'bios.bootOrder = "ethernet,disk"' >> "$VMX_PATH"
     EOF
 
-    # 4. Power On the VM
-    sshpass -p '{{ exsi_password }}' ssh -o StrictHostKeyChecking=no root@{{ exsi_hostname }} "vim-cmd vmsvc/power.on $VMID"
+    # 4. Power On the VM to start PXE
+    sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/power.on $VMID"
 
-    # 5. Wait for PXE to engage (20s) then swap boot order back to disk
+    # 5. Wait for PXE handshake (20 seconds), then flip boot order to DISK
+    # This ensures that after installation, the VM reboots into the OS
     sleep 20
-    sshpass -p '{{ exsi_password }}' ssh -o StrictHostKeyChecking=no root@{{ exsi_hostname }} <<EOF
-      sed -i '/bios.bootOrder/d' $VMX_PATH
-      echo 'bios.bootOrder = "disk,ethernet"' >> $VMX_PATH
-    EOF
+    sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "sed -i 's/ethernet,disk/disk,ethernet/' \"$VMX_PATH\""
   delegate_to: localhost
+  register: esxi_mgmt_result
 
-# STEP 3: MONITOR COMPLETION
+# STEP 3: MONITOR INSTALLATION AND VERIFY KERNEL
 - name: Wait for VM to respond to SSH (Port 22)
   wait_for:
     host: "{{ server.ip }}"
     port: 22
     state: started
-    delay: 60
-    timeout: 1200
+    delay: 60      # Wait 1 min before checking
+    timeout: 1800  # 30 min timeout for full OS install
   delegate_to: localhost
 
-- name: Clean and Update SSH Keys
+- name: Clean SSH Keys and Capture Kernel
   shell: |
     ssh-keygen -R {{ server.ip }} || true
     ssh-keyscan -H {{ server.ip }} >> /tmp/known_hosts
-  delegate_to: localhost
-
-- name: Verify Kernel Version
-  shell: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/known_hosts root@{{ server.ip }} 'uname -r'"
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/known_hosts root@{{ server.ip }} 'uname -r'
   register: kernel_version
   delegate_to: localhost
 
-- name: Final Result
+- name: Final Provisioning Summary
   debug:
-    msg: "VM {{ server.hostname }} is ready with kernel {{ kernel_version.stdout }}"
+    msg: 
+      - "Hostname: {{ server.hostname }}"
+      - "IP Address: {{ server.ip }}"
+      - "Kernel Version: {{ kernel_version.stdout }}"
+      - "Status: PROVISIONING COMPLETE"
