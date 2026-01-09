@@ -1,18 +1,16 @@
 ---
-# awx-netbox-centos_roles/pxe_provision/tasks/main.yml
-
-- name: Force write GRUB dispatcher via shell pipe
+- name: Reality Check
   shell: |
-    cat <<EOF > /var/lib/tftpboot/grub2/grub.cfg
-    {{ lookup('template', 'grub-dispatcher.j2') }}
-    EOF
+    echo "Hostname: $(hostname)"
+    echo "User: $(whoami)"
+    echo "Current Dir: $(pwd)"
+    ls -la /var/lib/tftpboot/grub2 || echo "FOLDER NOT FOUND"
+    df -h /var/lib/tftpboot
   delegate_to: tftp-server-01
   vars:
     ansible_user: root
-  run_once: true
+  register: reality_check
 
-- name: Provision PXE servers
-  include_tasks: per_server.yml
-  loop: "{{ servers }}"
-  loop_control:
-    loop_var: server
+- name: Show Reality Check
+  debug:
+    var: reality_check.stdout_lines
