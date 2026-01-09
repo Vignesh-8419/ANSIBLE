@@ -1,5 +1,5 @@
 ---
-# STEP 1: PREPARE NETWORK INFRASTRUCTURE (DHCP & TFTP)
+# STEP 1: PREPARE NETWORK INFRASTRUCTURE
 - name: Add DHCP reservation and restart service
   shell: |
     sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 <<EOF
@@ -29,44 +29,43 @@
 - name: Configure and Power On VM on ESXi host
   shell: 
     cmd: |
-      # 1. Extract short hostname
-      SHORT_NAME=$(echo "{{ server.hostname }}" | cut -d'.' -f1)
-      
-      # 2. Find the VMID
-      VMID=$(sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/getallvms | grep -w \"$SHORT_NAME\" | awk '{print \$1}'")
-      
-      if [ -z "$VMID" ]; then 
-        echo "VM Not Found on ESXi: $SHORT_NAME"
-        exit 1
-      fi
-
-      # 3. Power Off and modify VMX
-      # We use <<'EOF' (single quotes) to prevent local variable expansion
       sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} <<'EOF'
-        VMID_REMOTE=$(vim-cmd vmsvc/getallvms | grep -w "{{ server.hostname.split('.')[0] }}" | awk '{print $1}')
-        VMX_PATH=$(vim-cmd vmsvc/get.config $VMID_REMOTE | grep -i 'vmxPath' | awk -F'"' '{print $2}')
+        # 1. Find VMID
+        VMNAME="{{ server.hostname.split('.')[0] }}"
+        VMID=$(vim-cmd vmsvc/getallvms | grep -w "$VMNAME" | awk '{print $1}')
         
-        echo "Updating VMX: $VMX_PATH"
+        if [ -z "$VMID" ]; then echo "VM $VMNAME not found"; exit 1; fi
         
-        # Stop VM
-        vim-cmd vmsvc/power.off $VMID_REMOTE >/dev/null 2>&1 || true
+        # 2. Get Absolute VMX Path
+        # vim-cmd returns 'datastore path', we convert it to /vmfs/volumes/datastore/path
+        VMX_INFO=$(vim-cmd vmsvc/get.config $VMID | grep -i 'vmxPath' | awk -F'"' '{print $2}')
+        DS_NAME=$(echo "$VMX_INFO" | awk -F' ' '{print $1}' | tr -d '[]')
+        REL_PATH=$(echo "$VMX_INFO" | awk -F' ' '{print $2}')
+        FULL_VMX_PATH="/vmfs/volumes/$DS_NAME/$REL_PATH"
         
-        # Remove old entries and add UEFI + PXE First
-        sed -i '/firmware/d' "$VMX_PATH"
-        sed -i '/bios.bootOrder/d' "$VMX_PATH"
-        echo 'firmware = "efi"' >> "$VMX_PATH"
-        echo 'bios.bootOrder = "ethernet,disk"' >> "$VMX_PATH"
+        if [ ! -f "$FULL_VMX_PATH" ]; then echo "File $FULL_VMX_PATH not found"; exit 1; fi
+
+        # 3. Stop VM
+        vim-cmd vmsvc/power.off $VMID >/dev/null 2>&1 || true
         
-        # Start VM
-        vim-cmd vmsvc/power.on $VMID_REMOTE
+        # 4. Modify VMX for UEFI + PXE Boot
+        sed -i '/firmware/d' "$FULL_VMX_PATH"
+        sed -i '/bios.bootOrder/d' "$FULL_VMX_PATH"
+        echo 'firmware = "efi"' >> "$FULL_VMX_PATH"
+        echo 'bios.bootOrder = "ethernet,disk"' >> "$FULL_VMX_PATH"
         
-        # Wait for PXE to engage then flip order back to Disk
+        # 5. Start VM
+        vim-cmd vmsvc/power.on $VMID
+        
+        # 6. Wait for PXE to start (25s), then flip order back to Disk
+        # We do this so the NEXT reboot uses the hard drive
         sleep 25
-        sed -i 's/ethernet,disk/disk,ethernet/' "$VMX_PATH"
+        sed -i 's/ethernet,disk/disk,ethernet/' "$FULL_VMX_PATH"
       EOF
   delegate_to: localhost
 
 # STEP 3: MONITOR INSTALLATION
+
 - name: Wait for VM to respond to SSH
   wait_for:
     host: "{{ server.ip }}"
