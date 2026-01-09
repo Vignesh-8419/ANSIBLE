@@ -18,7 +18,6 @@
     networks:
       - name: "{{ nb_ctx.vm_network }}"
         mac: "{{ server.mac }}"
-        device_type: vmxnet3
     disk:
       - size_gb: "{{ nb_ctx.disk_size_gb }}"
         type: thin
