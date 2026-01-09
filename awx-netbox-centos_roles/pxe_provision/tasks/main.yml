@@ -1,9 +1,4 @@
 ---
-# Load NetBox config context for role tasks
-- name: Ensure NetBox config context is loaded
-  set_fact:
-    nb_ctx: "{{ nb_ctx }}"   # already loaded by playbook
-
 # Ensure GRUB dispatcher exists
 - name: Ensure GRUB dispatcher exists
   template:
