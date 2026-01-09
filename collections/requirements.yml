@@ -1,2 +1,3 @@
 collections:
   - name: netbox.netbox
+  - name: community.vmware
