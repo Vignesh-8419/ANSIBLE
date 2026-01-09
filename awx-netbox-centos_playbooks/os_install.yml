@@ -1,19 +1,22 @@
 ---
-- name: PXE Provision hosts from NetBox
+- name: PXE Provision CentOS servers via NetBox
   hosts: all
   gather_facts: false
 
   tasks:
+    # Ensure host is tagged for PXE
     - name: Fail if host is not tagged for PXE
       assert:
         that:
           - "'pxe_centostag' in tags"
         fail_msg: "Host {{ inventory_hostname }} is not tagged with pxe_centostag in NetBox"
 
+    # Load NetBox config context
     - name: Load NetBox config context
       set_fact:
         nb_ctx: "{{ config_context | first }}"
 
+    # Build servers list using NetBox info (hostname, IP, MAC)
     - name: Build PXE server structure from NetBox
       set_fact:
         servers:
@@ -21,8 +24,9 @@
             ip: "{{ ansible_host }}"
             mac: "{{ interfaces[0].mac_address | lower }}"
 
+    # Run PXE provisioning role
     - name: Run PXE provisioning role
       include_role:
         name: awx-netbox-centos_roles/pxe_provision
       vars:
-        vcenter_password: "{{ vmware_password }}"   # <-- inject AWX credential
+        vcenter_password: "{{ vmware_password }}"   # <-- inject AWX VMware credential
