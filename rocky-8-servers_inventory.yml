@@ -2,14 +2,21 @@
 plugin: netbox.netbox.nb_inventory
 api_endpoint: https://192.168.253.134
 validate_certs: false
+
+# Pull full host metadata
 config_context: true
+interfaces: true
+primary_ip: true
+services: false
 
 group_by:
   - status
+  - tags
 
 device_query_filters:
-  - status: 'active'
-  - cluster_id: '6'  # Use ID 6 for Rocky
+  - status: active
+  - cluster_id: '6'
 
 compose:
   ansible_host: primary_ip4.address.split('/')[0]
+  primary_ip4: primary_ip4.address.split('/')[0]
