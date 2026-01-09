@@ -14,7 +14,19 @@
     # Load NetBox config context
     - name: Load NetBox config context
       set_fact:
-        nb_ctx: "{{ config_context | first }}"
+        nb_ctx: "{{ config_context[0] }}"   # <-- extract first dictionary from list
+
+    # Validate required PXE/VMware variables exist
+    - name: Validate PXE-related variables from NetBox
+      assert:
+        that:
+          - nb_ctx.http_server is defined
+          - nb_ctx.kickstart_url is defined
+          - nb_ctx.pxe_folder is defined
+          - nb_ctx.vcenter_hostname is defined
+          - nb_ctx.vcenter_username is defined
+          - nb_ctx.vcenter_password is defined
+        fail_msg: "Required PXE or VMware variables missing in NetBox config_context"
 
     # Build servers list using NetBox info (hostname, IP, MAC)
     - name: Build PXE server structure from NetBox
@@ -28,3 +40,6 @@
     - name: Run PXE provisioning role
       include_role:
         name: awx-netbox-centos_roles/pxe_provision
+      vars:
+        # Use password from NetBox config_context
+        vcenter_password: "{{ nb_ctx.vcenter_password }}"
