@@ -4,7 +4,7 @@
   vmware_guest:
     hostname: "{{ nb_ctx.vcenter_hostname }}"
     username: "{{ nb_ctx.vcenter_username }}"
-    password: "{{ vcenter_password }}"  # from NetBox
+    vcenter_password: "{{ vmware_password }}"
     validate_certs: false
     datacenter: "{{ nb_ctx.datacenter_name }}"
     folder: "{{ nb_ctx.folder }}"
