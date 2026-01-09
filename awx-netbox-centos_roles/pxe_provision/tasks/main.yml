@@ -1,8 +1,4 @@
 ---
-- name: Load NetBox config context
-  set_fact:
-    nb_ctx: "{{ config_context | first }}"
-
 - name: Ensure GRUB dispatcher exists
   template:
     src: grub-dispatcher.j2
