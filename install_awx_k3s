@@ -65,3 +65,40 @@ kubectl patch awx awx-server -n awx --type=merge -p '{
     "projects_persistence": true
   }
 }'
+
+
+kubectl -n awx edit awx awx-server
+
+
+spec:
+  web_resource_requirements:
+    requests:
+      memory: "2Gi"
+      cpu: "500m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+
+  task_resource_requirements:
+    requests:
+      memory: "2Gi"
+      cpu: "500m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+
+  postgres_resource_requirements:
+    requests:
+      memory: "1Gi"
+    limits:
+      memory: "2Gi"
+
+  redis_resource_requirements:
+    requests:
+      memory: "512Mi"
+    limits:
+      memory: "1Gi"
+
+
+kubectl -n awx delete pod --all
+
