@@ -18,7 +18,7 @@
     EOF
   delegate_to: localhost
 
-- name: Generate per-host GRUB config via SSH pipe
+- name: Generate per-host GRUB config
   shell: |
     sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 "cat > /var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') | lower }}" <<EOF
     {{ lookup('template', 'grub-centos7.j2') }}
@@ -29,42 +29,44 @@
 - name: Configure and Power On VM on ESXi host
   shell: 
     cmd: |
-      # Extract short hostname
+      # 1. Extract short hostname
       SHORT_NAME=$(echo "{{ server.hostname }}" | cut -d'.' -f1)
       
-      # 1. Find the VMID
-      # We escape the $ for awk and grep so Jinja doesn't touch them
+      # 2. Find the VMID
       VMID=$(sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/getallvms | grep -w \"$SHORT_NAME\" | awk '{print \$1}'")
       
       if [ -z "$VMID" ]; then 
-        echo "VM Not Found on ESXi using short name: $SHORT_NAME"
+        echo "VM Not Found on ESXi: $SHORT_NAME"
         exit 1
       fi
 
-      # 2. Power Off
-      sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/power.off $VMID" || true
-
-      # 3. Identify VMX path
-      VMX_PATH=$(sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/get.config $VMID | grep -i 'vmxPath' | awk -F'\"' '{print \$2}'")
-      
-      # 4. Modify VMX file directly on ESXi
-      sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} <<EOF
-        sed -i '/firmware/d' "\$VMX_PATH"
-        echo 'firmware = "efi"' >> "\$VMX_PATH"
-        sed -i '/bios.bootOrder/d' "\$VMX_PATH"
-        echo 'bios.bootOrder = "ethernet,disk"' >> "\$VMX_PATH"
+      # 3. Power Off and modify VMX
+      # We use <<'EOF' (single quotes) to prevent local variable expansion
+      sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} <<'EOF'
+        VMID_REMOTE=$(vim-cmd vmsvc/getallvms | grep -w "{{ server.hostname.split('.')[0] }}" | awk '{print $1}')
+        VMX_PATH=$(vim-cmd vmsvc/get.config $VMID_REMOTE | grep -i 'vmxPath' | awk -F'"' '{print $2}')
+        
+        echo "Updating VMX: $VMX_PATH"
+        
+        # Stop VM
+        vim-cmd vmsvc/power.off $VMID_REMOTE >/dev/null 2>&1 || true
+        
+        # Remove old entries and add UEFI + PXE First
+        sed -i '/firmware/d' "$VMX_PATH"
+        sed -i '/bios.bootOrder/d' "$VMX_PATH"
+        echo 'firmware = "efi"' >> "$VMX_PATH"
+        echo 'bios.bootOrder = "ethernet,disk"' >> "$VMX_PATH"
+        
+        # Start VM
+        vim-cmd vmsvc/power.on $VMID_REMOTE
+        
+        # Wait for PXE to engage then flip order back to Disk
+        sleep 25
+        sed -i 's/ethernet,disk/disk,ethernet/' "$VMX_PATH"
       EOF
-
-      # 5. Power On
-      sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/power.on $VMID"
-
-      # 6. Wait and Revert Boot Order
-      sleep 20
-      sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "sed -i 's/ethernet,disk/disk,ethernet/' \"\$VMX_PATH\""
   delegate_to: localhost
 
 # STEP 3: MONITOR INSTALLATION
-
 - name: Wait for VM to respond to SSH
   wait_for:
     host: "{{ server.ip }}"
@@ -74,17 +76,10 @@
     timeout: 1800
   delegate_to: localhost
 
-- name: Clean SSH Keys and Capture Kernel
+- name: Verify Kernel Version
   shell: |
     ssh-keygen -R {{ server.ip }} || true
     ssh-keyscan -H {{ server.ip }} >> /tmp/known_hosts
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/known_hosts root@{{ server.ip }} 'uname -r'
   register: kernel_version
   delegate_to: localhost
-
-- name: Final Provisioning Summary
-  debug:
-    msg: 
-      - "Hostname: {{ server.hostname }}"
-      - "IP Address: {{ server.ip }}"
-      - "Kernel Version: {{ kernel_version.stdout }}"
