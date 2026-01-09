@@ -90,15 +90,17 @@
 
 - name: Capture Kernel Version (Non-blocking)
   shell: |
-    sshpass -p '{{ nb_ctx.vm_root_password | default("root_password_here") }}' \
+    sshpass -p '{{ nb_ctx.vm_root_password }}' \
     ssh -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=10 \
-    root@{{ server.ip }} 'uname -r'
+    -o PreferredAuthentications=password \
+    -o PubkeyAuthentication=no \
+    {{ nb_ctx.vm_root_user | default('root') }}@{{ server.ip }} 'uname -r'
   register: kernel_version
   until: kernel_version.rc == 0
-  retries: 5
-  delay: 10
+  retries: 10
+  delay: 15
   delegate_to: localhost
 
 - name: Final Provisioning Summary
