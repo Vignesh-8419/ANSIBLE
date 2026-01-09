@@ -1,15 +1,5 @@
 ---
-# Main logic: Using sshpass to handle the password so it doesn't hang
-
-- name: Force install requests library in runner
-  pip:
-    name: 
-      - requests
-      - pyvmomi
-    extra_args: --user
-  delegate_to: localhost
-  run_once: true
-
+# Step 1: Write the main GRUB dispatcher to the TFTP server
 - name: Force write GRUB dispatcher via SSH pipe
   shell: |
     sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 "cat > /var/lib/tftpboot/grub2/grub.cfg" <<EOF
@@ -18,6 +8,7 @@
   delegate_to: localhost
   run_once: true
 
+# Step 2: Process each server
 - name: Provision PXE servers
   include_tasks: per_server.yml
   loop: "{{ servers }}"
