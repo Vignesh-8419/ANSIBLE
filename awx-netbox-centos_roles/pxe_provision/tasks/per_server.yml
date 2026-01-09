@@ -1,4 +1,6 @@
 ---
+# Step 1: Create the Virtual Machine
+# We use the python interpreter override to find the 'requests' library in AWX
 - name: Create and Power On VM
   community.vmware.vmware_guest:
     hostname: "{{ nb_ctx.vcenter_hostname }}"
@@ -10,7 +12,6 @@
     name: "{{ server.hostname }}"
     state: poweredon
     guest_id: centos7_64Guest
-    # boot_order removed to fix "Unsupported Parameter" error
     hardware:
       memory_mb: "{{ nb_ctx.default_memory_mb }}"
       num_cpus: "{{ nb_ctx.default_cpus }}"
@@ -23,7 +24,11 @@
         type: thin
         datastore: "{{ nb_ctx.datastore }}"
   delegate_to: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
 
+# Step 2: Generate per-host GRUB config on TFTP server
+# Using the SSH pipe logic to bypass SFTP/Permissions issues
 - name: Generate per-host GRUB config via SSH pipe
   shell: |
     sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 "cat > /var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') | lower }}" <<EOF
@@ -31,10 +36,13 @@
     EOF
   delegate_to: localhost
 
+# Step 3: Add DHCP reservation and restart DHCP service
 - name: Add DHCP reservation and restart service
   shell: |
     sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 <<EOF
+    # Remove old entries to prevent duplicates
     sed -i '/# BEGIN ANSIBLE {{ server.hostname }}/,/# END ANSIBLE {{ server.hostname }}/d' /etc/dhcp/dhcpd.conf
+    # Append new host configuration
     cat >> /etc/dhcp/dhcpd.conf <<DHCP_EOF
     # BEGIN ANSIBLE {{ server.hostname }}
     host {{ server.hostname }} {
@@ -45,6 +53,7 @@
     }
     # END ANSIBLE {{ server.hostname }}
     DHCP_EOF
+    # Restart the service immediately
     systemctl restart dhcpd
     EOF
   delegate_to: localhost
