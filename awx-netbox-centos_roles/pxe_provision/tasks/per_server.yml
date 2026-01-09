@@ -1,5 +1,4 @@
 ---
-# Step 1: Create and Power On VM via vCenter REST API
 - name: Create and Power On VM (Bypassing Python/Requests issues)
   shell: |
     # 1. Get Authentication Token
@@ -8,18 +7,19 @@
       https://{{ nb_ctx.vcenter_hostname }}/api/session | tr -d '"')
 
     # 2. Create the VM 
-    # This creates a VM with the network and hardware specs from NetBox
-    curl -k -s -X POST https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm \
+    # NOTE: I am using 'placement' without specific folder/datastore to use vCenter defaults
+    # If this fails, we will need to provide the specific IDs.
+    CREATE_RESP=$(curl -k -s -X POST https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm \
       -H "vmware-api-session-id: $SESSION_ID" \
       -H "Content-Type: application/json" \
       -d '{
         "name": "{{ server.hostname }}",
         "guest_OS": "CENTOS_7_64",
-        "placement": { "folder": "vm", "datastore": "datastore1" },
         "cpu": { "count": {{ nb_ctx.default_cpus }} },
         "memory": { "size_MiB": {{ nb_ctx.default_memory_mb }} },
         "nics": [{
             "backing": { "type": "STANDARD_PORTGROUP", "network": "{{ nb_ctx.vm_network }}" },
+            "allow_guest_control": true,
             "mac_address": "{{ server.mac }}",
             "mac_type": "MANUAL",
             "start_connected": true
@@ -27,16 +27,24 @@
         "disks": [{
             "new_vmdk": { "capacity": {{ nb_ctx.disk_size_gb | int * 1024 * 1024 * 1024 }} }
         }]
-      }'
+      }')
 
-    # 3. Power On the VM
-    # We find the VM ID by name, then send the 'start' action
+    # 3. Find VM ID and Power On
+    # We list VMs and filter by the name we just created
     VM_ID=$(curl -k -s -H "vmware-api-session-id: $SESSION_ID" \
       "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm?names={{ server.hostname }}" | grep -o 'vm-[0-9]*' | head -1)
     
     curl -k -s -X POST "https://{{ nb_ctx.vcenter_hostname }}/api/vcenter/vm/$VM_ID/power?action=start" \
       -H "vmware-api-session-id: $SESSION_ID"
+      
+    echo "Create Response: $CREATE_RESP"
   delegate_to: localhost
+  register: vm_create_debug
+
+- name: Debug vCenter Response if failed
+  debug:
+    var: vm_create_debug.stdout
+  when: vm_create_debug.rc != 0
 
 # Step 2: Generate per-host GRUB config on TFTP server
 - name: Generate per-host GRUB config via SSH pipe
