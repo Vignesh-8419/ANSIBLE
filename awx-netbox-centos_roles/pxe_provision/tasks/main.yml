@@ -1,13 +1,21 @@
 ---
-# awx-netbox-centos_roles/pxe_provision/tasks/main.yml
+# Ensure the directory exists (just in case)
+- name: Ensure GRUB directory exists
+  file:
+    path: "/var/lib/tftpboot/grub2"
+    state: directory
+    mode: '0755'
+  delegate_to: "192.168.253.136"
+  vars:
+    ansible_user: root
 
+# Place the main dispatcher
 - name: Ensure GRUB dispatcher exists
   template:
     src: grub-dispatcher.j2
-    dest: "{{ nb_ctx.pxe_folder }}/grub2/grub.cfg"
+    dest: "/var/lib/tftpboot/grub2/grub.cfg"
     mode: '0644'
-  # Use the IP here if the hostname isn't in your AWX inventory
-  delegate_to: "192.168.253.136" 
+  delegate_to: "192.168.253.136"
   vars:
     ansible_user: root
   run_once: true
