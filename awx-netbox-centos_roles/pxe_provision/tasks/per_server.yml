@@ -1,39 +1,58 @@
 ---
 # awx-netbox-centos_roles/pxe_provision/tasks/per_server.yml
-- name: Create VM if not exists
-  community.vmware.vmware_guest: # Using full collection name is best practice
+
+# Step 1: Create the Virtual Machine in vCenter
+# Executed on the AWX Runner (localhost) via vCenter API
+- name: Create and Power On VM with PXE boot order
+  community.vmware.vmware_guest:
     hostname: "{{ nb_ctx.vcenter_hostname }}"
     username: "{{ nb_ctx.vcenter_username }}"
-    password: "{{ nb_ctx.vcenter_password }}" # Use the var from your context
+    password: "{{ nb_ctx.vcenter_password }}"
     validate_certs: false
     datacenter: "{{ nb_ctx.datacenter_name }}"
     folder: "{{ nb_ctx.folder }}"
     name: "{{ server.hostname }}"
-    state: present
-    guest_id: otherGuest64
+    state: poweredon
+    guest_id: centos7_64Guest
+    # Forces the VM to try Network Boot (PXE) before the empty Hard Drive
+    boot_order: [ "ethernet0" ]
     hardware:
       memory_mb: "{{ nb_ctx.default_memory_mb }}"
       num_cpus: "{{ nb_ctx.default_cpus }}"
     networks:
       - name: "{{ nb_ctx.vm_network }}"
         mac: "{{ server.mac }}"
+        device_type: vmxnet3
     disk:
       - size_gb: "{{ nb_ctx.disk_size_gb }}"
         type: thin
         datastore: "{{ nb_ctx.datastore }}"
-  delegate_to: localhost  # <--- CRITICAL: Runs on AWX, not the target IP
+  delegate_to: localhost
 
+# Step 2: Create the host-specific GRUB config file on the TFTP server
+# This file is named after the MAC address (e.g., grub.cfg-01-00-50-56-20-2f-7d)
 - name: Generate per-host GRUB config
   template:
     src: grub-centos7.j2
     dest: "{{ nb_ctx.pxe_folder }}/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') }}"
     mode: '0644'
   delegate_to: tftp-server-01
-  become: true # <--- Add this
+  become: true
 
+# Step 3: Add the static DHCP reservation to the DHCP server
+# This ensures the VM gets the IP address defined in NetBox
 - name: Add DHCP reservation
   blockinfile:
     path: /etc/dhcp/dhcpd.conf
-    # ... rest of task
+    marker: "# {mark} ANSIBLE {{ server.hostname }}"
+    block: |
+      host {{ server.hostname }} {
+        hardware ethernet {{ server.mac }};
+        fixed-address {{ server.ip }};
+        option host-name "{{ server.hostname }}";
+        # Path to the EFI bootloader relative to the TFTP root
+        filename "grub2/grubx64.efi"; 
+      }
   delegate_to: tftp-server-01
-  become: true # <--- Add this
+  become: true
+  notify: restart dhcpd
