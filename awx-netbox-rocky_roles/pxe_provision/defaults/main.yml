@@ -1,7 +1,6 @@
-http_server: "192.168.253.136"
+# Default variables for PXE CentOS provisioning
 
-esxi_host: "192.168.253.128"
-esxi_user: "root"
-esxi_pass: "admin$22"
+servers: []  # Overridden by AWX survey or NetBox dynamic inventory
 
-servers: []   # overridden by AWX survey
+# All other variables come from NetBox Config Context
+# Example: http_server, vm_network, pxe_folder, etc.
