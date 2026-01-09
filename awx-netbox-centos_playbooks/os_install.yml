@@ -26,7 +26,6 @@
           - nb_ctx.pxe_folder is defined
           - nb_ctx.vcenter_hostname is defined
           - nb_ctx.vcenter_username is defined
-          - nb_ctx.vcenter_password is defined
         fail_msg: "Required PXE or VMware variables missing in NetBox config_context"
 
     - name: Build PXE server structure from NetBox
