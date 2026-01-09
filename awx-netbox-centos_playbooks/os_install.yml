@@ -1,6 +1,6 @@
 ---
 - name: PXE Provision CentOS servers via NetBox
-  hosts: localhost
+  hosts: all
   gather_facts: false
 
   tasks:
