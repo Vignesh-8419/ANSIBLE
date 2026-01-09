@@ -26,8 +26,8 @@
 
 - name: Generate per-host GRUB config
   shell: |
-    sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no root@192.168.253.160 "cat > /var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') | lower }}" <<EOF
-    {{ lookup('template', 'grub-centos7.j2') }}
+    sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no root@192.168.253.170 "cat > /var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') | lower }}" <<EOF
+    {{ lookup('template', 'grub-rocky8.j2') }}
     EOF
   delegate_to: localhost
 
