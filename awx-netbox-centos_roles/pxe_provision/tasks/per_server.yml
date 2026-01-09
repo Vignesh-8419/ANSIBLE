@@ -4,7 +4,7 @@
   vmware_guest:
     hostname: "{{ nb_ctx.vcenter_hostname }}"
     username: "{{ nb_ctx.vcenter_username }}"
-    vcenter_password: "{{ vmware_password }}"
+    vcenter_password: "admin$22"
     validate_certs: false
     datacenter: "{{ nb_ctx.datacenter_name }}"
     folder: "{{ nb_ctx.folder }}"
