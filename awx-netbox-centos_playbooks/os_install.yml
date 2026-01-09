@@ -40,4 +40,4 @@
       include_role:
         name: awx-netbox-centos_roles/pxe_provision
       vars:
-        vcenter_password: "{{ nb_ctx.vcenter_password }}"
+        vcenter_password: "{{ vmware_password }}"
