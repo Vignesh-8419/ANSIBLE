@@ -1,4 +1,10 @@
 ---
+# Load NetBox config context for role tasks
+- name: Ensure NetBox config context is loaded
+  set_fact:
+    nb_ctx: "{{ nb_ctx }}"   # already loaded by playbook
+
+# Ensure GRUB dispatcher exists
 - name: Ensure GRUB dispatcher exists
   template:
     src: grub-dispatcher.j2
@@ -7,6 +13,7 @@
   delegate_to: tftp-server-01
   run_once: true
 
+# Provision PXE servers
 - name: Provision PXE servers
   include_tasks: per_server.yml
   loop: "{{ servers }}"
