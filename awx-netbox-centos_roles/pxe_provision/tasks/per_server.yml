@@ -3,9 +3,7 @@
 - name: Add DHCP reservation and restart service
   shell: |
     sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 <<EOF
-    # Remove existing entries for this host to prevent duplicates
     sed -i '/# BEGIN ANSIBLE {{ server.hostname }}/,/# END ANSIBLE {{ server.hostname }}/d' /etc/dhcp/dhcpd.conf
-    # Append the new configuration
     cat >> /etc/dhcp/dhcpd.conf <<DHCP_EOF
     # BEGIN ANSIBLE {{ server.hostname }}
     host {{ server.hostname }} {
@@ -29,46 +27,45 @@
 
 # STEP 2: ESXi DIRECT VM MANAGEMENT
 - name: Configure and Power On VM on ESXi host
-  shell: |
-    # Extract short hostname (e.g., test-pxe-01.vgs.com becomes test-pxe-01)
-    SHORT_NAME=$(echo "{{ server.hostname }}" | cut -d'.' -f1)
-    
-    # 1. Find the VMID on the ESXi host using the short name
-    VMID=$(sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/getallvms | grep -w \"\$SHORT_NAME\" | awk '{print \$1}'")
-    
-    if [ -z "$VMID" ]; then 
-      echo "VM Not Found on ESXi using short name: \$SHORT_NAME"
-      exit 1
-    fi
+  shell: 
+    cmd: |
+      # Extract short hostname
+      SHORT_NAME=$(echo "{{ server.hostname }}" | cut -d'.' -f1)
+      
+      # 1. Find the VMID
+      # We escape the $ for awk and grep so Jinja doesn't touch them
+      VMID=$(sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/getallvms | grep -w \"$SHORT_NAME\" | awk '{print \$1}'")
+      
+      if [ -z "$VMID" ]; then 
+        echo "VM Not Found on ESXi using short name: $SHORT_NAME"
+        exit 1
+      fi
 
-    # 2. Power Off if running (required to ensure VMX edits are picked up)
-    sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/power.off $VMID" || true
+      # 2. Power Off
+      sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/power.off $VMID" || true
 
-    # 3. Identify VMX path and set Boot Order / Firmware
-    VMX_PATH=$(sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/get.config $VMID | grep -i 'vmxPath' | awk -F'\"' '{print \$2}'")
-    
-    sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} <<EOF
-      # Set Firmware to UEFI
-      sed -i '/firmware/d' "$VMX_PATH"
-      echo 'firmware = "efi"' >> "$VMX_PATH"
-      # Set Network (PXE) as priority
-      sed -i '/bios.bootOrder/d' "$VMX_PATH"
-      echo 'bios.bootOrder = "ethernet,disk"' >> "$VMX_PATH"
-    EOF
+      # 3. Identify VMX path
+      VMX_PATH=$(sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/get.config $VMID | grep -i 'vmxPath' | awk -F'\"' '{print \$2}'")
+      
+      # 4. Modify VMX file directly on ESXi
+      sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} <<EOF
+        sed -i '/firmware/d' "\$VMX_PATH"
+        echo 'firmware = "efi"' >> "\$VMX_PATH"
+        sed -i '/bios.bootOrder/d' "\$VMX_PATH"
+        echo 'bios.bootOrder = "ethernet,disk"' >> "\$VMX_PATH"
+      EOF
 
-    # 4. Power On the VM
-    sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/power.on $VMID"
+      # 5. Power On
+      sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "vim-cmd vmsvc/power.on $VMID"
 
-    # 5. Wait for PXE boot process to start (20s), then flip boot order back to DISK
-    # This ensures that after the installation reboots, it doesn't loop back to PXE
-    sleep 20
-    sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "sed -i 's/ethernet,disk/disk,ethernet/' \"$VMX_PATH\""
+      # 6. Wait and Revert Boot Order
+      sleep 20
+      sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} "sed -i 's/ethernet,disk/disk,ethernet/' \"\$VMX_PATH\""
   delegate_to: localhost
-  register: esxi_mgmt_result
 
 # STEP 3: MONITOR INSTALLATION
 
-- name: Wait for VM to respond to SSH (Port 22)
+- name: Wait for VM to respond to SSH
   wait_for:
     host: "{{ server.ip }}"
     port: 22
@@ -89,7 +86,5 @@
   debug:
     msg: 
       - "Hostname: {{ server.hostname }}"
-      - "Short Name used for ESXi: {{ server.hostname.split('.')[0] }}"
       - "IP Address: {{ server.ip }}"
       - "Kernel Version: {{ kernel_version.stdout }}"
-      - "Status: PROVISIONING COMPLETE"
