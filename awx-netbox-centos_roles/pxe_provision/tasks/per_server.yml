@@ -1,9 +1,15 @@
+- name: Validate vCenter password from AWX
+  assert:
+    that:
+      - vmware_password is defined
+    fail_msg: "vmware_password not injected by AWX VMware-vCenter credential"
+
 ---
 - name: Create VM if not exists
   vmware_guest:
     hostname: "{{ nb_ctx.vcenter_hostname }}"
     username: "{{ nb_ctx.vcenter_username }}"
-    password: "{{ vcenter_password }}"
+    password: "{{ vmware_password }}"   # <--- change here
     validate_certs: false
     datacenter: "{{ nb_ctx.datacenter_name }}"
     folder: "{{ nb_ctx.folder }}"
