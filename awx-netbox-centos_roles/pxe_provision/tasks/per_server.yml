@@ -1,17 +1,10 @@
 ---
-# Validate vCenter password exists
-- name: Validate vCenter password from NetBox
-  assert:
-    that:
-      - vcenter_password is defined
-    fail_msg: "vCenter password not found in NetBox config_context"
-
 # Create VM in vCenter if it does not exist
 - name: Create VM if not exists
   vmware_guest:
     hostname: "{{ nb_ctx.vcenter_hostname }}"
     username: "{{ nb_ctx.vcenter_username }}"
-    password: "{{ vcenter_password }}"
+    password: "{{ vcenter_password }}"  # from NetBox
     validate_certs: false
     datacenter: "{{ nb_ctx.datacenter_name }}"
     folder: "{{ nb_ctx.folder }}"
