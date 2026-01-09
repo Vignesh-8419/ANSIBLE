@@ -10,9 +10,13 @@
           - "'pxe_centostag' in tags"
         fail_msg: "Host {{ inventory_hostname }} is not tagged with pxe_centostag in NetBox"
 
-    - name: Load NetBox config context
+    - name: Load and normalize NetBox config context
       set_fact:
-        nb_ctx: "{{ config_context | first }}"  # <-- use `| first` instead of `[0]`
+        nb_ctx: "{{ config_context | first | combine({}) }}"
+
+    - name: Debug NetBox context
+      debug:
+        var: nb_ctx
 
     - name: Validate PXE/VMware variables from NetBox
       assert:
