@@ -1,9 +1,11 @@
 ---
-# We use 'ansible_user: root' to bypass the sudo/permission mess entirely.
+# awx-netbox-centos_roles/pxe_provision/tasks/main.yml
+
 - name: Ensure GRUB dispatcher exists
   template:
     src: grub-dispatcher.j2
-    dest: "{{ nb_ctx.pxe_folder }}/grub2/grub.cfg"
+    # HARDCODED PATH to test if NetBox variables are the issue
+    dest: "/var/lib/tftpboot/grub2/grub.cfg"
     mode: '0644'
   delegate_to: tftp-server-01
   vars:
