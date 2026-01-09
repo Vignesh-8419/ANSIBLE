@@ -1,5 +1,5 @@
 ---
-# VMware task stays the same...
+# VMware task MUST stay delegate_to: localhost (it uses the vCenter API)
 - name: Create and Power On VM
   community.vmware.vmware_guest:
     hostname: "{{ nb_ctx.vcenter_hostname }}"
@@ -12,20 +12,25 @@
     state: poweredon
     guest_id: centos7_64Guest
     boot_order: [ "ethernet0" ]
+    hardware:
+      memory_mb: "{{ nb_ctx.default_memory_mb }}"
+      num_cpus: "{{ nb_ctx.default_cpus }}"
     networks:
       - name: "{{ nb_ctx.vm_network }}"
         mac: "{{ server.mac }}"
+        device_type: vmxnet3
     disk:
       - size_gb: "{{ nb_ctx.disk_size_gb }}"
+        type: thin
         datastore: "{{ nb_ctx.datastore }}"
   delegate_to: localhost
 
-- name: Force write per-host GRUB config via shell pipe
-  shell: |
-    cat <<EOF > /var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') }}
-    {{ lookup('template', 'grub-centos7.j2') }}
-    EOF
-  delegate_to: tftp-server-01
+- name: Generate per-host GRUB config
+  template:
+    src: grub-centos7.j2
+    dest: "{{ nb_ctx.pxe_folder }}/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') }}"
+    mode: '0644'
+  delegate_to: "192.168.253.136"
   vars:
     ansible_user: root
 
@@ -40,7 +45,7 @@
         option host-name "{{ server.hostname }}";
         filename "grub2/grubx64.efi"; 
       }
-  delegate_to: tftp-server-01
+  delegate_to: "192.168.253.136"
   vars:
     ansible_user: root
   notify: restart dhcpd
