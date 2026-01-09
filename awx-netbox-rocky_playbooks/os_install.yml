@@ -1,35 +1,43 @@
-- name: Provision servers via PXE
-  hosts: localhost
+---
+- name: PXE Provision CentOS servers via NetBox
+  hosts: all
   gather_facts: false
-
-  vars:
-    hostnames: ""
-    ips: ""
-    macs: ""
+  connection: local  # <--- Add this line
 
   tasks:
-    - name: Normalize survey inputs
-      set_fact:
-        host_list: "{{ hostnames.replace('\"','').strip().split(',') }}"
-        ip_list: "{{ ips.replace('\"','').strip().split(',') }}"
-        mac_list: "{{ macs.replace('\"','').strip().split(',') }}"
-
-    - name: Validate input lengths
+    - name: Fail if host is not tagged for PXE
       assert:
         that:
-          - host_list | length == ip_list | length
-          - host_list | length == mac_list | length
-        fail_msg: "Survey input count mismatch"
+          - "'pxe_rockyostag' in tags"
+        fail_msg: "Host {{ inventory_hostname }} is not tagged with pxe_rockyostag in NetBox"
 
-    - name: Build servers list
+    - name: Load and normalize NetBox config context
       set_fact:
-        servers: "{{ servers | default([]) + [ {
-          'hostname': item.0.strip(),
-          'ip': item.1.strip(),
-          'mac': item.2.strip() | lower
-        } ] }}"
-      loop: "{{ host_list | zip(ip_list, mac_list) | list }}"
+        nb_ctx: "{{ config_context | first | combine({}) }}"
+
+    - name: Debug NetBox context
+      debug:
+        var: nb_ctx
+
+    - name: Validate PXE/VMware variables from NetBox
+      assert:
+        that:
+          - nb_ctx.http_server is defined
+          - nb_ctx.kickstart_url is defined
+          - nb_ctx.pxe_folder is defined
+          - nb_ctx.vcenter_hostname is defined
+          - nb_ctx.vcenter_username is defined
+        fail_msg: "Required PXE or VMware variables missing in NetBox config_context"
+
+    - name: Build PXE server structure from NetBox
+      set_fact:
+        servers:
+          - hostname: "{{ inventory_hostname }}"
+            ip: "{{ ansible_host }}"
+            mac: "{{ interfaces[0].mac_address | lower }}"
 
     - name: Run PXE provisioning role
       include_role:
-        name: rocky_roles/pxe_provision
+        name: awx-netbox-rocky_roles/pxe_provision
+      vars:
+        vcenter_password: "{{ vmware_password }}"
