@@ -11,7 +11,7 @@ menuentry "Install Rocky Linux 8" {
       ip=dhcp \
       inst.repo=http://{{ nb_ctx.http_server }}/repo/rocky8/ \
       inst.stage2=http://{{ nb_ctx.http_server }}/repo/rocky8/ \
-      inst.ks={{ nb_ctx.centos_kickstart_url }} \
+      inst.ks={{ nb_ctx.rockyos_kickstart_url }} \
       inst.text \
       inst.default_fstype=ext4 \
       hostname={{ server.hostname }} \
