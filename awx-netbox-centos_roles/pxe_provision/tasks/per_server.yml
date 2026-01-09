@@ -1,5 +1,16 @@
 ---
-# STEP 1: PREPARE NETWORK INFRASTRUCTURE
+# STEP 1: RESOLVE PYTHON DEPENDENCIES
+# This fixes the "ModuleNotFoundError: No module named 'requests'" error in AWX
+- name: Ensure VMware Python dependencies are present on AWX runner
+  pip:
+    name: 
+      - requests
+      - pyvmomi
+    extra_args: --user
+  delegate_to: localhost
+  run_once: true
+
+# STEP 2: PREPARE NETWORK INFRASTRUCTURE (DHCP & TFTP)
 - name: Add DHCP reservation and restart service
   shell: |
     sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 <<EOF
@@ -18,15 +29,15 @@
     EOF
   delegate_to: localhost
 
-- name: Generate per-host GRUB config
+- name: Generate per-host GRUB config via SSH pipe
   shell: |
     sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 "cat > /var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') | lower }}" <<EOF
     {{ lookup('template', 'grub-centos7.j2') }}
     EOF
   delegate_to: localhost
 
-# STEP 2: NATIVE VMWARE MODULES FOR ESXi
-# We use server.hostname.split('.')[0] to match the ESXi short name
+# STEP 3: NATIVE VMWARE MODULES FOR ESXi
+# Note: We use .split('.')[0] because your ESXi VM name is the short name (test-pxe-01)
 - name: Power OFF VM
   community.vmware.vmware_guest:
     hostname: "{{ nb_ctx.exsi_hostname }}"
@@ -37,7 +48,7 @@
     state: poweredoff
   delegate_to: localhost
 
-- name: Set VM firmware to EFI (UEFI)
+- name: Set VM firmware to EFI and Boot Order (PXE First)
   community.vmware.vmware_guest_boot_manager:
     hostname: "{{ nb_ctx.exsi_hostname }}"
     username: "{{ nb_ctx.exsi_username }}"
@@ -45,21 +56,12 @@
     validate_certs: false
     name: "{{ server.hostname.split('.')[0] }}"
     boot_firmware: "efi"
-  delegate_to: localhost
-
-- name: Set boot order to PXE first
-  community.vmware.vmware_guest_boot_manager:
-    hostname: "{{ nb_ctx.exsi_hostname }}"
-    username: "{{ nb_ctx.exsi_username }}"
-    password: "{{ nb_ctx.exsi_password }}"
-    validate_certs: false
-    name: "{{ server.hostname.split('.')[0] }}"
     boot_order:
       - ethernet
       - disk
   delegate_to: localhost
 
-- name: Power on VM
+- name: Power ON VM
   community.vmware.vmware_guest:
     hostname: "{{ nb_ctx.exsi_hostname }}"
     username: "{{ nb_ctx.exsi_username }}"
@@ -71,9 +73,9 @@
 
 - name: Pause to allow PXE boot to initiate
   pause:
-    seconds: 20
+    seconds: 25
 
-- name: Switch boot order to disk first (for next reboot)
+- name: Switch boot order to disk first (for post-install reboot)
   community.vmware.vmware_guest_boot_manager:
     hostname: "{{ nb_ctx.exsi_hostname }}"
     username: "{{ nb_ctx.exsi_username }}"
@@ -85,29 +87,28 @@
       - ethernet
   delegate_to: localhost
 
-# STEP 3: MONITOR & VERIFY
-- name: Wait for VM to respond to SSH
+# STEP 4: MONITOR INSTALLATION AND VERIFY
+- name: Wait for VM to respond to SSH (Port 22)
   wait_for:
     host: "{{ server.ip }}"
     port: 22
     state: started
-    delay: 30
+    delay: 60
     timeout: 1800
   delegate_to: localhost
 
-- name: Refresh SSH known_hosts
+- name: Clean SSH Keys and Capture Kernel
   shell: |
     ssh-keygen -R {{ server.ip }} || true
     ssh-keyscan -H {{ server.ip }} >> /tmp/known_hosts
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/known_hosts root@{{ server.ip }} 'uname -r'
+  register: kernel_version
   delegate_to: localhost
 
-- name: Check kernel version via SSH
-  command: uname -r
-  register: kernel_version
-  delegate_to: "{{ server.ip }}"
-  vars:
-    ansible_ssh_common_args: "-o UserKnownHostsFile=/tmp/known_hosts -o StrictHostKeyChecking=no"
-
-- name: Display kernel version
+- name: Final Provisioning Summary
   debug:
-    msg: "Kernel version on {{ server.hostname }} is {{ kernel_version.stdout }}"
+    msg: 
+      - "Hostname: {{ server.hostname }}"
+      - "IP Address: {{ server.ip }}"
+      - "Kernel Version: {{ kernel_version.stdout }}"
+      - "Status: PROVISIONING COMPLETE"
