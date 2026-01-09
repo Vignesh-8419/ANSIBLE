@@ -4,20 +4,17 @@
   gather_facts: false
 
   tasks:
-    # Ensure host is tagged for PXE
     - name: Fail if host is not tagged for PXE
       assert:
         that:
           - "'pxe_centostag' in tags"
         fail_msg: "Host {{ inventory_hostname }} is not tagged with pxe_centostag in NetBox"
 
-    # Load NetBox config context
     - name: Load NetBox config context
       set_fact:
-        nb_ctx: "{{ config_context[0] }}"   # extract first dictionary
+        nb_ctx: "{{ config_context | first }}"  # <-- use `| first` instead of `[0]`
 
-    # Validate PXE/VMware variables exist
-    - name: Validate PXE-related variables from NetBox
+    - name: Validate PXE/VMware variables from NetBox
       assert:
         that:
           - nb_ctx.http_server is defined
@@ -28,7 +25,6 @@
           - nb_ctx.vcenter_password is defined
         fail_msg: "Required PXE or VMware variables missing in NetBox config_context"
 
-    # Build servers list using NetBox info (hostname, IP, MAC)
     - name: Build PXE server structure from NetBox
       set_fact:
         servers:
@@ -36,10 +32,8 @@
             ip: "{{ ansible_host }}"
             mac: "{{ interfaces[0].mac_address | lower }}"
 
-    # Run PXE provisioning role
     - name: Run PXE provisioning role
       include_role:
         name: awx-netbox-centos_roles/pxe_provision
       vars:
-        # Use password from NetBox config_context
         vcenter_password: "{{ nb_ctx.vcenter_password }}"
