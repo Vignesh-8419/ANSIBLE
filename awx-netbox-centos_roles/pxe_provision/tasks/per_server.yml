@@ -25,60 +25,89 @@
     EOF
   delegate_to: localhost
 
-# STEP 2: ESXi DIRECT VM MANAGEMENT
-- name: Configure and Power On VM on ESXi host
-  shell: 
-    cmd: |
-      sshpass -p '{{ nb_ctx.exsi_password }}' ssh -o StrictHostKeyChecking=no {{ nb_ctx.exsi_username }}@{{ nb_ctx.exsi_hostname }} <<'EOF'
-        # 1. Find VMID
-        VMNAME="{{ server.hostname.split('.')[0] }}"
-        VMID=$(vim-cmd vmsvc/getallvms | grep -w "$VMNAME" | awk '{print $1}')
-        
-        if [ -z "$VMID" ]; then echo "VM $VMNAME not found"; exit 1; fi
-        
-        # 2. Get Absolute VMX Path
-        # vim-cmd returns 'datastore path', we convert it to /vmfs/volumes/datastore/path
-        VMX_INFO=$(vim-cmd vmsvc/get.config $VMID | grep -i 'vmxPath' | awk -F'"' '{print $2}')
-        DS_NAME=$(echo "$VMX_INFO" | awk -F' ' '{print $1}' | tr -d '[]')
-        REL_PATH=$(echo "$VMX_INFO" | awk -F' ' '{print $2}')
-        FULL_VMX_PATH="/vmfs/volumes/$DS_NAME/$REL_PATH"
-        
-        if [ ! -f "$FULL_VMX_PATH" ]; then echo "File $FULL_VMX_PATH not found"; exit 1; fi
-
-        # 3. Stop VM
-        vim-cmd vmsvc/power.off $VMID >/dev/null 2>&1 || true
-        
-        # 4. Modify VMX for UEFI + PXE Boot
-        sed -i '/firmware/d' "$FULL_VMX_PATH"
-        sed -i '/bios.bootOrder/d' "$FULL_VMX_PATH"
-        echo 'firmware = "efi"' >> "$FULL_VMX_PATH"
-        echo 'bios.bootOrder = "ethernet,disk"' >> "$FULL_VMX_PATH"
-        
-        # 5. Start VM
-        vim-cmd vmsvc/power.on $VMID
-        
-        # 6. Wait for PXE to start (25s), then flip order back to Disk
-        # We do this so the NEXT reboot uses the hard drive
-        sleep 25
-        sed -i 's/ethernet,disk/disk,ethernet/' "$FULL_VMX_PATH"
-      EOF
+# STEP 2: NATIVE VMWARE MODULES FOR ESXi
+# We use server.hostname.split('.')[0] to match the ESXi short name
+- name: Power OFF VM
+  community.vmware.vmware_guest:
+    hostname: "{{ nb_ctx.exsi_hostname }}"
+    username: "{{ nb_ctx.exsi_username }}"
+    password: "{{ nb_ctx.exsi_password }}"
+    validate_certs: false
+    name: "{{ server.hostname.split('.')[0] }}"
+    state: poweredoff
   delegate_to: localhost
 
-# STEP 3: MONITOR INSTALLATION
+- name: Set VM firmware to EFI (UEFI)
+  community.vmware.vmware_guest_boot_manager:
+    hostname: "{{ nb_ctx.exsi_hostname }}"
+    username: "{{ nb_ctx.exsi_username }}"
+    password: "{{ nb_ctx.exsi_password }}"
+    validate_certs: false
+    name: "{{ server.hostname.split('.')[0] }}"
+    boot_firmware: "efi"
+  delegate_to: localhost
 
+- name: Set boot order to PXE first
+  community.vmware.vmware_guest_boot_manager:
+    hostname: "{{ nb_ctx.exsi_hostname }}"
+    username: "{{ nb_ctx.exsi_username }}"
+    password: "{{ nb_ctx.exsi_password }}"
+    validate_certs: false
+    name: "{{ server.hostname.split('.')[0] }}"
+    boot_order:
+      - ethernet
+      - disk
+  delegate_to: localhost
+
+- name: Power on VM
+  community.vmware.vmware_guest:
+    hostname: "{{ nb_ctx.exsi_hostname }}"
+    username: "{{ nb_ctx.exsi_username }}"
+    password: "{{ nb_ctx.exsi_password }}"
+    validate_certs: false
+    name: "{{ server.hostname.split('.')[0] }}"
+    state: poweredon
+  delegate_to: localhost
+
+- name: Pause to allow PXE boot to initiate
+  pause:
+    seconds: 20
+
+- name: Switch boot order to disk first (for next reboot)
+  community.vmware.vmware_guest_boot_manager:
+    hostname: "{{ nb_ctx.exsi_hostname }}"
+    username: "{{ nb_ctx.exsi_username }}"
+    password: "{{ nb_ctx.exsi_password }}"
+    validate_certs: false
+    name: "{{ server.hostname.split('.')[0] }}"
+    boot_order:
+      - disk
+      - ethernet
+  delegate_to: localhost
+
+# STEP 3: MONITOR & VERIFY
 - name: Wait for VM to respond to SSH
   wait_for:
     host: "{{ server.ip }}"
     port: 22
     state: started
-    delay: 60
+    delay: 30
     timeout: 1800
   delegate_to: localhost
 
-- name: Verify Kernel Version
+- name: Refresh SSH known_hosts
   shell: |
     ssh-keygen -R {{ server.ip }} || true
     ssh-keyscan -H {{ server.ip }} >> /tmp/known_hosts
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/known_hosts root@{{ server.ip }} 'uname -r'
-  register: kernel_version
   delegate_to: localhost
+
+- name: Check kernel version via SSH
+  command: uname -r
+  register: kernel_version
+  delegate_to: "{{ server.ip }}"
+  vars:
+    ansible_ssh_common_args: "-o UserKnownHostsFile=/tmp/known_hosts -o StrictHostKeyChecking=no"
+
+- name: Display kernel version
+  debug:
+    msg: "Kernel version on {{ server.hostname }} is {{ kernel_version.stdout }}"
