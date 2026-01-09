@@ -1,9 +1,10 @@
 ---
-# Main logic: Using a standard SSH pipe to bypass SFTP/Permissions issues
+# Main logic: Using sshpass to handle the password so it doesn't hang
 - name: Force write GRUB dispatcher via SSH pipe
   shell: |
-    echo "{{ lookup('template', 'grub-dispatcher.j2') }}" | \
-    ssh -o StrictHostKeyChecking=no root@192.168.253.160 "cat > /var/lib/tftpboot/grub2/grub.cfg"
+    sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.160 "cat > /var/lib/tftpboot/grub2/grub.cfg" <<EOF
+    {{ lookup('template', 'grub-dispatcher.j2') }}
+    EOF
   delegate_to: localhost
   run_once: true
 
