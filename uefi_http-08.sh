@@ -26,7 +26,7 @@ subnet 192.168.253.0 netmask 255.255.255.0 {
   option subnet-mask 255.255.255.0;
 
   filename "grub2/grubx64.efi";
-  next-server 192.168.253.160;
+  next-server 192.168.253.170;
 }
 
 EOF
