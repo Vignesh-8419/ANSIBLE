@@ -1,40 +1,112 @@
-- name: Create VM if not exists
-  vmware_guest:
-    hostname: "{{ esxi_host }}"
-    username: "{{ esxi_user }}"
-    password: "{{ esxi_pass }}"
-    validate_certs: false
-    datacenter: "ha-datacenter"
-    name: "{{ server.hostname }}"
-    state: present
-    guest_id: "otherGuest64"
-    hardware:
-#      memory_mb: 4096
-#      num_cpus: 2
-      network:
-        - name: "VM Network"
-          mac: "{{ server.mac }}"
-    disk:
-      - size_gb: 100
-        type: thin
-        datastore: "datastore1"
+---
+# STEP 1: FORCE INSTALL DEPENDENCIES (The Fix)
+- name: Bootstrap Python environment
+  raw: python3 -m ensurepip --default-pip && python3 -m pip install setuptools requests pyvmomi
+  delegate_to: localhost
+  run_once: true
+
+# STEP 2: NETWORK CONFIGURATION
+- name: Add DHCP reservation and restart service
+  shell: |
+    sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no root@192.168.253.160 <<EOF
+    sed -i '/# BEGIN ANSIBLE {{ server.hostname }}/,/# END ANSIBLE {{ server.hostname }}/d' /etc/dhcp/dhcpd.conf
+    cat >> /etc/dhcp/dhcpd.conf <<DHCP_EOF
+    # BEGIN ANSIBLE {{ server.hostname }}
+    host {{ server.hostname }} {
+      hardware ethernet {{ server.mac }};
+      fixed-address {{ server.ip }};
+      option host-name "{{ server.hostname }}";
+      filename "grub2/grubx64.efi";
+    }
+    # END ANSIBLE {{ server.hostname }}
+    DHCP_EOF
+    systemctl restart dhcpd
+    EOF
+  delegate_to: localhost
 
 - name: Generate per-host GRUB config
-  template:
-    src: grub-rocky8.j2
-    dest: "/var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | lower | regex_replace(':','-') }}"
-    mode: '0644'
-  delegate_to: tftp-server-02
+  shell: |
+    sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no root@192.168.253.160 "cat > /var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') | lower }}" <<EOF
+    {{ lookup('template', 'grub-centos7.j2') }}
+    EOF
+  delegate_to: localhost
 
-- name: Add DHCP reservation
-  blockinfile:
-    path: /etc/dhcp/dhcpd.conf
-    marker: "# {mark} ANSIBLE {{ server.hostname }}"
-    block: |
-      host {{ server.hostname }} {
-        hardware ethernet {{ server.mac }};
-        fixed-address {{ server.ip }};
-        option host-name "{{ server.hostname }}";
-      }
-  delegate_to: tftp-server-02
-  notify: restart dhcpd
+# STEP 3: VMWARE MODULES
+# We use server.hostname.split('.')[0] to match the ESXi short name
+- name: Power OFF VM
+  community.vmware.vmware_guest:
+    hostname: "{{ nb_ctx.exsi_hostname }}"
+    username: "{{ nb_ctx.exsi_username }}"
+    password: "{{ nb_ctx.exsi_password }}"
+    validate_certs: false
+    name: "{{ server.hostname.split('.')[0] }}"
+    state: poweredoff
+  delegate_to: localhost
+
+- name: Set VM firmware and PXE Boot Order
+  community.vmware.vmware_guest_boot_manager:
+    hostname: "{{ nb_ctx.exsi_hostname }}"
+    username: "{{ nb_ctx.exsi_username }}"
+    password: "{{ nb_ctx.exsi_password }}"
+    validate_certs: false
+    name: "{{ server.hostname.split('.')[0] }}"
+    boot_firmware: "efi"
+    boot_order: [ "ethernet", "disk" ]
+  delegate_to: localhost
+
+- name: Power ON VM
+  community.vmware.vmware_guest:
+    hostname: "{{ nb_ctx.exsi_hostname }}"
+    username: "{{ nb_ctx.exsi_username }}"
+    password: "{{ nb_ctx.exsi_password }}"
+    validate_certs: false
+    name: "{{ server.hostname.split('.')[0] }}"
+    state: poweredon
+  delegate_to: localhost
+
+- name: Wait for PXE boot to start
+  pause:
+    seconds: 25
+
+- name: Reset Boot Order to Disk (for next reboot)
+  community.vmware.vmware_guest_boot_manager:
+    hostname: "{{ nb_ctx.exsi_hostname }}"
+    username: "{{ nb_ctx.exsi_username }}"
+    password: "{{ nb_ctx.exsi_password }}"
+    validate_certs: false
+    name: "{{ server.hostname.split('.')[0] }}"
+    boot_order: [ "disk", "ethernet" ]
+  delegate_to: localhost
+
+# STEP 4: VERIFICATION
+- name: Wait for OS installation to complete (SSH)
+  wait_for:
+    host: "{{ server.ip }}"
+    port: 22
+    state: started
+    delay: 60      # Wait 1 minute before first check
+    timeout: 1800  # 30 minute limit for the installer to finish
+  delegate_to: localhost
+
+- name: Capture Kernel Version (Non-blocking)
+  shell: |
+    sshpass -p '{{ nb_ctx.vm_root_password }}' \
+    ssh -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    -o ConnectTimeout=10 \
+    -o PreferredAuthentications=password \
+    -o PubkeyAuthentication=no \
+    {{ nb_ctx.vm_root_user | default('root') }}@{{ server.ip }} 'uname -r'
+  register: kernel_version
+  until: kernel_version.rc == 0
+  retries: 10
+  delay: 15
+  delegate_to: localhost
+
+- name: Final Provisioning Summary
+  debug:
+    msg: 
+      - "Hostname: {{ server.hostname }}"
+      - "IP: {{ server.ip }}"
+      - "Kernel: {{ kernel_version.stdout }}"
+      - "Status: SUCCESS"
