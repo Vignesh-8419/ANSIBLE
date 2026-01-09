@@ -10,7 +10,8 @@ fi
 
 SERVER=$1
 
-sshpass -p "$PASS" ssh -o StrictHostKeyChecking=no $USER@$SERVER << 'EOF'
+sshpass -p "$PASS" ssh -o StrictHostKeyChecking=no $USER@$SERVER << EOF
+echo "SERVER: $SERVER"
 
 echo "-----------------------------------------"
 echo "Hostname:"
