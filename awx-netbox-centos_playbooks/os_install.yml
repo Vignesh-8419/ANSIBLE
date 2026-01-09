@@ -1,35 +1,25 @@
 ---
-- name: Provision CentOS servers via PXE using NetBox
-  hosts: localhost
+- name: PXE Provision hosts from NetBox
+  hosts: all
   gather_facts: false
 
-  vars:
-    hostnames: ""
-    ips: ""
-    macs: ""
-
   tasks:
-    - name: Normalize survey inputs
-      set_fact:
-        host_list: "{{ hostnames.replace('\"','').split(',') }}"
-        ip_list: "{{ ips.replace('\"','').split(',') }}"
-        mac_list: "{{ macs.replace('\"','').split(',') }}"
-
-    - name: Validate input lengths
+    - name: Fail if host is not tagged for PXE
       assert:
         that:
-          - host_list | length == ip_list | length
-          - host_list | length == mac_list | length
-        fail_msg: "Survey input count mismatch"
+          - "'pxe_centostag' in tags"
+        fail_msg: "Host {{ inventory_hostname }} is not tagged with pxe_centostag in NetBox"
 
-    - name: Build servers list
+    - name: Load NetBox config context
       set_fact:
-        servers: "{{ servers | default([]) + [ {
-          'hostname': item.0 | trim,
-          'ip': item.1 | trim,
-          'mac': item.2 | trim | lower
-        } ] }}"
-      loop: "{{ host_list | zip(ip_list, mac_list) | list }}"
+        nb_ctx: "{{ config_context | first }}"
+
+    - name: Build PXE server structure from NetBox
+      set_fact:
+        servers:
+          - hostname: "{{ inventory_hostname }}"
+            ip: "{{ ansible_host }}"
+            mac: "{{ interfaces[0].mac_address | lower }}"
 
     - name: Run PXE provisioning role
       include_role:
