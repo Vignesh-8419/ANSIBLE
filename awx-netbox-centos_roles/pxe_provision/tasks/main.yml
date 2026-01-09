@@ -1,14 +1,21 @@
 ---
-# awx-netbox-centos_roles/pxe_provision/tasks/main.yml
+# Ensure the directory structure exists on the TFTP server
+- name: Ensure GRUB directory exists
+  file:
+    path: "{{ nb_ctx.pxe_folder }}/grub2"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  delegate_to: tftp-server-01
 
-# Ensure GRUB dispatcher exists
+# Now try to place the file
 - name: Ensure GRUB dispatcher exists
   template:
     src: grub-dispatcher.j2
     dest: "{{ nb_ctx.pxe_folder }}/grub2/grub.cfg"
     mode: '0644'
   delegate_to: tftp-server-01
-  # become: true  <-- REMOVE THIS LINE COMPLETELY
   run_once: true
 
 # Provision PXE servers
