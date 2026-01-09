@@ -1,11 +1,4 @@
 ---
-# Validate vCenter password from AWX
-- name: Validate vCenter password from AWX
-  assert:
-    that:
-      - vcenter_password is defined
-    fail_msg: "vCenter password not injected by AWX VMware-vCenter credential"
-
 # Create VM in vCenter if it does not exist
 - name: Create VM if not exists
   vmware_guest:
