@@ -1,6 +1,6 @@
 ---
 - name: PXE Provision CentOS servers via NetBox
-  hosts: localhost
+  hosts: ansible-server-01.vgs.com
   gather_facts: false
 
   tasks:
