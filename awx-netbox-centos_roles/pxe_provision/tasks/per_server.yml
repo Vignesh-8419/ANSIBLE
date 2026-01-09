@@ -11,7 +11,7 @@
   vmware_guest:
     hostname: "{{ nb_ctx.vcenter_hostname }}"
     username: "{{ nb_ctx.vcenter_username }}"
-    password: "{{ vcenter_password }}"          # <--- Use vcenter_password
+    password: "{{ nb_ctx.vcenter_password }}"
     validate_certs: false
     datacenter: "{{ nb_ctx.datacenter_name }}"
     folder: "{{ nb_ctx.folder }}"
