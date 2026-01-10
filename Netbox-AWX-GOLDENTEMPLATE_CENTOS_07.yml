@@ -7,21 +7,10 @@
 
   tasks:
     # --- PHASE 0: PREPARE DATA ---
-    - name: Debug Raw Config Context (Troubleshooting)
-      debug:
-        var: config_context
-      tags: [debug]
-
     - name: Load and normalize NetBox config context
       set_fact:
-        # We ensure it looks for 'config_context' and handles it even if it's a list
-        nb_ctx: "{{ (config_context | first) if (config_context is iterable and config_context is not mapping) else config_context }}"
-      # Removed 'when' to force it to attempt or fail clearly
-      
-    - name: Verify nb_ctx was actually created
-      fail:
-        msg: "CRITICAL: nb_ctx is not defined! Check if NetBox is sending config_context."
-      when: nb_ctx is not defined
+        nb_ctx: "{{ config_context[0] }}"
+      when: config_context is defined and config_context | length > 0
 
     - name: Map Target IP
       set_fact:
@@ -33,7 +22,7 @@
       delegate_to: 192.168.253.151 
       become: yes
       vars:
-        # Use .get() to avoid fatal crashes if keys are missing
+        # Explicitly referencing the flattened nb_ctx
         ansible_user: "{{ nb_ctx.infra_dns_user }}"
         ansible_ssh_pass: "{{ nb_ctx.infra_dns_pass }}"
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
