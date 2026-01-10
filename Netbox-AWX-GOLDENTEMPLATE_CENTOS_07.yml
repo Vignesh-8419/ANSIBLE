@@ -12,12 +12,11 @@
 
 # --- PHASE 1: DNS REGISTRATION ---
 - name: Phase 1 - Register DNS entries on Pi-hole
-  hosts: dns-server-01
+  hosts: dns-server-01.vgs.com
   become: yes
   tasks:
     - name: Execute Pi-hole script
       ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ item }}.{{ hostvars[item].ctx.guest_domain }} {{ hostvars[item].target_ip }}"
-      # Loop only through the limited hosts, excluding infra servers
       loop: "{{ ansible_play_batch | reject('match', 'dns-server-01|localhost') | list }}"
 
 # --- PHASE 2: VCENTER PROVISIONING ---
@@ -44,7 +43,6 @@
             gateway: "{{ hostvars[item].ctx.gateway }}"
             dns_servers: "{{ hostvars[item].ctx.dns_servers }}"
             start_connected: true
-        # Use hardware defaults from Netbox
         hardware:
           memory_mb: "{{ hostvars[item].ctx.default_memory_mb | default(4096) }}"
           num_cpus: "{{ hostvars[item].ctx.default_cpus | default(2) }}"
@@ -53,45 +51,43 @@
 
 # --- PHASE 3: GUEST CONFIGURATION ---
 - name: Phase 3 - Login to Servers via IP and Configure
+  # Correct way to filter: run on 'all' but skip infra hosts inside the tasks
   hosts: all
-  # Exclude infrastructure from guest config
-  groups: "{{ groups['all'] | reject('match', 'dns-server-01|localhost') | list }}"
   serial: 1 
   gather_facts: no
   tasks:
-    - name: 1. Wait for SSH connection
-      ansible.builtin.wait_for_connection:
-        delay: 10
-        timeout: 600
+    # This block ensures tasks only run on the VMs, not the DNS server or localhost
+    - name: Perform Guest Config
+      block:
+        - name: 1. Wait for SSH connection
+          ansible.builtin.wait_for_connection:
+            delay: 10
+            timeout: 600
 
-    - name: 2. Gather facts
-      ansible.builtin.setup:
+        - name: 2. Gather facts
+          ansible.builtin.setup:
 
-    - name: 3. Set Hostname inside the VM
-      ansible.builtin.hostname:
-        name: "{{ inventory_hostname }}.{{ nb_ctx.guest_domain }}"
+        - name: 3. Set Hostname inside the VM
+          ansible.builtin.hostname:
+            name: "{{ inventory_hostname }}.{{ nb_ctx.guest_domain }}"
 
-    - name: 4. Rename Connection and Configure DNS
-      ansible.builtin.shell: |
-        # Identify the current connection
-        OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
-        
-        # Standardize connection name to ens192
-        nmcli connection modify "$OLD_NAME" connection.id "ens192"
-        
-        # Apply DNS settings from Netbox
-        nmcli connection modify "ens192" ipv4.dns "{{ nb_ctx.dns_servers | join(' ') }}"
-        nmcli connection modify "ens192" ipv4.dns-search "{{ nb_ctx.guest_domain }}"
-        nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
-        
-        # Refresh connection
-        nmcli connection up "ens192"
-      become: yes
+        - name: 4. Rename Connection and Configure DNS
+          ansible.builtin.shell: |
+            OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
+            nmcli connection modify "$OLD_NAME" connection.id "ens192"
+            nmcli connection modify "ens192" ipv4.dns "{{ nb_ctx.dns_servers | join(' ') }}"
+            nmcli connection modify "ens192" ipv4.dns-search "{{ nb_ctx.guest_domain }}"
+            nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
+            nmcli connection up "ens192"
+          become: yes
 
-    - name: 5. Verify DNS configuration
-      ansible.builtin.command: cat /etc/resolv.conf
-      register: resolv_out
+        - name: 5. Verify DNS configuration
+          ansible.builtin.command: cat /etc/resolv.conf
+          register: resolv_out
 
-    - name: 6. Final Verification
-      ansible.builtin.debug:
-        msg: "Successfully provisioned {{ inventory_hostname }} with IP {{ ansible_host }} via Netbox Inventory sync"
+        - name: 6. Final Verification
+          ansible.builtin.debug:
+            msg: "Successfully provisioned {{ inventory_hostname }} with IP {{ ansible_host }}"
+      
+      # This 'when' clause replaces the broken 'groups' attribute
+      when: inventory_hostname not in ['dns-server-01', 'localhost']
