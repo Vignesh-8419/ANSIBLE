@@ -6,7 +6,7 @@
   tasks:
     - name: Load and normalize NetBox config context
       set_fact:
-        # This converts NetBox list output into the dictionary your script needs
+        # Handles the 'list object' error from NetBox by forcing dictionary conversion
         nb_ctx: "{{ (config_context | first) if (config_context is iterable and config_context is not mapping) else config_context }}"
       when: config_context is defined
 
@@ -14,13 +14,13 @@
       set_fact:
         target_ip: "{{ ansible_host }}"
 
-# --- CONSOLIDATED PHASES 1 & 2 ---
+# --- CONSOLIDATED PHASES 1 & 2: INFRASTRUCTURE ---
 - name: Phases 1 & 2 - DNS and vCenter Provisioning
   hosts: all
   gather_facts: no
   tasks:
     - name: Execute Pi-hole script on DNS Server
-      # Uses inventory_hostname directly to prevent .vgs.com.vgs.com
+      # Uses inventory_hostname directly to avoid cent-07-01.vgs.com.vgs.com
       ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ inventory_hostname }} {{ target_ip }}"
       delegate_to: 192.168.253.151 
       become: yes
@@ -37,7 +37,7 @@
         validate_certs: false
         datacenter: "{{ nb_ctx.datacenter_name }}"
         folder: "/{{ nb_ctx.datacenter_name }}/vm"
-        name: "{{ inventory_hostname.split('.')[0] }}"
+        name: "{{ inventory_hostname.split('.')[0] }}" # VM named cent-07-01 in vCenter
         state: poweredon
         template: "{{ nb_ctx.centos_template_name | default(nb_ctx.rockyos_template_name) }}"
         networks:
@@ -56,11 +56,17 @@
   hosts: all
   serial: 1 
   gather_facts: no
+  vars:
+    # CRITICAL: This bypasses the (yes/no) prompt that was making your script hang
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+    ansible_user: "root"
+    ansible_ssh_pass: "Root@123"
   tasks:
     - name: Guest Configuration Block
       block:
         - name: Wait for SSH (Timeout 10 mins)
           ansible.builtin.wait_for_connection:
+            delay: 10
             timeout: 600
 
         - name: Set Hostname and Network inside Guest
