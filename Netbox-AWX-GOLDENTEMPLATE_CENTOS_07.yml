@@ -13,41 +13,38 @@
       set_fact:
         target_ip: "{{ ansible_host }}"
 
-# --- PHASE 1: DNS REGISTRATION ---
-- name: Phase 1 - Register DNS entries on Pi-hole
-  hosts: dns-server-01
-  become: yes
-  tasks:
-    - name: Execute Pi-hole script
-      ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ item }}.{{ hostvars[item].nb_ctx.guest_domain }} {{ hostvars[item].target_ip }}"
-      loop: "{{ ansible_play_batch | reject('match', 'dns-server-01|localhost') | list }}"
-
-# --- PHASE 2: VCENTER PROVISIONING ---
-- name: Phase 2 - Create VMs
-  hosts: localhost
-  connection: local
+# --- CONSOLIDATED PHASES 1 & 2: INFRASTRUCTURE ---
+- name: Phases 1 & 2 - DNS and vCenter Provisioning
+  hosts: all
   gather_facts: no
   tasks:
-    - name: Create VM from Template
+    - name: Execute Pi-hole script on DNS Server
+      ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ inventory_hostname }}.{{ nb_ctx.guest_domain }} {{ target_ip }}"
+      # Use the IP address since the hostname isn't in this inventory
+      delegate_to: 192.168.253.151 
+      become: yes
+      when: inventory_hostname not in ['dns-server-01', 'localhost']
+
+    - name: Create VM in vCenter
       community.vmware.vmware_guest:
-        hostname: "{{ hostvars[item].nb_ctx.vcenter_hostname }}"
-        username: "{{ hostvars[item].nb_ctx.vcenter_username }}"
-        password: "{{ hostvars[item].nb_ctx.vcenter_password }}"
+        hostname: "{{ nb_ctx.vcenter_hostname }}"
+        username: "{{ nb_ctx.vcenter_username }}"
+        password: "{{ nb_ctx.vcenter_password }}"
         validate_certs: false
-        datacenter: "{{ hostvars[item].nb_ctx.datacenter_name }}"
-        folder: "{{ hostvars[item].nb_ctx.folder }}"
-        name: "{{ item }}"
+        datacenter: "{{ nb_ctx.datacenter_name }}"
+        folder: "{{ nb_ctx.folder }}"
+        name: "{{ inventory_hostname }}"
         state: poweredon
-        # Picks the available template
-        template: "{{ hostvars[item].nb_ctx.centos_template_name | default(hostvars[item].nb_ctx.rockyos_template_name) }}"
+        template: "{{ nb_ctx.centos_template_name | default(nb_ctx.rock_template_name) }}"
         networks:
-          - name: "{{ hostvars[item].nb_ctx.vm_network }}"
-            ip: "{{ hostvars[item].target_ip }}"
-            netmask: "{{ hostvars[item].nb_ctx.netmask }}"
-            gateway: "{{ hostvars[item].nb_ctx.gateway }}"
-            dns_servers: "{{ hostvars[item].nb_ctx.dns_servers | default([hostvars[item].nb_ctx.dns_primary]) }}"
+          - name: "{{ nb_ctx.vm_network }}"
+            ip: "{{ target_ip }}"
+            netmask: "{{ nb_ctx.netmask }}"
+            gateway: "{{ nb_ctx.gateway }}"
+            dns_servers: "{{ nb_ctx.dns_servers | default([nb_ctx.dns_primary]) }}"
             start_connected: true
-      loop: "{{ ansible_play_batch | reject('match', 'dns-server-01|localhost') | list }}"
+      delegate_to: localhost
+      when: inventory_hostname not in ['dns-server-01', 'localhost']
       no_log: true
 
 # --- PHASE 3: GUEST CONFIGURATION ---
@@ -58,7 +55,7 @@
   tasks:
     - name: Guest Configuration Block
       block:
-        - name: Wait for SSH
+        - name: Wait for SSH (Timeout 10 mins)
           ansible.builtin.wait_for_connection:
             timeout: 600
 
@@ -71,4 +68,5 @@
             nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
             nmcli connection up "ens192"
           become: yes
+      # Skip if this is the infra server itself
       when: inventory_hostname not in ['dns-server-01', 'localhost']
