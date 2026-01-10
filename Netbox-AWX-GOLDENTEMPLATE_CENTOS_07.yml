@@ -6,7 +6,6 @@
   tasks:
     - name: Load and normalize NetBox config context
       set_fact:
-        # Handles the 'list object' error from NetBox by forcing dictionary conversion
         nb_ctx: "{{ (config_context | first) if (config_context is iterable and config_context is not mapping) else config_context }}"
       when: config_context is defined
 
@@ -14,19 +13,27 @@
       set_fact:
         target_ip: "{{ ansible_host }}"
 
-# --- CONSOLIDATED PHASES 1 & 2: INFRASTRUCTURE ---
+    - name: Verify All Required Credentials exist in NetBox
+      fail:
+        msg: "CRITICAL: One or more passwords (infra, vcenter, or guest) are missing in NetBox!"
+      when: 
+        - inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+        - (nb_ctx.infra_dns_pass is not defined) or 
+          (nb_ctx.vcenter_password is not defined) or 
+          (nb_ctx.vm_root_password is not defined)
+
+# --- CONSOLIDATED PHASES 1 & 2 ---
 - name: Phases 1 & 2 - DNS and vCenter Provisioning
   hosts: all
   gather_facts: no
   tasks:
     - name: Execute Pi-hole script on DNS Server
-      # Uses inventory_hostname directly to avoid cent-07-01.vgs.com.vgs.com
       ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ inventory_hostname }} {{ target_ip }}"
       delegate_to: 192.168.253.151 
       become: yes
       vars:
-        ansible_user: root
-        ansible_ssh_pass: "Root@123"
+        ansible_user: "{{ nb_ctx.infra_dns_user }}"
+        ansible_ssh_pass: "{{ nb_ctx.infra_dns_pass }}"
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
     - name: Create VM in vCenter
@@ -36,16 +43,16 @@
         password: "{{ nb_ctx.vcenter_password }}"
         validate_certs: false
         datacenter: "{{ nb_ctx.datacenter_name }}"
-        folder: "/{{ nb_ctx.datacenter_name }}/vm"
-        name: "{{ inventory_hostname.split('.')[0] }}" # VM named cent-07-01 in vCenter
+        folder: "/{{ nb_ctx.datacenter_name }}/{{ nb_ctx.folder | default('vm') }}"
+        name: "{{ inventory_hostname.split('.')[0] }}"
         state: poweredon
-        template: "{{ nb_ctx.centos_template_name | default(nb_ctx.rockyos_template_name) }}"
+        template: "{{ nb_ctx.centos_template_name }}"
         networks:
           - name: "{{ nb_ctx.vm_network }}"
             ip: "{{ target_ip }}"
             netmask: "{{ nb_ctx.netmask }}"
             gateway: "{{ nb_ctx.gateway }}"
-            dns_servers: "{{ nb_ctx.dns_servers | default([nb_ctx.dns_primary]) }}"
+            dns_servers: "{{ nb_ctx.dns_servers }}"
             start_connected: true
         wait_for_ip_address: yes
       delegate_to: localhost
@@ -57,16 +64,15 @@
   serial: 1 
   gather_facts: no
   vars:
-    # CRITICAL: This bypasses the (yes/no) prompt that was making your script hang
     ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-    ansible_user: "root"
-    ansible_ssh_pass: "Root@123"
+    ansible_user: "{{ nb_ctx.vm_root_user }}"
+    ansible_ssh_pass: "{{ nb_ctx.vm_root_password }}"
   tasks:
     - name: Guest Configuration Block
       block:
         - name: Wait for SSH (Timeout 10 mins)
           ansible.builtin.wait_for_connection:
-            delay: 10
+            delay: 15
             timeout: 600
 
         - name: Set Hostname and Network inside Guest
@@ -74,7 +80,7 @@
             hostnamectl set-hostname {{ inventory_hostname }}
             OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
             nmcli connection modify "$OLD_NAME" connection.id "ens192"
-            nmcli connection modify "ens192" ipv4.dns "{{ nb_ctx.dns_servers | default([nb_ctx.dns_primary]) | join(' ') }}"
+            nmcli connection modify "ens192" ipv4.dns "{{ nb_ctx.dns_servers | join(' ') }}"
             nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
             nmcli connection up "ens192"
           become: yes
