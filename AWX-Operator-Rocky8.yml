@@ -1,127 +1,74 @@
 ---
-# --- PRE-PHASE: GENERATE THE LIST ---
-- name: Prepare VM data
-  hosts: localhost
-  connection: local
+- name: End-to-End VM Provisioning and Configuration
+  hosts: all
   gather_facts: no
   vars:
-    # Inputs
-    vm_name: "http-server-01,tftp-server-01,tftp-server-02"
-    vm_ip: "192.168.253.136,192.168.253.160,192.168.253.170"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+
   tasks:
-    - name: Build vm_list from survey inputs
+    # --- PHASE 0: PREPARE DATA ---
+    - name: Load and normalize NetBox config context
       set_fact:
-        vm_list: "{{ vm_list | default([]) + [ {'name': item.0.strip(), 'ip': item.1.strip()} ] }}"
-      loop: "{{ vm_name.split(',') | zip(vm_ip.split(',')) | list }}"
-      run_once: true
+        # Use the first index since your debug showed it's a list
+        nb_ctx: "{{ config_context[0] }}"
+      when: config_context is defined and config_context | length > 0
 
-# --- PHASE 1: DNS REGISTRATION ---
-- name: Phase 1 - Register DNS entries on Pi-hole
-  hosts: dns-server-01
-  become: yes
-  vars:
-    guest_domain: "vgs.com"
-  tasks:
-    - name: Execute Pi-hole script for each new VM
-      ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ item.name }}.{{ guest_domain }} {{ item.ip }}"
-      loop: "{{ hostvars['localhost']['vm_list'] }}"
+    - name: Map Target IP
+      set_fact:
+        target_ip: "{{ ansible_host }}"
 
-# --- PHASE 2: VCENTER PROVISIONING ---
-- name: Phase 2 - Create and Power On VMs in vCenter
-  hosts: localhost
-  connection: local
-  gather_facts: no
-  vars:
-    vcenter_hostname: "192.168.253.129"
-    vcenter_username: "administrator@vsphere.local"
-    vcenter_password: "Vigneshv12$"
-    datacenter_name: "Datacenter"
-    folder: "vm"
-    template_name: "GOLDENTEMPLATE_ROCKYOS_08"
-    vm_network: "VM Network"
-    netmask: "255.255.255.0"
-    gateway: "192.168.253.2"
-    guest_domain: "vgs.com"
-    vm_root_user: "root"
-    vm_root_password: "Root@123"
-  tasks:
-    - name: Create and Power On VMs in vCenter
-      community.vmware.vmware_guest:
-        hostname: "{{ vcenter_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
-        validate_certs: false
-        datacenter: "{{ datacenter_name }}"
-        folder: "{{ folder }}"
-        name: "{{ item.name }}"
-        state: poweredon
-        template: "{{ template_name }}"
-        guest_id: "rhel8_64Guest"
-        networks:
-          - name: "{{ vm_network }}"
-            ip: "{{ item.ip }}"
-            netmask: "{{ netmask }}"
-            gateway: "{{ gateway }}"
-            dns_servers:
-             - 192.168.253.151
-            start_connected: true
-        wait_for_customization: no
-        wait_for_ip_address: no
-      loop: "{{ vm_list }}"
-
-    - name: Add VMs to temporary inventory for Phase 3
-      ansible.builtin.add_host:
-        name: "{{ item.name }}"
-        ansible_host: "{{ item.ip }}"
-        ansible_user: "{{ vm_root_user }}"
-        ansible_password: "{{ vm_root_password }}"
-        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-        vm_short_name: "{{ item.name }}"
-        vm_domain: "{{ guest_domain }}"
-        groups: "temp_group"
-      loop: "{{ vm_list }}"
-
-
-# --- PHASE 3: GUEST CONFIGURATION ---
-- name: Phase 3 - Login to Servers via IP and Configure
-  hosts: temp_group
-  gather_facts: no
-  vars:
-    dns_server_target: "192.168.253.151"
-  tasks:
-    - name: 1. Wait for SSH connection
-      ansible.builtin.wait_for_connection:
-        delay: 10
-        timeout: 300
-
-    - name: 2. Gather facts
-      ansible.builtin.setup:
-
-    - name: 3. Set Hostname inside the VM
-      ansible.builtin.hostname:
-        name: "{{ vm_short_name }}.{{ vm_domain }}"
-
-    - name: 4. Rename Connection and Configure DNS
-      ansible.builtin.shell: |
-        # 1. Get the current active connection name (e.g., "System ens192")
-        OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
-        
-        # 2. Rename the connection profile to "ens192"
-        nmcli connection modify "$OLD_NAME" connection.id "ens192"
-        
-        # 3. Apply DNS settings using the new name
-        nmcli connection modify "ens192" ipv4.dns "{{ dns_server_target }}"
-        nmcli connection modify "ens192" ipv4.dns-search "{{ vm_domain }}"
-        nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
-        
-        # 4. Refresh the connection to apply changes
-        nmcli connection up "ens192"
+    # --- PHASE 1: DNS REGISTRATION ---
+    - name: Execute Pi-hole script on DNS Server
+      ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ inventory_hostname }} {{ target_ip }}"
+      delegate_to: 192.168.253.151 
       become: yes
+      vars:
+        # Explicitly pull nb_ctx from the current host's facts
+        ansible_user: "{{ hostvars[inventory_hostname]['nb_ctx']['infra_dns_user'] }}"
+        ansible_ssh_pass: "{{ hostvars[inventory_hostname]['nb_ctx']['infra_dns_pass'] }}"
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
-    - name: 5. Verify DNS configuration
-      ansible.builtin.command: cat /etc/resolv.conf
-      register: resolv_out
+    # --- PHASE 2: VCENTER PROVISIONING ---
+    - name: Create VM in vCenter
+      community.vmware.vmware_guest:
+        hostname: "{{ nb_ctx.vcenter_hostname }}"
+        username: "{{ nb_ctx.vcenter_username }}"
+        password: "{{ nb_ctx.vcenter_password }}"
+        validate_certs: false
+        datacenter: "{{ nb_ctx.datacenter_name }}"
+        folder: "/{{ nb_ctx.datacenter_name }}/{{ nb_ctx.folder | default('vm') }}"
+        name: "{{ inventory_hostname.split('.')[0] }}"
+        state: poweredon
+        template: "{{ nb_ctx.centos_template_name }}"
+        networks:
+          - name: "{{ nb_ctx.vm_network }}"
+            ip: "{{ target_ip }}"
+            netmask: "{{ nb_ctx.netmask }}"
+            gateway: "{{ nb_ctx.gateway }}"
+            dns_servers: "{{ nb_ctx.dns_servers }}"
+            start_connected: true
+        wait_for_ip_address: yes
+      delegate_to: localhost
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
-    - name: 6. Final Verification
-      ansible.builtin.debug:
-        msg: "Successfully configured {{ inventory_hostname }} at {{ ansible_host }}"
+    # --- PHASE 3: GUEST CONFIGURATION ---
+    - name: Guest Configuration Block
+      block:
+        - name: Wait for SSH (Timeout 10 mins)
+          ansible.builtin.wait_for_connection:
+            delay: 15
+            timeout: 600
+
+        - name: Set Hostname and Network inside Guest
+          ansible.builtin.shell: |
+            hostnamectl set-hostname {{ inventory_hostname }}
+            OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
+            nmcli connection modify "$OLD_NAME" connection.id "ens192"
+            nmcli connection modify "ens192" ipv4.dns "{{ nb_ctx.dns_servers | join(' ') }}"
+            nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
+            nmcli connection up "ens192"
+          become: yes
+      vars:
+        ansible_user: "{{ nb_ctx.vm_root_user }}"
+        ansible_ssh_pass: "{{ nb_ctx.vm_root_password }}"
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
