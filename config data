@@ -1,4 +1,3 @@
-vmware-awx-context
 {
   "nb_ctx": {
     "vcenter_hostname": "192.168.253.129",
@@ -13,42 +12,29 @@ vmware-awx-context
     "vm_network": "VM Network",
     "netmask": "255.255.255.0",
     "gateway": "192.168.253.2",
-    "dns_servers": ["192.168.253.151"],
-    "guest_domain": "vgs.com",
-    "rockyos_template_name": "GOLDENTEMPLATE_ROCKYOS_08",
+    "dns_primary": "192.168.253.151",
+    "guest_domain": "vgs.com"
+  }
+}
+
+{
+  "nb_ctx": {
+    "kickstart_url": "http://192.168.253.136/repo/centos/kickstart/centos.cfg",
     "centos_template_name": "GOLDENTEMPLATE_CENTOS_07",
-    "default_cpus": 4,
-    "default_memory_mb": 4096,
-    "disk_size_gb": 100,
+    "pxe_folder": "/var/lib/tftpboot",
+    "http_server": "192.168.253.136",
     "vm_root_user": "root",
     "vm_root_password": "Root@123"
   }
 }
 
-pxe_centos
 {
-        "centos_kickstart_url": "http://192.168.253.136/repo/centos/kickstart/centos.cfg",
-        "vm_network": "VM Network",
-        "netmask": "255.255.255.0",
-        "gateway": "192.168.253.2",
-        "dns_primary": "192.168.253.151",
-        "guest_domain": "vgs.com",
-        "pxe_folder": "/var/lib/tftpboot"
-        "http_server": "192.168.253.136"
-        "vm_root_user": "root",
-        "vm_root_password": "Root@123"
-}
-
-pxe_rockyos
-{
-        "centos_kickstart_url": "http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg",
-        "vm_network": "VM Network",
-        "netmask": "255.255.255.0",
-        "gateway": "192.168.253.2",
-        "dns_primary": "192.168.253.151",
-        "guest_domain": "vgs.com",
-        "pxe_folder": "/var/lib/tftpboot"
-        "http_server": "192.168.253.136"
-        "vm_root_user": "root",
-        "vm_root_password": "Root@123"
+  "nb_ctx": {
+    "kickstart_url": "http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg",
+    "rockyos_template_name": "GOLDENTEMPLATE_ROCKYOS_08",
+    "pxe_folder": "/var/lib/tftpboot",
+    "http_server": "192.168.253.136",
+    "vm_root_user": "root",
+    "vm_root_password": "Root@123"
+  }
 }
