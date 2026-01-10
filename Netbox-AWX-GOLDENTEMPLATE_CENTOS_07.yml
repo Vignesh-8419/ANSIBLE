@@ -6,6 +6,7 @@
   tasks:
     - name: Load and normalize NetBox config context
       set_fact:
+        # This converts NetBox list output into the dictionary your script needs
         nb_ctx: "{{ (config_context | first) if (config_context is iterable and config_context is not mapping) else config_context }}"
       when: config_context is defined
 
@@ -19,7 +20,7 @@
   gather_facts: no
   tasks:
     - name: Execute Pi-hole script on DNS Server
-      # FIXED: Removed .{{ nb_ctx.guest_domain }} to avoid double domain
+      # Uses inventory_hostname directly to prevent .vgs.com.vgs.com
       ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ inventory_hostname }} {{ target_ip }}"
       delegate_to: 192.168.253.151 
       become: yes
@@ -35,8 +36,8 @@
         password: "{{ nb_ctx.vcenter_password }}"
         validate_certs: false
         datacenter: "{{ nb_ctx.datacenter_name }}"
-        folder: "/{{ nb_ctx.datacenter_name }}/vm" # Added full path logic
-        name: "{{ inventory_hostname.split('.')[0] }}" # Using short name for VM display
+        folder: "/{{ nb_ctx.datacenter_name }}/vm"
+        name: "{{ inventory_hostname.split('.')[0] }}"
         state: poweredon
         template: "{{ nb_ctx.centos_template_name | default(nb_ctx.rockyos_template_name) }}"
         networks:
@@ -48,7 +49,6 @@
             start_connected: true
         wait_for_ip_address: yes
       delegate_to: localhost
-      # no_log: true  # DISABLED so we can see the error if it fails
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
 # --- PHASE 3: GUEST CONFIGURATION ---
@@ -63,7 +63,7 @@
           ansible.builtin.wait_for_connection:
             timeout: 600
 
-        - name: Set Hostname and Network
+        - name: Set Hostname and Network inside Guest
           ansible.builtin.shell: |
             hostnamectl set-hostname {{ inventory_hostname }}
             OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
