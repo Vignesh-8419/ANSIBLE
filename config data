@@ -1,40 +1,48 @@
+vmware-awx-context
 {
-  "nb_ctx": {
-    "vcenter_hostname": "192.168.253.129",
-    "vcenter_username": "administrator@vsphere.local",
-    "vcenter_password": "admin$22",
-    "exsi_hostname": "192.168.253.128",
-    "exsi_username": "root",
-    "exsi_password": "admin$22",
+    "centos_template_name": "GOLDENTEMPLATE_CENTOS_07",
     "datacenter_name": "Datacenter",
     "datastore": "datastore1",
-    "folder": "vm",
-    "vm_network": "VM Network",
-    "netmask": "255.255.255.0",
-    "gateway": "192.168.253.2",
     "dns_primary": "192.168.253.151",
-    "guest_domain": "vgs.com"
-  }
+    "dns_servers": [
+        "192.168.253.151",
+        "8.8.8.8"
+    ],
+    "folder": "vm",
+    "gateway": "192.168.253.2",
+    "guest_domain": "vgs.com",
+    "infra_dns_pass": "Root@123",
+    "infra_dns_user": "root",
+    "netmask": "255.255.255.0",
+    "vcenter_hostname": "192.168.253.129",
+    "vcenter_password": "Vigneshv12$",
+    "vcenter_username": "administrator@vsphere.local",
+    "vm_network": "VM Network",
+    "vm_root_password": "Root@123",
+    "vm_root_user": "root"
 }
 
+pxe-centos-context
+
 {
-  "nb_ctx": {
-    "kickstart_url": "http://192.168.253.136/repo/centos/kickstart/centos.cfg",
+    "centos_kickstart_url": "http://192.168.253.136/repo/centos/kickstart/centos.cfg",
     "centos_template_name": "GOLDENTEMPLATE_CENTOS_07",
-    "pxe_folder": "/var/lib/tftpboot",
     "http_server": "192.168.253.136",
-    "vm_root_user": "root",
-    "vm_root_password": "Root@123"
-  }
+    "pxe_folder": "/var/lib/tftpboot",
+    "vm_root_password": "Root@123",
+    "vm_root_user": "root"
 }
 
+pxe-rockyos-context
+
 {
-  "nb_ctx": {
-    "kickstart_url": "http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg",
-    "rockyos_template_name": "GOLDENTEMPLATE_ROCKYOS_08",
-    "pxe_folder": "/var/lib/tftpboot",
-    "http_server": "192.168.253.136",
-    "vm_root_user": "root",
-    "vm_root_password": "Root@123"
-  }
+    "nb_ctx": {
+        "http_server": "192.168.253.136",
+        "kickstart_url": "http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg",
+        "pxe_folder": "/var/lib/tftpboot",
+        "rockyos_template_name": "GOLDENTEMPLATE_ROCKYOS_08",
+        "vm_root_password": "Root@123",
+        "vm_root_user": "root"
+    }
 }
+
