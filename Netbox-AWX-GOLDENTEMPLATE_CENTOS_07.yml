@@ -6,24 +6,24 @@
   tasks:
     - name: Load and normalize NetBox config context
       set_fact:
-        nb_ctx: "{{ config_context }}"
+        # This fix handles the 'list object' error by forcing a dictionary
+        nb_ctx: "{{ (config_context | first) if (config_context is iterable and config_context is not mapping) else config_context }}"
       when: config_context is defined
 
     - name: Map Target IP
       set_fact:
         target_ip: "{{ ansible_host }}"
 
-# --- CONSOLIDATED PHASES 1 & 2: INFRASTRUCTURE ---
+# --- CONSOLIDATED PHASES 1 & 2 ---
 - name: Phases 1 & 2 - DNS and vCenter Provisioning
   hosts: all
   gather_facts: no
   tasks:
     - name: Execute Pi-hole script on DNS Server
       ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ inventory_hostname }}.{{ nb_ctx.guest_domain }} {{ target_ip }}"
-      # Use the IP address since the hostname isn't in this inventory
       delegate_to: 192.168.253.151 
       become: yes
-      when: inventory_hostname not in ['dns-server-01', 'localhost']
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
     - name: Create VM in vCenter
       community.vmware.vmware_guest:
@@ -35,7 +35,7 @@
         folder: "{{ nb_ctx.folder }}"
         name: "{{ inventory_hostname }}"
         state: poweredon
-        template: "{{ nb_ctx.centos_template_name | default(nb_ctx.rock_template_name) }}"
+        template: "{{ nb_ctx.centos_template_name | default(nb_ctx.rockyos_template_name) }}"
         networks:
           - name: "{{ nb_ctx.vm_network }}"
             ip: "{{ target_ip }}"
@@ -44,7 +44,6 @@
             dns_servers: "{{ nb_ctx.dns_servers | default([nb_ctx.dns_primary]) }}"
             start_connected: true
       delegate_to: localhost
-      when: inventory_hostname not in ['dns-server-01', 'localhost']
       no_log: true
 
 # --- PHASE 3: GUEST CONFIGURATION ---
@@ -68,5 +67,4 @@
             nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
             nmcli connection up "ens192"
           become: yes
-      # Skip if this is the infra server itself
-      when: inventory_hostname not in ['dns-server-01', 'localhost']
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
