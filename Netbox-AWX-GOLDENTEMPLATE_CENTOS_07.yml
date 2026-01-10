@@ -6,7 +6,7 @@
   tasks:
     - name: Load and normalize NetBox config context
       set_fact:
-        # This fix handles the 'list object' error by forcing a dictionary
+        # Forcing the dictionary conversion to avoid the 'list object' error
         nb_ctx: "{{ (config_context | first) if (config_context is iterable and config_context is not mapping) else config_context }}"
       when: config_context is defined
 
@@ -23,6 +23,11 @@
       ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ inventory_hostname }}.{{ nb_ctx.guest_domain }} {{ target_ip }}"
       delegate_to: 192.168.253.151 
       become: yes
+      vars:
+        # Overriding credentials specifically for the DNS server
+        ansible_user: root
+        # If you use a password, ensure it is defined in AWX or use a vault variable
+        ansible_ssh_pass: "Root@123" 
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
     - name: Create VM in vCenter
