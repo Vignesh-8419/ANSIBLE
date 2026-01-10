@@ -2,7 +2,7 @@
 
 # NetBox API URL and token
 NETBOX_URL="https://192.168.253.134/api"
-TOKEN="ac398a41868b98659d10c6f500a433f2409960d8"
+TOKEN="6cc3f3c7bdd27d7ba032d5e65c73f58bf3ec3eb8"
 
 # Site data
 SITE_NAME="VGS"
