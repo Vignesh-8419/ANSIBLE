@@ -6,17 +6,12 @@
   tasks:
     - name: Load and normalize NetBox config context
       set_fact:
-        # We take the flat config_context and assign it to nb_ctx for your roles
         nb_ctx: "{{ config_context }}"
       when: config_context is defined
 
-    - name: Validate merged context
-      ansible.builtin.assert:
-        that:
-          - nb_ctx.vcenter_hostname is defined
-          - nb_ctx.vm_root_password is defined
-          - nb_ctx.centos_template_name is defined or nb_ctx.rockyos_template_name is defined
-        fail_msg: "Variables missing! Ensure Netbox JSON is 'Flat' (no nb_ctx wrapper)."
+    - name: Map Target IP
+      set_fact:
+        target_ip: "{{ ansible_host }}"
 
 # --- PHASE 1: DNS REGISTRATION ---
 - name: Phase 1 - Register DNS entries on Pi-hole
@@ -24,7 +19,7 @@
   become: yes
   tasks:
     - name: Execute Pi-hole script
-      ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ item }}.{{ hostvars[item].nb_ctx.guest_domain }} {{ hostvars[item].ansible_host }}"
+      ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ item }}.{{ hostvars[item].nb_ctx.guest_domain }} {{ hostvars[item].target_ip }}"
       loop: "{{ ansible_play_batch | reject('match', 'dns-server-01|localhost') | list }}"
 
 # --- PHASE 2: VCENTER PROVISIONING ---
@@ -43,14 +38,14 @@
         folder: "{{ hostvars[item].nb_ctx.folder }}"
         name: "{{ item }}"
         state: poweredon
-        # Dynamically picks CentOS or Rocky template from the flat context
+        # Picks the available template
         template: "{{ hostvars[item].nb_ctx.centos_template_name | default(hostvars[item].nb_ctx.rockyos_template_name) }}"
         networks:
           - name: "{{ hostvars[item].nb_ctx.vm_network }}"
-            ip: "{{ hostvars[item].ansible_host }}"
+            ip: "{{ hostvars[item].target_ip }}"
             netmask: "{{ hostvars[item].nb_ctx.netmask }}"
             gateway: "{{ hostvars[item].nb_ctx.gateway }}"
-            dns_servers: "{{ hostvars[item].nb_ctx.dns_servers }}"
+            dns_servers: "{{ hostvars[item].nb_ctx.dns_servers | default([hostvars[item].nb_ctx.dns_primary]) }}"
             start_connected: true
       loop: "{{ ansible_play_batch | reject('match', 'dns-server-01|localhost') | list }}"
       no_log: true
@@ -72,7 +67,7 @@
             hostnamectl set-hostname {{ inventory_hostname }}.{{ nb_ctx.guest_domain }}
             OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
             nmcli connection modify "$OLD_NAME" connection.id "ens192"
-            nmcli connection modify "ens192" ipv4.dns "{{ nb_ctx.dns_servers | join(' ') }}"
+            nmcli connection modify "ens192" ipv4.dns "{{ nb_ctx.dns_servers | default([nb_ctx.dns_primary]) | join(' ') }}"
             nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
             nmcli connection up "ens192"
           become: yes
