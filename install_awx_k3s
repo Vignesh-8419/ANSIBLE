@@ -113,3 +113,13 @@ kubectl -n awx delete pod --all
     limits:
       memory: "2Gi"
       cpu: "1000m"
+
+kubectl -n awx describe pod awx-server-web | grep -A5 Limits
+kubectl -n awx describe pod awx-server-task | grep -A5 Limits
+
+
+kubectl -n awx get pod -o wide
+
+
+dmesg -T | grep -i oom
+
