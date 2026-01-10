@@ -15,7 +15,7 @@ group_by:
 
 device_query_filters:
   - status: active
-  - cluster_id: '6'
+  - cluster_id: '1'
 
 compose:
   ansible_host: primary_ip4.address.split('/')[0]
