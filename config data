@@ -36,13 +36,11 @@ pxe-centos-context
 pxe-rockyos-context
 
 {
-    "nb_ctx": {
         "http_server": "192.168.253.136",
         "kickstart_url": "http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg",
         "pxe_folder": "/var/lib/tftpboot",
         "rockyos_template_name": "GOLDENTEMPLATE_ROCKYOS_08",
         "vm_root_password": "Root@123",
         "vm_root_user": "root"
-    }
 }
 
