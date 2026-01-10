@@ -1,9 +1,13 @@
 ---
-# --- PHASE 0: PREPARE DATA ---
-- name: Phase 0 - Map Inventory Data
+- name: End-to-End VM Provisioning and Configuration
   hosts: all
   gather_facts: no
+  # We define common vars here so they are available to all tasks in this play
+  vars:
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+
   tasks:
+    # --- PHASE 0: PREPARE DATA ---
     - name: Load and normalize NetBox config context
       set_fact:
         nb_ctx: "{{ (config_context | first) if (config_context is iterable and config_context is not mapping) else config_context }}"
@@ -15,18 +19,14 @@
 
     - name: Verify All Required Credentials exist in NetBox
       fail:
-        msg: "CRITICAL: One or more passwords (infra, vcenter, or guest) are missing in NetBox!"
+        msg: "CRITICAL: One or more passwords missing in NetBox!"
       when: 
         - inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
         - (nb_ctx.infra_dns_pass is not defined) or 
           (nb_ctx.vcenter_password is not defined) or 
           (nb_ctx.vm_root_password is not defined)
 
-# --- CONSOLIDATED PHASES 1 & 2 ---
-- name: Phases 1 & 2 - DNS and vCenter Provisioning
-  hosts: all
-  gather_facts: no
-  tasks:
+    # --- PHASE 1: DNS REGISTRATION ---
     - name: Execute Pi-hole script on DNS Server
       ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ inventory_hostname }} {{ target_ip }}"
       delegate_to: 192.168.253.151 
@@ -36,6 +36,7 @@
         ansible_ssh_pass: "{{ nb_ctx.infra_dns_pass }}"
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
+    # --- PHASE 2: VCENTER PROVISIONING ---
     - name: Create VM in vCenter
       community.vmware.vmware_guest:
         hostname: "{{ nb_ctx.vcenter_hostname }}"
@@ -58,16 +59,7 @@
       delegate_to: localhost
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
-# --- PHASE 3: GUEST CONFIGURATION ---
-- name: Phase 3 - OS Customization
-  hosts: all
-  serial: 1 
-  gather_facts: no
-  vars:
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-    ansible_user: "{{ nb_ctx.vm_root_user }}"
-    ansible_ssh_pass: "{{ nb_ctx.vm_root_password }}"
-  tasks:
+    # --- PHASE 3: GUEST CONFIGURATION ---
     - name: Guest Configuration Block
       block:
         - name: Wait for SSH (Timeout 10 mins)
@@ -84,4 +76,8 @@
             nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
             nmcli connection up "ens192"
           become: yes
+      vars:
+        # Dynamically use the credentials from NetBox for Phase 3
+        ansible_user: "{{ nb_ctx.vm_root_user }}"
+        ansible_ssh_pass: "{{ nb_ctx.vm_root_password }}"
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
