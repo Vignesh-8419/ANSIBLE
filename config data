@@ -11,7 +11,7 @@
     "gateway": "192.168.253.2",
     "guest_domain": "vgs.com",
     "http_server": "192.168.253.136",
-    "kickstart_url": "http://192.168.253.136/repo/centos/kickstart/centos.cfg",
+    "centos_kickstart_url": "http://192.168.253.136/repo/centos/kickstart/centos.cfg",
     "netmask": "255.255.255.0",
     "pxe_folder": "/var/lib/tftpboot",
     "vcenter_hostname": "192.168.253.129",
