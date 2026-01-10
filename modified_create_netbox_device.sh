@@ -24,9 +24,9 @@ read -p "Hostname: " HOSTNAME
 read -p "Interface name: " IFACE
 read -p "IP Address (CIDR): " IPADDR
 read -p "MAC Address (optional): " MAC
-read -p "Cluster Type: " TYPE_NAME
-read -p "Cluster Group: " GROUP_NAME
-read -p "Cluster Name: " CLUSTER_NAME
+read -p "Cluster Type ( Physical / Virtual ): " TYPE_NAME
+read -p "Cluster Group: (RockyOS Servers / CentOS Servers )" GROUP_NAME
+read -p "Cluster Name ( rocky-8-servers / centos-07-servers ): " CLUSTER_NAME
 
 # ---------------- CLUSTER TYPE ----------------
 echo "Checking Cluster Type..."
