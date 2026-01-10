@@ -1,97 +1,74 @@
 ---
-# --- PHASE 0: PREPARE DATA FROM INVENTORY ---
-- name: Phase 0 - Map Inventory Data
+- name: End-to-End VM Provisioning and Configuration
   hosts: all
   gather_facts: no
+  vars:
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+
   tasks:
-    - name: Ensure nb_ctx is loaded and map VM data
+    # --- PHASE 0: PREPARE DATA ---
+    - name: Load and normalize NetBox config context
+      set_fact:
+        # Use the first index since your debug showed it's a list
+        nb_ctx: "{{ config_context[0] }}"
+      when: config_context is defined and config_context | length > 0
+
+    - name: Map Target IP
       set_fact:
         target_ip: "{{ ansible_host }}"
-        ctx: "{{ nb_ctx }}"
-      run_once: false
 
-# --- PHASE 1: DNS REGISTRATION ---
-- name: Phase 1 - Register DNS entries on Pi-hole
-  hosts: dns-server-01
-  become: yes
-  tasks:
-    - name: Execute Pi-hole script
-      ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ item }}.{{ hostvars[item].ctx.guest_domain }} {{ hostvars[item].target_ip }}"
-      # Loop only through the limited hosts, excluding infra servers
-      loop: "{{ ansible_play_batch | reject('match', 'dns-server-01|localhost') | list }}"
-
-# --- PHASE 2: VCENTER PROVISIONING ---
-- name: Phase 2 - Create and Power On VMs in vCenter
-  hosts: localhost
-  connection: local
-  gather_facts: no
-  tasks:
-    - name: Create VM from Template
-      community.vmware.vmware_guest:
-        hostname: "{{ hostvars[item].ctx.vcenter_hostname }}"
-        username: "{{ hostvars[item].ctx.vcenter_username }}"
-        password: "{{ hostvars[item].ctx.vcenter_password }}"
-        validate_certs: false
-        datacenter: "{{ hostvars[item].ctx.datacenter_name }}"
-        folder: "{{ hostvars[item].ctx.folder }}"
-        name: "{{ item }}"
-        state: poweredon
-        template: "{{ hostvars[item].ctx.rockyos_template_name }}"
-        networks:
-          - name: "{{ hostvars[item].ctx.vm_network }}"
-            ip: "{{ hostvars[item].target_ip }}"
-            netmask: "{{ hostvars[item].ctx.netmask }}"
-            gateway: "{{ hostvars[item].ctx.gateway }}"
-            dns_servers: "{{ hostvars[item].ctx.dns_servers }}"
-            start_connected: true
-        # Use hardware defaults from Netbox
-        hardware:
-          memory_mb: "{{ hostvars[item].ctx.default_memory_mb | default(4096) }}"
-          num_cpus: "{{ hostvars[item].ctx.default_cpus | default(2) }}"
-      loop: "{{ ansible_play_batch | reject('match', 'dns-server-01|localhost') | list }}"
-      no_log: true
-
-# --- PHASE 3: GUEST CONFIGURATION ---
-- name: Phase 3 - Login to Servers via IP and Configure
-  hosts: all
-  # Exclude infrastructure from guest config
-  groups: "{{ groups['all'] | reject('match', 'dns-server-01|localhost') | list }}"
-  serial: 1 
-  gather_facts: no
-  tasks:
-    - name: 1. Wait for SSH connection
-      ansible.builtin.wait_for_connection:
-        delay: 10
-        timeout: 600
-
-    - name: 2. Gather facts
-      ansible.builtin.setup:
-
-    - name: 3. Set Hostname inside the VM
-      ansible.builtin.hostname:
-        name: "{{ inventory_hostname }}.{{ nb_ctx.guest_domain }}"
-
-    - name: 4. Rename Connection and Configure DNS
-      ansible.builtin.shell: |
-        # Identify the current connection
-        OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
-        
-        # Standardize connection name to ens192
-        nmcli connection modify "$OLD_NAME" connection.id "ens192"
-        
-        # Apply DNS settings from Netbox
-        nmcli connection modify "ens192" ipv4.dns "{{ nb_ctx.dns_servers | join(' ') }}"
-        nmcli connection modify "ens192" ipv4.dns-search "{{ nb_ctx.guest_domain }}"
-        nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
-        
-        # Refresh connection
-        nmcli connection up "ens192"
+    # --- PHASE 1: DNS REGISTRATION ---
+    - name: Execute Pi-hole script on DNS Server
+      ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ inventory_hostname }} {{ target_ip }}"
+      delegate_to: 192.168.253.151 
       become: yes
+      vars:
+        # Explicitly pull nb_ctx from the current host's facts
+        ansible_user: "{{ hostvars[inventory_hostname]['nb_ctx']['infra_dns_user'] }}"
+        ansible_ssh_pass: "{{ hostvars[inventory_hostname]['nb_ctx']['infra_dns_pass'] }}"
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
-    - name: 5. Verify DNS configuration
-      ansible.builtin.command: cat /etc/resolv.conf
-      register: resolv_out
+    # --- PHASE 2: VCENTER PROVISIONING ---
+    - name: Create VM in vCenter
+      community.vmware.vmware_guest:
+        hostname: "{{ nb_ctx.vcenter_hostname }}"
+        username: "{{ nb_ctx.vcenter_username }}"
+        password: "{{ nb_ctx.vcenter_password }}"
+        validate_certs: false
+        datacenter: "{{ nb_ctx.datacenter_name }}"
+        folder: "/{{ nb_ctx.datacenter_name }}/{{ nb_ctx.folder | default('vm') }}"
+        name: "{{ inventory_hostname.split('.')[0] }}"
+        state: poweredon
+        template: "{{ nb_ctx.rockyos_template_name }}"
+        networks:
+          - name: "{{ nb_ctx.vm_network }}"
+            ip: "{{ target_ip }}"
+            netmask: "{{ nb_ctx.netmask }}"
+            gateway: "{{ nb_ctx.gateway }}"
+            dns_servers: "{{ nb_ctx.dns_servers }}"
+            start_connected: true
+        wait_for_ip_address: yes
+      delegate_to: localhost
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
-    - name: 6. Final Verification
-      ansible.builtin.debug:
-        msg: "Successfully provisioned {{ inventory_hostname }} with IP {{ ansible_host }} via Netbox Inventory sync"
+    # --- PHASE 3: GUEST CONFIGURATION ---
+    - name: Guest Configuration Block
+      block:
+        - name: Wait for SSH (Timeout 10 mins)
+          ansible.builtin.wait_for_connection:
+            delay: 15
+            timeout: 600
+
+        - name: Set Hostname and Network inside Guest
+          ansible.builtin.shell: |
+            hostnamectl set-hostname {{ inventory_hostname }}
+            OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
+            nmcli connection modify "$OLD_NAME" connection.id "ens192"
+            nmcli connection modify "ens192" ipv4.dns "{{ nb_ctx.dns_servers | join(' ') }}"
+            nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
+            nmcli connection up "ens192"
+          become: yes
+      vars:
+        ansible_user: "{{ nb_ctx.vm_root_user }}"
+        ansible_ssh_pass: "{{ nb_ctx.vm_root_password }}"
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
