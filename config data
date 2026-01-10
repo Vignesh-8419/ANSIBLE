@@ -33,6 +33,8 @@ vmware-awx-context
         "gateway": "192.168.253.2",
         "dns_primary": "192.168.253.151",
         "guest_domain": "vgs.com",
+        "pxe_folder": "/var/lib/tftpboot"
+        "http_server": "192.168.253.136"
         "vm_root_user": "root",
         "vm_root_password": "Root@123"
     }
