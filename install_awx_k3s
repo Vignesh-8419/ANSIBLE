@@ -123,3 +123,5 @@ kubectl -n awx get pod -o wide
 
 dmesg -T | grep -i oom
 
+systemctl restart k3s
+
