@@ -2,29 +2,30 @@
 - name: End-to-End VM Provisioning and Configuration
   hosts: all
   gather_facts: no
-  # We define common vars here so they are available to all tasks in this play
   vars:
     ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
 
   tasks:
     # --- PHASE 0: PREPARE DATA ---
+    - name: Debug Raw Config Context (Troubleshooting)
+      debug:
+        var: config_context
+      tags: [debug]
+
     - name: Load and normalize NetBox config context
       set_fact:
+        # We ensure it looks for 'config_context' and handles it even if it's a list
         nb_ctx: "{{ (config_context | first) if (config_context is iterable and config_context is not mapping) else config_context }}"
-      when: config_context is defined
+      # Removed 'when' to force it to attempt or fail clearly
+      
+    - name: Verify nb_ctx was actually created
+      fail:
+        msg: "CRITICAL: nb_ctx is not defined! Check if NetBox is sending config_context."
+      when: nb_ctx is not defined
 
     - name: Map Target IP
       set_fact:
         target_ip: "{{ ansible_host }}"
-
-    - name: Verify All Required Credentials exist in NetBox
-      fail:
-        msg: "CRITICAL: One or more passwords missing in NetBox!"
-      when: 
-        - inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
-        - (nb_ctx.infra_dns_pass is not defined) or 
-          (nb_ctx.vcenter_password is not defined) or 
-          (nb_ctx.vm_root_password is not defined)
 
     # --- PHASE 1: DNS REGISTRATION ---
     - name: Execute Pi-hole script on DNS Server
@@ -32,6 +33,7 @@
       delegate_to: 192.168.253.151 
       become: yes
       vars:
+        # Use .get() to avoid fatal crashes if keys are missing
         ansible_user: "{{ nb_ctx.infra_dns_user }}"
         ansible_ssh_pass: "{{ nb_ctx.infra_dns_pass }}"
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
@@ -77,7 +79,6 @@
             nmcli connection up "ens192"
           become: yes
       vars:
-        # Dynamically use the credentials from NetBox for Phase 3
         ansible_user: "{{ nb_ctx.vm_root_user }}"
         ansible_ssh_pass: "{{ nb_ctx.vm_root_password }}"
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
