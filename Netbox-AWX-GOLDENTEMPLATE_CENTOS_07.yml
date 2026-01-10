@@ -6,7 +6,6 @@
   tasks:
     - name: Load and normalize NetBox config context
       set_fact:
-        # Forcing the dictionary conversion to avoid the 'list object' error
         nb_ctx: "{{ (config_context | first) if (config_context is iterable and config_context is not mapping) else config_context }}"
       when: config_context is defined
 
@@ -20,14 +19,13 @@
   gather_facts: no
   tasks:
     - name: Execute Pi-hole script on DNS Server
-      ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ inventory_hostname }}.{{ nb_ctx.guest_domain }} {{ target_ip }}"
+      # FIXED: Removed .{{ nb_ctx.guest_domain }} to avoid double domain
+      ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ inventory_hostname }} {{ target_ip }}"
       delegate_to: 192.168.253.151 
       become: yes
       vars:
-        # Overriding credentials specifically for the DNS server
         ansible_user: root
-        # If you use a password, ensure it is defined in AWX or use a vault variable
-        ansible_ssh_pass: "Root@123" 
+        ansible_ssh_pass: "Root@123"
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
     - name: Create VM in vCenter
@@ -37,8 +35,8 @@
         password: "{{ nb_ctx.vcenter_password }}"
         validate_certs: false
         datacenter: "{{ nb_ctx.datacenter_name }}"
-        folder: "{{ nb_ctx.folder }}"
-        name: "{{ inventory_hostname }}"
+        folder: "/{{ nb_ctx.datacenter_name }}/vm" # Added full path logic
+        name: "{{ inventory_hostname.split('.')[0] }}" # Using short name for VM display
         state: poweredon
         template: "{{ nb_ctx.centos_template_name | default(nb_ctx.rockyos_template_name) }}"
         networks:
@@ -48,8 +46,10 @@
             gateway: "{{ nb_ctx.gateway }}"
             dns_servers: "{{ nb_ctx.dns_servers | default([nb_ctx.dns_primary]) }}"
             start_connected: true
+        wait_for_ip_address: yes
       delegate_to: localhost
-      no_log: true
+      # no_log: true  # DISABLED so we can see the error if it fails
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
 # --- PHASE 3: GUEST CONFIGURATION ---
 - name: Phase 3 - OS Customization
@@ -65,7 +65,7 @@
 
         - name: Set Hostname and Network
           ansible.builtin.shell: |
-            hostnamectl set-hostname {{ inventory_hostname }}.{{ nb_ctx.guest_domain }}
+            hostnamectl set-hostname {{ inventory_hostname }}
             OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
             nmcli connection modify "$OLD_NAME" connection.id "ens192"
             nmcli connection modify "ens192" ipv4.dns "{{ nb_ctx.dns_servers | default([nb_ctx.dns_primary]) | join(' ') }}"
