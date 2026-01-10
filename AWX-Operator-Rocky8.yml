@@ -39,7 +39,7 @@
         folder: "/{{ nb_ctx.datacenter_name }}/{{ nb_ctx.folder | default('vm') }}"
         name: "{{ inventory_hostname.split('.')[0] }}"
         state: poweredon
-        template: "{{ nb_ctx.centos_template_name }}"
+        template: "{{ nb_ctx.rockyos_template_name }}"
         networks:
           - name: "{{ nb_ctx.vm_network }}"
             ip: "{{ target_ip }}"
