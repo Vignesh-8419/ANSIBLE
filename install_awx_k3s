@@ -90,3 +90,26 @@ kubectl -n awx get awx awx-server -o yaml
 
 kubectl -n awx delete pod --all
 
+
+  init_container_resource_requirements:
+    requests:
+      memory: "1Gi"
+      cpu: "200m"
+    limits:
+      memory: "2Gi"
+      cpu: "500m"
+  
+  postgres_resource_requirements:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  ee_resource_requirements:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
