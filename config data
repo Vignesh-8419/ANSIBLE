@@ -1,33 +1,33 @@
 vmware-awx-context
 {
-    "datacenter_name": "Datacenter",
-    "datastore": "datastore1",
-    "default_cpus": 4,
-    "default_memory_mb": 4096,
-    "disk_size_gb": 100,
-    "dns_servers": [
-        "192.168.253.151"
-    "datacenter_name": "Datacenter",
-    "dns_servers": ["192.168.253.151"],
-    "folder": "vm",
-    "gateway": "192.168.253.2",
-    "guest_domain": "vgs.com",
-    "netmask": "255.255.255.0",
+  "nb_ctx": {
     "vcenter_hostname": "192.168.253.129",
-    "vcenter_password": "admin$22",
     "vcenter_username": "administrator@vsphere.local",
+    "vcenter_password": "admin$22",
     "exsi_hostname": "192.168.253.128",
     "exsi_username": "root",
     "exsi_password": "admin$22",
+    "datacenter_name": "Datacenter",
+    "datastore": "datastore1",
+    "folder": "vm",
     "vm_network": "VM Network",
+    "netmask": "255.255.255.0",
+    "gateway": "192.168.253.2",
+    "dns_servers": ["192.168.253.151"],
+    "guest_domain": "vgs.com",
+    "rockyos_template_name": "GOLDENTEMPLATE_ROCKYOS_08",
+    "centos_template_name": "GOLDENTEMPLATE_CENTOS_07",
+    "default_cpus": 4,
+    "default_memory_mb": 4096,
+    "disk_size_gb": 100,
     "vm_root_user": "root",
-    "vm_root_password": "Root@123" 
+    "vm_root_password": "Root@123"
+  }
 }
 
-
+pxe_centos
 {
-    {
-        "centos_kickstart_url": "http://192.168.253.160/ks/centos7-ks.cfg",
+        "centos_kickstart_url": "http://192.168.253.136/repo/centos/kickstart/centos.cfg",
         "vm_network": "VM Network",
         "netmask": "255.255.255.0",
         "gateway": "192.168.253.2",
@@ -37,6 +37,18 @@ vmware-awx-context
         "http_server": "192.168.253.136"
         "vm_root_user": "root",
         "vm_root_password": "Root@123"
-    }
 }
-w
+
+pxe_rockyos
+{
+        "centos_kickstart_url": "http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg",
+        "vm_network": "VM Network",
+        "netmask": "255.255.255.0",
+        "gateway": "192.168.253.2",
+        "dns_primary": "192.168.253.151",
+        "guest_domain": "vgs.com",
+        "pxe_folder": "/var/lib/tftpboot"
+        "http_server": "192.168.253.136"
+        "vm_root_user": "root",
+        "vm_root_password": "Root@123"
+}
