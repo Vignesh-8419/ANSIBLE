@@ -62,6 +62,8 @@
           yum:
             name: '*'
             state: latest
+            skip_broken: yes
+            update_cache: yes
           register: yum_result
 
         - name: Reboot if kernel/system updated
