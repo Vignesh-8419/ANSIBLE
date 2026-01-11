@@ -68,7 +68,7 @@ if [ "$SOURCE_CHOICE" == "1" ]; then
     IFACE=$(echo $IFACE_DATA | awk '{print $2}')
     IPADDR=$(echo $IFACE_DATA | awk '{print $4}')
     MAC=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no ${SSH_USER}@${REMOTE_HOST} "cat /sys/class/net/$IFACE/address")
-    echo ">>> Fetched: $HOSTNAME | $IPADDR | $MAC"
+    echo ">>> Fetched: $HOSTNAME | $IPADDR | $MAC | Interface: $IFACE"
 else
     read -p "Hostname: " HOSTNAME
     read -p "Interface name: " IFACE
@@ -77,16 +77,13 @@ else
 fi
 
 # ---------------- PRE-CHECK EXISTING DEVICE ----------------
-echo -e "\nChecking if $HOSTNAME exists in Netbox..."
 DEV_PRECHECK=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/dcim/devices/?name=$(urlencode "$HOSTNAME")")
 EXISTING_DEV_ID=$(echo "$DEV_PRECHECK" | jq -r '.results[0].id // empty')
 
 CURRENT_CLUSTER_INFO="None"
 if [ -n "$EXISTING_DEV_ID" ]; then
-    # Fetch details about the existing cluster assignment
     C_NAME=$(echo "$DEV_PRECHECK" | jq -r '.results[0].cluster.name // "N/A"')
     C_TYPE=$(echo "$DEV_PRECHECK" | jq -r '.results[0].cluster.type.name // "N/A"')
-    # Cluster Group is often nested or requires another lookup, for brevity:
     CURRENT_CLUSTER_INFO="Name: $C_NAME | Type: $C_TYPE"
 fi
 
@@ -104,33 +101,22 @@ FORCE_MANUAL="false"
 USE_EXISTING="false"
 
 if [ "$CLUSTER_MODE" == "1" ] && [ -n "$EXISTING_DEV_ID" ]; then
-    # If user picks 1 and device exists, we just reuse the existing Cluster ID
     CLUSTER_ID=$(echo "$DEV_PRECHECK" | jq -r '.results[0].cluster.id // empty')
     CLUSTER_NAME=$(echo "$DEV_PRECHECK" | jq -r '.results[0].cluster.name // empty')
-    
-    if [ "$CLUSTER_ID" != "null" ] && [ -n "$CLUSTER_ID" ]; then
-        USE_EXISTING="true"
-        echo "Using existing cluster: $CLUSTER_NAME"
-    fi
+    [ "$CLUSTER_ID" != "null" ] && [ -n "$CLUSTER_ID" ] && USE_EXISTING="true"
 fi
+[ "$CLUSTER_MODE" == "2" ] && FORCE_MANUAL="true"
 
-if [ "$CLUSTER_MODE" == "2" ]; then
-    FORCE_MANUAL="true"
-fi
-
-# ---------------- CLUSTER SELECTION (SKIP IF USING EXISTING) ----------------
+# ---------------- CLUSTER SELECTION ----------------
 if [ "$USE_EXISTING" == "false" ]; then
-    # 1. Cluster Type
     select_from_netbox "virtualization/cluster-types/" "Cluster Type" "$FORCE_MANUAL"
     TYPE_ID=$SELECTED_ID
     [ -z "$TYPE_ID" ] && TYPE_ID=$(curl -sk -X POST "$NETBOX_URL/virtualization/cluster-types/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"name\":\"$SELECTED_NAME\",\"slug\":\"$(slugify "$SELECTED_NAME")\"}" | jq -r '.id')
 
-    # 2. Cluster Group
     select_from_netbox "virtualization/cluster-groups/" "Cluster Group" "$FORCE_MANUAL"
     GROUP_ID=$SELECTED_ID
     [ -z "$GROUP_ID" ] && GROUP_ID=$(curl -sk -X POST "$NETBOX_URL/virtualization/cluster-groups/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"name\":\"$SELECTED_NAME\",\"slug\":\"$(slugify "$SELECTED_NAME")\"}" | jq -r '.id')
 
-    # 3. Cluster Name
     select_from_netbox "virtualization/clusters/" "Cluster" "$FORCE_MANUAL"
     CLUSTER_ID=$SELECTED_ID
     CLUSTER_NAME=$SELECTED_NAME
@@ -138,39 +124,58 @@ if [ "$USE_EXISTING" == "false" ]; then
 fi
 
 # ---------------- FINAL SYNC ----------------
-echo -e "\nSyncing $HOSTNAME to Netbox..."
+echo -e "\nSyncing to Netbox..."
 
 # 1. Device
 DEVICE_ID=$EXISTING_DEV_ID
 if [ -z "$DEVICE_ID" ]; then
     DEVICE_ID=$(curl -sk -X POST "$NETBOX_URL/dcim/devices/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"name\":\"$HOSTNAME\",\"device_type\":$DEVICETYPE_ID,\"role\":$DEVICEROLE_ID,\"site\":$SITE_ID,\"cluster\":$CLUSTER_ID}" | jq -r '.id')
 else
-    # Update cluster if changed
     curl -sk -X PATCH "$NETBOX_URL/dcim/devices/$DEVICE_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"cluster\":$CLUSTER_ID}" > /dev/null
 fi
 
-# 2. Interface (Same MAC update logic)
-INT_JSON=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/dcim/interfaces/?device_id=$DEVICE_ID&name=$(urlencode "$IFACE")")
-INTERFACE_ID=$(echo "$INT_JSON" | jq -r '.results[0].id // empty')
+# 2. Interface (WITH AUTO-CLEANUP FOR OLD NAMES)
+INT_JSON=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/dcim/interfaces/?device_id=$DEVICE_ID")
+INTERFACE_ID=$(echo "$INT_JSON" | jq -r ".results[] | select(.name == \"$IFACE\") | .id // empty")
+
 if [ -z "$INTERFACE_ID" ]; then
-    INTERFACE_ID=$(curl -sk -X POST "$NETBOX_URL/dcim/interfaces/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"device\":$DEVICE_ID,\"name\":\"$IFACE\",\"type\":\"1000base-t\",\"mac_address\":\"$MAC\"}" | jq -r '.id')
-else
-    EXISTING_MAC=$(echo "$INT_JSON" | jq -r '.results[0].mac_address // empty' | tr '[:upper:]' '[:lower:]')
-    NEW_MAC=$(echo "$MAC" | tr '[:upper:]' '[:lower:]')
-    if [ "$EXISTING_MAC" != "$NEW_MAC" ] && [ -n "$NEW_MAC" ]; then
-        curl -sk -X PATCH "$NETBOX_URL/dcim/interfaces/$INTERFACE_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"mac_address\":\"$NEW_MAC\"}" > /dev/null
+    # Name not found, see if we can find the same MAC to rename it
+    OLD_INT_DATA=$(echo "$INT_JSON" | jq -r ".results[] | select(.mac_address == \"${MAC^^}\" or .mac_address == \"${MAC,,}\") | \"\(.id)|\(.name)\"")
+    
+    if [ -n "$OLD_INT_DATA" ]; then
+        OLD_INT_ID=$(echo "$OLD_INT_DATA" | cut -d'|' -f1)
+        OLD_NAME=$(echo "$OLD_INT_DATA" | cut -d'|' -f2)
+        echo "Updating Interface name: $OLD_NAME -> $IFACE"
+        curl -sk -X PATCH "$NETBOX_URL/dcim/interfaces/$OLD_INT_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"name\":\"$IFACE\"}" > /dev/null
+        INTERFACE_ID=$OLD_INT_ID
+    else
+        echo "Creating Interface $IFACE..."
+        INTERFACE_ID=$(curl -sk -X POST "$NETBOX_URL/dcim/interfaces/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"device\":$DEVICE_ID,\"name\":\"$IFACE\",\"type\":\"1000base-t\",\"mac_address\":\"$MAC\"}" | jq -r '.id')
     fi
 fi
+
+# --- CLEANUP STEP ---
+# Delete any other interfaces on this device that DON'T match our current IFACE
+echo "Cleaning up duplicate interfaces for $HOSTNAME..."
+echo "$INT_JSON" | jq -r ".results[] | select(.name != \"$IFACE\") | .id" | while read -r to_delete; do
+    if [ -n "$to_delete" ]; then
+        echo "Deleting stale interface ID: $to_delete"
+        curl -sk -X DELETE "$NETBOX_URL/dcim/interfaces/$to_delete/" -H "Authorization: Token $NETBOX_TOKEN"
+    fi
+done
 
 # 3. IP Address
 IP_ID=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/ipam/ip-addresses/?address=$(urlencode "$IPADDR")" | jq -r '.results[0].id // empty')
 if [ -z "$IP_ID" ]; then
     IP_ID=$(curl -sk -X POST "$NETBOX_URL/ipam/ip-addresses/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"address\":\"$IPADDR\",\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID,\"status\":\"active\"}" | jq -r '.id')
+else
+    # Ensure IP is assigned to the current interface (IFACE)
+    curl -sk -X PATCH "$NETBOX_URL/ipam/ip-addresses/$IP_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"assigned_object_id\":$INTERFACE_ID}" > /dev/null
 fi
 
-# Set Primary IP
+# Primary IP set
 curl -sk -X PATCH "$NETBOX_URL/dcim/devices/$DEVICE_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"primary_ip4\":$IP_ID}" > /dev/null
 
 echo "------------------------------------------------"
-echo "✅ Finished! $HOSTNAME is updated in $CLUSTER_NAME"
+echo "✅ Finished! $HOSTNAME is updated, old interfaces removed."
 echo "------------------------------------------------"
