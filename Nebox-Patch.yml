@@ -1,0 +1,71 @@
+---
+- name: Dynamic Patching via NetBox Repo Context
+  hosts: all
+  become: true
+  gather_facts: yes
+
+  tasks:
+    # --- PHASE 0: LOAD DATA ---
+    - name: Load NetBox Context
+      set_fact:
+        nb_ctx: "{{ config_context[0] }}"
+      when: config_context is defined
+
+    # --- PHASE 1: PREPARE STORAGE ---
+    - name: Create mount point
+      file:
+        path: "{{ nb_ctx.repo_mount_point }}"
+        state: directory
+        mode: '0755'
+
+    - name: Mount ISO share
+      mount:
+        path: "{{ nb_ctx.repo_mount_point }}"
+        src: "{{ nb_ctx.repo_mount_path }}"
+        fstype: cifs
+        opts: "username={{ nb_ctx.iso_share_user }},password={{ nb_ctx.iso_share_pass }},rw,vers=3.0"
+        state: mounted
+      when: ansible_mounts | selectattr('mount', 'equalto', nb_ctx.repo_mount_point) | list | length == 0
+
+    # --- PHASE 2: CLEAN & RE-CREATE REPOS ---
+    - name: Remove existing CentOS repos
+      shell: "rm -f /etc/yum.repos.d/CentOS-*"
+      args:
+        warn: false
+
+    - name: Generate Repos from NetBox Data
+      copy:
+        content: |
+          [{{ item.id }}]
+          name={{ item.name }}
+          baseurl=file://{{ nb_ctx.repo_mount_point }}/{{ item.folder }}
+          enabled=1
+          gpgcheck=0
+        dest: "/etc/yum.repos.d/{{ item.id }}.repo"
+      loop: "{{ nb_ctx.repositories }}"
+      when: nb_ctx.repositories is defined
+
+    # --- PHASE 3: UPDATE EXECUTION ---
+    - name: Refresh Cache and Update
+      block:
+        - name: Clean YUM cache
+          command: yum clean all
+
+        - name: Update all packages
+          yum:
+            name: '*'
+            state: latest
+          register: yum_result
+
+        - name: Reboot if kernel/system updated
+          reboot:
+            reboot_timeout: 600
+          when: yum_result.changed
+
+    - name: Verification
+      command: uname -r
+      register: kernel_ver
+
+    - name: Display Status
+      debug:
+        msg: "Update complete on {{ inventory_hostname }}. Active Kernel: {{ kernel_ver.stdout }}"
