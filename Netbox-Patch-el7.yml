@@ -28,10 +28,17 @@
       when: ansible_mounts | selectattr('mount', 'equalto', nb_ctx.repo_mount_point) | list | length == 0
 
     # --- PHASE 2: CLEAN & RE-CREATE REPOS ---
+    - name: Find existing CentOS repo files
+      find:
+        paths: /etc/yum.repos.d/
+        patterns: 'CentOS-*'
+      register: old_repos
+
     - name: Remove existing CentOS repos
-      shell: "rm -f /etc/yum.repos.d/CentOS-*"
-      args:
-        warn: false
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ old_repos.files }}"
 
     - name: Generate Repos from NetBox Data
       copy:
