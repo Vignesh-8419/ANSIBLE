@@ -11,7 +11,8 @@ fetch_all: true
 
 # 2. Limit the data being pulled to the bare minimum
 config_context: true
-interfaces: false
+interfaces: true
+primary_ip: true
 services: false
 
 group_by:
