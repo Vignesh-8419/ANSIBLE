@@ -1,6 +1,7 @@
 ---
 plugin: netbox.netbox.nb_inventory
 api_endpoint: https://192.168.253.134
+token: FZRvENMkPG8xXTKdP9ewxmGtSgLuN8xaAMHkvcgr
 validate_certs: false
 
 # Pull full host metadata
