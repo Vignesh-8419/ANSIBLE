@@ -4,23 +4,20 @@ api_endpoint: https://192.168.253.134
 token: FZRvENMkPG8xXTKdP9ewxmGtSgLuN8xaAMHkvcgr
 validate_certs: false
 
-# CRITICAL: This skips the API schema fetch that is causing the 500 Error
+# 1. Skip the schema fetch entirely
 fetch_all: true
+validate_query_filters: false
 
-# Metadata options
+# 2. Simplified Metadata (Fetching interfaces can sometimes slow it down)
 config_context: true
-interfaces: true
 primary_ip: true
 
-group_by:
-  - status
-  - tags
-
-# NetBox v4 prefers 'query_filters' over 'device_query_filters'
+# 3. Filtering logic
 query_filters:
   - status: "active"
   - cluster_id: 1
 
+# 4. Host Variable Mapping
 compose:
   ansible_host: primary_ip4.address.split('/')[0]
   primary_ip4: primary_ip4.address.split('/')[0]
