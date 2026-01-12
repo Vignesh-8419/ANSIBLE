@@ -1,14 +1,14 @@
-curl -k -H "Authorization: Token 6cc3f3c7bdd27d7ba032d5e65c73f58bf3ec3eb8" httpss://192.168.253.134/api/dcim/interfaces/?device_id=2
+curl -k -H "Authorization: Token 6FqTiw1byBhzjSLRSBgHKbd26zve0l7swDd36wK0" httpss://192.168.253.134/api/dcim/interfaces/?device_id=2
 	 
 # Create tag (if not already created)
 curl -X POST https://192.168.253.134/api/extras/tags/ \
-  -H "Authorization: Token 6cc3f3c7bdd27d7ba032d5e65c73f58bf3ec3eb8" \
+  -H "Authorization: Token 6FqTiw1byBhzjSLRSBgHKbd26zve0l7swDd36wK0" \
   -H "Content-Type: application/json" \
   -d '{"name": "new-build-rockyos", "slug": "new-build-rockyos"}'
 
 
 curl -X POST -k "https://192.168.253.134/api/dcim/device-roles/" \
-  -H "Authorization: Token 6cc3f3c7bdd27d7ba032d5e65c73f58bf3ec3eb8" \
+  -H "Authorization: Token 6FqTiw1byBhzjSLRSBgHKbd26zve0l7swDd36wK0" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Server",
@@ -18,7 +18,7 @@ curl -X POST -k "https://192.168.253.134/api/dcim/device-roles/" \
 
 
 curl -X POST -k "https://192.168.253.134/api/dcim/manufacturers/" \
-  -H "Authorization: Token 6cc3f3c7bdd27d7ba032d5e65c73f58bf3ec3eb8" \
+  -H "Authorization: Token 6FqTiw1byBhzjSLRSBgHKbd26zve0l7swDd36wK0" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Generic",
@@ -26,7 +26,7 @@ curl -X POST -k "https://192.168.253.134/api/dcim/manufacturers/" \
   }'
 
 curl -X POST -k "https://192.168.253.134/api/dcim/device-types/" \
-  -H "Authorization: Token 6cc3f3c7bdd27d7ba032d5e65c73f58bf3ec3eb8" \
+  -H "Authorization: Token 6FqTiw1byBhzjSLRSBgHKbd26zve0l7swDd36wK0" \
   -H "Content-Type: application/json" \
   -d '{
     "manufacturer": 1,
