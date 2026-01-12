@@ -3,7 +3,7 @@ set -e
 
 # ---------------- CONFIG ----------------
 NETBOX_URL="https://192.168.253.134/api"
-NETBOX_TOKEN="6cc3f3c7bdd27d7ba032d5e65c73f58bf3ec3eb8"
+NETBOX_TOKEN="FZRvENMkPG8xXTKdP9ewxmGtSgLuN8xaAMHkvcgr"
 HDR="Content-Type: application/json"
 
 SSH_USER="root"
@@ -63,17 +63,20 @@ read -p "Choice [1-2]: " SOURCE_CHOICE
 if [ "$SOURCE_CHOICE" == "1" ]; then
     read -p "Enter Target Server IP/Hostname: " REMOTE_HOST
     echo "Fetching data from $REMOTE_HOST..."
-    HOSTNAME=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no ${SSH_USER}@${REMOTE_HOST} "hostname")
+    
+    HOSTNAME=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no ${SSH_USER}@${REMOTE_HOST} "hostname" | xargs)
     IFACE_DATA=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no ${SSH_USER}@${REMOTE_HOST} "ip -o -4 addr show scope global | head -1")
-    IFACE=$(echo $IFACE_DATA | awk '{print $2}')
-    IPADDR=$(echo $IFACE_DATA | awk '{print $4}')
-    MAC=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no ${SSH_USER}@${REMOTE_HOST} "cat /sys/class/net/$IFACE/address")
+    IFACE=$(echo $IFACE_DATA | awk '{print $2}' | xargs)
+    IPADDR=$(echo $IFACE_DATA | awk '{print $4}' | xargs)
+    MAC=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no ${SSH_USER}@${REMOTE_HOST} "cat /sys/class/net/$IFACE/address" | xargs | tr '[:lower:]' '[:upper:]')
+    
     echo ">>> Fetched: $HOSTNAME | $IPADDR | $MAC | Interface: $IFACE"
 else
     read -p "Hostname: " HOSTNAME
     read -p "Interface name: " IFACE
     read -p "IP Address (CIDR): " IPADDR
     read -p "MAC Address (optional): " MAC
+    MAC=$(echo "$MAC" | xargs | tr '[:lower:]' '[:upper:]')
 fi
 
 # ---------------- PRE-CHECK EXISTING DEVICE ----------------
@@ -102,7 +105,6 @@ USE_EXISTING="false"
 
 if [ "$CLUSTER_MODE" == "1" ] && [ -n "$EXISTING_DEV_ID" ]; then
     CLUSTER_ID=$(echo "$DEV_PRECHECK" | jq -r '.results[0].cluster.id // empty')
-    CLUSTER_NAME=$(echo "$DEV_PRECHECK" | jq -r '.results[0].cluster.name // empty')
     [ "$CLUSTER_ID" != "null" ] && [ -n "$CLUSTER_ID" ] && USE_EXISTING="true"
 fi
 [ "$CLUSTER_MODE" == "2" ] && FORCE_MANUAL="true"
@@ -134,42 +136,44 @@ else
     curl -sk -X PATCH "$NETBOX_URL/dcim/devices/$DEVICE_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"cluster\":$CLUSTER_ID}" > /dev/null
 fi
 
-# 2. Interface (WITH AUTO-CLEANUP FOR OLD NAMES)
+# 2. Interface Sync
 INT_JSON=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/dcim/interfaces/?device_id=$DEVICE_ID")
 INTERFACE_ID=$(echo "$INT_JSON" | jq -r ".results[] | select(.name == \"$IFACE\") | .id // empty")
 
 if [ -z "$INTERFACE_ID" ]; then
-    # Name not found, see if we can find the same MAC to rename it
-    OLD_INT_DATA=$(echo "$INT_JSON" | jq -r ".results[] | select(.mac_address == \"${MAC^^}\" or .mac_address == \"${MAC,,}\") | \"\(.id)|\(.name)\"")
-    
-    if [ -n "$OLD_INT_DATA" ]; then
-        OLD_INT_ID=$(echo "$OLD_INT_DATA" | cut -d'|' -f1)
-        OLD_NAME=$(echo "$OLD_INT_DATA" | cut -d'|' -f2)
-        echo "Updating Interface name: $OLD_NAME -> $IFACE"
-        curl -sk -X PATCH "$NETBOX_URL/dcim/interfaces/$OLD_INT_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"name\":\"$IFACE\"}" > /dev/null
-        INTERFACE_ID=$OLD_INT_ID
-    else
-        echo "Creating Interface $IFACE..."
-        INTERFACE_ID=$(curl -sk -X POST "$NETBOX_URL/dcim/interfaces/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"device\":$DEVICE_ID,\"name\":\"$IFACE\",\"type\":\"1000base-t\",\"mac_address\":\"$MAC\"}" | jq -r '.id')
-    fi
+    echo "Creating Interface $IFACE..."
+    INTERFACE_ID=$(curl -sk -X POST "$NETBOX_URL/dcim/interfaces/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"device\":$DEVICE_ID,\"name\":\"$IFACE\",\"type\":\"1000base-t\"}" | jq -r '.id')
 fi
 
+# 3. MAC Address Object Sync (Essential for NetBox 4.x)
+echo "Syncing MAC Address via L2 Object..."
+MAC_OBJ_CHECK=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/dcim/mac-addresses/?mac_address=$MAC")
+MAC_OBJ_ID=$(echo "$MAC_OBJ_CHECK" | jq -r '.results[0].id // empty')
+
+if [ -z "$MAC_OBJ_ID" ]; then
+    MAC_OBJ_ID=$(curl -sk -X POST "$NETBOX_URL/dcim/mac-addresses/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+        -d "{\"mac_address\":\"$MAC\",\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID}" | jq -r '.id')
+else
+    curl -sk -X PATCH "$NETBOX_URL/dcim/mac-addresses/$MAC_OBJ_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+        -d "{\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID}" > /dev/null
+fi
+
+# Link the MAC Object as Primary to the Interface
+curl -sk -X PATCH "$NETBOX_URL/dcim/interfaces/$INTERFACE_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"primary_mac_address\": $MAC_OBJ_ID}" > /dev/null
+
 # --- CLEANUP STEP ---
-# Delete any other interfaces on this device that DON'T match our current IFACE
 echo "Cleaning up duplicate interfaces for $HOSTNAME..."
 echo "$INT_JSON" | jq -r ".results[] | select(.name != \"$IFACE\") | .id" | while read -r to_delete; do
     if [ -n "$to_delete" ]; then
-        echo "Deleting stale interface ID: $to_delete"
         curl -sk -X DELETE "$NETBOX_URL/dcim/interfaces/$to_delete/" -H "Authorization: Token $NETBOX_TOKEN"
     fi
 done
 
-# 3. IP Address
+# 4. IP Address
 IP_ID=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/ipam/ip-addresses/?address=$(urlencode "$IPADDR")" | jq -r '.results[0].id // empty')
 if [ -z "$IP_ID" ]; then
     IP_ID=$(curl -sk -X POST "$NETBOX_URL/ipam/ip-addresses/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"address\":\"$IPADDR\",\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID,\"status\":\"active\"}" | jq -r '.id')
 else
-    # Ensure IP is assigned to the current interface (IFACE)
     curl -sk -X PATCH "$NETBOX_URL/ipam/ip-addresses/$IP_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"assigned_object_id\":$INTERFACE_ID}" > /dev/null
 fi
 
@@ -177,5 +181,5 @@ fi
 curl -sk -X PATCH "$NETBOX_URL/dcim/devices/$DEVICE_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"primary_ip4\":$IP_ID}" > /dev/null
 
 echo "------------------------------------------------"
-echo "✅ Finished! $HOSTNAME is updated, old interfaces removed."
+echo "✅ Finished! $HOSTNAME updated. MAC $MAC is linked via Object ID $MAC_OBJ_ID"
 echo "------------------------------------------------"
