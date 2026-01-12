@@ -10,7 +10,7 @@ validate_query_filters: false
 fetch_all: true
 
 # 2. Limit the data being pulled to the bare minimum
-config_context: false
+config_context: true
 interfaces: false
 services: false
 
@@ -25,3 +25,4 @@ query_filters:
 
 compose:
   ansible_host: primary_ip4.address.split('/')[0]
+  primary_ip4: primary_ip4.address.split('/')[0]
