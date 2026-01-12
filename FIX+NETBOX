@@ -1,0 +1,12 @@
+[root@rocky-08-02 ~]# cat /etc/systemd/system/netbox.service
+[Unit]
+Description=NetBox WSGI Service
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/netbox/netbox
+ExecStart=/opt/netbox/venv/bin/gunicorn --bind 127.0.0.1:8001 --timeout 120 --workers 3 netbox.wsgi
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
