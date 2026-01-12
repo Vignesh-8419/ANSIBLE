@@ -17,40 +17,23 @@ DEVICEROLE_ID=1
 slugify() { echo "$1" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | sed 's/[^a-z0-9-]//g'; }
 urlencode() { jq -rn --arg v "$1" '$v|@uri'; }
 
-select_from_netbox() {
+get_or_create() {
     local endpoint=$1
-    local display_name=$2
-    local force_manual=$3
-
-    if [ "$force_manual" == "true" ]; then
-        read -p "Enter $display_name name: " new_name
-        SELECTED_NAME="$new_name"
-        SELECTED_ID=""
-        return
-    fi
-
-    echo -e "\n--- Select $display_name ---"
-    results=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/$endpoint" | jq -r '.results[] | "\(.id)|\(.name)"')
-    local count=1
-    declare -A map
-    declare -A name_map
-    if [ -n "$results" ]; then
-        while IFS='|' read -r id name; do
-            echo "$count) $name"
-            map[$count]=$id
-            name_map[$count]=$name
-            ((count++))
-        done <<< "$results"
-    fi
-    echo "$count) Type New $display_name Manually"
-    read -p "Choose option [1-$count]: " choice
-    if [[ "$choice" -eq "$count" ]]; then
-        read -p "Enter new $display_name name: " new_name
-        SELECTED_NAME="$new_name"
-        SELECTED_ID=""
+    local name=$2
+    local extra_json=$3
+    local slug=$(slugify "$name")
+    
+    # Check if exists
+    local existing_id=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/$endpoint/?name=$(urlencode "$name")" | jq -r '.results[0].id // empty')
+    
+    if [ -n "$existing_id" ] && [ "$existing_id" != "null" ]; then
+        echo "$existing_id"
     else
-        SELECTED_ID="${map[$choice]}"
-        SELECTED_NAME="${name_map[$choice]}"
+        # Create new
+        local response=$(curl -sk -X POST "$NETBOX_URL/$endpoint/" \
+            -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+            -d "{\"name\":\"$name\",\"slug\":\"$slug\"$extra_json}")
+        echo "$response" | jq -r '.id // empty'
     fi
 }
 
@@ -62,124 +45,112 @@ read -p "Choice [1-2]: " SOURCE_CHOICE
 
 if [ "$SOURCE_CHOICE" == "1" ]; then
     read -p "Enter Target Server IP/Hostname: " REMOTE_HOST
-    echo "Fetching data from $REMOTE_HOST..."
-    
+    echo "Fetching data..."
     HOSTNAME=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no ${SSH_USER}@${REMOTE_HOST} "hostname" | xargs)
     IFACE_DATA=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no ${SSH_USER}@${REMOTE_HOST} "ip -o -4 addr show scope global | head -1")
     IFACE=$(echo $IFACE_DATA | awk '{print $2}' | xargs)
     IPADDR=$(echo $IFACE_DATA | awk '{print $4}' | xargs)
     MAC=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no ${SSH_USER}@${REMOTE_HOST} "cat /sys/class/net/$IFACE/address" | xargs | tr '[:lower:]' '[:upper:]')
-    
     echo ">>> Fetched: $HOSTNAME | $IPADDR | $MAC | Interface: $IFACE"
 else
     read -p "Hostname: " HOSTNAME
     read -p "Interface name: " IFACE
     read -p "IP Address (CIDR): " IPADDR
     read -p "MAC Address (optional): " MAC
-    MAC=$(echo "$MAC" | xargs | tr '[:lower:]' '[:upper:]')
+    [ -n "$MAC" ] && MAC=$(echo "$MAC" | xargs | tr '[:lower:]' '[:upper:]')
 fi
 
 # ---------------- PRE-CHECK EXISTING DEVICE ----------------
 DEV_PRECHECK=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/dcim/devices/?name=$(urlencode "$HOSTNAME")")
 EXISTING_DEV_ID=$(echo "$DEV_PRECHECK" | jq -r '.results[0].id // empty')
 
-CURRENT_CLUSTER_INFO="None"
-if [ -n "$EXISTING_DEV_ID" ]; then
-    C_NAME=$(echo "$DEV_PRECHECK" | jq -r '.results[0].cluster.name // "N/A"')
-    C_TYPE=$(echo "$DEV_PRECHECK" | jq -r '.results[0].cluster.type.name // "N/A"')
-    CURRENT_CLUSTER_INFO="Name: $C_NAME | Type: $C_TYPE"
-fi
-
-# ---------------- CLUSTER MODE SELECTION ----------------
+# ---------------- CLUSTER SYNC ----------------
 echo -e "\nCluster Configuration:"
-if [ "$CURRENT_CLUSTER_INFO" != "None" ]; then
-    echo "1) Keep existing configuration ($CURRENT_CLUSTER_INFO)"
-else
-    echo "1) Pick from existing Netbox clusters/groups"
-fi
+echo "1) Pick from existing Netbox clusters"
 echo "2) Add to a specific/new cluster setup (Manual entry)"
 read -p "Choice [1-2]: " CLUSTER_MODE
 
-FORCE_MANUAL="false"
-USE_EXISTING="false"
+if [ "$CLUSTER_MODE" == "2" ]; then
+    read -p "Enter Cluster Type name: " TYPE_NAME
+    TYPE_ID=$(get_or_create "virtualization/cluster-types" "$TYPE_NAME")
 
-if [ "$CLUSTER_MODE" == "1" ] && [ -n "$EXISTING_DEV_ID" ]; then
-    CLUSTER_ID=$(echo "$DEV_PRECHECK" | jq -r '.results[0].cluster.id // empty')
-    [ "$CLUSTER_ID" != "null" ] && [ -n "$CLUSTER_ID" ] && USE_EXISTING="true"
+    read -p "Enter Cluster Group name: " GROUP_NAME
+    GROUP_ID=$(get_or_create "virtualization/cluster-groups" "$GROUP_NAME")
+
+    read -p "Enter Cluster name: " CLUSTER_NAME
+    CLUSTER_ID=$(get_or_create "virtualization/clusters" "$CLUSTER_NAME" ",\"type\":$TYPE_ID,\"group\":$GROUP_ID,\"site\":$SITE_ID")
+else
+    echo -e "\n--- Select Cluster ---"
+    results=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/virtualization/clusters/" | jq -r '.results[] | "\(.id)|\(.name)"')
+    if [ -z "$results" ]; then
+        echo "No existing clusters found. Please use Manual Entry."
+        exit 1
+    fi
+    count=1
+    declare -A cluster_map
+    while IFS='|' read -r id name; do
+        echo "$count) $name"
+        cluster_map[$count]=$id
+        ((count++))
+    done <<< "$results"
+    read -p "Choose cluster [1-$((count-1))]: " c_choice
+    CLUSTER_ID=${cluster_map[$c_choice]}
 fi
-[ "$CLUSTER_MODE" == "2" ] && FORCE_MANUAL="true"
 
-# ---------------- CLUSTER SELECTION ----------------
-if [ "$USE_EXISTING" == "false" ]; then
-    select_from_netbox "virtualization/cluster-types/" "Cluster Type" "$FORCE_MANUAL"
-    TYPE_ID=$SELECTED_ID
-    [ -z "$TYPE_ID" ] && TYPE_ID=$(curl -sk -X POST "$NETBOX_URL/virtualization/cluster-types/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"name\":\"$SELECTED_NAME\",\"slug\":\"$(slugify "$SELECTED_NAME")\"}" | jq -r '.id')
-
-    select_from_netbox "virtualization/cluster-groups/" "Cluster Group" "$FORCE_MANUAL"
-    GROUP_ID=$SELECTED_ID
-    [ -z "$GROUP_ID" ] && GROUP_ID=$(curl -sk -X POST "$NETBOX_URL/virtualization/cluster-groups/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"name\":\"$SELECTED_NAME\",\"slug\":\"$(slugify "$SELECTED_NAME")\"}" | jq -r '.id')
-
-    select_from_netbox "virtualization/clusters/" "Cluster" "$FORCE_MANUAL"
-    CLUSTER_ID=$SELECTED_ID
-    CLUSTER_NAME=$SELECTED_NAME
-    [ -z "$CLUSTER_ID" ] && CLUSTER_ID=$(curl -sk -X POST "$NETBOX_URL/virtualization/clusters/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"name\":\"$CLUSTER_NAME\",\"slug\":\"$(slugify "$CLUSTER_NAME")\",\"type\":$TYPE_ID,\"group\":$GROUP_ID,\"site\":$SITE_ID}" | jq -r '.id')
+# Final check for Cluster ID
+if [ -z "$CLUSTER_ID" ] || [ "$CLUSTER_ID" == "null" ]; then
+    echo "❌ Error: Failed to obtain a valid Cluster ID. Check your Netbox logs or permissions."
+    exit 1
 fi
 
 # ---------------- FINAL SYNC ----------------
 echo -e "\nSyncing to Netbox..."
 
 # 1. Device
-DEVICE_ID=$EXISTING_DEV_ID
-if [ -z "$DEVICE_ID" ]; then
-    DEVICE_ID=$(curl -sk -X POST "$NETBOX_URL/dcim/devices/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"name\":\"$HOSTNAME\",\"device_type\":$DEVICETYPE_ID,\"role\":$DEVICEROLE_ID,\"site\":$SITE_ID,\"cluster\":$CLUSTER_ID}" | jq -r '.id')
+if [ -z "$EXISTING_DEV_ID" ] || [ "$EXISTING_DEV_ID" == "null" ]; then
+    DEVICE_ID=$(curl -sk -X POST "$NETBOX_URL/dcim/devices/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+        -d "{\"name\":\"$HOSTNAME\",\"device_type\":$DEVICETYPE_ID,\"role\":$DEVICEROLE_ID,\"site\":$SITE_ID,\"cluster\":$CLUSTER_ID}" | jq -r '.id')
 else
+    DEVICE_ID=$EXISTING_DEV_ID
     curl -sk -X PATCH "$NETBOX_URL/dcim/devices/$DEVICE_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"cluster\":$CLUSTER_ID}" > /dev/null
 fi
 
-# 2. Interface Sync
+# 2. Interface
 INT_JSON=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/dcim/interfaces/?device_id=$DEVICE_ID")
 INTERFACE_ID=$(echo "$INT_JSON" | jq -r ".results[] | select(.name == \"$IFACE\") | .id // empty")
 
-if [ -z "$INTERFACE_ID" ]; then
-    echo "Creating Interface $IFACE..."
-    INTERFACE_ID=$(curl -sk -X POST "$NETBOX_URL/dcim/interfaces/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"device\":$DEVICE_ID,\"name\":\"$IFACE\",\"type\":\"1000base-t\"}" | jq -r '.id')
+if [ -z "$INTERFACE_ID" ] || [ "$INTERFACE_ID" == "null" ]; then
+    INTERFACE_ID=$(curl -sk -X POST "$NETBOX_URL/dcim/interfaces/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+        -d "{\"device\":$DEVICE_ID,\"name\":\"$IFACE\",\"type\":\"1000base-t\"}" | jq -r '.id')
 fi
 
-# 3. MAC Address Object Sync (Essential for NetBox 4.x)
-echo "Syncing MAC Address via L2 Object..."
-MAC_OBJ_CHECK=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/dcim/mac-addresses/?mac_address=$MAC")
-MAC_OBJ_ID=$(echo "$MAC_OBJ_CHECK" | jq -r '.results[0].id // empty')
+# 3. MAC Object
+if [ -n "$MAC" ]; then
+    MAC_OBJ_CHECK=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/dcim/mac-addresses/?mac_address=$MAC")
+    MAC_OBJ_ID=$(echo "$MAC_OBJ_CHECK" | jq -r '.results[0].id // empty')
 
-if [ -z "$MAC_OBJ_ID" ]; then
-    MAC_OBJ_ID=$(curl -sk -X POST "$NETBOX_URL/dcim/mac-addresses/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
-        -d "{\"mac_address\":\"$MAC\",\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID}" | jq -r '.id')
-else
-    curl -sk -X PATCH "$NETBOX_URL/dcim/mac-addresses/$MAC_OBJ_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
-        -d "{\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID}" > /dev/null
-fi
-
-# Link the MAC Object as Primary to the Interface
-curl -sk -X PATCH "$NETBOX_URL/dcim/interfaces/$INTERFACE_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"primary_mac_address\": $MAC_OBJ_ID}" > /dev/null
-
-# --- CLEANUP STEP ---
-echo "Cleaning up duplicate interfaces for $HOSTNAME..."
-echo "$INT_JSON" | jq -r ".results[] | select(.name != \"$IFACE\") | .id" | while read -r to_delete; do
-    if [ -n "$to_delete" ]; then
-        curl -sk -X DELETE "$NETBOX_URL/dcim/interfaces/$to_delete/" -H "Authorization: Token $NETBOX_TOKEN"
+    if [ -z "$MAC_OBJ_ID" ] || [ "$MAC_OBJ_ID" == "null" ]; then
+        MAC_OBJ_ID=$(curl -sk -X POST "$NETBOX_URL/dcim/mac-addresses/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+            -d "{\"mac_address\":\"$MAC\",\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID}" | jq -r '.id')
+    else
+        curl -sk -X PATCH "$NETBOX_URL/dcim/mac-addresses/$MAC_OBJ_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+            -d "{\"assigned_object_id\":$INTERFACE_ID}" > /dev/null
     fi
-done
+    curl -sk -X PATCH "$NETBOX_URL/dcim/interfaces/$INTERFACE_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"primary_mac_address\": $MAC_OBJ_ID}" > /dev/null
+fi
 
-# 4. IP Address
+# 4. IP Sync
 IP_ID=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/ipam/ip-addresses/?address=$(urlencode "$IPADDR")" | jq -r '.results[0].id // empty')
-if [ -z "$IP_ID" ]; then
-    IP_ID=$(curl -sk -X POST "$NETBOX_URL/ipam/ip-addresses/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"address\":\"$IPADDR\",\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID,\"status\":\"active\"}" | jq -r '.id')
+if [ -z "$IP_ID" ] || [ "$IP_ID" == "null" ]; then
+    IP_ID=$(curl -sk -X POST "$NETBOX_URL/ipam/ip-addresses/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
+        -d "{\"address\":\"$IPADDR\",\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID,\"status\":\"active\"}" | jq -r '.id')
 else
     curl -sk -X PATCH "$NETBOX_URL/ipam/ip-addresses/$IP_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"assigned_object_id\":$INTERFACE_ID}" > /dev/null
 fi
 
-# Primary IP set
 curl -sk -X PATCH "$NETBOX_URL/dcim/devices/$DEVICE_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"primary_ip4\":$IP_ID}" > /dev/null
 
 echo "------------------------------------------------"
-echo "✅ Finished! $HOSTNAME updated. MAC $MAC is linked via Object ID $MAC_OBJ_ID"
+echo "✅ Finished! $HOSTNAME is updated."
+echo "Linked to Cluster ID: $CLUSTER_ID"
 echo "------------------------------------------------"
