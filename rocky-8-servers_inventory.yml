@@ -4,20 +4,19 @@ api_endpoint: https://192.168.253.134
 token: FZRvENMkPG8xXTKdP9ewxmGtSgLuN8xaAMHkvcgr
 validate_certs: false
 
-# 1. Skip the schema fetch entirely
-fetch_all: true
+# FORCED BYPASS: Explicitly define resources so it doesn't "ask" the schema what exists
+fetch_all: false
+resources:
+  - devices
+
+# These must be false to stop the schema-based validation
 validate_query_filters: false
+config_context: false
 
-# 2. Simplified Metadata (Fetching interfaces can sometimes slow it down)
-config_context: true
-primary_ip: true
-
-# 3. Filtering logic
 query_filters:
   - status: "active"
   - cluster_id: 1
 
-# 4. Host Variable Mapping
 compose:
   ansible_host: primary_ip4.address.split('/')[0]
   primary_ip4: primary_ip4.address.split('/')[0]
