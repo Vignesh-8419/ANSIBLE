@@ -1,9 +1,15 @@
 ---
 plugin: netbox.netbox.nb_inventory
 api_endpoint: https://192.168.253.134
+token: FZRvENMkPG8xXTKdP9ewxmGtSgLuN8xaAMHkvcgr
 validate_certs: false
 
-# Pull full host metadata
+# 1. STOP THE SCHEMA FETCH
+# This is the most important setting for low-memory servers
+validate_query_filters: false
+fetch_all: true
+
+# 2. Limit the data being pulled to the bare minimum
 config_context: true
 interfaces: true
 primary_ip: true
@@ -13,9 +19,10 @@ group_by:
   - status
   - tags
 
-device_query_filters:
-  - status: active
-  - cluster_id: '2'
+# 3. Use your verified filter
+query_filters:
+  - status: "active"
+  - cluster_id: 2
 
 compose:
   ansible_host: primary_ip4.address.split('/')[0]
