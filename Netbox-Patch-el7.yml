@@ -11,23 +11,7 @@
         nb_ctx: "{{ config_context[0] }}"
       when: config_context is defined
 
-    # --- PHASE 1: PREPARE STORAGE ---
-    - name: Create mount point
-      file:
-        path: "{{ nb_ctx.repo_mount_point }}"
-        state: directory
-        mode: '0755'
-
-    - name: Mount ISO share
-      mount:
-        path: "{{ nb_ctx.repo_mount_point }}"
-        src: "{{ nb_ctx.repo_mount_path }}"
-        fstype: cifs
-        opts: "username={{ nb_ctx.iso_share_user }},password={{ nb_ctx.iso_share_pass }},rw,vers=3.0"
-        state: mounted
-      when: ansible_mounts | selectattr('mount', 'equalto', nb_ctx.repo_mount_point) | list | length == 0
-
-    # --- PHASE 2: CLEAN & RE-CREATE REPOS ---
+    # --- PHASE 1: CLEAN & RE-CREATE REPOS ---
     - name: Find existing CentOS repo files
       find:
         paths: /etc/yum.repos.d/
@@ -42,17 +26,17 @@
 
     - name: Generate Repos from NetBox Data
       copy:
+        dest: "/etc/yum.repos.d/{{ item.id }}.repo"
         content: |
           [{{ item.id }}]
           name={{ item.name }}
-          baseurl=file://{{ nb_ctx.repo_mount_point }}/{{ item.folder }}
+          baseurl={{ nb_ctx.httpd_server_url }}{{ item.folder }}/
           enabled=1
           gpgcheck=0
-        dest: "/etc/yum.repos.d/{{ item.id }}.repo"
       loop: "{{ nb_ctx.repositories }}"
       when: nb_ctx.repositories is defined
 
-    # --- PHASE 3: UPDATE EXECUTION ---
+    # --- PHASE 2: UPDATE EXECUTION ---
     - name: Refresh Cache and Update
       block:
         - name: Clean YUM cache
