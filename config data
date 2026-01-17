@@ -114,3 +114,26 @@ centostorocky-context
         }
     ]
 }
+
+
+patch-el8-context
+{
+  "httpd_server_url": "http://192.168.253.136/repo/",
+  "repositories": [
+    {
+      "id": "rocky8-baseos",
+      "name": "Rocky Linux 8 BaseOS",
+      "folder": "rocky8/BaseOS"
+    },
+    {
+      "id": "rocky8-appstream",
+      "name": "Rocky Linux 8 AppStream",
+      "folder": "rocky8/Appstream"
+    },
+    {
+      "id": "rocky8-rhel-installed",
+      "name": "Rocky Linux 8 Installed RHEL",
+      "folder": "installed_rhel8"
+    }
+  ]
+}
