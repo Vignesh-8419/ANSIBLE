@@ -83,7 +83,7 @@ PEPPER=$(python3 netbox/generate_secret_key.py)
 cat <<EOF > netbox/netbox/configuration.py
 import os
 
-ALLOWED_HOSTS = ['$FQDN','IPADDRESS']
+ALLOWED_HOSTS = ['$FQDN','$IPADDRESS']
 DEBUG = False
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -211,6 +211,7 @@ systemctl enable --now netbox netbox-worker nginx
 log "----------------------------------------"
 log "NetBox CLEAN INSTALL COMPLETE"
 log "URL: https://$FQDN"
+log "URL: https://$IPADDRESS"
 log "User: netadmin"
 log "Pass: Netbox12345678"
 log "----------------------------------------"
