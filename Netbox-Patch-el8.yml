@@ -1,0 +1,80 @@
+---
+- name: Dynamic Patching Rocky Linux 8 via NetBox
+  hosts: all
+  become: true
+  gather_facts: yes
+
+  tasks:
+    # --- PHASE 0: LOAD DATA ---
+    - name: Load NetBox Context
+      set_fact:
+        nb_ctx: "{{ config_context[0] }}"
+      when: config_context is defined
+
+    # --- PHASE 1: REPO MANAGEMENT ---
+    - name: Find existing repo files
+      find:
+        paths: /etc/yum.repos.d/
+        patterns: '*.repo'
+      register: existing_repos
+
+    - name: Backup/Remove old repos
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ existing_repos.files }}"
+      # Be careful: ensure your NetBox context provides ALL necessary repos 
+      # (BaseOS, AppStream, and Extras) or this will break dependencies.
+
+    - name: Generate Rocky 8 Repos from NetBox Data
+      copy:
+        dest: "/etc/yum.repos.d/{{ item.id }}.repo"
+        content: |
+          [{{ item.id }}]
+          name={{ item.name }}
+          baseurl={{ nb_ctx.httpd_server_url }}{{ item.folder }}/
+          enabled=1
+          gpgcheck=0
+          # Rocky 8 specific optimization
+          module_hotfixes=true
+      loop: "{{ nb_ctx.repositories }}"
+      when: nb_ctx.repositories is defined
+
+    # --- PHASE 2: UPDATE EXECUTION ---
+    - name: Patching Operations
+      block:
+        - name: Clean DNF cache
+          dnf:
+            forget_cache: yes
+            update_cache: yes
+
+        - name: Update all packages to latest
+          dnf:
+            name: '*'
+            state: latest
+            # Equivalent to skip_broken in dnf
+            nobest: yes
+          register: dnf_result
+
+        - name: Check if a reboot is required
+          # Checks if any installed package marked "reboot suggested"
+          shell: dnf needs-restarting -r
+          register: reboot_required
+          failed_when: false
+          changed_when: false
+
+        - name: Reboot if kernel or system-libs updated
+          reboot:
+            reboot_timeout: 600
+          when: dnf_result.changed or reboot_required.rc != 0
+
+    # --- PHASE 3: VERIFICATION ---
+    - name: Check Kernel and OS Version
+      shell: |
+        echo "OS: $(cat /etc/redhat-release)"
+        echo "Kernel: $(uname -r)"
+      register: system_info
+
+    - name: Final Status
+      debug:
+        msg: "Patching Successful. Details: {{ system_info.stdout_lines }}"
