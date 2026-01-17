@@ -3,15 +3,14 @@
   hosts: all
   become: yes
   vars:
-    # File Paths
-    centos_vault_repo_file: /etc/yum.repos.d/CentOS-Base.repo
+    centos_vault_repo_file: /etc/yum.repos.d/vault.repo
     elevate_repo_file: /etc/yum.repos.d/elevate.repo
     rocky_repo_file: /etc/leapp/files/leapp_upgrade_repositories.repo
     centos_patch_repo_file: /etc/yum.repos.d/centos-patch.repo
     ansible_python_interpreter: /usr/bin/python2.7
 
   pre_tasks:
-    - name: Load and normalize NetBox config context
+    - name: Load Config Context from NetBox/AWX
       set_fact:
         nb_ctx: "{{ config_context[0] }}"
       when: config_context is defined and config_context | length > 0
@@ -21,291 +20,173 @@
       register: kernel_version
       changed_when: false
 
-    - name: Show message if already Rocky
-      debug:
-        msg: "✅ Server is already Rocky Linux 8 (kernel {{ kernel_version.stdout }})"
-      when: kernel_version.stdout is search("4.18.")
-
-    - name: Stop play if already Rocky
+    - name: Stop play if already Rocky Linux 8
       meta: end_play
       when: kernel_version.stdout is search("4.18.")
 
   tasks:
-    # --- PHASE 1: CONNECTIVITY & REPO CLEANUP ---
+    # --- PHASE 1: CONNECTIVITY & CLEANUP ---
     - name: Check DNS resolution
-      command: nslookup "{{ nb_ctx.ansible_hostname | default('ansible-server-01.vgs.com') }}"
+      command: nslookup "{{ nb_ctx.ansible_hostname }}"
       register: nslookup_result
       ignore_errors: yes
       changed_when: false
 
     - name: Configure DNS resolver
       copy:
-        content: "nameserver {{ nb_ctx.dns_primary | default('192.168.253.151') }}"
+        content: "nameserver {{ nb_ctx.dns_primary }}"
         dest: /etc/resolv.conf
       when: nslookup_result.rc != 0
 
-    - name: Find CentOS YUM repo files
-      find:
-        paths: /etc/yum.repos.d/
-        patterns: 'CentOS-*'
-      register: centos_repo_files
+    - name: Remove original CentOS YUM repo files
+      shell: "rm -f /etc/yum.repos.d/CentOS-*"
+      warn: false
 
-    - name: Remove CentOS YUM repo files
-      file:
-        path: "{{ item.path }}"
-        state: absent
-      loop: "{{ centos_repo_files.files }}"
-
-    # --- PHASE 2: INITIAL PATCHING REPOS ---
+    # --- PHASE 2: REPOS & INITIAL PATCHING ---
     - name: Create CentOS 7 patch repo
       copy:
         dest: "{{ centos_patch_repo_file }}"
         content: |
           [patch]
           name=patch-repo
-          baseurl=http://{{ nb_ctx.http_server_name | default('http-server-01') }}/repo/installed_rhel7
+          baseurl={{ nb_ctx.httpd_server_url }}installed_rhel7
           enabled=1
           gpgcheck=0
 
-    - name: Create vault.repo
+    - name: Create vault.repo using context loop
       copy:
-        dest: /etc/yum.repos.d/vault.repo
+        dest: "{{ centos_vault_repo_file }}"
         content: |
-          [base]
-          name=CentOS Vault Base
-          baseurl=https://vault.centos.org/7.9.2009/os/x86_64/
+          {% for repo in nb_ctx.vault_repositories %}
+          [{{ repo.id }}]
+          name={{ repo.name }}
+          baseurl={{ repo.url }}
           enabled=1
           gpgcheck=1
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 
-          [updates]
-          name=CentOS Vault Updates
-          baseurl=https://vault.centos.org/7.9.2009/updates/x86_64/
-          enabled=1
-          gpgcheck=1
-          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+          {% endfor %}
 
-          [extras]
-          name=CentOS Vault Extras
-          baseurl=https://vault.centos.org/7.9.2009/extras/x86_64/
-          enabled=1
-          gpgcheck=1
-          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
-
-    - name: Remove libsolv if installed
+    - name: Remove libsolv and libcomps to prevent conflicts
       yum:
-        name: 
-          - libsolv-0.6.34-4.el7.x86_64
-          - libcomps.x86_64
+        name: ['libsolv-0.6.34-4.el7.x86_64', 'libcomps.x86_64']
         state: absent
 
-    - name: Make resolv.conf mutable before upgrade
+    - name: Make resolv.conf mutable
       command: chattr -i /etc/resolv.conf
 
-    - name: Install SELinux python bindings for Rocky 8
-      dnf:
-        name: python3-libselinux
-        state: present
-      when: ansible_distribution_major_version == "8"
-
-    - name: Get current kernel version
-      shell: uname -r
-      register: current_kernel
-      changed_when: false
-
-    - name: Set patch_needed based on kernel version
+    - name: Set patch_needed fact
       set_fact:
-        patch_needed: "{{ current_kernel.stdout.strip() != '3.10.0-1160.119.1.el7.x86_64' }}"
+        patch_needed: "{{ kernel_version.stdout.strip() != '3.10.0-1160.119.1.el7.x86_64' }}"
 
-    - name: Show current kernel and patch need
-      debug:
-        msg: "Current kernel: {{ current_kernel.stdout.strip() }} | Patch needed: {{ patch_needed }}"
-
-    - name: Update all CentOS 7 packages
+    - name: Update CentOS 7 packages
       yum:
         name: "*"
         state: latest
       when: patch_needed
 
-    - name: Reboot to reflect updates
+    - name: Reboot to apply patches
       reboot:
-        msg: "Reboot after applying CentOS 7 patches"
-        connect_timeout: 5
         reboot_timeout: 600
-        pre_reboot_delay: 5
-        post_reboot_delay: 30
       when: patch_needed
 
-    # --- PHASE 3: ELEVATE & LEAPP PREP ---
-    - name: Move existing .repo files to backup
+    # --- PHASE 3: ELEVATE PREP ---
+    - name: Backup existing repo files
       shell: mkdir -p /etc/yum.repos.d/backup && mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/
       ignore_errors: yes
 
-    - name: Create elevate.repo
+    - name: Create elevate and base repos
       copy:
         dest: "{{ elevate_repo_file }}"
         content: |
           [elevate]
           name=ELevate-repo
-          baseurl=http://{{ nb_ctx.http_server_name | default('http-server-01') }}/repo/elevate/
+          baseurl={{ nb_ctx.httpd_server_url }}elevate/
           enabled=1
           gpgcheck=0
- 
+
           [baseos]
           name=base-repo
-          baseurl=http://{{ nb_ctx.http_server_name | default('http-server-01') }}/repo/centos/
+          baseurl={{ nb_ctx.httpd_server_url }}centos/
           enabled=1
           gpgcheck=0
 
-          [basevault]
-          name=CentOS Vault Base
-          baseurl=https://vault.centos.org/7.9.2009/os/x86_64/
-          enabled=1
-          gpgcheck=1
-          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
-
-          [updatesvault]
-          name=CentOS Vault Updates
-          baseurl=https://vault.centos.org/7.9.2009/updates/x86_64/
-          enabled=1
-          gpgcheck=1
-          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
-          
-          [extrasvault]
-          name=CentOS Vault Extras
-          baseurl=https://vault.centos.org/7.9.2009/extras/x86_64/
-          enabled=1
-          gpgcheck=1
-          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
-
-    - name: Check if yum-complete-transaction is pending
+    - name: Fix pending yum transactions
       shell: yum-complete-transaction --cleanup-only --quiet --skip-broken; echo $?
       register: yum_pending
       changed_when: false
 
-    - name: Run yum-complete-transaction if pending
+    - name: Run yum-complete-transaction if needed
       command: yum-complete-transaction -y
       when: yum_pending.stdout != "0"
 
-    - name: Download deltarpm package from CentOS Vault
-      get_url:
-        url: http://vault.centos.org/7.9.2009/os/x86_64/Packages/deltarpm-3.6-3.el7.x86_64.rpm
-        dest: /tmp/deltarpm-3.6-3.el7.x86_64.rpm
-        mode: '0644'
-      ignore_errors: yes
+    - name: Install deltarpm manually (Vault backup)
+      shell: |
+        curl -o /tmp/deltarpm.rpm http://vault.centos.org/7.9.2009/os/x86_64/Packages/deltarpm-3.6-3.el7.x86_64.rpm
+        rpm -ivh /tmp/deltarpm.rpm || true
 
-    - name: Retry - Download deltarpm package from CentOS Vault
-      get_url:
-        url: http://vault.centos.org/7.9.2009/os/x86_64/Packages/deltarpm-3.6-3.el7.x86_64.rpm
-        dest: /tmp/deltarpm-3.6-3.el7.x86_64.rpm
-        mode: '0644'
-      ignore_errors: yes
-
-    - name: Install deltarpm package
-      command: rpm -ivh /tmp/deltarpm-3.6-3.el7.x86_64.rpm
-      args:
-        creates: /usr/bin/applydeltarpm
-
-    - name: Reinstall elevate and leapp packages after libcomps fix
+    - name: Install Leapp and Rocky data
       yum:
-        name:
-          - leapp-upgrade
-          - leapp-data-rocky
+        name: ['leapp-upgrade', 'leapp-data-rocky']
         state: present
 
-    # --- PHASE 4: LEAPP UPGRADE REPO LOCKING ---
-    - name: Backup existing leapp upgrade repo file
-      copy:
-        src: /etc/leapp/files/leapp_upgrade_repositories.repo
-        dest: /etc/leapp/files/leapp_upgrade_repositories.repo.bak
-        remote_src: yes
-        backup: yes
-
-    - name: Create Rocky Linux 8 repo for leapp upgrade
+    # --- PHASE 4: REPO LOCKING & CLEANUP ---
+    - name: Create Rocky Linux 8 repo for Leapp
       copy:
         dest: "{{ rocky_repo_file }}"
         content: |
           [rocky8-baseos]
           name=Rocky Linux 8 - BaseOS
-          baseurl=http://{{ nb_ctx.http_server_name | default('http-server-01') }}/repo/rocky8/BaseOS/
+          baseurl={{ nb_ctx.httpd_server_url }}rocky8/BaseOS/
           gpgcheck=0
           enabled=1
-          
+
           [rocky8-appstream]
           name=Rocky Linux 8 - AppStream
-          baseurl=http://{{ nb_ctx.http_server_name | default('http-server-01') }}/repo/rocky8/AppStream/
+          baseurl={{ nb_ctx.httpd_server_url }}rocky8/AppStream/
           gpgcheck=0
           enabled=1
 
-    - name: Make leapp_upgrade_repositories.repo immutable to avoid changes
+    - name: Lock Leapp repository file
       command: chattr +i {{ rocky_repo_file }}
 
-    - name: Unmount repo mount if mounted
-      mount:
-        path: "{{ nb_ctx.repo_mount_point | default('/var/www/html/repo') }}"
-        state: unmounted
-      ignore_errors: yes
-
-    - name: Remove repo mount entry from /etc/fstab
-      lineinfile:
-        path: /etc/fstab
-        regexp: "{{ (nb_ctx.repo_mount_path | default('//192.168.31.87/ISO')) | regex_escape() }}"
-        state: absent
-
-    # --- PHASE 5: UPGRADE EXECUTION ---
-    - name: Run leapp preupgrade
+    # --- PHASE 5: UPGRADE ---
+    - name: Run Leapp Preupgrade
       command: leapp preupgrade
       register: preupgrade_result
       ignore_errors: true
 
-    - name: Set SELinux to permissive (setenforce 0)
+    - name: Set SELinux to permissive
       command: setenforce 0
       ignore_errors: yes
 
-    - name: Show preupgrade result
-      debug:
-        var: preupgrade_result.stdout_lines
+    - name: Remove incompatible modules
+      shell: "modprobe -r floppy || true; modprobe -r pata_acpi || true"
 
-    - name: Remove incompatible kernel modules
-      shell: |
-        modprobe -r floppy || true
-        modprobe -r pata_acpi || true
-
-    - name: Answer leapp questions (authselect, PAM)
+    - name: Answer Leapp confirmation questions
       shell: |
         leapp answer --section authselect_check.confirm=True
         leapp answer --section remove_pam_pkcs11_module_check.confirm=True
 
-    - name: Make leapp_upgrade_repositories.repo mutable before upgrade
-      command: chattr -i {{ rocky_repo_file }}
-
-    - name: Run leapp upgrade
-      command: leapp upgrade
+    - name: Unlock repo and run Leapp Upgrade
+      shell: |
+        chattr -i {{ rocky_repo_file }}
+        leapp upgrade
       register: upgrade_result
       ignore_errors: true
 
-    - name: Show upgrade result
-      debug:
-        var: upgrade_result.stdout_lines
-
-    # --- PHASE 6: POST-UPGRADE ---
-    - name: Reboot into Rocky Linux
+    # --- PHASE 6: POST-MIGRATION ---
+    - name: Final Reboot into Rocky 8
       reboot:
         reboot_timeout: 180000
       when: upgrade_result.rc == 0
 
-    - name: Ensure Python 3 is installed on Rocky after reboot
+    - name: Verify Python 3 presence
       raw: |
-        if [ ! -x /usr/bin/python3 ]; then
-          dnf install -y python3
-        fi
+        if [ ! -x /usr/bin/python3 ]; then dnf install -y python3; fi
       changed_when: false
 
-    - name: Switch interpreter to Python 3
-      set_fact:
-        ansible_python_interpreter: /usr/bin/python3
-
-    - name: Verify OS after reboot
+    - name: Final OS Verification
       shell: cat /etc/os-release
       register: os_release
       vars:
