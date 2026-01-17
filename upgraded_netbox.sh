@@ -140,7 +140,7 @@ After=network.target
 [Service]
 Environment="DJANGO_SETTINGS_MODULE=netbox.settings"
 WorkingDirectory=$NETBOX_ROOT/netbox
-ExecStart=$NETBOX_ROOT/venv/bin/gunicorn --bind 127.0.0.1:8001 --workers 3 netbox.wsgi
+ExecStart=$NETBOX_ROOT/venv/bin/gunicorn --bind 127.0.0.1:8001 --timeout 120 --workers 3 netbox.wsgi
 Restart=always
 
 [Install]
