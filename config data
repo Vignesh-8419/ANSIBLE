@@ -80,8 +80,8 @@ repo-config-context
 
 centostorocky-context
 {
-    "dns_primary": "192.168.253.151",
     "ansible_hostname": "ansible-server-01.vgs.com",
+    "dns_primary": "192.168.253.151",
     "httpd_server_url": "http://192.168.253.136/repo/",
     "vault_repositories": [
         {
