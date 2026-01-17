@@ -1,22 +1,25 @@
 - name: Configure HTTP server and prepare Rocky 8 repo
   hosts: all
   become: yes
+  gather_facts: yes
+
+  vars:
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
 
   tasks:
-    - name: Discover Context Variables
+    # --- PHASE 0: PREPARE DATA ---
+    # This matches your working script to extract the data from the list
+    - name: Load and normalize config context
       set_fact:
-        # This looks for the value in the top level, OR inside any of your context objects
-        m_path: "{{ repo_mount_path | default(patch_context.repo_mount_path | default(pxe_rockyos_context.repo_mount_path | default(''))) }}"
-        m_point: "{{ repo_mount_point | default(patch_context.repo_mount_point | default(pxe_rockyos_context.repo_mount_point | default(''))) }}"
-        m_user: "{{ iso_share_user | default(patch_context.iso_share_user | default(pxe_rockyos_context.iso_share_user | default(''))) }}"
-        m_pass: "{{ iso_share_pass | default(patch_context.iso_share_pass | default(pxe_rockyos_context.iso_share_pass | default(''))) }}"
-        m_repos: "{{ repositories | default(patch_context.repositories | default([])) }}"
+        nb_ctx: "{{ config_context[0] }}"
+      when: config_context is defined and config_context | length > 0
 
     - name: Verify Variables are Populated
       fail:
-        msg: "CRITICAL: repo_mount_path or repo_mount_point is empty. Check AWX Extra Vars."
-      when: m_path == "" or m_point == ""
+        msg: "CRITICAL: repo_mount_path is missing from config_context. Check your JSON."
+      when: nb_ctx.repo_mount_path is not defined
 
+    # --- PHASE 1: INSTALL & PREP ---
     - name: Install required packages
       yum:
         name: [httpd, createrepo, firewalld, cifs-utils]
@@ -24,42 +27,47 @@
 
     - name: Create base mount point directory
       file:
-        path: "{{ m_point }}"
+        path: "{{ nb_ctx.repo_mount_point }}"
         state: directory
         mode: '0777'
 
     - name: Mount ISO share via CIFS
       mount:
-        path: "{{ m_point }}"
-        src: "{{ m_path }}"
+        path: "{{ nb_ctx.repo_mount_point }}"
+        src: "{{ nb_ctx.repo_mount_path }}"
         fstype: cifs
-        opts: "username={{ m_user }},password={{ m_pass }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
+        opts: "username={{ nb_ctx.iso_share_user }},password={{ nb_ctx.iso_share_pass }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
         state: mounted
 
     - name: Ensure repository subdirectories exist
       file:
-        path: "{{ m_point }}/{{ item.folder }}"
+        path: "{{ nb_ctx.repo_mount_point }}/{{ item.folder }}"
         state: directory
         mode: '0755'
-      loop: "{{ m_repos }}"
+      loop: "{{ nb_ctx.repositories }}"
 
-    - name: Configure HTTPD directory permissions
-      blockinfile:
-        path: /etc/httpd/conf/httpd.conf
-        block: |
-          <Directory "{{ m_point }}">
-              Options Indexes FollowSymLinks
-              AllowOverride None
-              Require all granted
-          </Directory>
-        marker: "# {mark} ANSIBLE MANAGED BLOCK"
-
-    - name: Enable Firewall and Start HTTPD
+    # --- PHASE 2: SERVICES ---
+    - name: Ensure firewalld and httpd are running
       service:
         name: "{{ item }}"
         state: started
         enabled: true
       loop: [firewalld, httpd]
+
+    - name: Disable SELinux immediately
+      command: setenforce 0
+      ignore_errors: yes
+
+    - name: Configure HTTPD directory permissions
+      blockinfile:
+        path: /etc/httpd/conf/httpd.conf
+        block: |
+          <Directory "{{ nb_ctx.repo_mount_point }}">
+              Options Indexes FollowSymLinks
+              AllowOverride None
+              Require all granted
+          </Directory>
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
 
     - name: Enable HTTP service in Firewall
       firewalld:
