@@ -66,3 +66,13 @@ patch-context
     "dns_primary": "192.168.253.151",
     "guest_domain": "vgs.com"
 }
+
+repo-config-context
+
+{
+    "repo_mount_path": "//192.168.31.87/ISO",
+    "repo_mount_point": "/var/www/html/repo",
+    "iso_share_user": "vigne",
+    "iso_share_pass": "Vigneshv12$",
+    "http_server_ip": "192.168.253.136",
+}
