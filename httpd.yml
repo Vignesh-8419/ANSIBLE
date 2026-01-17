@@ -66,8 +66,8 @@
 #    - name: Rebuild BaseOS metadata
 #      command: createrepo --update {{ local_repo_path }}/BaseOS/
 
-#    - name: Rebuild AppStream metadata
-#      command: createrepo --update {{ local_repo_path }}/AppStream/
+    - name: Disable selinux
+      command: setenforce 0
 
     - name: Configure HTTPD directory permissions
       blockinfile:
