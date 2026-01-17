@@ -7,6 +7,8 @@
     mount_point_1: "/var/www/html/repo"
     username: "vigne"
     password: "Vigneshv12$"
+  vars:
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
 
   tasks:
 
@@ -37,34 +39,6 @@
         name: firewalld
         state: started
         enabled: true
-
-#    - name: Create local repo directory
-#      file:
-#        path: "{{ local_repo_path }}"
-#        state: directory
-#        mode: '0755'
-
-#    - name: Create ISO mount point
-#      file:
-#        path: "{{ mount_point }}"
-#        state: directory
-#        mode: '0755'
-
-#    - name: Mount RockyOS ISO
-#      mount:
-#        path: "{{ mount_point }}"
-#        src: "{{ iso_path }}"
-#        fstype: iso9660
-#        opts: loop,ro
-#        state: mounted
-
-#    - name: Copy contents from mounted ISO to local repo
-#      command: cp -a {{ mount_point }}/. {{ local_repo_path }}/
-#     args:
-#        creates: "{{ local_repo_path }}/BaseOS"
-
-#    - name: Rebuild BaseOS metadata
-#      command: createrepo --update {{ local_repo_path }}/BaseOS/
 
     - name: Disable selinux
       command: setenforce 0
