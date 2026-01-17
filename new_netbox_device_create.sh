@@ -3,7 +3,7 @@ set -e
 
 # ---------------- CONFIG ----------------
 NETBOX_URL="https://192.168.253.134/api"
-NETBOX_TOKEN="FZRvENMkPG8xXTKdP9ewxmGtSgLuN8xaAMHkvcgr"
+NETBOX_TOKEN="d16af27a4c533af154c60b7f6687f824f60183ba"
 HDR="Content-Type: application/json"
 
 SSH_USER="root"
@@ -22,10 +22,10 @@ get_or_create() {
     local name=$2
     local extra_json=$3
     local slug=$(slugify "$name")
-    
+
     # Check if exists
     local existing_id=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/$endpoint/?name=$(urlencode "$name")" | jq -r '.results[0].id // empty')
-    
+
     if [ -n "$existing_id" ] && [ "$existing_id" != "null" ]; then
         echo "$existing_id"
     else
@@ -115,14 +115,28 @@ else
     curl -sk -X PATCH "$NETBOX_URL/dcim/devices/$DEVICE_ID/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" -d "{\"cluster\":$CLUSTER_ID}" > /dev/null
 fi
 
-# 2. Interface
-INT_JSON=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/dcim/interfaces/?device_id=$DEVICE_ID")
-INTERFACE_ID=$(echo "$INT_JSON" | jq -r ".results[] | select(.name == \"$IFACE\") | .id // empty")
+# 2. Interface Sync & Cleanup
+# ------------------------------------------------
+# Get all existing interfaces for this device
+ALL_INTS_JSON=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" "$NETBOX_URL/dcim/interfaces/?device_id=$DEVICE_ID")
+
+# Check if our current interface ($IFACE) already exists
+INTERFACE_ID=$(echo "$ALL_INTS_JSON" | jq -r ".results[] | select(.name == \"$IFACE\") | .id // empty")
 
 if [ -z "$INTERFACE_ID" ] || [ "$INTERFACE_ID" == "null" ]; then
+    echo "Creating interface: $IFACE"
     INTERFACE_ID=$(curl -sk -X POST "$NETBOX_URL/dcim/interfaces/" -H "$HDR" -H "Authorization: Token $NETBOX_TOKEN" \
         -d "{\"device\":$DEVICE_ID,\"name\":\"$IFACE\",\"type\":\"1000base-t\"}" | jq -r '.id')
 fi
+
+# CLEANUP: Delete any interfaces on this device that are NOT named $IFACE
+echo "Cleaning up old interfaces..."
+STALE_IDS=$(echo "$ALL_INTS_JSON" | jq -r ".results[] | select(.name != \"$IFACE\") | .id")
+
+for stale_id in $STALE_IDS; do
+    echo "Deleting stale interface ID: $stale_id"
+    curl -sk -X DELETE "$NETBOX_URL/dcim/interfaces/$stale_id/" -H "Authorization: Token $NETBOX_TOKEN"
+done
 
 # 3. MAC Object
 if [ -n "$MAC" ]; then
