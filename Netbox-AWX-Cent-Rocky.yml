@@ -95,7 +95,12 @@
       shell: mkdir -p /etc/yum.repos.d/backup && mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/
       ignore_errors: yes
 
-    - name: Create elevate and base repos
+# --- PHASE 3: ELEVATE PREP ---
+    - name: Backup existing repo files
+      shell: mkdir -p /etc/yum.repos.d/backup && mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/
+      ignore_errors: yes
+
+    - name: Create elevate, base, and patch repos for Leapp installation
       copy:
         dest: "{{ elevate_repo_file }}"
         content: |
@@ -108,6 +113,12 @@
           [baseos]
           name=base-repo
           baseurl={{ nb_ctx.httpd_server_url }}centos/
+          enabled=1
+          gpgcheck=0
+
+          [patch-temp]
+          name=patch-repo-temp
+          baseurl={{ nb_ctx.httpd_server_url }}installed_rhel7
           enabled=1
           gpgcheck=0
 
