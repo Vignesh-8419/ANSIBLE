@@ -67,8 +67,3 @@
         permanent: true
         state: enabled
         immediate: true
-
-    - name: Run createrepo
-      command: "createrepo {{ m_point }}/{{ item.folder }}"
-      loop: "{{ m_repos }}"
-      when: m_repos | length > 0
