@@ -47,24 +47,25 @@ pxe-rockyos-context
 
 patch-context
 {
-    "repo_mount_path": "//192.168.31.87/ISO",
-    "repo_mount_point": "/var/www/html/repo",
-    "iso_share_user": "vigne",
+    "dns_primary": "192.168.253.151",
+    "guest_domain": "vgs.com",
+    "httpd_server_url": "http://192.168.253.136/repo/",
     "iso_share_pass": "Vigneshv12$",
+    "iso_share_user": "vigne",
+    "repo_mount_path": "//192.168.29.241/ISO",
+    "repo_mount_point": "/var/www/html/repo",
     "repositories": [
         {
+            "folder": "centos",
             "id": "base",
-            "name": "CentOS Base Repo",
-            "folder": "centos"
+            "name": "CentOS Base Repo"
         },
         {
+            "folder": "installed_rhel7",
             "id": "patch",
-            "name": "CentOS Patch Repo",
-            "folder": "installed_rhel7"
+            "name": "CentOS Patch Repo"
         }
-    ],
-    "dns_primary": "192.168.253.151",
-    "guest_domain": "vgs.com"
+    ]
 }
 
 repo-config-context
