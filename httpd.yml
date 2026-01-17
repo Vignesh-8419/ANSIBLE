@@ -3,16 +3,27 @@
   become: yes
 
   vars:
-    # This maps the keys from your "patch-context" JSON into the nb_ctx object
+    # This maps your "patch-context" JSON keys to the nb_ctx object style
     nb_ctx:
-      repo_mount: "{{ repo_mount_path | default(repo_mount_path) }}"
-      mount_point: "{{ repo_mount_point | default(repo_mount_point) }}"
-      iso_user: "{{ iso_share_user | default(iso_share_user) }}"
-      iso_pass: "{{ iso_share_pass | default(iso_share_pass) }}"
+      repo_mount: "{{ repo_mount_path }}"
+      mount_point: "{{ repo_mount_point }}"
+      iso_user: "{{ iso_share_user }}"
+      iso_pass: "{{ iso_share_pass }}"
+      # Accessing the list of repositories from your JSON
+      repo_list: "{{ repositories }}"
       ssh_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
   tasks:
-    - name: Create mount point directory for CIFS share
+    - name: Install required packages
+      yum:
+        name:
+          - httpd
+          - createrepo
+          - firewalld
+          - cifs-utils
+        state: present
+
+    - name: Create base mount point directory
       file:
         path: "{{ nb_ctx.mount_point }}"
         state: directory
@@ -26,13 +37,12 @@
         opts: "username={{ nb_ctx.iso_user }},password={{ nb_ctx.iso_pass }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
         state: mounted
 
-    - name: Install required packages
-      yum:
-        name:
-          - httpd
-          - createrepo
-          - firewalld
-        state: present
+    - name: Ensure repository subdirectories exist
+      file:
+        path: "{{ nb_ctx.mount_point }}/{{ item.folder }}"
+        state: directory
+        mode: '0755'
+      loop: "{{ nb_ctx.repo_list }}"
 
     - name: Ensure firewalld is running
       service:
@@ -40,7 +50,7 @@
         state: started
         enabled: true
 
-    - name: Disable selinux
+    - name: Disable SELinux immediately
       command: setenforce 0
       ignore_errors: yes
 
@@ -48,7 +58,7 @@
       blockinfile:
         path: /etc/httpd/conf/httpd.conf
         block: |
-          <Directory "/var/www/html">
+          <Directory "{{ nb_ctx.mount_point }}">
               Options Indexes FollowSymLinks
               AllowOverride None
               Require all granted
@@ -70,3 +80,8 @@
         name: httpd
         state: started
         enabled: true
+
+    - name: Run createrepo on repository folders
+      command: "createrepo {{ nb_ctx.mount_point }}/{{ item.folder }}"
+      loop: "{{ nb_ctx.repo_list }}"
+      tags: update_repo
