@@ -39,13 +39,6 @@
         opts: "username={{ nb_ctx.iso_share_user }},password={{ nb_ctx.iso_share_pass }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
         state: mounted
 
-    - name: Ensure repository subdirectories exist
-      file:
-        path: "{{ nb_ctx.repo_mount_point }}/{{ item.folder }}"
-        state: directory
-        mode: '0755'
-      loop: "{{ nb_ctx.repositories }}"
-
     # --- PHASE 2: SERVICES ---
     - name: Ensure firewalld and httpd are running
       service:
