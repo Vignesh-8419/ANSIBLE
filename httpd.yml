@@ -3,27 +3,27 @@
   become: yes
 
   vars:
-    repo_mount: "//192.168.31.87/ISO"
-    mount_point_1: "/var/www/html/repo"
-    username: "vigne"
-    password: "Vigneshv12$"
-  vars:
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+    # This mirrors your existing script structure
+    nb_ctx:
+      repo_mount: "{{ repo_mount_path }}"
+      mount_point: "{{ repo_mount_point }}"
+      iso_user: "{{ iso_share_user }}"
+      iso_pass: "{{ iso_share_pass }}"
+      ssh_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
   tasks:
-
     - name: Create mount point directory for CIFS share
       file:
-        path: "{{ mount_point_1 }}"
+        path: "{{ nb_ctx.mount_point }}"
         state: directory
         mode: '0777'
 
     - name: Mount ISO share via CIFS
       mount:
-        path: "{{ mount_point_1 }}"
-        src: "{{ repo_mount }}"
+        path: "{{ nb_ctx.mount_point }}"
+        src: "{{ nb_ctx.repo_mount }}"
         fstype: cifs
-        opts: "username={{ username }},password={{ password }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
+        opts: "username={{ nb_ctx.iso_user }},password={{ nb_ctx.iso_pass }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
         state: mounted
 
     - name: Install required packages
@@ -42,6 +42,7 @@
 
     - name: Disable selinux
       command: setenforce 0
+      ignore_errors: yes
 
     - name: Configure HTTPD directory permissions
       blockinfile:
