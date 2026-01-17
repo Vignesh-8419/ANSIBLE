@@ -3,6 +3,7 @@ set -e
 
 # ---------------- CONFIGURATION ----------------
 FQDN="rocky-08-02.vgs.com"
+IPADDRESS="192.168.253.134"
 NETBOX_VERSION="v4.4.9"
 
 DB_NAME="netbox"
@@ -82,7 +83,7 @@ PEPPER=$(python3 netbox/generate_secret_key.py)
 cat <<EOF > netbox/netbox/configuration.py
 import os
 
-ALLOWED_HOSTS = ['$FQDN']
+ALLOWED_HOSTS = ['$FQDN','IPADDRESS']
 DEBUG = False
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
