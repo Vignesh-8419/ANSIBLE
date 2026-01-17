@@ -82,6 +82,7 @@ centostorocky-context
 {
     "ansible_hostname": "ansible-server-01.vgs.com",
     "dns_primary": "192.168.253.151",
+    "guest_domain": "vgs.com",
     "httpd_server_url": "http://192.168.253.136/repo/",
     "vault_repositories": [
         {
@@ -98,6 +99,18 @@ centostorocky-context
             "id": "extras",
             "name": "CentOS Vault Extras",
             "url": "https://vault.centos.org/7.9.2009/extras/x86_64/"
+        }
+    ],
+    "rocky8_repos": [
+        {
+            "id": "rocky8-baseos",
+            "name": "Rocky Linux 8 - BaseOS",
+            "folder": "rocky8/BaseOS/"
+        },
+        {
+            "id": "rocky8-appstream",
+            "name": "Rocky Linux 8 - AppStream",
+            "folder": "rocky8/AppStream/"
         }
     ]
 }
