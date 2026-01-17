@@ -48,6 +48,7 @@
           dnf:
             name: '*'
             state: latest
+            skip_broken: yes
             update_cache: yes
             nobest: yes
           register: dnf_result
