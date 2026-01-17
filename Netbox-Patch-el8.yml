@@ -1,5 +1,5 @@
 ---
-- name: Dynamic Patching Rocky Linux 8 via NetBox
+- name: Dynamic Patching Rocky Linux 8 via NetBox Context
   hosts: all
   become: true
   gather_facts: yes
@@ -10,6 +10,7 @@
       set_fact:
         nb_ctx: "{{ config_context[0] }}"
       when: config_context is defined
+      tags: always
 
     # --- PHASE 1: REPO MANAGEMENT ---
     - name: Find existing repo files
@@ -18,13 +19,11 @@
         patterns: '*.repo'
       register: existing_repos
 
-    - name: Backup/Remove old repos
+    - name: Remove old repos to ensure clean source
       file:
         path: "{{ item.path }}"
         state: absent
       loop: "{{ existing_repos.files }}"
-      # Be careful: ensure your NetBox context provides ALL necessary repos 
-      # (BaseOS, AppStream, and Extras) or this will break dependencies.
 
     - name: Generate Rocky 8 Repos from NetBox Data
       copy:
@@ -35,7 +34,6 @@
           baseurl={{ nb_ctx.httpd_server_url }}{{ item.folder }}/
           enabled=1
           gpgcheck=0
-          # Rocky 8 specific optimization
           module_hotfixes=true
       loop: "{{ nb_ctx.repositories }}"
       when: nb_ctx.repositories is defined
@@ -44,37 +42,38 @@
     - name: Patching Operations
       block:
         - name: Clean DNF cache
-          dnf:
-            forget_cache: yes
-            update_cache: yes
+          command: dnf clean all
 
         - name: Update all packages to latest
           dnf:
             name: '*'
             state: latest
-            # Equivalent to skip_broken in dnf
+            update_cache: yes
             nobest: yes
           register: dnf_result
 
         - name: Check if a reboot is required
-          # Checks if any installed package marked "reboot suggested"
           shell: dnf needs-restarting -r
           register: reboot_required
           failed_when: false
           changed_when: false
 
-        - name: Reboot if kernel or system-libs updated
+        - name: Reboot if packages were changed or kernel update detected
           reboot:
             reboot_timeout: 600
-          when: dnf_result.changed or reboot_required.rc != 0
+            msg: "Rebooting after Rocky 8 patch application"
+          when: dnf_result.changed or (reboot_required.rc is defined and reboot_required.rc != 0)
 
     # --- PHASE 3: VERIFICATION ---
-    - name: Check Kernel and OS Version
+    - name: Capture Final System Status
       shell: |
         echo "OS: $(cat /etc/redhat-release)"
         echo "Kernel: $(uname -r)"
+        echo "Uptime: $(uptime -p)"
       register: system_info
 
-    - name: Final Status
+    - name: Display Status Report
       debug:
-        msg: "Patching Successful. Details: {{ system_info.stdout_lines }}"
+        msg: 
+          - "Patching Complete for {{ inventory_hostname }}"
+          - "Details: {{ system_info.stdout_lines }}"
