@@ -17,7 +17,7 @@
 
 # --- PHASE 1: DNS REGISTRATION ---
 - name: Phase 1 - Register DNS entries on Pi-hole
-  hosts: dns-server-01
+  hosts: dns-server-01.vgs.com
   become: yes
   vars:
     guest_domain: "vgs.com"
