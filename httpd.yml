@@ -3,17 +3,22 @@
   become: yes
 
   vars:
-    # This maps your "patch-context" JSON keys to the nb_ctx object style
+    # This logic handles both flat JSON and wrapped JSON from AWX
     nb_ctx:
-      repo_mount: "{{ repo_mount_path }}"
-      mount_point: "{{ repo_mount_point }}"
-      iso_user: "{{ iso_share_user }}"
-      iso_pass: "{{ iso_share_pass }}"
-      # Accessing the list of repositories from your JSON
-      repo_list: "{{ repositories }}"
+      repo_mount: "{{ repo_mount_path | default(patch_context.repo_mount_path | default('')) }}"
+      mount_point: "{{ repo_mount_point | default(patch_context.repo_mount_point | default('')) }}"
+      iso_user: "{{ iso_share_user | default(patch_context.iso_share_user | default('')) }}"
+      iso_pass: "{{ iso_share_pass | default(patch_context.iso_share_pass | default('')) }}"
+      repo_list: "{{ repositories | default(patch_context.repositories | default([])) }}"
       ssh_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
   tasks:
+    - name: Debug Variables (Troubleshooting)
+      debug:
+        msg: 
+          - "Mount Path: {{ nb_ctx.repo_mount }}"
+          - "Mount Point: {{ nb_ctx.mount_point }}"
+
     - name: Install required packages
       yum:
         name:
@@ -84,4 +89,4 @@
     - name: Run createrepo on repository folders
       command: "createrepo {{ nb_ctx.mount_point }}/{{ item.folder }}"
       loop: "{{ nb_ctx.repo_list }}"
-      tags: update_repo
+      when: nb_ctx.repo_list | length > 0
