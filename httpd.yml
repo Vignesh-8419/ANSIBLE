@@ -2,91 +2,73 @@
   hosts: all
   become: yes
 
-  vars:
-    # This logic handles both flat JSON and wrapped JSON from AWX
-    nb_ctx:
-      repo_mount: "{{ repo_mount_path | default(patch_context.repo_mount_path | default('')) }}"
-      mount_point: "{{ repo_mount_point | default(patch_context.repo_mount_point | default('')) }}"
-      iso_user: "{{ iso_share_user | default(patch_context.iso_share_user | default('')) }}"
-      iso_pass: "{{ iso_share_pass | default(patch_context.iso_share_pass | default('')) }}"
-      repo_list: "{{ repositories | default(patch_context.repositories | default([])) }}"
-      ssh_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-
   tasks:
-    - name: Debug Variables (Troubleshooting)
-      debug:
-        msg: 
-          - "Mount Path: {{ nb_ctx.repo_mount }}"
-          - "Mount Point: {{ nb_ctx.mount_point }}"
+    - name: Discover Context Variables
+      set_fact:
+        # This looks for the value in the top level, OR inside any of your context objects
+        m_path: "{{ repo_mount_path | default(patch_context.repo_mount_path | default(pxe_rockyos_context.repo_mount_path | default(''))) }}"
+        m_point: "{{ repo_mount_point | default(patch_context.repo_mount_point | default(pxe_rockyos_context.repo_mount_point | default(''))) }}"
+        m_user: "{{ iso_share_user | default(patch_context.iso_share_user | default(pxe_rockyos_context.iso_share_user | default(''))) }}"
+        m_pass: "{{ iso_share_pass | default(patch_context.iso_share_pass | default(pxe_rockyos_context.iso_share_pass | default(''))) }}"
+        m_repos: "{{ repositories | default(patch_context.repositories | default([])) }}"
+
+    - name: Verify Variables are Populated
+      fail:
+        msg: "CRITICAL: repo_mount_path or repo_mount_point is empty. Check AWX Extra Vars."
+      when: m_path == "" or m_point == ""
 
     - name: Install required packages
       yum:
-        name:
-          - httpd
-          - createrepo
-          - firewalld
-          - cifs-utils
+        name: [httpd, createrepo, firewalld, cifs-utils]
         state: present
 
     - name: Create base mount point directory
       file:
-        path: "{{ nb_ctx.mount_point }}"
+        path: "{{ m_point }}"
         state: directory
         mode: '0777'
 
     - name: Mount ISO share via CIFS
       mount:
-        path: "{{ nb_ctx.mount_point }}"
-        src: "{{ nb_ctx.repo_mount }}"
+        path: "{{ m_point }}"
+        src: "{{ m_path }}"
         fstype: cifs
-        opts: "username={{ nb_ctx.iso_user }},password={{ nb_ctx.iso_pass }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
+        opts: "username={{ m_user }},password={{ m_pass }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
         state: mounted
 
     - name: Ensure repository subdirectories exist
       file:
-        path: "{{ nb_ctx.mount_point }}/{{ item.folder }}"
+        path: "{{ m_point }}/{{ item.folder }}"
         state: directory
         mode: '0755'
-      loop: "{{ nb_ctx.repo_list }}"
-
-    - name: Ensure firewalld is running
-      service:
-        name: firewalld
-        state: started
-        enabled: true
-
-    - name: Disable SELinux immediately
-      command: setenforce 0
-      ignore_errors: yes
+      loop: "{{ m_repos }}"
 
     - name: Configure HTTPD directory permissions
       blockinfile:
         path: /etc/httpd/conf/httpd.conf
         block: |
-          <Directory "{{ nb_ctx.mount_point }}">
+          <Directory "{{ m_point }}">
               Options Indexes FollowSymLinks
               AllowOverride None
               Require all granted
           </Directory>
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
 
-    - name: Enable HTTP & HTTPS firewall services
+    - name: Enable Firewall and Start HTTPD
+      service:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop: [firewalld, httpd]
+
+    - name: Enable HTTP service in Firewall
       firewalld:
-        service: "{{ item }}"
+        service: http
         permanent: true
         state: enabled
         immediate: true
-      loop:
-        - http
-        - https
 
-    - name: Start and enable httpd
-      service:
-        name: httpd
-        state: started
-        enabled: true
-
-    - name: Run createrepo on repository folders
-      command: "createrepo {{ nb_ctx.mount_point }}/{{ item.folder }}"
-      loop: "{{ nb_ctx.repo_list }}"
-      when: nb_ctx.repo_list | length > 0
+    - name: Run createrepo
+      command: "createrepo {{ m_point }}/{{ item.folder }}"
+      loop: "{{ m_repos }}"
+      when: m_repos | length > 0
