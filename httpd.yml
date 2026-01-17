@@ -3,12 +3,12 @@
   become: yes
 
   vars:
-    # This mirrors your existing script structure
+    # This maps the keys from your "patch-context" JSON into the nb_ctx object
     nb_ctx:
-      repo_mount: "{{ repo_mount_path }}"
-      mount_point: "{{ repo_mount_point }}"
-      iso_user: "{{ iso_share_user }}"
-      iso_pass: "{{ iso_share_pass }}"
+      repo_mount: "{{ repo_mount_path | default(repo_mount_path) }}"
+      mount_point: "{{ repo_mount_point | default(repo_mount_point) }}"
+      iso_user: "{{ iso_share_user | default(iso_share_user) }}"
+      iso_pass: "{{ iso_share_pass | default(iso_share_pass) }}"
       ssh_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
   tasks:
