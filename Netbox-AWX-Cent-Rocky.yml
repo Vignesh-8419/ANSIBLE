@@ -40,7 +40,7 @@
 
     - name: Remove original CentOS YUM repo files
       shell: "rm -f /etc/yum.repos.d/CentOS-*"
-      warn: false
+      # Removed 'warn: false' which caused the conflict
 
     # --- PHASE 2: REPOS & INITIAL PATCHING ---
     - name: Create CentOS 7 patch repo
@@ -120,7 +120,7 @@
       command: yum-complete-transaction -y
       when: yum_pending.stdout != "0"
 
-    - name: Install deltarpm manually (Vault backup)
+    - name: Install deltarpm manually
       shell: |
         curl -o /tmp/deltarpm.rpm http://vault.centos.org/7.9.2009/os/x86_64/Packages/deltarpm-3.6-3.el7.x86_64.rpm
         rpm -ivh /tmp/deltarpm.rpm || true
@@ -130,22 +130,19 @@
         name: ['leapp-upgrade', 'leapp-data-rocky']
         state: present
 
-    # --- PHASE 4: REPO LOCKING & CLEANUP ---
-    - name: Create Rocky Linux 8 repo for Leapp
+    # --- PHASE 4: REPO LOCKING ---
+    - name: Create Rocky Linux 8 repo for Leapp from loop
       copy:
         dest: "{{ rocky_repo_file }}"
         content: |
-          [rocky8-baseos]
-          name=Rocky Linux 8 - BaseOS
-          baseurl={{ nb_ctx.httpd_server_url }}rocky8/BaseOS/
+          {% for repo in nb_ctx.rocky8_repos %}
+          [{{ repo.id }}]
+          name={{ repo.name }}
+          baseurl={{ nb_ctx.httpd_server_url }}{{ repo.folder }}
           gpgcheck=0
           enabled=1
 
-          [rocky8-appstream]
-          name=Rocky Linux 8 - AppStream
-          baseurl={{ nb_ctx.httpd_server_url }}rocky8/AppStream/
-          gpgcheck=0
-          enabled=1
+          {% endfor %}
 
     - name: Lock Leapp repository file
       command: chattr +i {{ rocky_repo_file }}
