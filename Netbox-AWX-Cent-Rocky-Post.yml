@@ -1,0 +1,112 @@
+---
+- name: 🧹 Cleanup old CentOS 7 kernels and packages after ELevate migration
+  hosts: all
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Load Config Context
+      set_fact:
+        nb_ctx: "{{ config_context[0] }}"
+      when: config_context is defined and config_context | length > 0
+
+    - name: Ensure we are running on Rocky Linux 8
+      fail:
+        msg: "This playbook must be run only on Rocky Linux 8!"
+      when: ansible_distribution != "Rocky" or ansible_distribution_major_version != "8"
+
+  tasks:
+    - name: Ensure backup directory exists
+      file:
+        path: /etc/yum.repos.d/backup
+        state: directory
+        mode: '0755'
+
+    - name: Move all repo files except backup directory
+      shell: |
+        shopt -s extglob
+        mv /etc/yum.repos.d/!(backup) /etc/yum.repos.d/backup/ || true
+      args:
+        executable: /bin/bash
+      ignore_errors: yes
+
+    - name: Create Rocky Linux 8 repo from Config Context
+      copy:
+        dest: /etc/yum.repos.d/base.repo
+        content: |
+          {% for repo in nb_ctx.rocky8_repos %}
+          [{{ repo.id }}]
+          name={{ repo.name }}
+          baseurl={{ nb_ctx.httpd_server_url }}{{ repo.folder }}
+          gpgcheck=0
+          enabled=1
+
+          {% endfor %}
+        mode: '0644'
+
+    - name: Backup current RPM database
+      command: mv /var/lib/rpm /var/lib/rpm.bak-{{ ansible_date_time.epoch }}
+      args:
+        creates: "/var/lib/rpm.bak-{{ ansible_date_time.epoch }}"
+
+    - name: Create new empty RPM db directory
+      file:
+        path: /var/lib/rpm
+        state: directory
+        mode: '0755'
+
+    - name: Initialize and Rebuild RPM database
+      shell: |
+        rpm --initdb
+        cp -av /var/lib/rpm.bak-{{ ansible_date_time.epoch }}/Packages /var/lib/rpm/
+        rm -f /var/lib/rpm/__db.*
+        rpm --rebuilddb
+      ignore_errors: yes
+
+    - name: Clean DNF cache
+      command: dnf clean all
+      ignore_errors: yes
+
+    - name: Remove weak-modules and old kernels
+      shell: |
+        for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
+          /usr/sbin/weak-modules --remove-kernel $k || true
+          /bin/kernel-install remove $k /lib/modules/$k/vmlinuz || true
+        done
+
+    - name: Remove old kernel dirs
+      file:
+        path: "/lib/modules/{{ item }}"
+        state: absent
+      with_fileglob:
+        - "/lib/modules/*el7*"
+
+    - name: Find and Remove leftover el7 RPMs
+      shell: |
+        RPMS=$(rpm -qa | grep -e '\.el[67]' | grep -vE '^(gpg-pubkey|libmoduled|katello-ca-consumer)')
+        for i in $RPMS; do
+          rpm -e $i --nodeps || true
+        done
+      register: rpm_cleanup
+      changed_when: rpm_cleanup.stdout != ""
+
+    - name: Cleanup leapp packages and logs
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/log/leapp/
+        - /root/tmp_leapp_py3
+        - /var/lib/leapp/
+
+    - name: Reinstall current kernel-core
+      shell: dnf reinstall -y kernel-core-$(uname -r)
+
+    - name: Regenerate rescue entry
+      shell: |
+        rm -rf /boot/vmlinuz-*rescue* /boot/initramfs-*rescue*
+        /usr/lib/kernel/install.d/51-dracut-rescue.install add "$(uname -r)" /boot "/boot/vmlinuz-$(uname -r)"
+
+    - name: Final reboot after cleanup
+      reboot:
+        reboot_timeout: 600
