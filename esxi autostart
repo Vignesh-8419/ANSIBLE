@@ -1,0 +1,5 @@
+vim-cmd hostsvc/autostartmanager/get_defaults
+vim-cmd hostsvc/autostartmanager/enable_autostart 1
+vim-cmd vmsvc/getallvms
+vim-cmd hostsvc/autostartmanager/update_autostartentry 3 PowerOn 120 1 GuestShutdown 120 systemDefault
+vim-cmd hostsvc/autostartmanager/update_autostartentry 5 PowerOn 120 2 GuestShutdown 120 systemDefault
