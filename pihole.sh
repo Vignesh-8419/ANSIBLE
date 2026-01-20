@@ -44,3 +44,20 @@ bash basic-install.sh
   # 'r' tells FTL to redirect HTTP traffic to the first available HTTPS port
 #  port = "80r,443os,[::]:80r,[::]:443os"
 #systemctl restart pihole-FTL
+
+# 1. Generate a new key and certificate for your specific domain
+#openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
+#  -keyout /etc/pihole/tls.key -out /etc/pihole/tls.crt \
+#  -subj "/CN=dns-server-01.vgs.com" \
+#  -addext "subjectAltName=DNS:dns-server-01.vgs.com,DNS:pi.hole"
+
+# 2. Combine them into the tls.pem file that pihole-FTL uses
+#cat /etc/pihole/tls.key /etc/pihole/tls.crt > /etc/pihole/tls.pem
+
+# 3. Fix permissions
+#chown pihole:pihole /etc/pihole/tls.*
+#chmod 644 /etc/pihole/tls.crt /etc/pihole/tls.pem
+#chmod 600 /etc/pihole/tls.key
+
+# 4. Restart Pi-hole FTL
+#systemctl restart pihole-FTL
