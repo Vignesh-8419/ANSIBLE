@@ -46,7 +46,7 @@ priority=1
 
 [local-packages]
 name=Local Core Dependencies
-baseurl=https://${REPO_SERVER}/repo/offline_repo/packages
+baseurl=https://${REPO_SERVER}/repo/ansible_offline_repo/packages
 enabled=1
 gpgcheck=0
 sslverify=0
