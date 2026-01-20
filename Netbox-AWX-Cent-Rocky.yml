@@ -52,6 +52,7 @@
           baseurl={{ nb_ctx.httpd_server_url }}installed_rhel7
           enabled=1
           gpgcheck=0
+          sslverify=0
 
     - name: Create vault.repo using context loop
       copy:
@@ -63,6 +64,7 @@
           baseurl={{ repo.url }}
           enabled=1
           gpgcheck=1
+          sslverify=0
           gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 
           {% endfor %}
@@ -109,18 +111,21 @@
           baseurl={{ nb_ctx.httpd_server_url }}elevate/
           enabled=1
           gpgcheck=0
+          sslverify=0
 
           [baseos]
           name=base-repo
           baseurl={{ nb_ctx.httpd_server_url }}centos/
           enabled=1
           gpgcheck=0
+          sslverify=0
 
           [patch-temp]
           name=patch-repo-temp
           baseurl={{ nb_ctx.httpd_server_url }}installed_rhel7
           enabled=1
           gpgcheck=0
+          sslverify=0
 
     - name: Fix pending yum transactions
       shell: yum-complete-transaction --cleanup-only --quiet --skip-broken; echo $?
@@ -152,6 +157,7 @@
           baseurl={{ nb_ctx.httpd_server_url }}{{ repo.folder }}
           gpgcheck=0
           enabled=1
+          sslverify=0
 
           {% endfor %}
 
