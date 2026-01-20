@@ -137,6 +137,10 @@ spec:
   ingress_type: ingress
   hostname: ansible-server-01.vgs.com
   ingress_tls_secret: awx-server-tls
+  # Add the following lines:
+  ingress_annotations: |
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
 
 kubectl apply -f awx-instance.yaml -n awx
 
