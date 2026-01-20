@@ -117,21 +117,36 @@ pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_r
 # 2. Install database drivers and gunicorn
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} gunicorn psycopg psycopg_pool
-
 # 3. MANUALLY install the problematic .tar.gz packages
-log "Building problematic source packages using PEP 517 (Bypassing distutils)..."
+log "Manually extracting problematic package (Bypassing Pip entirely)..."
 
-mkdir -p /tmp/build_pglocks
+# Define venv site-packages path
+SITEPKGS="$NETBOX_ROOT/venv/lib/python3.12/site-packages"
+
+mkdir -p /tmp/manual_pglocks
 curl -kL https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/django-pglocks-1.0.4.tar.gz -o /tmp/django-pglocks.tar.gz
-tar -xzf /tmp/django-pglocks.tar.gz -C /tmp/build_pglocks --strip-components=1
+tar -xzf /tmp/django-pglocks.tar.gz -C /tmp/manual_pglocks --strip-components=1
 
-cd /tmp/build_pglocks
-# FIX: Use the full absolute path to the venv pip
-$NETBOX_ROOT/venv/bin/pip install . --no-index --no-build-isolation --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs --trusted-host ${REPO_SERVER}
+# Copy the actual python package folder into the venv
+# django-pglocks is a simple package; its core is the 'django_pglocks' folder
+cp -r /tmp/manual_pglocks/django_pglocks $SITEPKGS/
+
+# Verify it works by trying to import it
+$NETBOX_ROOT/venv/bin/python3 -c "import django_pglocks; print('✔ django-pglocks manually injected')"
+
 cd $NETBOX_ROOT
+
+
+# ... after manual injection ...
 
 # 4. Now install the rest of the requirements
 log "Installing remaining requirements..."
+
+# NEW FIX: Remove django-pglocks from requirements.txt so pip doesn't try to re-build it
+if [ -f "requirements.txt" ]; then
+    sed -i '/django-pglocks/d' requirements.txt
+fi
+
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} -r requirements.txt
 
