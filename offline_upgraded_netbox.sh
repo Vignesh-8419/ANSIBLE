@@ -118,9 +118,14 @@ pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_r
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} gunicorn psycopg psycopg_pool
 
-# 3. Install remaining requirements
-# THE FINAL FIX: Export the variable to force pip to use the local setuptools for building
-export PIP_NO_BUILD_ISOLATION=0  # Set to 0 or False to disable the isolation logic
+# 3. MANUALLY install the problematic .tar.gz packages using the existing environment
+# This forces it to use the setuptools we just installed.
+log "Building problematic source packages..."
+pip install --no-index --no-build-isolation --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
+    --trusted-host ${REPO_SERVER} django-pglocks==1.0.4
+
+# 4. Now install the rest of the requirements
+log "Installing remaining requirements..."
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} -r requirements.txt
 
