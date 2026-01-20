@@ -152,8 +152,12 @@ cd $NETBOX_ROOT
 
 # 4. Now install the rest of the requirements
 log "Installing remaining requirements..."
+
+# Remove problematic packages from requirements.txt so pip doesn't re-try them
 sed -i '/django-pglocks/d' requirements.txt
 sed -i '/sgmllib3k/d' requirements.txt
+# NEW: Force pip to ignore any requirement for the C-extension we already handled
+sed -i '/psycopg/d' requirements.txt
 
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} -r requirements.txt
