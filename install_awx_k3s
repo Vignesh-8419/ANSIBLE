@@ -139,3 +139,23 @@ spec:
   ingress_tls_secret: awx-server-tls
 
 kubectl apply -f awx-instance.yaml -n awx
+
+
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout tls.key -out tls.crt \
+  -subj "/CN=ansible-server-01.vgs.com"
+
+kubectl create secret tls awx-server-tls \
+  --cert=tls.crt \
+  --key=tls.key \
+  -n awx
+
+kubectl delete ingress awx-ingress -n awx
+
+kubectl delete statefulset awx-server-postgres-15 -n awx --cascade=orphan
+kubectl logs -f deployment/awx-operator-controller-manager -n awx --all-containers
+kubectl get ingress -n awx
+kubectl delete statefulset awx-server-postgres-15 -n awx --cascade=orphan
+kubectl delete ingress awx-ingress -n awx --ignore-not-found
+kubectl rollout restart deployment awx-operator-controller-manager -n awx
+kubectl get ingress -n awx
