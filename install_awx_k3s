@@ -144,17 +144,12 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout tls.key -out tls.crt \
   -subj "/CN=ansible-server-01.vgs.com"
 
-kubectl create secret tls awx-server-tls \
-  --cert=tls.crt \
-  --key=tls.key \
-  -n awx
-
-# 1. Ensure the Traefik Middleware exists in the 'awx' namespace
+# 1. Re-create the Middleware with a clean name
 cat <<EOF | kubectl apply -f -
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
-  name: awx-force-https
+  name: force-https
   namespace: awx
 spec:
   redirectScheme:
@@ -162,8 +157,8 @@ spec:
     permanent: true
 EOF
 
-# 2. Update your AWX Instance YAML with the Fully Qualified Middleware Name
-# Note: Traefik requires 'namespace-name@kubernetescrd'
+# 2. Apply the AWX Instance with the EXACT naming string Traefik requires
+# In K3s Traefik, the format is: namespace-name@kubernetescrd
 cat <<EOF > awx-instance.yaml
 apiVersion: awx.ansible.com/v1beta1
 kind: AWX
@@ -176,30 +171,32 @@ spec:
   hostname: ansible-server-01.vgs.com
   ingress_tls_secret: awx-server-tls
   ingress_annotations: |
-    traefik.ingress.kubernetes.io/router.middlewares: awx-awx-force-https@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: awx-force-https@kubernetescrd
   extra_settings:
     - setting: SECURE_PROXY_SSL_HEADER
       value: "('HTTP_X_FORWARDED_PROTO', 'https')"
 EOF
 
-# 3. Apply the updated configuration
+# 3. Apply the configuration
 kubectl apply -f awx-instance.yaml -n awx
 
-# 4. Delete the existing Ingress to force the Operator to recreate it fresh
-# This clears any manual annotation "fighting" between you and the Operator
-kubectl delete ingress awx-server-ingress -n awx
+# 4. Force a clean refresh of the Ingress
+kubectl delete ingress awx-server-ingress -n awx --ignore-not-found
 
-# 5. Wait 30 seconds for reconciliation, then verify the Endpoints are active
-# If ENDPOINTS is empty, Traefik will return a 404 regardless of the middleware
+# 5. Wait for the Operator to recreate the Ingress and Traefik to load it
+echo "Waiting 30s for the front-door to refresh..."
 sleep 30
-kubectl get endpoints awx-server-service -n awx
 
-# 6. Final Tests
-echo "--- Testing HTTP Redirect (Should be 301/302) ---"
-curl -I http://ansible-server-01.vgs.com
+# 6. VERIFICATION TESTS (Targeting the external IP to avoid 'Connection Refused')
+echo "--- Testing Redirect (Should return 301/302) ---"
+curl -I -L http://ansible-server-01.vgs.com
 
-echo "--- Testing HTTPS Connection (Should be 200) ---"
+echo "--- Testing HTTPS (Should return 200) ---"
 curl -I -k https://ansible-server-01.vgs.com
 
-# 7. Check Traefik logs if 404 persists
-kubectl logs -n kube-system -l app.kubernetes.io/name=traefik --tail=10
+# 7. Credentials
+echo "--- Login Info ---"
+echo "URL: https://ansible-server-01.vgs.com"
+echo "User: admin"
+echo -n "Pass: "
+kubectl get secret awx-server-admin-password -n awx -o jsonpath="{.data.password}" | base64 --decode; echo
