@@ -119,17 +119,18 @@ pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_r
     --trusted-host ${REPO_SERVER} gunicorn psycopg psycopg_pool
 
 # 3. MANUALLY install the problematic .tar.gz packages
-log "Manually building problematic source packages (Bypassing Pip Isolation)..."
+log "Building problematic source packages using PEP 517 (Bypassing distutils)..."
 
-# Create a temporary build directory
 mkdir -p /tmp/build_pglocks
-# Download the tarball to local tmp
 curl -kL https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/django-pglocks-1.0.4.tar.gz -o /tmp/django-pglocks.tar.gz
-# Extract it
 tar -xzf /tmp/django-pglocks.tar.gz -C /tmp/build_pglocks --strip-components=1
-# Run the install using the VENV's python directly (This ignores Pip's "environments")
+
 cd /tmp/build_pglocks
-$NETBOX_ROOT/venv/bin/python3 setup.py install
+# THE FIX: 
+# We use 'pip install .' while inside the folder. 
+# --no-build-isolation: Uses the setuptools we just installed in the venv.
+# This avoids the "python setup.py" direct call and uses modern build logic.
+venv/bin/pip install . --no-index --no-build-isolation --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs
 cd $NETBOX_ROOT
 
 # 4. Now install the rest of the requirements
