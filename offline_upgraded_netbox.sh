@@ -110,8 +110,7 @@ source venv/bin/activate
 
 log "Installing Python wheels from internal mirror..."
 
-# 1. Upgrade pip/wheel AND install setuptools from your repository
-# This provides the "builder" needed for .tar.gz files
+# 1. Upgrade pip/wheel AND install setuptools
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} pip wheel setuptools
 
@@ -120,9 +119,10 @@ pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_r
     --trusted-host ${REPO_SERVER} gunicorn psycopg psycopg_pool
 
 # 3. Install remaining requirements
-# Now that setuptools is installed in the venv, it will handle django-pglocks.tar.gz successfully
-pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
+# THE FIX: Added --no-build-isolation
+pip install --no-index --no-build-isolation --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} -r requirements.txt
+
 
 # ---------------- CONFIGURATION ----------------
 log "Configuring NetBox..."
