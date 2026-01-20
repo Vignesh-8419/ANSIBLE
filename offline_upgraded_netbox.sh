@@ -119,8 +119,9 @@ pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_r
     --trusted-host ${REPO_SERVER} gunicorn psycopg psycopg_pool
 
 # 3. Install remaining requirements
-# THE FIX: Added --no-build-isolation
-pip install --no-index --no-build-isolation --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
+# THE FINAL FIX: Export the variable to force pip to use the local setuptools for building
+export PIP_NO_BUILD_ISOLATION=0  # Set to 0 or False to disable the isolation logic
+pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} -r requirements.txt
 
 
