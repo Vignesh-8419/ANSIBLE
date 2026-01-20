@@ -102,42 +102,42 @@ log "Installing base Python tools..."
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} pip wheel setuptools gunicorn psycopg psycopg_pool
 
-# ---------------- MANUAL INJECTIONS ----------------
-log "Manually injecting legacy and problematic packages..."
+# ---------------- MANUAL INJECTIONS (The "Shim" Fix) ----------------
+log "Manually injecting legacy packages and creating Metadata Shims..."
 SITEPKGS="$NETBOX_ROOT/venv/lib/python3.12/site-packages"
 
-# 1. Install 'six' from the .whl file found on your server
-log "Installing six wheel..."
+# 1. Install 'six' wheel
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} six
 
-# 2. Inject django-pglocks (Source tarball)
-log "Injecting django-pglocks..."
+# 2. Inject django-pglocks
 mkdir -p /tmp/manual_pglocks
 curl -kL "https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/django-pglocks-1.0.4.tar.gz" -o /tmp/pglocks.tar.gz
 tar -xzf /tmp/pglocks.tar.gz -C /tmp/manual_pglocks --strip-components=1
 cp -r /tmp/manual_pglocks/django_pglocks "$SITEPKGS/"
 
-# 3. Inject sgmllib3k (Source tarball)
-log "Injecting sgmllib3k..."
+# 3. Inject sgmllib3k + Metadata Shim
 mkdir -p /tmp/manual_sgmllib
 curl -kL "https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/sgmllib3k-1.0.0.tar.gz" -o /tmp/sgmllib.tar.gz
 tar -xzf /tmp/sgmllib.tar.gz -C /tmp/manual_sgmllib --strip-components=1
 cp /tmp/manual_sgmllib/sgmllib.py "$SITEPKGS/"
+mkdir -p "$SITEPKGS/sgmllib3k-1.0.0.dist-info"
+echo -e "Metadata-Version: 2.1\nName: sgmllib3k\nVersion: 1.0.0" > "$SITEPKGS/sgmllib3k-1.0.0.dist-info/METADATA"
 
-# 4. Inject promise (Source tarball)
-log "Injecting promise..."
+# 4. Inject promise + Metadata Shim (Prevents building metadata error)
 mkdir -p /tmp/manual_promise
 curl -kL "https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/promise-2.3.tar.gz" -o /tmp/promise.tar.gz
 tar -xzf /tmp/promise.tar.gz -C /tmp/manual_promise --strip-components=1
 cp -r /tmp/manual_promise/promise "$SITEPKGS/"
+mkdir -p "$SITEPKGS/promise-2.3.dist-info"
+echo -e "Metadata-Version: 2.1\nName: promise\nVersion: 2.3" > "$SITEPKGS/promise-2.3.dist-info/METADATA"
 
-# Verify everything is imported correctly
-$NETBOX_ROOT/venv/bin/python3 -c "import django_pglocks, sgmllib, promise, six; print('✔ Legacy packages ready')"
+# Verify all are present
+$NETBOX_ROOT/venv/bin/python3 -c "import django_pglocks, sgmllib, promise, six; print('✔ All manual injections verified')"
 
 # ---------------- FINALIZE REQUIREMENTS ----------------
 log "Installing remaining requirements..."
-# Remove the ones we just manually handled from the requirements list
+# Remove handled packages from requirements.txt to avoid pip trying to re-fetch them
 sed -i '/django-pglocks/d; /sgmllib3k/d; /psycopg/d; /promise/d; /six/d' requirements.txt
 
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
