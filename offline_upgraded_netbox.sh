@@ -1,4 +1,4 @@
-=#!/bin/bash
+#!/bin/bash
 set -e
 
 # ---------------- CONFIGURATION ----------------
@@ -58,7 +58,7 @@ systemctl stop netbox netbox-worker nginx redis postgresql-15 postgresql || true
 pkill -9 -f gunicorn || true
 rm -rf $NETBOX_ROOT
 
-# ---------------- PACKAGES ----------------
+# ---------------- SYSTEM PACKAGES ----------------
 log "Installing system dependencies..."
 dnf clean all
 dnf install -y \
@@ -102,67 +102,136 @@ log "Installing base Python tools..."
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} pip wheel setuptools gunicorn psycopg psycopg_pool
 
-# ---------------- MANUAL INJECTION (THE FIX) ----------------
-log "Manually extracting legacy packages..."
+# ---------------- MANUAL INJECTIONS ----------------
+log "Manually injecting legacy and problematic packages..."
 SITEPKGS="$NETBOX_ROOT/venv/lib/python3.12/site-packages"
 
-# Helper function to download and extract safely
-inject_pkg() {
-    local name=$1
-    local file=$2
-    local target_dir=$3
-    log "Injecting $name..."
-    mkdir -p "/tmp/manual_$name"
-    curl -kL "https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/$file" -o "/tmp/$file"
-    
-    # Check if download was actually successful (not a 404 page)
-    if ! file "/tmp/$file" | grep -q "gzip compressed"; then
-        echo -e "\e[31m✘ Error: $file is not a valid tarball. Check if version exists on server.\e[0m"
-        exit 1
-    fi
-    
-    tar -xzf "/tmp/$file" -C "/tmp/manual_$name" --strip-components=1
-    cp -r "/tmp/manual_$name/$target_dir" "$SITEPKGS/"
-}
+# 1. Install 'six' from the .whl file found on your server
+log "Installing six wheel..."
+pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
+    --trusted-host ${REPO_SERVER} six
 
-# 1. django-pglocks
-inject_pkg "pglocks" "django-pglocks-1.0.4.tar.gz" "django_pglocks"
+# 2. Inject django-pglocks (Source tarball)
+log "Injecting django-pglocks..."
+mkdir -p /tmp/manual_pglocks
+curl -kL "https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/django-pglocks-1.0.4.tar.gz" -o /tmp/pglocks.tar.gz
+tar -xzf /tmp/pglocks.tar.gz -C /tmp/manual_pglocks --strip-components=1
+cp -r /tmp/manual_pglocks/django_pglocks "$SITEPKGS/"
 
-# 2. sgmllib3k (it's a single file, not a directory)
+# 3. Inject sgmllib3k (Source tarball)
 log "Injecting sgmllib3k..."
-curl -kL "https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/sgmllib3k-1.0.0.tar.gz" -o "/tmp/sgmllib.tar.gz"
-mkdir -p /tmp/manual_sgmllib && tar -xzf /tmp/sgmllib.tar.gz -C /tmp/manual_sgmllib --strip-components=1
+mkdir -p /tmp/manual_sgmllib
+curl -kL "https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/sgmllib3k-1.0.0.tar.gz" -o /tmp/sgmllib.tar.gz
+tar -xzf /tmp/sgmllib.tar.gz -C /tmp/manual_sgmllib --strip-components=1
 cp /tmp/manual_sgmllib/sgmllib.py "$SITEPKGS/"
 
-# 3. promise
-inject_pkg "promise" "promise-2.3.tar.gz" "promise"
+# 4. Inject promise (Source tarball)
+log "Injecting promise..."
+mkdir -p /tmp/manual_promise
+curl -kL "https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/promise-2.3.tar.gz" -o /tmp/promise.tar.gz
+tar -xzf /tmp/promise.tar.gz -C /tmp/manual_promise --strip-components=1
+cp -r /tmp/manual_promise/promise "$SITEPKGS/"
 
-# 4. six (Try 1.16.0 as it is the most common version in offline repos)
-# If this fails, please check the exact filename at https://192.168.253.136/repo/netbox_offline_repo/python_pkgs/
-inject_pkg "six" "six-1.16.0.tar.gz" "six.py" || inject_pkg "six" "six-1.17.0.tar.gz" "six.py"
+# Verify everything is imported correctly
+$NETBOX_ROOT/venv/bin/python3 -c "import django_pglocks, sgmllib, promise, six; print('✔ Legacy packages ready')"
 
-# Verify
-$NETBOX_ROOT/venv/bin/python3 -c "import django_pglocks, sgmllib, promise, six; print('✔ All manual injections verified')"
-
-# ---------------- FINALIZE INSTALL ----------------
+# ---------------- FINALIZE REQUIREMENTS ----------------
 log "Installing remaining requirements..."
+# Remove the ones we just manually handled from the requirements list
 sed -i '/django-pglocks/d; /sgmllib3k/d; /psycopg/d; /promise/d; /six/d' requirements.txt
 
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} -r requirements.txt
 
+# ---------------- CONFIGURATION ----------------
 log "Configuring NetBox..."
 SECRET_KEY=$(venv/bin/python3 netbox/generate_secret_key.py)
+
 cat <<EOF > netbox/netbox/configuration.py
 import os
 ALLOWED_HOSTS = ['*']
-DATABASE = {'NAME': '$DB_NAME','USER': '$DB_USER','PASSWORD': '$DB_PASS','HOST': '127.0.0.1'}
-REDIS = {'tasks': {'HOST': '127.0.0.1', 'PORT': 6379, 'DATABASE': 0}, 'caching': {'HOST': '127.0.0.1', 'PORT': 6379, 'DATABASE': 1}}
+DATABASE = {
+    'NAME': '$DB_NAME',
+    'USER': '$DB_USER',
+    'PASSWORD': '$DB_PASS',
+    'HOST': '127.0.0.1',
+    'PORT': '',
+}
+REDIS = {
+    'tasks': {'HOST': '127.0.0.1', 'PORT': 6379, 'DATABASE': 0},
+    'caching': {'HOST': '127.0.0.1', 'PORT': 6379, 'DATABASE': 1},
+}
 SECRET_KEY = '$SECRET_KEY'
 EOF
 
-log "Running migrations..."
+# ---------------- MIGRATIONS ----------------
+log "Running migrations and static collection..."
+redis-cli -n 0 flushdb
+redis-cli -n 1 flushdb
 venv/bin/python3 netbox/manage.py migrate
 venv/bin/python3 netbox/manage.py collectstatic --noinput
 
-log "INSTALL COMPLETE"
+# ---------------- ADMIN USER ----------------
+log "Creating admin user..."
+echo "from django.contrib.auth import get_user_model; User=get_user_model(); User.objects.create_superuser('netadmin','admin@example.com','Netbox12345678')" | venv/bin/python3 netbox/manage.py shell
+
+# ---------------- SYSTEMD ----------------
+log "Installing systemd services..."
+
+cat <<EOF > /etc/systemd/system/netbox.service
+[Unit]
+Description=NetBox WSGI Service
+After=network.target
+
+[Service]
+Environment="DJANGO_SETTINGS_MODULE=netbox.settings"
+WorkingDirectory=$NETBOX_ROOT/netbox
+ExecStart=$NETBOX_ROOT/venv/bin/gunicorn --bind 127.0.0.1:8001 --timeout 120 --workers 3 netbox.wsgi
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat <<EOF > /etc/systemd/system/netbox-worker.service
+[Unit]
+Description=NetBox RQ Worker
+After=network.target
+
+[Service]
+WorkingDirectory=$NETBOX_ROOT/netbox
+ExecStart=$NETBOX_ROOT/venv/bin/python3 manage.py rqworker
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ---------------- NGINX ----------------
+log "Configuring Nginx..."
+cat <<EOF > /etc/nginx/conf.d/netbox.conf
+server {
+    listen 80;
+    server_name $FQDN;
+    location /static/ {
+        alias $NETBOX_ROOT/netbox/static/;
+    }
+    location / {
+        proxy_pass http://127.0.0.1:8001;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+    }
+}
+EOF
+
+# ---------------- START ----------------
+log "Starting services..."
+systemctl daemon-reload
+systemctl enable --now netbox netbox-worker nginx
+firewall-cmd --permanent --add-service=http
+firewall-cmd --reload || true
+
+log "----------------------------------------"
+log "NETBOX OFFLINE INSTALL COMPLETE"
+log "URL: http://$IPADDRESS"
+log "----------------------------------------"
