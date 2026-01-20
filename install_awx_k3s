@@ -184,3 +184,17 @@ firewall-cmd --permanent --zone=trusted --add-source=10.42.0.0/16
 firewall-cmd --permanent --zone=trusted --add-source=10.43.0.0/16 # Services
 
 firewall-cmd --reload
+
+cat <<EOF | kubectl apply -f -
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: awx-force-https
+  namespace: awx
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+EOF
+
+kubectl annotate ingress awx-server-ingress traefik.ingress.kubernetes.io/router.middlewares- -n awx
