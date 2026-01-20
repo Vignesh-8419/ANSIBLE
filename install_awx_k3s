@@ -138,9 +138,33 @@ spec:
 EOF
 
 
+HTTP == HTTPS
 
-vi awx-instance.yaml
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout tls.key -out tls.crt \
+  -subj "/CN=ansible-server-01.vgs.com"
 
+kubectl create secret tls awx-server-tls \
+  --cert=tls.crt \
+  --key=tls.key \
+  -n awx
+
+# 1. Ensure the Traefik Middleware exists in the 'awx' namespace
+cat <<EOF | kubectl apply -f -
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: awx-force-https
+  namespace: awx
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+EOF
+
+# 2. Update your AWX Instance YAML with the Fully Qualified Middleware Name
+# Note: Traefik requires 'namespace-name@kubernetescrd'
+cat <<EOF > awx-instance.yaml
 apiVersion: awx.ansible.com/v1beta1
 kind: AWX
 metadata:
@@ -156,58 +180,26 @@ spec:
   extra_settings:
     - setting: SECURE_PROXY_SSL_HEADER
       value: "('HTTP_X_FORWARDED_PROTO', 'https')"
-
-
-kubectl apply -f awx-instance.yaml -n awx
-
-
-
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout tls.key -out tls.crt \
-  -subj "/CN=ansible-server-01.vgs.com"
-
-kubectl create secret tls awx-server-tls \
-  --cert=tls.crt \
-  --key=tls.key \
-  -n awx
-
-kubectl delete ingress awx-ingress -n awx
-
-kubectl delete statefulset awx-server-postgres-15 -n awx --cascade=orphan
-kubectl logs -f deployment/awx-operator-controller-manager -n awx --all-containers
-kubectl get ingress -n awx
-kubectl delete statefulset awx-server-postgres-15 -n awx --cascade=orphan
-kubectl delete ingress awx-ingress -n awx --ignore-not-found
-kubectl rollout restart deployment awx-operator-controller-manager -n awx
-kubectl get ingress -n awx
-
-firewall-cmd --permanent --zone=trusted --add-source=10.42.0.0/16
-
-firewall-cmd --permanent --zone=trusted --add-source=10.43.0.0/16 # Services
-
-firewall-cmd --reload
-
-cat <<EOF | kubectl apply -f -
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: awx-force-https
-  namespace: awx
-spec:
-  redirectScheme:
-    scheme: https
-    permanent: true
 EOF
 
-kubectl annotate ingress awx-server-ingress traefik.ingress.kubernetes.io/router.middlewares- -n awx
+# 3. Apply the updated configuration
+kubectl apply -f awx-instance.yaml -n awx
 
-kubectl delete pods --all -n awx
-kubectl annotate ingress awx-server-ingress traefik.ingress.kubernetes.io/router.middlewares- -n awx
+# 4. Delete the existing Ingress to force the Operator to recreate it fresh
+# This clears any manual annotation "fighting" between you and the Operator
+kubectl delete ingress awx-server-ingress -n awx
+
+# 5. Wait 30 seconds for reconciliation, then verify the Endpoints are active
+# If ENDPOINTS is empty, Traefik will return a 404 regardless of the middleware
+sleep 30
 kubectl get endpoints awx-server-service -n awx
-curl -I -k http://ansible-server-01.vgs.com
 
-kubectl annotate ingress awx-server-ingress -n awx --overwrite traefik.ingress.kubernetes.io/router.middlewares=awx-awx-force-https@kubernetescrd
-kubectl get ingress awx-server-ingress -n awx -o yaml | grep middlewares
-kubectl logs -n kube-system -l app.kubernetes.io/name=traefik --tail=5
+# 6. Final Tests
+echo "--- Testing HTTP Redirect (Should be 301/302) ---"
+curl -I http://ansible-server-01.vgs.com
+
+echo "--- Testing HTTPS Connection (Should be 200) ---"
 curl -I -k https://ansible-server-01.vgs.com
-curl -I -k http://ansible-server-01.vgs.com
+
+# 7. Check Traefik logs if 404 persists
+kubectl logs -n kube-system -l app.kubernetes.io/name=traefik --tail=10
