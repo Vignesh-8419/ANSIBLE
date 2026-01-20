@@ -102,15 +102,16 @@ $PYTHON_BIN -m venv venv
 source venv/bin/activate
 
 log "Installing Python wheels from internal mirror..."
-# Add --trusted-host to bypass SSL certificate verification for Pip
-pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
-    --trusted-host ${REPO_SERVER} pip wheel
 
+# 1. Upgrade pip and install setuptools/wheel from your local files
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
-    --trusted-host ${REPO_SERVER} gunicorn "psycopg[c,pool]"
+    --trusted-host ${REPO_SERVER} pip wheel setuptools
 
-pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
-    --trusted-host ${REPO_SERVER} -r requirements.txt
+# 2. Install NetBox dependencies but tell pip to ONLY use binary wheels
+# This prevents it from trying to compile the psycopg source file that failed
+pip install --no-index --only-binary=:all: --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
+    --trusted-host ${REPO_SERVER} gunicorn psycopg psycopg-c psycopg-pool -r requirements.txt
+
 # ---------------- CONFIGURATION ----------------
 log "Configuring NetBox..."
 SECRET_KEY=$(python3 netbox/generate_secret_key.py)
