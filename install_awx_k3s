@@ -125,6 +125,20 @@ dmesg -T | grep -i oom
 
 systemctl restart k3s
 
+cat <<EOF | kubectl apply -f -
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: force-https
+  namespace: awx
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+EOF
+
+
+
 vi awx-instance.yaml
 
 apiVersion: awx.ansible.com/v1beta1
@@ -137,10 +151,11 @@ spec:
   ingress_type: ingress
   hostname: ansible-server-01.vgs.com
   ingress_tls_secret: awx-server-tls
-  # Add the following lines:
   ingress_annotations: |
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: awx-force-https@kubernetescrd
+  extra_settings:
+    - setting: SECURE_PROXY_SSL_HEADER
+      value: "('HTTP_X_FORWARDED_PROTO', 'https')"
 
 kubectl apply -f awx-instance.yaml -n awx
 
