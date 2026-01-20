@@ -13,6 +13,38 @@ DB_PASS="Root@123"
 NETBOX_ROOT="/opt/netbox"
 PYTHON_BIN="/usr/bin/python3.12"
 
+rm -rf /etc/yum.repos.d/*
+cat <<EOF > /etc/yum.repos.d/internal_mirror.repo
+[local-extras]
+name=Local Rocky Extras
+baseurl=https://http-server-01/repo/offline_repo/extras
+enabled=1
+gpgcheck=0
+sslverify=0
+
+[local-rancher]
+name=Local Rancher K3s
+baseurl=https://http-server-01/repo/offline_repo/rancher-k3s-common-stable
+enabled=1
+gpgcheck=0
+sslverify=0
+
+[local-packages]
+name=Local Core Dependencies
+baseurl=https://http-server-01/repo/offline_repo/packages
+enabled=1
+gpgcheck=0
+sslverify=0
+
+[netbox-offline]
+name=NetBox Offline Repository
+baseurl=https://http-server-01/repo/netbox_offline_repo/rpms
+enabled=1
+gpgcheck=0
+sslverify=0
+priority=1
+EOF
+
 # ---------------- FUNCTIONS ----------------
 log() { echo -e "\e[32m✔ $1\e[0m"; }
 
