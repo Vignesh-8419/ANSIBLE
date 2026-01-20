@@ -118,7 +118,7 @@ pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_r
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} gunicorn psycopg psycopg_pool
 # 3. MANUALLY install problematic .tar.gz packages
-log "Manually extracting problematic packages (sgmllib3k & django-pglocks)..."
+log "Manually extracting packages and creating metadata shims..."
 
 SITEPKGS="$NETBOX_ROOT/venv/lib/python3.12/site-packages"
 
@@ -128,28 +128,32 @@ curl -kL https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/django-pglo
 tar -xzf /tmp/django-pglocks.tar.gz -C /tmp/manual_pglocks --strip-components=1
 cp -r /tmp/manual_pglocks/django_pglocks $SITEPKGS/
 
-# --- Inject sgmllib3k (New) ---
+# --- Inject sgmllib3k + Metadata Shim ---
 mkdir -p /tmp/manual_sgmllib
 curl -kL https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/sgmllib3k-1.0.0.tar.gz -o /tmp/sgmllib.tar.gz
 tar -xzf /tmp/sgmllib.tar.gz -C /tmp/manual_sgmllib --strip-components=1
-# sgmllib3k is a single file package, usually sgmllib.py
 cp /tmp/manual_sgmllib/sgmllib.py $SITEPKGS/
 
-# Verify both
-$NETBOX_ROOT/venv/bin/python3 -c "import django_pglocks, sgmllib; print('✔ Legacy packages injected successfully')"
+# CREATE THE SHIM: This stops pip from trying to download/build it again
+METADATA_DIR="$SITEPKGS/sgmllib3k-1.0.0.dist-info"
+mkdir -p $METADATA_DIR
+cat <<EOF > $METADATA_DIR/METADATA
+Metadata-Version: 2.1
+Name: sgmllib3k
+Version: 1.0.0
+Summary: Standard Python sgmllib ported to Python 3.
+EOF
+echo '{"generator": "manual"}' > $METADATA_DIR/INSTALLER
+
+# Verify
+$NETBOX_ROOT/venv/bin/python3 -c "import django_pglocks, sgmllib; print('✔ Legacy packages and shims ready')"
 
 cd $NETBOX_ROOT
 
-
-# ... after manual injection ...
-
 # 4. Now install the rest of the requirements
 log "Installing remaining requirements..."
-
-# NEW FIX: Remove django-pglocks from requirements.txt so pip doesn't try to re-build it
-if [ -f "requirements.txt" ]; then
-    sed -i '/django-pglocks/d' requirements.txt
-fi
+sed -i '/django-pglocks/d' requirements.txt
+sed -i '/sgmllib3k/d' requirements.txt
 
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} -r requirements.txt
