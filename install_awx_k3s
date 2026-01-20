@@ -125,3 +125,17 @@ dmesg -T | grep -i oom
 
 systemctl restart k3s
 
+vi awx-instance.yaml
+
+apiVersion: awx.ansible.com/v1beta1
+kind: AWX
+metadata:
+  name: awx-server
+  namespace: awx
+spec:
+  service_type: ClusterIP
+  ingress_type: ingress
+  hostname: ansible-server-01.vgs.com
+  ingress_tls_secret: awx-server-tls
+
+kubectl apply -f awx-instance.yaml -n awx
