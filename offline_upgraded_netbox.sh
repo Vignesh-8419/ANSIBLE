@@ -126,11 +126,8 @@ curl -kL https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/django-pglo
 tar -xzf /tmp/django-pglocks.tar.gz -C /tmp/build_pglocks --strip-components=1
 
 cd /tmp/build_pglocks
-# THE FIX: 
-# We use 'pip install .' while inside the folder. 
-# --no-build-isolation: Uses the setuptools we just installed in the venv.
-# This avoids the "python setup.py" direct call and uses modern build logic.
-venv/bin/pip install . --no-index --no-build-isolation --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs
+# FIX: Use the full absolute path to the venv pip
+$NETBOX_ROOT/venv/bin/pip install . --no-index --no-build-isolation --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs --trusted-host ${REPO_SERVER}
 cd $NETBOX_ROOT
 
 # 4. Now install the rest of the requirements
