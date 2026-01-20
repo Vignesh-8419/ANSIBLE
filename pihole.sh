@@ -61,3 +61,10 @@ bash basic-install.sh
 
 # 4. Restart Pi-hole FTL
 #systemctl restart pihole-FTL
+
+# Add permissions for web traffic
+#firewall-cmd --permanent --add-service=http
+#firewall-cmd --permanent --add-service=https
+
+# Reload to apply changes
+#firewall-cmd --reload
