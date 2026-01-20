@@ -3,3 +3,27 @@ vim-cmd hostsvc/autostartmanager/enable_autostart 1
 vim-cmd vmsvc/getallvms
 vim-cmd hostsvc/autostartmanager/update_autostartentry 3 PowerOn 120 1 GuestShutdown 120 systemDefault
 vim-cmd hostsvc/autostartmanager/update_autostartentry 5 PowerOn 120 2 GuestShutdown 120 systemDefault
+
+
+
+[root@localhost:~] esxcli system settings encryption set --mode=TPM
+[root@localhost:~] esxcli system settings encryption set --require-secure-boot=T
+[root@localhost:~] /bin/backup.sh 0
+Saving current state in /bootbank
+Creating ConfigStore Backup
+Locking esx.conf
+Creating archive
+Unlocked esx.conf
+Using key ID
+c9506184-8fad-4787-b155-f89e450d108b to encrypt
+Clock updated.
+Time: 06:57:34   Date: 01/20/2026   UTC
+[root@localhost:~] esxcli system settings encryption get
+   Mode: TPM
+   Require Executables Only From Installed VIBs: false
+   Require Secure Boot: true
+[root@localhost:~] esxcli system settings encryption recovery list
+Recovery ID                             Key
+--------------------------------------  ---
+{51640D4C-6CF8-48D7-81E9-D867CD844D92}  072512-279302-061261-639928-516069-538268-309205-215816-081991-345288-294425-163339-576302-591835-423239-336571
+[root@localhost:~]
