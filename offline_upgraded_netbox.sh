@@ -79,7 +79,6 @@ fi
 systemctl enable --now postgresql-15 redis
 
 log "Creating NetBox database..."
-# Move to /tmp to avoid "Permission denied" when sudo-ing to postgres user
 cd /tmp
 sudo -u postgres psql <<EOF
 DROP DATABASE IF EXISTS $DB_NAME;
@@ -98,11 +97,6 @@ tar -xzf /tmp/netbox.tar.gz -C $NETBOX_ROOT --strip-components=1
 
 cd $NETBOX_ROOT
 
-# FIX: Modify requirements to use pure-python psycopg instead of seeking C-extensions
-if [ -f "requirements.txt" ]; then
-    sed -i 's/psycopg\[c\]/psycopg/g' requirements.txt
-fi
-
 # ---------------- PYTHON VENV & PKGS (OFFLINE) ----------------
 log "Creating Python virtual environment..."
 $PYTHON_BIN -m venv venv
@@ -110,13 +104,14 @@ source venv/bin/activate
 
 log "Installing Python wheels from internal mirror..."
 
-# 1. Upgrade pip/wheel AND install setuptools
+# 1. Upgrade core pip tools
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} pip wheel setuptools
 
 # 2. Install database drivers and gunicorn
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} gunicorn psycopg psycopg_pool
+
 # 3. MANUALLY install problematic .tar.gz packages
 log "Manually extracting packages and creating metadata shims..."
 
@@ -134,7 +129,6 @@ curl -kL https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/sgmllib3k-1
 tar -xzf /tmp/sgmllib.tar.gz -C /tmp/manual_sgmllib --strip-components=1
 cp /tmp/manual_sgmllib/sgmllib.py $SITEPKGS/
 
-# CREATE THE SHIM: This stops pip from trying to download/build it again
 METADATA_DIR="$SITEPKGS/sgmllib3k-1.0.0.dist-info"
 mkdir -p $METADATA_DIR
 cat <<EOF > $METADATA_DIR/METADATA
@@ -143,7 +137,6 @@ Name: sgmllib3k
 Version: 1.0.0
 Summary: Standard Python sgmllib ported to Python 3.
 EOF
-echo '{"generator": "manual"}' > $METADATA_DIR/INSTALLER
 
 # --- Inject promise ---
 mkdir -p /tmp/manual_promise
@@ -151,32 +144,33 @@ curl -kL https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/promise-2.3
 tar -xzf /tmp/promise.tar.gz -C /tmp/manual_promise --strip-components=1
 cp -r /tmp/manual_promise/promise $SITEPKGS/
 
-# Verify
-$NETBOX_ROOT/venv/bin/python3 -c "import django_pglocks, sgmllib, promise; print('✔ Legacy packages and shims ready')"
+# --- Inject six (Dependency for promise) ---
+mkdir -p /tmp/manual_six
+curl -kL https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/six-1.17.0.tar.gz -o /tmp/six.tar.gz
+tar -xzf /tmp/six.tar.gz -C /tmp/manual_six --strip-components=1
+cp /tmp/manual_six/six.py $SITEPKGS/
 
+# Verify manual injections
+$NETBOX_ROOT/venv/bin/python3 -c "import django_pglocks, sgmllib, promise, six; print('✔ Legacy packages and shims ready')"
 
-# Verify
-$NETBOX_ROOT/venv/bin/python3 -c "import django_pglocks, sgmllib; print('✔ Legacy packages and shims ready')"
-
+# 4. Install remaining requirements
+log "Installing remaining requirements..."
 cd $NETBOX_ROOT
 
-# 4. Now install the rest of the requirements
-log "Installing remaining requirements..."
-
+# Strip problematic packages from requirements.txt to prevent build attempts
 sed -i '/django-pglocks/d' requirements.txt
 sed -i '/sgmllib3k/d' requirements.txt
 sed -i '/psycopg/d' requirements.txt
-# NEW: Strip promise so pip doesn't try to build it
 sed -i '/promise/d' requirements.txt
+sed -i '/six/d' requirements.txt
 
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} -r requirements.txt
 
-
 # ---------------- CONFIGURATION ----------------
 log "Configuring NetBox..."
-SECRET_KEY=$(python3 netbox/generate_secret_key.py)
-PEPPER=$(python3 netbox/generate_secret_key.py)
+SECRET_KEY=$(venv/bin/python3 netbox/generate_secret_key.py)
+PEPPER=$(venv/bin/python3 netbox/generate_secret_key.py)
 
 cat <<EOF > netbox/netbox/configuration.py
 import os
@@ -201,13 +195,6 @@ REDIS = {
 SECRET_KEY = '$SECRET_KEY'
 API_TOKEN_PEPPERS = {1: '$PEPPER'}
 CSRF_TRUSTED_ORIGINS = ['https://$FQDN','http://$FQDN']
-
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {'console': {'class': 'logging.StreamHandler'}},
-    'root': {'handlers': ['console'], 'level': 'INFO'},
-}
 EOF
 
 # ---------------- MIGRATIONS ----------------
@@ -215,12 +202,12 @@ log "Running migrations..."
 redis-cli -n 0 flushdb
 redis-cli -n 1 flushdb
 
-python3 netbox/manage.py migrate
-python3 netbox/manage.py collectstatic --noinput
+venv/bin/python3 netbox/manage.py migrate
+venv/bin/python3 netbox/manage.py collectstatic --noinput
 
 # ---------------- ADMIN USER ----------------
 log "Creating admin user..."
-echo "from django.contrib.auth import get_user_model; User=get_user_model(); User.objects.create_superuser('netadmin','admin@example.com','Netbox12345678')" | python3 netbox/manage.py shell
+echo "from django.contrib.auth import get_user_model; User=get_user_model(); User.objects.create_superuser('netadmin','admin@example.com','Netbox12345678')" | venv/bin/python3 netbox/manage.py shell
 
 # ---------------- SYSTEMD ----------------
 log "Installing systemd services..."
