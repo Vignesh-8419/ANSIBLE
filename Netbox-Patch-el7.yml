@@ -33,6 +33,7 @@
           baseurl={{ nb_ctx.httpd_server_url }}{{ item.folder }}/
           enabled=1
           gpgcheck=0
+          sslverify=0
       loop: "{{ nb_ctx.repositories }}"
       when: nb_ctx.repositories is defined
 
