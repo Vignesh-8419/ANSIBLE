@@ -198,3 +198,8 @@ spec:
 EOF
 
 kubectl annotate ingress awx-server-ingress traefik.ingress.kubernetes.io/router.middlewares- -n awx
+
+kubectl delete pods --all -n awx
+kubectl annotate ingress awx-server-ingress traefik.ingress.kubernetes.io/router.middlewares- -n awx
+kubectl get endpoints awx-server-service -n awx
+curl -I -k http://ansible-server-01.vgs.com
