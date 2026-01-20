@@ -152,7 +152,7 @@ spec:
   hostname: ansible-server-01.vgs.com
   ingress_tls_secret: awx-server-tls
   ingress_annotations: |
-    traefik.ingress.kubernetes.io/router.middlewares: awx-force-https@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: awx-awx-force-https@kubernetescrd
   extra_settings:
     - setting: SECURE_PROXY_SSL_HEADER
       value: "('HTTP_X_FORWARDED_PROTO', 'https')"
