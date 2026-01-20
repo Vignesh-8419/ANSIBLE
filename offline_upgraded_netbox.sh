@@ -79,6 +79,8 @@ fi
 systemctl enable --now postgresql-15 redis
 
 log "Creating NetBox database..."
+# Move to /tmp to avoid "Permission denied" when sudo-ing to postgres user
+cd /tmp
 sudo -u postgres psql <<EOF
 DROP DATABASE IF EXISTS $DB_NAME;
 DROP USER IF EXISTS $DB_USER;
@@ -86,15 +88,20 @@ CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';
 CREATE DATABASE $DB_NAME OWNER $DB_USER;
 ALTER SCHEMA public OWNER TO $DB_USER;
 EOF
+cd ~
 
 # ---------------- NETBOX SOURCE (OFFLINE) ----------------
 log "Downloading NetBox source tarball from mirror..."
 mkdir -p $NETBOX_ROOT
-# Pulling the compressed source instead of git clone
 curl -kL https://${REPO_SERVER}/repo/netbox_offline_repo/src/netbox-${NETBOX_VERSION}.tar.gz -o /tmp/netbox.tar.gz
 tar -xzf /tmp/netbox.tar.gz -C $NETBOX_ROOT --strip-components=1
 
 cd $NETBOX_ROOT
+
+# FIX: Modify requirements to use pure-python psycopg instead of seeking C-extensions
+if [ -f "requirements.txt" ]; then
+    sed -i 's/psycopg\[c\]/psycopg/g' requirements.txt
+fi
 
 # ---------------- PYTHON VENV & PKGS (OFFLINE) ----------------
 log "Creating Python virtual environment..."
@@ -103,17 +110,15 @@ source venv/bin/activate
 
 log "Installing Python wheels from internal mirror..."
 
-# 1. Upgrade pip/wheel using what you have
+# 1. Upgrade pip/wheel
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} pip wheel
 
-# 2. Install psycopg and pool (excluding the 'c' extension)
-# listing them individually ensures we don't trigger the 'psycopg[c]' requirement
+# 2. Install database drivers and gunicorn explicitly
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} gunicorn psycopg psycopg_pool
 
-# 3. Install requirements but ignore any failure for 'psycopg-c' or 'setuptools'
-# We use --no-deps for the requirements if you have all sub-dependencies in the folder
+# 3. Install remaining requirements
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} -r requirements.txt
 
