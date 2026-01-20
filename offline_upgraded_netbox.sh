@@ -102,11 +102,15 @@ $PYTHON_BIN -m venv venv
 source venv/bin/activate
 
 log "Installing Python wheels from internal mirror..."
-# --no-index and --find-links prevent pip from reaching out to PyPI
-pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs pip wheel
-pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs gunicorn "psycopg[c,pool]"
-pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs -r requirements.txt
+# Add --trusted-host to bypass SSL certificate verification for Pip
+pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
+    --trusted-host ${REPO_SERVER} pip wheel
 
+pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
+    --trusted-host ${REPO_SERVER} gunicorn "psycopg[c,pool]"
+
+pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
+    --trusted-host ${REPO_SERVER} -r requirements.txt
 # ---------------- CONFIGURATION ----------------
 log "Configuring NetBox..."
 SECRET_KEY=$(python3 netbox/generate_secret_key.py)
