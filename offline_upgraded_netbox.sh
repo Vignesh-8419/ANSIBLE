@@ -145,6 +145,16 @@ Summary: Standard Python sgmllib ported to Python 3.
 EOF
 echo '{"generator": "manual"}' > $METADATA_DIR/INSTALLER
 
+# --- Inject promise ---
+mkdir -p /tmp/manual_promise
+curl -kL https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs/promise-2.3.tar.gz -o /tmp/promise.tar.gz
+tar -xzf /tmp/promise.tar.gz -C /tmp/manual_promise --strip-components=1
+cp -r /tmp/manual_promise/promise $SITEPKGS/
+
+# Verify
+$NETBOX_ROOT/venv/bin/python3 -c "import django_pglocks, sgmllib, promise; print('✔ Legacy packages and shims ready')"
+
+
 # Verify
 $NETBOX_ROOT/venv/bin/python3 -c "import django_pglocks, sgmllib; print('✔ Legacy packages and shims ready')"
 
@@ -153,11 +163,11 @@ cd $NETBOX_ROOT
 # 4. Now install the rest of the requirements
 log "Installing remaining requirements..."
 
-# Remove problematic packages from requirements.txt so pip doesn't re-try them
 sed -i '/django-pglocks/d' requirements.txt
 sed -i '/sgmllib3k/d' requirements.txt
-# NEW: Force pip to ignore any requirement for the C-extension we already handled
 sed -i '/psycopg/d' requirements.txt
+# NEW: Strip promise so pip doesn't try to build it
+sed -i '/promise/d' requirements.txt
 
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
     --trusted-host ${REPO_SERVER} -r requirements.txt
