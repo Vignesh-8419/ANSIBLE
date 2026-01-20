@@ -39,6 +39,7 @@
           name={{ repo.name }}
           baseurl={{ nb_ctx.httpd_server_url }}{{ repo.folder }}
           gpgcheck=0
+          sslverify=0
           enabled=1
 
           {% endfor %}
