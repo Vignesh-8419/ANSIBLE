@@ -38,3 +38,9 @@ export PIHOLE_SELINUX=true
 echo "configured selinux"
 
 bash basic-install.sh
+
+#vi /etc/pihole/pihole.toml
+#[webserver]
+  # 'r' tells FTL to redirect HTTP traffic to the first available HTTPS port
+#  port = "80r,443os,[::]:80r,[::]:443os"
+#systemctl restart pihole-FTL
