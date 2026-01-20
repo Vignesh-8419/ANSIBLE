@@ -157,7 +157,9 @@ spec:
     - setting: SECURE_PROXY_SSL_HEADER
       value: "('HTTP_X_FORWARDED_PROTO', 'https')"
 
+
 kubectl apply -f awx-instance.yaml -n awx
+
 
 
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
@@ -202,4 +204,10 @@ kubectl annotate ingress awx-server-ingress traefik.ingress.kubernetes.io/router
 kubectl delete pods --all -n awx
 kubectl annotate ingress awx-server-ingress traefik.ingress.kubernetes.io/router.middlewares- -n awx
 kubectl get endpoints awx-server-service -n awx
+curl -I -k http://ansible-server-01.vgs.com
+
+kubectl annotate ingress awx-server-ingress -n awx --overwrite traefik.ingress.kubernetes.io/router.middlewares=awx-awx-force-https@kubernetescrd
+kubectl get ingress awx-server-ingress -n awx -o yaml | grep middlewares
+kubectl logs -n kube-system -l app.kubernetes.io/name=traefik --tail=5
+curl -I -k https://ansible-server-01.vgs.com
 curl -I -k http://ansible-server-01.vgs.com
