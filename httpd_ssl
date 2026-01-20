@@ -388,11 +388,14 @@ PidFile /var/run/httpd/httpd.pid
 
 ============================================
 sudo yum install -y mod_ssl        # or dnf install mod_ssl on newer systems
+openssl genrsa -out pvt.pem
 openssl req -new -key pvt.pem -out cert.pem -subj "/C=IN/ST=Chennai/O=VGS.COM/OU=VGS.COM/CN=http-server-01.vgs.com"
 openssl x509 -req -days 365 -in cert.pem -signkey pvt.pem -out cert.pem
 openssl x509 -in cert.pem --text
-sudo cp your-cert.crt /etc/pki/tls/certs/crt.pem
-sudo cp your-key.key  /etc/pki/tls/private/pvt.pem
+# Move the actual files you generated
+sudo cp cert.pem /etc/pki/tls/certs/crt.pem
+sudo cp pvt.pem /etc/pki/tls/private/pvt.pem
+# Secure the private key
 sudo chmod 600 /etc/pki/tls/private/pvt.pem
 sudo vi /etc/httpd/conf.d/ssl.conf
 ServerName http-server-01.vgs.com
