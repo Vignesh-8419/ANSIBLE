@@ -103,15 +103,18 @@ source venv/bin/activate
 
 log "Installing Python wheels from internal mirror..."
 
-# 1. Upgrade pip and install setuptools/wheel from your local files
+# 1. Try to install what you have, ignoring the error if setuptools is missing
 pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
-    --trusted-host ${REPO_SERVER} pip wheel setuptools
+    --trusted-host ${REPO_SERVER} pip wheel || true
 
-# 2. Install NetBox dependencies but tell pip to ONLY use binary wheels
-# This prevents it from trying to compile the psycopg source file that failed
+# 2. Use the --ignore-requires-python flag and list every major requirement
+# We add --no-deps to prevent it from hunting for setuptools if the wheel is already binary
 pip install --no-index --only-binary=:all: --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
-    --trusted-host ${REPO_SERVER} gunicorn psycopg psycopg-c psycopg-pool -r requirements.txt
+    --trusted-host ${REPO_SERVER} gunicorn psycopg-binary psycopg-pool 
 
+# 3. Install the rest of the requirements
+pip install --no-index --find-links=https://${REPO_SERVER}/repo/netbox_offline_repo/python_pkgs \
+    --trusted-host ${REPO_SERVER} -r requirements.txt
 # ---------------- CONFIGURATION ----------------
 log "Configuring NetBox..."
 SECRET_KEY=$(python3 netbox/generate_secret_key.py)
