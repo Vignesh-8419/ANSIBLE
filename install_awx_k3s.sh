@@ -8,6 +8,38 @@ VIP="192.168.253.145"
 ADMIN_PASSWORD="Root@123"
 INTERFACE=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
 
+rm -rf /etc/yum.repos.d/*
+cat <<EOF > /etc/yum.repos.d/internal_mirror.repo
+[local-extras]
+name=Local Rocky Extras
+baseurl=https://http-server-01/repo/offline_repo/extras
+enabled=1
+gpgcheck=0
+sslverify=0
+
+[local-rancher]
+name=Local Rancher K3s
+baseurl=https://http-server-01/repo/offline_repo/rancher-k3s-common-stable
+enabled=1
+gpgcheck=0
+sslverify=0
+
+[local-packages]
+name=Local Core Dependencies
+baseurl=https://http-server-01/repo/offline_repo/packages
+enabled=1
+gpgcheck=0
+sslverify=0
+
+[netbox-offline]
+name=NetBox Offline Repository
+baseurl=https://http-server-01/repo/netbox_offline_repo/rpms
+enabled=1
+gpgcheck=0
+sslverify=0
+priority=1
+EOF
+
 echo "📦 Installing prerequisites & SELinux support..."
 dnf install -y git make curl gettext net-tools container-selinux selinux-policy-base
 # Install K3s SELinux policy specifically for RHEL/Rocky 8
