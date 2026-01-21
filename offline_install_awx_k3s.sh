@@ -206,6 +206,42 @@ until [ "$(curl -s -L -o /dev/null -w "%{http_code}" http://$VIP --connect-timeo
     sleep 20
 done
 
+cat <<EOF | kubectl apply -f -
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: awx
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+EOF
+
+cat <<EOF | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: awx-ingress
+  namespace: awx
+  annotations:
+    # This line triggers the redirect middleware created above
+    traefik.ingress.kubernetes.io/router.middlewares: awx-redirect-https@kubernetescrd
+    # This line tells Traefik to listen on both ports
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: awx-server-service
+            port:
+              number: 80
+EOF
+
 echo -e "\n-------------------------------------------------------"
 echo "✅ AWX IS READY!"
 echo "🌐 URL: http://$VIP"
