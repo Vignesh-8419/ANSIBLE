@@ -65,7 +65,7 @@ module_hotfixes=true
 EOF
 
 yum clean all
-log "Installing OS dependencies (psmisc, socat, conntrack)..."
+log "Installing OS dependencies..."
 yum install -y psmisc socat conntrack-tools ipset-service || true
 
 # ---------------- 2. NUCLEAR CLEANUP ----------------
@@ -75,7 +75,7 @@ pkill -9 -x k3s || true
 pkill -9 -x containerd || true
 cat /proc/mounts | grep -E 'k3s|kubelet' | awk '{print $2}' | sort -r | xargs -r umount -l || true
 fuser -k 6443/tcp 2>/dev/null || true
-rm -rf /var/lib/rancher/k3s /etc/rancher/k3s /tmp/*.tar /var/log/k3s_install.log
+rm -rf /var/lib/rancher/k3s /etc/rancher/k3s /var/log/k3s_install.log
 
 # ---------------- 3. NETWORK SETUP ----------------
 log "Ensuring Virtual IP $VIP is active..."
@@ -84,10 +84,9 @@ if ! ip addr show $INTERFACE | grep -q $VIP; then
 fi
 
 # ---------------- 4. DOWNLOAD BINARIES ----------------
-log "Downloading K3s and Kustomize..."
+log "Downloading K3s..."
 curl -fkL https://${REPO_SERVER}/repo/ansible_offline_repo/binaries/k3s -o /usr/local/bin/k3s
-curl -fkL https://${REPO_SERVER}/repo/ansible_offline_repo/binaries/kustomize -o /usr/local/bin/kustomize
-chmod +x /usr/local/bin/k3s /usr/local/bin/kustomize
+chmod +x /usr/local/bin/k3s
 ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl
 
 # ---------------- 5. START K3S ----------------
@@ -119,31 +118,36 @@ echo " Connected!"
 log "Importing Images..."
 IMAGE_FILES=("k3s-airgap-images.tar" "awx.tar" "awx-operator.tar" "postgres.tar" "redis.tar")
 for IMG in "${IMAGE_FILES[@]}"; do
-    log "Processing $IMG..."
+    log "Downloading and processing $IMG..."
     curl -fkL https://${REPO_SERVER}/repo/ansible_offline_repo/images/$IMG -o /tmp/$IMG
-    k3s ctr images import /tmp/$IMG && rm -f /tmp/$IMG
+    /usr/local/bin/k3s ctr images import /tmp/$IMG && rm -f /tmp/$IMG
 done
 
-# ---------------- 7. DEPLOY OPERATOR (OFFLINE) ----------------
-log "Deploying AWX Operator (Local Manifest)..."
+# ---------------- 7. DEPLOY OPERATOR (OFFLINE DIRECT) ----------------
+log "Deploying AWX Operator..."
 kubectl create namespace awx || true
-mkdir -p /opt/awx-operator
-cd /opt/awx-operator
 
-curl -fkL https://${REPO_SERVER}/repo/ansible_offline_repo/manifests/awx-operator.yaml -o awx-operator-offline.yaml
-kubectl apply -f awx-operator-offline.yaml
+# We pull the specific versioned manifest from your repo. 
+# Ensure you have uploaded the manifest to your Repo Server!
+curl -fkL https://${REPO_SERVER}/repo/ansible_offline_repo/manifests/awx-operator.yaml -o /tmp/awx-operator.yaml
 
-log "Waiting for Operator..."
-sleep 30
+if [ ! -s /tmp/awx-operator.yaml ]; then
+    error_exit "Operator manifest not found on repo server! Please upload awx-operator.yaml to /repo/ansible_offline_repo/manifests/"
+fi
+
+kubectl apply -f /tmp/awx-operator.yaml
+
+log "Waiting for Operator pod to be ready..."
 kubectl rollout status deployment awx-operator-controller-manager -n awx --timeout=300s || true
 
 # ---------------- 8. DEPLOY AWX INSTANCE ----------------
-log "Creating AWX Instance with Storage & Networking Fixes..."
+log "Creating AWX Instance..."
 
+# Admin Secret
 kubectl create secret generic awx-server-admin-password \
     --from-literal=password='Root@123' -n awx --dry-run=client -o yaml | kubectl apply -f -
 
-cat <<EOF > awx-instance.yaml
+cat <<EOF > /tmp/awx-instance.yaml
 apiVersion: awx.ansible.com/v1beta1
 kind: AWX
 metadata:
@@ -158,7 +162,7 @@ spec:
   image_version: ${AWX_VERSION}
   postgres_image: docker.io/library/postgres
   postgres_image_version: "15"
-  # Postgres security fix
+  # Database Persistence/Permission Fix
   postgres_extra_container_params:
     - name: postgres
       securityContext:
@@ -167,6 +171,7 @@ spec:
         fsGroup: 0
 EOF
 
-kubectl apply -f awx-instance.yaml -n awx
+kubectl apply -f /tmp/awx-instance.yaml -n awx
 
-log "Installation complete! Access AWX at https://$VIP"
+log "Installation complete!"
+log "Check status: kubectl get pods -n awx"
