@@ -273,7 +273,59 @@ systemctl restart nginx
 
 curl -I http://192.168.253.134
 
+# ---------------- SSL GENERATION ----------------
+log "Generating self-signed SSL certificate..."
+mkdir -p /etc/nginx/ssl
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /etc/nginx/ssl/netbox.key \
+  -out /etc/nginx/ssl/netbox.crt \
+  -subj "/C=US/ST=State/L=City/O=Org/CN=$FQDN"
+
+# ---------------- NGINX (HTTPS VERSION) ----------------
+log "Configuring Nginx with HTTPS..."
+cat <<EOF > /etc/nginx/conf.d/netbox.conf
+server {
+    listen 80;
+    server_name $FQDN $IPADDRESS;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name $FQDN $IPADDRESS;
+
+    ssl_certificate /etc/nginx/ssl/netbox.crt;
+    ssl_certificate_key /etc/nginx/ssl/netbox.key;
+
+    # Optimization for file uploads
+    client_max_body_size 25m;
+
+    location /static/ {
+        alias $NETBOX_ROOT/netbox/static/;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8001;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+
+# ---------------- START & FIREWALL ----------------
+log "Starting services and updating firewall..."
+systemctl daemon-reload
+systemctl enable --now netbox netbox-worker nginx
+
+# Ensure both 80 and 443 are open
+firewall-cmd --permanent --add-service=http
+firewall-cmd --permanent --add-service=https
+firewall-cmd --reload || true
+
 log "----------------------------------------"
 log "NETBOX OFFLINE INSTALL COMPLETE"
-log "URL: http://$IPADDRESS"
+log "URL: https://$FQDN"
+log "Note: You will see a browser certificate warning (self-signed)."
 log "----------------------------------------"
