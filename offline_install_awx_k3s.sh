@@ -26,14 +26,14 @@ sslverify=0
 
 [local-rancher]
 name=Local Rancher K3s
-baseurl=https://192.168.253.136/repo/offline_repo/rancher-k3s-common-stable
+baseurl=https://192.168.253.136/repo/ansible_offline_repo/rancher-k3s-common-stable
 enabled=1
 gpgcheck=0
 sslverify=0
 
 [local-packages]
 name=Local Core Dependencies
-baseurl=https://192.168.253.136/repo/offline_repo/packages
+baseurl=https://192.168.253.136/repo/ansible_offline_repo/packages
 enabled=1
 gpgcheck=0
 sslverify=0
