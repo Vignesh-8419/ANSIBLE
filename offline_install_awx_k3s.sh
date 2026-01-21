@@ -142,6 +142,11 @@ spec:
   service_type: ClusterIP
   admin_password_secret: awx-server-admin-password
   postgres_storage_class: local-path
+  # Use the exact images we just imported
+  postgres_image: docker.io/library/postgres
+  postgres_image_version: "15"
+  redis_image: docker.io/library/redis
+  redis_image_version: "7"
 EOF
 
 kubectl apply -f /opt/awx-operator/awx-instance.yaml -n $NAMESPACE
