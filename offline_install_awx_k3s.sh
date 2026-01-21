@@ -5,6 +5,7 @@ set -e
 NAMESPACE="awx"
 OPERATOR_VERSION="2.19.1"
 VIP="192.168.253.145"
+DOMAIN="ansible-server-01.vgs.com" # Added domain variable
 ADMIN_PASSWORD="Root@123"
 INTERFACE=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
 
@@ -71,19 +72,16 @@ fi
 # --- 3. K3s Installation & Path Fixes ---
 echo "☸️ Installing K3s (Kubernetes)..."
 
-# Fallback mechanism: Try installer, if fails, do it manually
 if ! command -v k3s &> /dev/null; then
     curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--write-kubeconfig-mode 644" sh - || true
 fi
 
-# Manual Binary Download if installer skipped or failed
 if [ ! -f /usr/local/bin/k3s ]; then
     echo "⚠️ Installer failed to place binary. Downloading manually..."
     curl -Lo /usr/local/bin/k3s https://github.com/k3s-io/k3s/releases/download/v1.29.1+k3s2/k3s
     chmod +x /usr/local/bin/k3s
 fi
 
-# Manual Service Creation if missing
 if [ ! -f /etc/systemd/system/k3s.service ]; then
     echo "🛠️ Creating k3s.service manually..."
     cat <<EOF > /etc/systemd/system/k3s.service
@@ -118,7 +116,6 @@ until [ -f /etc/rancher/k3s/k3s.yaml ]; do
     printf "."
 done
 
-# Set Environment for the script
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 export PATH=$PATH:/usr/local/bin
 ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl
@@ -171,14 +168,14 @@ spec:
 EOF
 kubectl apply -f awx-instance.yaml -n $NAMESPACE
 
-# --- 8. Wait for Traefik CRDs (Crucial for Middleware) ---
+# --- 8. Wait for Traefik CRDs ---
 echo "⏳ Waiting for Traefik CRDs to initialize..."
 until kubectl get crd middlewares.traefik.containo.us >/dev/null 2>&1; do
     printf "."
     sleep 5
 done
 
-# --- 9. HTTPS Redirect Configuration ---
+# --- 9. HTTPS Redirect & Ingress Configuration (FIXED) ---
 echo -e "\n🔒 Configuring HTTPS Redirect Middleware..."
 cat <<EOF | kubectl apply -f -
 apiVersion: traefik.containo.us/v1alpha1
@@ -192,7 +189,7 @@ spec:
     permanent: true
 EOF
 
-echo "🔗 Creating Ingress with HTTPS Redirect for VIP $VIP..."
+echo "🔗 Creating Ingress for $DOMAIN..."
 cat <<EOF | kubectl apply -f -
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -200,12 +197,23 @@ metadata:
   name: awx-ingress
   namespace: $NAMESPACE
   annotations:
-    # Syntax: <namespace>-<middleware-name>@kubernetescrd
     traefik.ingress.kubernetes.io/router.middlewares: ${NAMESPACE}-redirect-https@kubernetescrd
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/service.serversscheme: http
 spec:
   rules:
-  - http:
+  - host: $DOMAIN
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: awx-server-service
+            port:
+              number: 80
+  - host: $VIP
+    http:
       paths:
       - path: /
         pathType: Prefix
@@ -218,21 +226,21 @@ EOF
 
 # --- 10. The Wait Loop ---
 echo "⏳ Waiting for AWX UI to be fully operational..."
-echo "Monitoring migration status (this may take several minutes)..."
+echo "Monitoring status at https://$DOMAIN..."
 
-# Using -k because we are using HTTPS with a self-signed cert
-until [ "$(curl -k -s -L -o /dev/null -w "%{http_code}" https://$VIP --connect-timeout 5)" == "200" ]; do
+until [ "$(curl -k -s -H "Host: $DOMAIN" -L -o /dev/null -w "%{http_code}" https://$VIP --connect-timeout 5)" == "200" ]; do
     printf "."
     STATUS=$(kubectl get pods -n $NAMESPACE | grep "postgres" | awk '{print $3}' | head -n 1 || echo "Pending")
     if [[ "$STATUS" == *"Error"* ]] || [[ "$STATUS" == *"CrashLoop"* ]]; then
-        echo -e "\n⚠️  Postgres error detected: Check logs with 'kubectl logs -n $NAMESPACE -l app.kubernetes.io/name=postgres'"
+        echo -e "\n⚠️ Postgres error detected. Check logs."
     fi
     sleep 20
 done
 
 echo -e "\n-------------------------------------------------------"
 echo "✅ AWX IS READY!"
-echo "🌐 URL:      https://$VIP (Redirects from HTTP)"
-echo "👤 User:     admin"
-echo "🔑 Password: $ADMIN_PASSWORD"
+echo "🌐 URL (Domain):  https://$DOMAIN"
+echo "🌐 URL (IP):      https://$VIP"
+echo "👤 User:          admin"
+echo "🔑 Password:      $ADMIN_PASSWORD"
 echo "-------------------------------------------------------"
