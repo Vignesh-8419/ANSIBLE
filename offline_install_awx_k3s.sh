@@ -9,16 +9,10 @@ OPERATOR_VERSION="2.19.1"
 
 set -e
 
-log() {
-    echo -e "\e[32m✔ $1\e[0m"
-}
+log() { echo -e "\e[32m✔ $1\e[0m"; }
+error_exit() { echo -e "\e[31m✘ $1\e[0m"; exit 1; }
 
-error_exit() {
-    echo -e "\e[31m✘ $1\e[0m"
-    exit 1
-}
-
-# ---------------- 1. CONFIGURE OFFLINE REPOS ----------------
+# ---------------- 1. REPOS & DEPENDENCIES ----------------
 log "Configuring local YUM repositories..."
 cat <<EOF > /etc/yum.repos.d/internal_mirror.repo
 [local-extras]
@@ -64,7 +58,6 @@ module_hotfixes=true
 EOF
 
 yum clean all
-log "Ensuring OS dependencies are installed..."
 yum install -y psmisc socat conntrack-tools ipset-service || true
 
 # ---------------- 2. NUCLEAR CLEANUP ----------------
@@ -76,91 +69,61 @@ cat /proc/mounts | grep -E 'k3s|kubelet' | awk '{print $2}' | sort -r | xargs -r
 fuser -k 6443/tcp 2>/dev/null || true
 rm -rf /var/lib/rancher/k3s /etc/rancher/k3s /var/log/k3s_install.log
 
-# ---------------- 3. NETWORK SETUP ----------------
-log "Ensuring Virtual IP $VIP is active..."
+# ---------------- 3. NETWORK & BINARIES ----------------
 if ! ip addr show $INTERFACE | grep -q $VIP; then
     ip addr add ${VIP}/24 dev $INTERFACE || true
 fi
 
-# ---------------- 4. DOWNLOAD BINARY ----------------
 log "Downloading K3s..."
 curl -fkL https://${REPO_SERVER}/repo/ansible_offline_repo/binaries/k3s -o /usr/local/bin/k3s
 chmod +x /usr/local/bin/k3s
 ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl
 
-# ---------------- 5. START K3S ----------------
-log "Starting K3s Server..."
+# ---------------- 4. START K3S ----------------
+log "Starting K3s..."
 nohup /usr/local/bin/k3s server \
     --write-kubeconfig-mode 644 \
     --bind-address $VIP \
     --advertise-address $VIP \
     --node-ip $VIP \
     --disable traefik \
-    --kube-apiserver-arg="service-node-port-range=1-32767" \
     --data-dir /var/lib/rancher/k3s \
     >> /var/log/k3s_install.log 2>&1 &
 
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+until kubectl get nodes &>/dev/null; do sleep 3; echo -n "."; done
+log " Connected!"
 
-log "Waiting for K3s API..."
-MAX_RETRIES=40
-COUNT=0
-until kubectl get nodes &>/dev/null; do
-    sleep 3
-    COUNT=$((COUNT+1))
-    echo -n "."
-    [ $COUNT -ge $MAX_RETRIES ] && error_exit "K3s failed to start."
-done
-echo " Connected!"
-
-# ---------------- 6. IMPORT IMAGES ----------------
+# ---------------- 5. IMPORT IMAGES ----------------
 log "Importing Images..."
 IMAGE_FILES=("k3s-airgap-images.tar" "awx.tar" "awx-operator.tar" "postgres.tar" "redis.tar")
 for IMG in "${IMAGE_FILES[@]}"; do
-    log "Processing $IMG..."
     curl -fkL https://${REPO_SERVER}/repo/ansible_offline_repo/images/$IMG -o /tmp/$IMG
-    k3s ctr images import /tmp/$IMG && rm -f /tmp/$IMG
+    /usr/local/bin/k3s ctr images import /tmp/$IMG && rm -f /tmp/$IMG
 done
 
-# ---------------- 7. DEPLOY OPERATOR (INTERNAL YAML) ----------------
-log "Deploying AWX Operator via direct apply..."
+# ---------------- 6. DEPLOY OPERATOR (FULL MANIFEST) ----------------
+log "Applying Full AWX Operator Manifest..."
 kubectl create namespace awx || true
 
-# Since curl 404'd, we will use a "Local Kustomize" approach 
-# If you have the awx-operator image, we can start it using a basic deployment
-# This is a fallback manifest to get the operator running without external files
+# We download the full manifest once from your repo if available, 
+# but if it's missing, we MUST use a local file.
+# PLEASE ENSURE YOU RUN THIS ON YOUR REPO SERVER TO PROVIDE THE FILE:
+# curl -L https://raw.githubusercontent.com/ansible/awx-operator/2.19.1/deploy/awx-operator.yaml > /var/www/html/repo/ansible_offline_repo/manifests/awx-operator.yaml
 
-cat <<EOF | kubectl apply -f -
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: awx-operator-controller-manager
-  namespace: awx
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      control-plane: controller-manager
-  template:
-    metadata:
-      labels:
-        control-plane: controller-manager
-    spec:
-      containers:
-      - name: manager
-        image: quay.io/ansible/awx-operator:${OPERATOR_VERSION}
-        imagePullPolicy: IfNotPresent
-        env:
-          - name: WATCH_NAMESPACE
-            value: "awx"
-EOF
+curl -fkL https://${REPO_SERVER}/repo/ansible_offline_repo/manifests/awx-operator.yaml -o /tmp/awx-operator.yaml
 
-log "Waiting for Operator pod to initialize..."
+if [ ! -s /tmp/awx-operator.yaml ]; then
+    error_exit "CRITICAL: /tmp/awx-operator.yaml is empty. You MUST upload the official 2.19.1 manifest to your repo server."
+fi
+
+kubectl apply -f /tmp/awx-operator.yaml
+
+log "Waiting for CRDs to register..."
 sleep 20
 
-# ---------------- 8. DEPLOY AWX INSTANCE ----------------
+# ---------------- 7. DEPLOY AWX INSTANCE ----------------
 log "Creating AWX Instance..."
-
 kubectl create secret generic awx-server-admin-password \
     --from-literal=password='Root@123' -n awx --dry-run=client -o yaml | kubectl apply -f -
 
@@ -172,13 +135,8 @@ metadata:
   namespace: awx
 spec:
   service_type: loadbalancer
-  hostname: ansible-server-01.vgs.com
   admin_user: admin
   admin_password_secret: awx-server-admin-password
-  image: quay.io/ansible/awx
-  image_version: ${AWX_VERSION}
-  postgres_image: docker.io/library/postgres
-  postgres_image_version: "15"
   postgres_extra_container_params:
     - name: postgres
       securityContext:
@@ -187,13 +145,13 @@ spec:
         fsGroup: 0
 EOF
 
-# Try applying. If CRD isn't ready, loop until it is.
-MAX_WAIT=10
-until kubectl apply -f /tmp/awx-instance.yaml -n awx 2>/dev/null; do
-    echo "Waiting for AWX CustomResourceDefinition (CRD) to be registered by the operator..."
+# Loop until the CRD is actually recognized by the cluster
+MAX_RETRIES=20
+while ! kubectl apply -f /tmp/awx-instance.yaml -n awx 2>/dev/null; do
+    echo "Waiting for Operator to initialize CRDs..."
     sleep 10
-    MAX_WAIT=$((MAX_WAIT-1))
-    if [ $MAX_WAIT -eq 0 ]; then error_exit "Operator failed to register AWX CRD."; fi
+    ((MAX_RETRIES--))
+    if [ $MAX_RETRIES -le 0 ]; then error_exit "CRD registration timed out."; fi
 done
 
-log "Installation initiated! Access AWX at http://$VIP"
+log "Installation complete! Monitor with: kubectl get pods -n awx"
