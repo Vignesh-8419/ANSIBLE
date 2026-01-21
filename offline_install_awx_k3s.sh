@@ -12,79 +12,49 @@ set -e
 log() { echo -e "\e[32m✔ $1\e[0m"; }
 error_exit() { echo -e "\e[31m✘ $1\e[0m"; exit 1; }
 
-# ---------------- 1. REPOS & DEPENDENCIES ----------------
-log "Configuring local YUM repositories..."
-cat <<EOF > /etc/yum.repos.d/internal_mirror.repo
-[local-extras]
-name=Local Rocky Extras
-baseurl=https://${REPO_SERVER}/repo/ansible_offline_repo/extras
-enabled=1
-gpgcheck=0
-sslverify=0
-[local-rancher]
-name=Local Rancher K3s
-baseurl=https://${REPO_SERVER}/repo/ansible_offline_repo/rancher-k3s-common-stable
-enabled=1
-gpgcheck=0
-sslverify=0
-[local-packages]
-name=Local Core Dependencies
-baseurl=https://${REPO_SERVER}/repo/ansible_offline_repo/packages
-enabled=1
-gpgcheck=0
-sslverify=0
-EOF
-
-# Ensure K3s dependencies are present
-yum install -y psmisc socat conntrack-tools ipset-service || true
-
-# ---------------- 2. NUCLEAR CLEANUP ----------------
-log "Performing nuclear cleanup..."
-/usr/local/bin/k3s-killall.sh 2>/dev/null || true
-pkill -9 -x k3s || true
-rm -rf /var/lib/rancher/k3s /etc/rancher/k3s
-
-# ---------------- 3. NETWORK & BINARIES ----------------
-if ! ip addr show $INTERFACE | grep -q $VIP; then
-    ip addr add ${VIP}/24 dev $INTERFACE || true
+# ---------------- 1. START K3S (SKIP RE-INSTALL IF RUNNING) ----------------
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+if ! kubectl get nodes &>/dev/null; then
+    log "K3s not responding, restarting..."
+    systemctl stop k3s 2>/dev/null || true
+    pkill -9 -x k3s || true
+    nohup /usr/local/bin/k3s server --write-kubeconfig-mode 644 --bind-address $VIP --advertise-address $VIP --node-ip $VIP --disable traefik --data-dir /var/lib/rancher/k3s >> /var/log/k3s_install.log 2>&1 &
+    sleep 10
 fi
 
-log "Downloading K3s binary..."
-curl -fkL https://${REPO_SERVER}/repo/ansible_offline_repo/binaries/k3s -o /usr/local/bin/k3s
-chmod +x /usr/local/bin/k3s
-ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl
+# ---------------- 2. APPLY CRDs (THE MISSING PIECE) ----------------
+log "Applying AWX Custom Resource Definitions..."
 
-# ---------------- 4. START K3S ----------------
-log "Starting K3s..."
-nohup /usr/local/bin/k3s server \
-    --write-kubeconfig-mode 644 \
-    --bind-address $VIP \
-    --advertise-address $VIP \
-    --node-ip $VIP \
-    --disable traefik \
-    --data-dir /var/lib/rancher/k3s \
-    >> /var/log/k3s_install.log 2>&1 &
+cat <<EOF | kubectl apply -f -
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: awxs.awx.ansible.com
+spec:
+  group: awx.ansible.com
+  names:
+    kind: AWX
+    listKind: AWXList
+    plural: awxs
+    singular: awx
+  scope: Namespaced
+  versions:
+  - name: v1beta1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+    subresources:
+      status: {}
+EOF
 
-export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-until kubectl get nodes &>/dev/null; do sleep 2; echo -n "."; done
-log " Connected!"
+# ---------------- 3. RE-DEPLOY OPERATOR & RBAC ----------------
+log "Ensuring Operator Permissions & Deployment..."
+kubectl create namespace awx 2>/dev/null || true
 
-# ---------------- 5. IMPORT IMAGES ----------------
-log "Importing Images..."
-IMAGE_FILES=("k3s-airgap-images.tar" "awx.tar" "awx-operator.tar" "postgres.tar" "redis.tar")
-for IMG in "${IMAGE_FILES[@]}"; do
-    log "Loading $IMG..."
-    curl -fkL https://${REPO_SERVER}/repo/ansible_offline_repo/images/$IMG -o /tmp/$IMG
-    k3s ctr images import /tmp/$IMG && rm -f /tmp/$IMG
-done
-
-# ---------------- 6. DEPLOY OPERATOR (EMBEDDED MANIFEST) ----------------
-log "Deploying AWX Operator (Embedded YAML)..."
-kubectl create namespace awx || true
-
-# This command generates the required CRDs and Operator deployment directly
-# to avoid the 404 error you encountered.
-cat <<EOF > /tmp/awx-operator-local.yaml
+cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -124,17 +94,11 @@ spec:
       - name: manager
         image: quay.io/ansible/awx-operator:${OPERATOR_VERSION}
         imagePullPolicy: IfNotPresent
-        env:
-          - name: WATCH_NAMESPACE
-            value: ""
 EOF
 
-kubectl apply -f /tmp/awx-operator-local.yaml
+# ---------------- 4. DEPLOY AWX INSTANCE ----------------
+log "Deploying AWX Instance..."
 
-# ---------------- 7. DEPLOY AWX INSTANCE ----------------
-log "Creating AWX Instance..."
-
-# Admin Password Secret
 kubectl create secret generic awx-server-admin-password \
     --from-literal=password='Root@123' -n awx --dry-run=client -o yaml | kubectl apply -f -
 
@@ -156,19 +120,9 @@ spec:
         fsGroup: 0
 EOF
 
-log "Waiting for Operator to start..."
-sleep 30
+log "Waiting for API to recognize AWX type..."
+sleep 10
+kubectl apply -f /tmp/awx-instance.yaml -n awx
 
-# Attempt to apply AWX instance
-MAX_RETRIES=10
-until kubectl apply -f /tmp/awx-instance.yaml -n awx 2>/dev/null; do
-    echo "Waiting for AWX CRD to be ready..."
-    sleep 15
-    ((MAX_RETRIES--))
-    if [ $MAX_RETRIES -le 0 ]; then 
-        log "Warning: CRD not ready yet. You may need to run 'kubectl apply -f /tmp/awx-instance.yaml -n awx' manually in a few minutes."
-        break
-    fi
-done
-
-log "Script complete! Check progress with: kubectl get pods -n awx -w"
+log "SUCCESS: AWX Deployment initiated."
+log "Monitor progress with: kubectl get pods -n awx"
