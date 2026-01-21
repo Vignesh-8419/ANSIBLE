@@ -65,11 +65,14 @@ echo " Connected!"
 
 # ---------------- 5. IMPORT IMAGES ----------------
 log "Fetching and Importing Container Images..."
-IMAGE_FILES=("k3s-airgap-images.tar" "awx-images.tar")
+# Updated list of individual image files
+IMAGE_FILES=("k3s-airgap-images.tar" "awx.tar" "awx-operator.tar" "postgres.tar" "redis.tar")
 
 for IMG in "${IMAGE_FILES[@]}"; do
     log "Processing $IMG..."
+    # Download from the repo server
     if curl -fkL https://${REPO_SERVER}/repo/ansible_offline_repo/images/$IMG -o /tmp/$IMG; then
+        # Import into K3s container runtime
         k3s ctr images import /tmp/$IMG
         rm -f /tmp/$IMG
     else
