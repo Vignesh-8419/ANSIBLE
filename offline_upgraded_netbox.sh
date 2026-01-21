@@ -231,6 +231,48 @@ systemctl enable --now netbox netbox-worker nginx
 firewall-cmd --permanent --add-service=http
 firewall-cmd --reload || true
 
+# Backup the original config
+cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.bak
+
+# Use sed to remove the default server block (everything from 'server {' to the next '} }')
+# Or simply use this command to replace the file with a clean version that only loads conf.d
+cat <<EOF > /etc/nginx/nginx.conf
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log;
+pid /run/nginx.pid;
+
+include /usr/share/nginx/modules/*.conf;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    log_format  main  '\$remote_addr - \$remote_user [\$time_local] "\$request" '
+                      '\$status \$body_bytes_sent "\$http_referer" '
+                      '"\$http_user_agent" "\$http_x_forwarded_for"';
+
+    access_log  /var/log/nginx/access.log  main;
+
+    sendfile            on;
+    tcp_nopush          on;
+    tcp_nodelay         on;
+    keepalive_timeout   65;
+    types_hash_max_size 2048;
+
+    include             /etc/nginx/mime.types;
+    default_type        application/octet-stream;
+
+    # Load modular configuration files from the /etc/nginx/conf.d directory.
+    include /etc/nginx/conf.d/*.conf;
+}
+EOF
+
+systemctl restart nginx
+
+curl -I http://192.168.253.134
+
 log "----------------------------------------"
 log "NETBOX OFFLINE INSTALL COMPLETE"
 log "URL: http://$IPADDRESS"
