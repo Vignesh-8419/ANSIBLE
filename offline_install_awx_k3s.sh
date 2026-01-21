@@ -168,17 +168,18 @@ spec:
 EOF
 kubectl apply -f awx-instance.yaml -n $NAMESPACE
 
-# --- 8. Wait for Traefik CRDs ---
-echo "⏳ Waiting for Traefik CRDs to initialize..."
-until kubectl get crd middlewares.traefik.containo.us >/dev/null 2>&1; do
+# --- 8. Wait for Traefik Deployment (Modern K3s Check) ---
+echo "⏳ Waiting for Traefik to initialize..."
+until kubectl get deployment traefik -n kube-system >/dev/null 2>&1; do
     printf "."
     sleep 5
 done
 
-# --- 9. HTTPS Redirect & Ingress Configuration (FIXED) ---
+# --- 9. HTTPS Redirect & Ingress Configuration ---
 echo -e "\n🔒 Configuring HTTPS Redirect Middleware..."
+# Using the modern traefik.io API group
 cat <<EOF | kubectl apply -f -
-apiVersion: traefik.containo.us/v1alpha1
+apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: redirect-https
@@ -189,7 +190,7 @@ spec:
     permanent: true
 EOF
 
-echo "🔗 Creating Ingress for $DOMAIN..."
+echo "🔗 Creating Ingress with HTTPS Redirect for $DOMAIN..."
 cat <<EOF | kubectl apply -f -
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -197,8 +198,10 @@ metadata:
   name: awx-ingress
   namespace: $NAMESPACE
   annotations:
+    # This triggers the redirect middleware created above
     traefik.ingress.kubernetes.io/router.middlewares: ${NAMESPACE}-redirect-https@kubernetescrd
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    # This allows self-signed/internal traffic between Traefik and AWX
     traefik.ingress.kubernetes.io/service.serversscheme: http
 spec:
   rules:
@@ -212,8 +215,7 @@ spec:
             name: awx-server-service
             port:
               number: 80
-  - host: $VIP
-    http:
+  - http: # No host rule to catch IP-based traffic ($VIP)
       paths:
       - path: /
         pathType: Prefix
@@ -226,15 +228,14 @@ EOF
 
 # --- 10. The Wait Loop ---
 echo "⏳ Waiting for AWX UI to be fully operational..."
-echo "Monitoring status at https://$DOMAIN..."
+echo "Monitoring status at http://$VIP (Redirecting to HTTPS)..."
 
-until [ "$(curl -k -s -H "Host: $DOMAIN" -L -o /dev/null -w "%{http_code}" https://$VIP --connect-timeout 5)" == "200" ]; do
+# Use -k to ignore self-signed certificate warnings during the check
+until [ "$(curl -k -s -L -o /dev/null -w "%{http_code}" http://$VIP --connect-timeout 5)" == "200" ]; do
     printf "."
-    STATUS=$(kubectl get pods -n $NAMESPACE | grep "postgres" | awk '{print $3}' | head -n 1 || echo "Pending")
-    if [[ "$STATUS" == *"Error"* ]] || [[ "$STATUS" == *"CrashLoop"* ]]; then
-        echo -e "\n⚠️ Postgres error detected. Check logs."
-    fi
-    sleep 20
+    # Optional: Brief pod status check to show progress in console
+    POD_STATUS=$(kubectl get pods -n $NAMESPACE -l app.kubernetes.io/component=awx-web -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Starting")
+    sleep 10
 done
 
 echo -e "\n-------------------------------------------------------"
@@ -243,4 +244,7 @@ echo "🌐 URL (Domain):  https://$DOMAIN"
 echo "🌐 URL (IP):      https://$VIP"
 echo "👤 User:          admin"
 echo "🔑 Password:      $ADMIN_PASSWORD"
+echo "⚠️ Note: Your browser will show a 'Privacy Warning' because"
+echo "   we are using a self-signed certificate. Click 'Advanced'"
+echo "   and 'Proceed' to enter the site."
 echo "-------------------------------------------------------"
