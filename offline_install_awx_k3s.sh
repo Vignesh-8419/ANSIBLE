@@ -4,19 +4,33 @@
 REPO_SERVER="192.168.253.136"
 VIP="192.168.253.145"
 OPERATOR_VERSION="2.19.1"
-K_CMD="kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml"
 
+# --- AUTO-DETECT KUBECONFIG ---
+if [ -f "/etc/rancher/k3s/k3s.yaml" ]; then
+    K_PATH="/etc/rancher/k3s/k3s.yaml"
+elif [ -f "/etc/kubernetes/admin.conf" ]; then
+    K_PATH="/etc/kubernetes/admin.conf"
+elif [ -f "$HOME/.kube/config" ]; then
+    K_PATH="$HOME/.kube/config"
+else
+    echo "❌ ERROR: Could not find k3s.yaml or admin.conf. Is K3s installed?"
+    exit 1
+fi
+
+K_CMD="kubectl --kubeconfig=$K_PATH"
 set -e
 
 log() { echo -e "\e[32m✔ $1\e[0m"; }
+
+log "Using Kubeconfig at: $K_PATH"
 
 # 1. CLEANUP
 log "Cleaning up old state..."
 $K_CMD delete awx awx-server -n awx --force --grace-period=0 2>/dev/null || true
 $K_CMD delete deployment awx-operator-controller-manager -n awx 2>/dev/null || true
-sleep 5
+sleep 2
 
-# 2. APPLY ALL REQUIRED CRDs
+# 2. APPLY CRDs
 log "Applying CRDs (Validation Disabled)..."
 cat <<EOF | $K_CMD apply --validate=false -f -
 apiVersion: apiextensions.k8s.io/v1
@@ -91,7 +105,7 @@ spec:
             value: "awx"
 EOF
 
-# 4. DEPLOY AWX INSTANCE
+# 4. DEPLOY AWX
 log "Deploying AWX Instance (HTTPS Enabled)..."
 $K_CMD create secret generic awx-server-admin-password --from-literal=password='Root@123' -n awx --dry-run=client -o yaml | $K_CMD apply -f -
 
