@@ -17,6 +17,7 @@ if netstat -tulpn | grep -q ":6443"; then
 fi
 
 # Refresh Repositories
+echo "📂 Configuring local repositories..."
 rm -rf /etc/yum.repos.d/*
 cat <<EOF > /etc/yum.repos.d/internal_mirror.repo
 [local-extras]
@@ -170,8 +171,28 @@ spec:
 EOF
 kubectl apply -f awx-instance.yaml -n $NAMESPACE
 
-# --- 8. Ingress Configuration ---
-echo "🔗 Creating Ingress for VIP $VIP..."
+# --- 8. Wait for Traefik CRDs (Crucial for Middleware) ---
+echo "⏳ Waiting for Traefik CRDs to initialize..."
+until kubectl get crd middlewares.traefik.containo.us >/dev/null 2>&1; do
+    printf "."
+    sleep 5
+done
+
+# --- 9. HTTPS Redirect Configuration ---
+echo -e "\n🔒 Configuring HTTPS Redirect Middleware..."
+cat <<EOF | kubectl apply -f -
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: $NAMESPACE
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+EOF
+
+echo "🔗 Creating Ingress with HTTPS Redirect for VIP $VIP..."
 cat <<EOF | kubectl apply -f -
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -179,55 +200,8 @@ metadata:
   name: awx-ingress
   namespace: $NAMESPACE
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
-spec:
-  rules:
-  - http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: awx-server-service
-            port:
-              number: 80
-EOF
-
-# --- 9. The Wait Loop ---
-echo "⏳ Waiting for AWX UI at http://$VIP..."
-echo "Monitoring migration status..."
-
-until [ "$(curl -s -L -o /dev/null -w "%{http_code}" http://$VIP --connect-timeout 5)" == "200" ]; do
-    printf "."
-    STATUS=$(kubectl get pods -n $NAMESPACE | grep "postgres" | awk '{print $3}' | head -n 1 || echo "Pending")
-    if [[ "$STATUS" == *"Error"* ]] || [[ "$STATUS" == *"CrashLoop"* ]]; then
-        echo -e "\n⚠️  Postgres error: Check logs with 'kubectl logs -n $NAMESPACE -l app.kubernetes.io/name=postgres'"
-    fi
-    sleep 20
-done
-
-cat <<EOF | kubectl apply -f -
-apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: redirect-https
-  namespace: awx
-spec:
-  redirectScheme:
-    scheme: https
-    permanent: true
-EOF
-
-cat <<EOF | kubectl apply -f -
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: awx-ingress
-  namespace: awx
-  annotations:
-    # This line triggers the redirect middleware created above
-    traefik.ingress.kubernetes.io/router.middlewares: awx-redirect-https@kubernetescrd
-    # This line tells Traefik to listen on both ports
+    # Syntax: <namespace>-<middleware-name>@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: ${NAMESPACE}-redirect-https@kubernetescrd
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
 spec:
   rules:
@@ -242,9 +216,23 @@ spec:
               number: 80
 EOF
 
+# --- 10. The Wait Loop ---
+echo "⏳ Waiting for AWX UI to be fully operational..."
+echo "Monitoring migration status (this may take several minutes)..."
+
+# Using -k because we are using HTTPS with a self-signed cert
+until [ "$(curl -k -s -L -o /dev/null -w "%{http_code}" https://$VIP --connect-timeout 5)" == "200" ]; do
+    printf "."
+    STATUS=$(kubectl get pods -n $NAMESPACE | grep "postgres" | awk '{print $3}' | head -n 1 || echo "Pending")
+    if [[ "$STATUS" == *"Error"* ]] || [[ "$STATUS" == *"CrashLoop"* ]]; then
+        echo -e "\n⚠️  Postgres error detected: Check logs with 'kubectl logs -n $NAMESPACE -l app.kubernetes.io/name=postgres'"
+    fi
+    sleep 20
+done
+
 echo -e "\n-------------------------------------------------------"
 echo "✅ AWX IS READY!"
-echo "🌐 URL: http://$VIP"
-echo "👤 User: admin"
+echo "🌐 URL:      https://$VIP (Redirects from HTTP)"
+echo "👤 User:     admin"
 echo "🔑 Password: $ADMIN_PASSWORD"
 echo "-------------------------------------------------------"
