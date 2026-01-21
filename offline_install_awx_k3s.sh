@@ -9,17 +9,18 @@ OPERATOR_VERSION="2.19.1"
 ADMIN_PASSWORD="Root@123"
 INTERFACE=$(ip route | grep default | awk '{print $5}' | head -n1)
 
+# ---------------- FUNCTIONS ----------------
+# Added the missing log function
+log() { echo -e "\e[32m✔ $1\e[0m"; }
+
 # ---------------- REPOSITORY SETUP ----------------
 log "Configuring all local repositories..."
-
-# Clear existing repos to prevent external lookups
 rm -rf /etc/yum.repos.d/*
 
-# 1. Internal Application Mirrors
 cat <<EOF > /etc/yum.repos.d/internal_mirror.repo
 [local-extras]
 name=Local Rocky Extras
-baseurl=https://192.168.253.136/repo/ansible_offline_repo/extras
+baseurl=https://192.168.253.136/repo/offline_repo/extras
 enabled=1
 gpgcheck=0
 sslverify=0
@@ -47,7 +48,6 @@ sslverify=0
 priority=1
 EOF
 
-# 2. Rocky Linux OS Repositories
 cat <<EOF > /etc/yum.repos.d/rocky8-baseos.repo
 [rocky8-baseos]
 name=Rocky Linux 8 BaseOS
@@ -68,7 +68,6 @@ sslverify=0
 module_hotfixes=true
 EOF
 
-# 3. Installed RHEL Compatibility Repo
 cat <<EOF > /etc/yum.repos.d/rocky8-rhel-installed.repo
 [rocky8-rhel-installed]
 name=Rocky Linux 8 Installed RHEL
@@ -79,16 +78,24 @@ sslverify=0
 module_hotfixes=true
 EOF
 
-# Refresh the cache
 dnf clean all
 dnf makecache
 
+# ---------------- SYSTEM PREP ----------------
+log "Optimizing system for K3s/AWX..."
+# Set SELinux to permissive to avoid container-engine conflicts
+setenforce 0 || true
+sed -i 's/^SELINUX=.*/SELINUX=permissive/' /etc/selinux/config || true
+
+# Disable firewall as K3s manages its own iptables
+systemctl stop firewalld || true
+systemctl disable firewalld || true
+
 log "Installing prerequisites..."
-dnf install -y curl net-tools tar openssl
+dnf install -y curl net-tools tar openssl git make
 
 # ---------------- 2. OFFLINE BINARIES ----------------
 log "Downloading offline binaries (K3s, Kustomize)..."
-# Download from your /binaries folder
 curl -kL https://${REPO_SERVER}/repo/ansible_offline_repo/binaries/k3s -o /usr/local/bin/k3s
 curl -kL https://${REPO_SERVER}/repo/ansible_offline_repo/binaries/kustomize -o /usr/local/bin/kustomize
 chmod +x /usr/local/bin/k3s /usr/local/bin/kustomize
@@ -96,24 +103,24 @@ ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl
 
 # ---------------- 3. K3S INSTALLATION ----------------
 log "Installing K3s in offline mode..."
-# Use --skip-deploy traefik if you prefer Nginx, but we'll stay with default for now
-# --airgap-extra-append ensures it doesn't try to phone home
-INSTALL_K3S_SKIP_DOWNLOAD=true k3s server \
-    --write-kubeconfig-mode 644 \
-    --bind-address $VIP \
-    --advertise-address $VIP &
+# Assign VIP to interface if not already present
+if ! ip addr show $INTERFACE | grep -q "$VIP"; then
+    ip addr add $VIP/24 dev $INTERFACE
+fi
 
-# Wait for K3s
+export INSTALL_K3S_SKIP_DOWNLOAD=true
+k3s server --write-kubeconfig-mode 644 --bind-address $VIP --advertise-address $VIP &
+
+log "Wait for K3s to be ready..."
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-until kubectl get nodes &>/dev/null; do sleep 2; done
+until kubectl get nodes &>/dev/null; do sleep 5; done
 
 # ---------------- 4. LOADING IMAGES ----------------
 log "Importing AWX and K3s Container Images..."
-# This assumes you have bundled images into a tarball
 curl -kL https://${REPO_SERVER}/repo/ansible_offline_repo/images/awx-images.tar -o /tmp/images.tar
 k3s ctr images import /tmp/images.tar
 
-# ---------------- 5. AWX OPERATOR (OFFLINE SOURCE) ----------------
+# ---------------- 5. AWX OPERATOR ----------------
 log "Extracting AWX Operator source..."
 curl -kL https://${REPO_SERVER}/repo/ansible_offline_repo/binaries/awx-operator-${OPERATOR_VERSION}.tar.gz -o /tmp/awx-op.tgz
 mkdir -p /opt/awx-operator
@@ -122,10 +129,10 @@ cd /opt/awx-operator
 
 log "Deploying AWX Operator..."
 kubectl create namespace $NAMESPACE || true
-kubectl create secret generic awx-server-admin-password --from-literal=password=$ADMIN_PASSWORD -n $NAMESPACE || true
+kubectl create secret generic awx-server-admin-password --from-literal=password=$ADMIN_PASSWORD -n $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
 
-# Deploy using local kustomize
-kustomize build config/default | kubectl apply -f -
+# Deploy using local kustomize binaries
+make deploy NAMESPACE=$NAMESPACE
 
 # ---------------- 6. AWX INSTANCE ----------------
 log "Creating AWX Instance..."
@@ -141,4 +148,8 @@ spec:
 EOF
 kubectl apply -f awx-instance.yaml -n $NAMESPACE
 
-log "AWX Offline Setup Initiated. Check status with: kubectl get pods -n $NAMESPACE"
+log "-------------------------------------------------------"
+log "AWX OFFLINE SETUP INITIATED"
+log "Check status with: kubectl get pods -n $NAMESPACE"
+log "URL: http://$VIP (Once pods are Ready)"
+log "-------------------------------------------------------"
