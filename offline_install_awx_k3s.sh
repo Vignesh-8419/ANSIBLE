@@ -18,13 +18,16 @@ error_exit() {
     exit 1
 }
 
-# ---------------- 1. CLEANUP PREVIOUS ATTEMPTS ----------------
-log "Cleaning up previous installations..."
-pkill -9 k3s || true
-if [ -f /usr/local/bin/k3s-killall.sh ]; then
-    /usr/local/bin/k3s-killall.sh 2>/dev/null || true
-fi
+# ---------------- 1. HARD CLEANUP ----------------
+log "Performing hard cleanup of previous attempts..."
+# Stop K3s and kill processes
+/usr/local/bin/k3s-killall.sh 2>/dev/null || true
+pkill -9 -x k3s || true
+
+# Remove data and corrupted image layers
 rm -rf /var/lib/rancher/k3s /etc/rancher/k3s /tmp/*.tar
+# This ensures we don't reuse the bad image IDs
+rm -rf /var/lib/rancher/k3s/agent/containerd 2>/dev/null || true
 
 # ---------------- 2. NETWORK SETUP ----------------
 log "Ensuring Virtual IP $VIP is active..."
@@ -40,8 +43,7 @@ chmod +x /usr/local/bin/k3s /usr/local/bin/kustomize
 ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl
 
 # ---------------- 4. START K3S (BACKGROUND) ----------------
-log "Starting K3s Server in background..."
-# We disable traefik to save resources for AWX
+log "Starting K3s Server..."
 k3s server --write-kubeconfig-mode 644 \
     --bind-address $VIP \
     --advertise-address $VIP \
@@ -65,14 +67,12 @@ echo " Connected!"
 
 # ---------------- 5. IMPORT IMAGES ----------------
 log "Fetching and Importing Container Images..."
-# Updated list of individual image files
+# Updated to use the individual files we verified on http-server-01
 IMAGE_FILES=("k3s-airgap-images.tar" "awx.tar" "awx-operator.tar" "postgres.tar" "redis.tar")
 
 for IMG in "${IMAGE_FILES[@]}"; do
     log "Processing $IMG..."
-    # Download from the repo server
     if curl -fkL https://${REPO_SERVER}/repo/ansible_offline_repo/images/$IMG -o /tmp/$IMG; then
-        # Import into K3s container runtime
         k3s ctr images import /tmp/$IMG
         rm -f /tmp/$IMG
     else
@@ -85,6 +85,9 @@ log "Deploying AWX Operator..."
 mkdir -p /opt/awx-operator
 cd /opt/awx-operator
 
+# We create the kustomization, but note: in a truly offline environment,
+# kustomize build might still try to reach GitHub for the remote resource.
+# If this step fails, we will need to apply a local manifest file.
 cat <<EOF > kustomization.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -95,10 +98,12 @@ images:
     newTag: ${OPERATOR_VERSION}
 EOF
 
-# Since we are offline, we use kustomize build
-kustomize build . | kubectl apply -f -
+# Build and apply
+kustomize build . | kubectl apply -f - || log "Warning: Kustomize build failed, may need offline manifest."
 
 log "Waiting for Operator to be ready..."
+# Give it a moment to initialize the deployment
+sleep 10
 kubectl rollout status deployment awx-operator-controller-manager -n awx --timeout=300s || true
 
 # ---------------- 7. DEPLOY AWX INSTANCE ----------------
@@ -118,7 +123,6 @@ spec:
   postgres_image_version: "15"
   redis_image: docker.io/library/redis
   redis_image_version: "7"
-  # Ensures the operator doesn't try to pull new EE images from internet
   control_plane_ee_image: quay.io/ansible/awx-ee:latest
 EOF
 
