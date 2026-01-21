@@ -19,7 +19,7 @@ rm -rf /etc/yum.repos.d/*
 cat <<EOF > /etc/yum.repos.d/internal_mirror.repo
 [local-extras]
 name=Local Rocky Extras
-baseurl=https://192.168.253.136/repo/offline_repo/extras
+baseurl=https://192.168.253.136/repo/ansible_offline_repo/extras
 enabled=1
 gpgcheck=0
 sslverify=0
