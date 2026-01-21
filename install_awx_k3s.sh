@@ -33,7 +33,7 @@ sslverify=0
 
 [netbox-offline]
 name=NetBox Offline Repository
-baseurl=https://http-server-01/repo/netbox_ansible_offline_repo/rpms
+baseurl=https://http-server-01/repo/netbox_offline_repo/rpms
 enabled=1
 gpgcheck=0
 sslverify=0
