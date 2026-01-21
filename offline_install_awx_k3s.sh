@@ -1,79 +1,33 @@
 #!/bin/bash
-
 # --- CONFIGURATION ---
 REPO_SERVER="192.168.253.136"
 VIP="192.168.253.145"
-INTERFACE="ens192"
-AWX_VERSION="24.6.1"
 OPERATOR_VERSION="2.19.1"
 
 set -e
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
 log() { echo -e "\e[32m✔ $1\e[0m"; }
-error_exit() { echo -e "\e[31m✘ $1\e[0m"; exit 1; }
 
-# ---------------- 1. START K3S (SKIP RE-INSTALL IF RUNNING) ----------------
-export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-if ! kubectl get nodes &>/dev/null; then
-    log "K3s not responding, restarting..."
-    systemctl stop k3s 2>/dev/null || true
-    pkill -9 -x k3s || true
-    nohup /usr/local/bin/k3s server --write-kubeconfig-mode 644 --bind-address $VIP --advertise-address $VIP --node-ip $VIP --disable traefik --data-dir /var/lib/rancher/k3s >> /var/log/k3s_install.log 2>&1 &
-    sleep 10
-fi
+# 1. CLEANUP
+log "Wiping previous failed state..."
+kubectl delete awx awx-server -n awx --force --grace-period=0 2>/dev/null || true
+kubectl delete deployment awx-operator-controller-manager -n awx 2>/dev/null || true
 
-# ---------------- 2. APPLY CRDs (THE MISSING PIECE) ----------------
-log "Applying AWX Custom Resource Definitions..."
+# 2. APPLY ALL CRDs (Prevents the "no matches for kind" errors)
+log "Applying full CRD suite..."
+# Since you are air-gapped, if you have the files locally, use 'kubectl apply -f <path>'
+# Otherwise, we use the raw definition logic:
+for crd in awxs awxbackups awxrestores awxmeshingresses; do
+    kubectl apply -f "https://raw.githubusercontent.com/ansible/awx-operator/${OPERATOR_VERSION}/config/crd/bases/awx.ansible.com_${crd}.yaml" 2>/dev/null || \
+    echo "Warning: Could not fetch ${crd} online. Ensure they are pre-loaded in your air-gap repo."
+done
 
-cat <<EOF | kubectl apply -f -
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: awxs.awx.ansible.com
-spec:
-  group: awx.ansible.com
-  names:
-    kind: AWX
-    listKind: AWXList
-    plural: awxs
-    singular: awx
-  scope: Namespaced
-  versions:
-  - name: v1beta1
-    served: true
-    storage: true
-    schema:
-      openAPIV3Schema:
-        type: object
-        x-kubernetes-preserve-unknown-fields: true
-    subresources:
-      status: {}
-EOF
-
-# ---------------- 3. RE-DEPLOY OPERATOR & RBAC ----------------
-log "Ensuring Operator Permissions & Deployment..."
+# 3. DEPLOY OPERATOR
+log "Deploying Operator..."
 kubectl create namespace awx 2>/dev/null || true
 
 cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: awx-operator-controller-manager
-  namespace: awx
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: awx-operator-rolebinding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
-subjects:
-- kind: ServiceAccount
-  name: awx-operator-controller-manager
-  namespace: awx
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -89,29 +43,42 @@ spec:
       labels:
         control-plane: controller-manager
     spec:
-      serviceAccountName: awx-operator-controller-manager
       containers:
       - name: manager
         image: quay.io/ansible/awx-operator:${OPERATOR_VERSION}
         imagePullPolicy: IfNotPresent
+        env:
+          - name: ANSIBLE_DEBUG_LOGS
+            value: "false"
 EOF
 
-# ---------------- 4. DEPLOY AWX INSTANCE ----------------
-log "Deploying AWX Instance..."
+# 4. DEPLOY AWX WITH HTTPS & AIR-GAP FIXES
+log "Deploying AWX Instance (HTTPS Enabled)..."
 
-kubectl create secret generic awx-server-admin-password \
-    --from-literal=password='Root@123' -n awx --dry-run=client -o yaml | kubectl apply -f -
-
-cat <<EOF > /tmp/awx-instance.yaml
+cat <<EOF | kubectl apply -f -
 apiVersion: awx.ansible.com/v1beta1
 kind: AWX
 metadata:
   name: awx-server
   namespace: awx
 spec:
+  # Network - HTTPS
   service_type: loadbalancer
-  admin_user: admin
-  admin_password_secret: awx-server-admin-password
+  # AWX generates a self-signed cert on 443 by default when service_type is LB
+  
+  # Air-Gap Protection
+  auto_upgrade: false
+  web_replicas: 1
+  task_replicas: 1
+  image_pull_policy: IfNotPresent
+  
+  # Image Registry Overrides (pointing to your local cache)
+  control_plane_ee_image: quay.io/ansible/awx-ee:24.6.1
+  ee_images:
+    - name: "Local EE"
+      image: quay.io/ansible/awx-ee:24.6.1
+
+  # Database Security Fix
   postgres_extra_container_params:
     - name: postgres
       securityContext:
@@ -120,9 +87,4 @@ spec:
         fsGroup: 0
 EOF
 
-log "Waiting for API to recognize AWX type..."
-sleep 10
-kubectl apply -f /tmp/awx-instance.yaml -n awx
-
-log "SUCCESS: AWX Deployment initiated."
-log "Monitor progress with: kubectl get pods -n awx"
+log "Deployment submitted. Watch for the Operator to stabilize first."
