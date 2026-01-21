@@ -64,27 +64,34 @@ metadata:
 spec:
   # Network - HTTPS
   service_type: loadbalancer
-  # AWX generates a self-signed cert on 443 by default when service_type is LB
-  
+  ingress_type: none
+  hostname: ${VIP}
+
   # Air-Gap Protection
   auto_upgrade: false
   web_replicas: 1
   task_replicas: 1
   image_pull_policy: IfNotPresent
   
-  # Image Registry Overrides (pointing to your local cache)
+  # Image Registry Overrides
   control_plane_ee_image: quay.io/ansible/awx-ee:24.6.1
   ee_images:
     - name: "Local EE"
       image: quay.io/ansible/awx-ee:24.6.1
 
-  # Database Security Fix
-  postgres_extra_container_params:
-    - name: postgres
-      securityContext:
-        runAsUser: 0
-        runAsGroup: 0
-        fsGroup: 0
+  # NEW POSTGRES CONFIG (Replaces the failing block)
+  # This tells the operator how to handle the postgres container
+  postgres_init_container_resource_requirements:
+    limits:
+      cpu: "100m"
+      memory: "128Mi"
+    requests:
+      cpu: "10m"
+      memory: "64Mi"
+
+  # Admin Password Secret (ensure this exists)
+  admin_user: admin
+  admin_password_secret: awx-server-admin-password
 EOF
 
 log "Deployment submitted. Watch for the Operator to stabilize first."
