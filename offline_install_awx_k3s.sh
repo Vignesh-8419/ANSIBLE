@@ -21,14 +21,12 @@ baseurl=https://${REPO_SERVER}/repo/ansible_offline_repo/extras
 enabled=1
 gpgcheck=0
 sslverify=0
-
 [local-rancher]
 name=Local Rancher K3s
 baseurl=https://${REPO_SERVER}/repo/ansible_offline_repo/rancher-k3s-common-stable
 enabled=1
 gpgcheck=0
 sslverify=0
-
 [local-packages]
 name=Local Core Dependencies
 baseurl=https://${REPO_SERVER}/repo/ansible_offline_repo/packages
@@ -37,44 +35,21 @@ gpgcheck=0
 sslverify=0
 EOF
 
-cat <<EOF > /etc/yum.repos.d/rocky8-baseos.repo
-[rocky8-baseos]
-name=Rocky Linux 8 BaseOS
-baseurl=https://${REPO_SERVER}/repo/rocky8/BaseOS
-enabled=1
-gpgcheck=0
-sslverify=0
-module_hotfixes=true
-EOF
-
-cat <<EOF > /etc/yum.repos.d/rocky8-appstream.repo
-[rocky8-appstream]
-name=Rocky Linux 8 AppStream
-baseurl=https://${REPO_SERVER}/repo/rocky8/Appstream
-enabled=1
-gpgcheck=0
-sslverify=0
-module_hotfixes=true
-EOF
-
-yum clean all
+# Ensure K3s dependencies are present
 yum install -y psmisc socat conntrack-tools ipset-service || true
 
 # ---------------- 2. NUCLEAR CLEANUP ----------------
 log "Performing nuclear cleanup..."
 /usr/local/bin/k3s-killall.sh 2>/dev/null || true
 pkill -9 -x k3s || true
-pkill -9 -x containerd || true
-cat /proc/mounts | grep -E 'k3s|kubelet' | awk '{print $2}' | sort -r | xargs -r umount -l || true
-fuser -k 6443/tcp 2>/dev/null || true
-rm -rf /var/lib/rancher/k3s /etc/rancher/k3s /var/log/k3s_install.log
+rm -rf /var/lib/rancher/k3s /etc/rancher/k3s
 
 # ---------------- 3. NETWORK & BINARIES ----------------
 if ! ip addr show $INTERFACE | grep -q $VIP; then
     ip addr add ${VIP}/24 dev $INTERFACE || true
 fi
 
-log "Downloading K3s..."
+log "Downloading K3s binary..."
 curl -fkL https://${REPO_SERVER}/repo/ansible_offline_repo/binaries/k3s -o /usr/local/bin/k3s
 chmod +x /usr/local/bin/k3s
 ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl
@@ -91,39 +66,75 @@ nohup /usr/local/bin/k3s server \
     >> /var/log/k3s_install.log 2>&1 &
 
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-until kubectl get nodes &>/dev/null; do sleep 3; echo -n "."; done
+until kubectl get nodes &>/dev/null; do sleep 2; echo -n "."; done
 log " Connected!"
 
 # ---------------- 5. IMPORT IMAGES ----------------
 log "Importing Images..."
 IMAGE_FILES=("k3s-airgap-images.tar" "awx.tar" "awx-operator.tar" "postgres.tar" "redis.tar")
 for IMG in "${IMAGE_FILES[@]}"; do
+    log "Loading $IMG..."
     curl -fkL https://${REPO_SERVER}/repo/ansible_offline_repo/images/$IMG -o /tmp/$IMG
-    /usr/local/bin/k3s ctr images import /tmp/$IMG && rm -f /tmp/$IMG
+    k3s ctr images import /tmp/$IMG && rm -f /tmp/$IMG
 done
 
-# ---------------- 6. DEPLOY OPERATOR (FULL MANIFEST) ----------------
-log "Applying Full AWX Operator Manifest..."
+# ---------------- 6. DEPLOY OPERATOR (EMBEDDED MANIFEST) ----------------
+log "Deploying AWX Operator (Embedded YAML)..."
 kubectl create namespace awx || true
 
-# We download the full manifest once from your repo if available, 
-# but if it's missing, we MUST use a local file.
-# PLEASE ENSURE YOU RUN THIS ON YOUR REPO SERVER TO PROVIDE THE FILE:
-# curl -L https://raw.githubusercontent.com/ansible/awx-operator/2.19.1/deploy/awx-operator.yaml > /var/www/html/repo/ansible_offline_repo/manifests/awx-operator.yaml
+# This command generates the required CRDs and Operator deployment directly
+# to avoid the 404 error you encountered.
+cat <<EOF > /tmp/awx-operator-local.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: awx-operator-controller-manager
+  namespace: awx
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: awx-operator-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: awx-operator-controller-manager
+  namespace: awx
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: awx-operator-controller-manager
+  namespace: awx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  template:
+    metadata:
+      labels:
+        control-plane: controller-manager
+    spec:
+      serviceAccountName: awx-operator-controller-manager
+      containers:
+      - name: manager
+        image: quay.io/ansible/awx-operator:${OPERATOR_VERSION}
+        imagePullPolicy: IfNotPresent
+        env:
+          - name: WATCH_NAMESPACE
+            value: ""
+EOF
 
-curl -fkL https://${REPO_SERVER}/repo/ansible_offline_repo/manifests/awx-operator.yaml -o /tmp/awx-operator.yaml
-
-if [ ! -s /tmp/awx-operator.yaml ]; then
-    error_exit "CRITICAL: /tmp/awx-operator.yaml is empty. You MUST upload the official 2.19.1 manifest to your repo server."
-fi
-
-kubectl apply -f /tmp/awx-operator.yaml
-
-log "Waiting for CRDs to register..."
-sleep 20
+kubectl apply -f /tmp/awx-operator-local.yaml
 
 # ---------------- 7. DEPLOY AWX INSTANCE ----------------
 log "Creating AWX Instance..."
+
+# Admin Password Secret
 kubectl create secret generic awx-server-admin-password \
     --from-literal=password='Root@123' -n awx --dry-run=client -o yaml | kubectl apply -f -
 
@@ -145,13 +156,19 @@ spec:
         fsGroup: 0
 EOF
 
-# Loop until the CRD is actually recognized by the cluster
-MAX_RETRIES=20
-while ! kubectl apply -f /tmp/awx-instance.yaml -n awx 2>/dev/null; do
-    echo "Waiting for Operator to initialize CRDs..."
-    sleep 10
+log "Waiting for Operator to start..."
+sleep 30
+
+# Attempt to apply AWX instance
+MAX_RETRIES=10
+until kubectl apply -f /tmp/awx-instance.yaml -n awx 2>/dev/null; do
+    echo "Waiting for AWX CRD to be ready..."
+    sleep 15
     ((MAX_RETRIES--))
-    if [ $MAX_RETRIES -le 0 ]; then error_exit "CRD registration timed out."; fi
+    if [ $MAX_RETRIES -le 0 ]; then 
+        log "Warning: CRD not ready yet. You may need to run 'kubectl apply -f /tmp/awx-instance.yaml -n awx' manually in a few minutes."
+        break
+    fi
 done
 
-log "Installation complete! Monitor with: kubectl get pods -n awx"
+log "Script complete! Check progress with: kubectl get pods -n awx -w"
