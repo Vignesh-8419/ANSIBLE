@@ -71,6 +71,7 @@ dnf -y module disable postgresql -y
 
 mkdir /tmp/llvm
 sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no root@192.168.253.136:/var/www/html/repo/netbox_offline_repo/rpms/llvm* /tmp/llvm/
+sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no root@192.168.253.136:/var/www/html/repo/netbox_offline_repo/rpms/clang-devel* /tmp/llvm/
 cd /tmp/llvm
 dnf localinstall -y *.rpm
 
