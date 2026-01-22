@@ -62,24 +62,24 @@ rm -rf $NETBOX_ROOT
 log "Installing system dependencies..."
 dnf clean all
 
-# 1. Reset everything first
-dnf -y module reset postgresql nginx
+# 1. Reset modules
+dnf -y module reset postgresql nginx llvm
 
-# 2. Enable Nginx 1.22 (this is fine and needed)
+# 2. Enable Nginx (needed for the web server)
 dnf -y module enable nginx:1.22 -y
 
-# 3. IMPORTANT: Disable the postgresql module. 
-# This removes the "Modular Filtering" that is hiding your postgresql15-server RPM.
-dnf -y module disable postgresql
+# 3. Disable modules that are filtering your offline RPMs
+# We disable 'postgresql' to see postgresql15-server
+# We disable 'llvm' to see the llvm-devel version in your repo
+dnf -y module disable postgresql llvm
 
-# 4. Install all packages. 
-# We add --allowerasing to handle the libxml2/gcc version differences.
+# 4. Install using --allowerasing to handle library swaps
 dnf install -y --allowerasing --nobest \
   python3.12 python3.12-devel python3.12-pip \
   gcc openssl-devel libffi-devel libxml2-devel libxslt-devel \
   libjpeg-turbo-devel zlib-devel \
   redis nginx openssl tar \
-  postgresql15-server postgresql15-devel
+  postgresql15-server postgresql15-devel llvm-devel
 
 # ---------------- DATABASE ----------------
 log "Initializing PostgreSQL 15..."
