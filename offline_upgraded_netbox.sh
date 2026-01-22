@@ -61,6 +61,9 @@ rm -rf $NETBOX_ROOT
 # ---------------- SYSTEM PACKAGES ----------------
 log "Installing system dependencies..."
 dnf clean all
+log "Enabling PostgreSQL 15 module..."
+dnf -y module reset postgresql
+dnf -y module enable postgresql:15
 dnf install -y \
   python3.12 python3.12-devel python3.12-pip \
   gcc openssl-devel libffi-devel libxml2-devel libxslt-devel \
