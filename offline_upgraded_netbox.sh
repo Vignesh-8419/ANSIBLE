@@ -61,15 +61,17 @@ rm -rf $NETBOX_ROOT
 # ---------------- SYSTEM PACKAGES ----------------
 log "Installing system dependencies..."
 dnf clean all
-dnf -y module reset postgresql nginx
-dnf -y module enable postgresql:15 nginx:1.22 -y
 
-dnf install -y \
+# Disable the modules that are causing the "filtering"
+dnf -y module disable postgresql nginx
+
+# Install using --allowerasing to resolve the libxml2/gcc version conflicts
+dnf install -y --allowerasing \
   python3.12 python3.12-devel python3.12-pip \
   gcc openssl-devel libffi-devel libxml2-devel libxslt-devel \
   libjpeg-turbo-devel zlib-devel \
   redis nginx openssl \
-  postgresql-server postgresql-devel tar
+  postgresql15-server postgresql15-devel tar
 
 # ---------------- DATABASE ----------------
 log "Initializing PostgreSQL 15..."
