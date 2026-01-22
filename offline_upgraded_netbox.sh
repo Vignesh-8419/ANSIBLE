@@ -67,6 +67,11 @@ dnf -y module reset postgresql nginx
 dnf -y module enable nginx:1.22 -y
 dnf -y module disable postgresql -y
 
+mkdir /tmp/llvm
+sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no root@192.168.253.136:/var/www/html/repo/netbox_offline_repo/rpms/llvm* /tmp/llvm/
+cd /tmp/llvm
+rpm -ivh llvm* --nodeps
+
 # 2. Install using the plugin disable flag
 # This prevents 'modular filtering' from hiding llvm-devel or postgresql15
 dnf install -y --allowerasing --nobest --nogpgcheck --disableplugin=modular \
