@@ -14,7 +14,7 @@ DB_PASS="Root@123"
 NETBOX_ROOT="/opt/netbox"
 PYTHON_BIN="/usr/bin/python3.12"
 
-yum install sshpass -p
+yum install sshpass -y
 dnf install -y python3.12 python3.12-devel python3.12-pip
 # ---------------- FUNCTIONS ----------------
 log() { echo -e "\e[32m✔ $1\e[0m"; }
@@ -76,7 +76,7 @@ dnf localinstall -y *.rpm
 
 # 2. Install using the plugin disable flag
 # This prevents 'modular filtering' from hiding llvm-devel or postgresql15
-dnf install -y --allowerasing --nobest --nogpgcheck --disableplugin=modular \
+dnf install -y --allowerasing --nobest --nogpgcheck \
   python3.12 python3.12-devel python3.12-pip \
   gcc openssl-devel libffi-devel libxml2-devel libxslt-devel \
   libjpeg-turbo-devel zlib-devel \
