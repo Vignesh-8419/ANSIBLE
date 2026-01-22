@@ -14,6 +14,8 @@ DB_PASS="Root@123"
 NETBOX_ROOT="/opt/netbox"
 PYTHON_BIN="/usr/bin/python3.12"
 
+yum install sshpass -p
+
 # ---------------- FUNCTIONS ----------------
 log() { echo -e "\e[32m✔ $1\e[0m"; }
 
