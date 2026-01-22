@@ -62,13 +62,12 @@ rm -rf $NETBOX_ROOT
 log "Installing system dependencies..."
 dnf clean all
 
-# 1. Reset and enable the module streams (this makes 'nginx' visible)
+# Keep modules enabled for Nginx 1.22
 dnf -y module reset postgresql nginx
 dnf -y module enable postgresql:15 nginx:1.22 -y
 
-# 2. Install everything. 
-# We add '--allowerasing' to swap core libs (libxml2/gcc) 
-# and '--nobest' to ignore the PHP-dependency warnings.
+# Use --allowerasing for libxml2/gcc and --nobest for PHP conflict.
+# We use the specific RPM name and ensure DNF doesn't filter it.
 dnf install -y --allowerasing --nobest \
   python3.12 python3.12-devel python3.12-pip \
   gcc openssl-devel libffi-devel libxml2-devel libxslt-devel \
