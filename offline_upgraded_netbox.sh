@@ -15,7 +15,7 @@ NETBOX_ROOT="/opt/netbox"
 PYTHON_BIN="/usr/bin/python3.12"
 
 yum install sshpass -p
-
+dnf install -y python3.12 python3.12-devel python3.12-pip
 # ---------------- FUNCTIONS ----------------
 log() { echo -e "\e[32m✔ $1\e[0m"; }
 
@@ -72,7 +72,7 @@ dnf -y module disable postgresql -y
 mkdir /tmp/llvm
 sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no root@192.168.253.136:/var/www/html/repo/netbox_offline_repo/rpms/llvm* /tmp/llvm/
 cd /tmp/llvm
-rpm -ivh llvm* --nodeps
+dnf localinstall -y *.rpm
 
 # 2. Install using the plugin disable flag
 # This prevents 'modular filtering' from hiding llvm-devel or postgresql15
