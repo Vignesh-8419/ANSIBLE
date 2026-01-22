@@ -388,6 +388,7 @@ PidFile /var/run/httpd/httpd.pid
 
 ============================================
 sudo yum install -y mod_ssl        # or dnf install mod_ssl on newer systems
+mkdir -p /var/www/html/repo
 echo "//192.168.29.241/ISO /var/www/html/repo cifs username=vigne,password=Vigneshv12$,rw,dir_mode=0777,file_mode=0777,vers=3.0 0 0" | sudo tee -a /etc/fstab 
 mount -a
 sudo tee -a /etc/httpd/conf.d/ssl.conf <<EOF
