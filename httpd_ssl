@@ -388,6 +388,13 @@ PidFile /var/run/httpd/httpd.pid
 
 ============================================
 sudo yum install -y mod_ssl        # or dnf install mod_ssl on newer systems
+sudo tee -a /etc/httpd/conf.d/ssl.conf <<EOF
+<Directory "/var/www/html">
+    Options Indexes FollowSymLinks
+    AllowOverride None
+    Require all granted
+</Directory>
+EOF
 openssl genrsa -out pvt.pem
 openssl req -new -key pvt.pem -out cert.pem -subj "/C=IN/ST=Chennai/O=VGS.COM/OU=VGS.COM/CN=http-server-01.vgs.com"
 openssl x509 -req -days 365 -in cert.pem -signkey pvt.pem -out cert.pem
@@ -397,17 +404,21 @@ sudo cp cert.pem /etc/pki/tls/certs/crt.pem
 sudo cp pvt.pem /etc/pki/tls/private/pvt.pem
 # Secure the private key
 sudo chmod 600 /etc/pki/tls/private/pvt.pem
-sudo vi /etc/httpd/conf.d/ssl.conf
+sudo tee -a /etc/httpd/conf.d/ssl.conf <<EOF
+<VirtualHost *:443>
 ServerName http-server-01.vgs.com
 SSLEngine on
 SSLCertificateFile /etc/pki/tls/certs/crt.pem
 SSLCertificateKeyFile /etc/pki/tls/private/pvt.pem
-sudo vi /etc/httpd/conf.d/ssl-redirect.conf
+</VirtualHost>
+EOF
+sudo tee -a /etc/httpd/conf.d/ssl-redirect.conf <<EOF
 <VirtualHost *:80>
     ServerName http-server-01.vgs.com
     RewriteEngine On
     RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [L,R=301]
 </VirtualHost>
+EOF
 grep -i rewrite /etc/httpd/conf.modules.d/00-base.conf
 #You must see: LoadModule rewrite_module modules/mod_rewrite.so
 sudo rm -f /etc/httpd/conf.modules.d/00-rewrite.conf
