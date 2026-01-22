@@ -62,14 +62,15 @@ rm -rf $NETBOX_ROOT
 log "Installing system dependencies..."
 dnf clean all
 
-# 1. Reset and manage only the modules we know exist
+# 1. Reset and configure specific modules
 dnf -y module reset postgresql nginx
 dnf -y module enable nginx:1.22 -y
-dnf -y module disable postgresql
+dnf -y module disable postgresql -y
 
-# 2. Install using the platform-id override. 
-# This tells DNF to ignore modular 'filtering' for this transaction.
-dnf install -y --allowerasing --nobest --module-platform-id=platform:el8 \
+# 2. Install dependencies
+# Removed the unrecognized --module-platform-id flag
+# Added --nogpgcheck just in case of local signature issues
+dnf install -y --allowerasing --nobest --nogpgcheck \
   python3.12 python3.12-devel python3.12-pip \
   gcc openssl-devel libffi-devel libxml2-devel libxslt-devel \
   libjpeg-turbo-devel zlib-devel \
