@@ -62,28 +62,35 @@ rm -rf $NETBOX_ROOT
 log "Installing system dependencies..."
 dnf clean all
 
-# Disable modules entirely to stop "Modular Filtering" from hiding your RPMs
-dnf -y module disable postgresql nginx
+# 1. Reset and enable the module streams (this makes 'nginx' visible)
+dnf -y module reset postgresql nginx
+dnf -y module enable postgresql:15 nginx:1.22 -y
 
-# Install using --allowerasing to handle the libxml2/gcc conflicts 
-# and --nobest to ignore the PHP/Nginx dependency complaint
+# 2. Install everything. 
+# We add '--allowerasing' to swap core libs (libxml2/gcc) 
+# and '--nobest' to ignore the PHP-dependency warnings.
 dnf install -y --allowerasing --nobest \
   python3.12 python3.12-devel python3.12-pip \
   gcc openssl-devel libffi-devel libxml2-devel libxslt-devel \
   libjpeg-turbo-devel zlib-devel \
-  redis nginx openssl \
-  postgresql15-server postgresql15-devel tar
+  redis nginx openssl tar \
+  postgresql15-server postgresql15-devel
 
 # ---------------- DATABASE ----------------
 log "Initializing PostgreSQL 15..."
-# Modular PostgreSQL uses standard paths
-if [ ! -d "/var/lib/pgsql/data/base" ]; then
-    postgresql-setup --initdb
+# Since you are using postgresql15-server (PGDG), the paths are version-specific
+export PATH=$PATH:/usr/pgsql-15/bin
+
+if [ ! -d "/var/lib/pgsql/15/data/base" ]; then
+    /usr/pgsql-15/bin/postgresql-15-setup initdb
 fi
-systemctl enable --now postgresql redis
+
+# Note the service name for PGDG is postgresql-15, not postgresql
+systemctl enable --now postgresql-15 redis
 
 log "Creating NetBox database..."
-sudo -u postgres psql <<EOF
+# Use the full path to psql just in case
+sudo -u postgres /usr/pgsql-15/bin/psql <<EOF
 DROP DATABASE IF EXISTS $DB_NAME;
 DROP USER IF EXISTS $DB_USER;
 CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';
