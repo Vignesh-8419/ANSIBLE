@@ -62,19 +62,14 @@ rm -rf $NETBOX_ROOT
 log "Installing system dependencies..."
 dnf clean all
 
-# 1. Reset modules
-dnf -y module reset postgresql nginx llvm
-
-# 2. Enable Nginx (needed for the web server)
+# 1. Reset and manage only the modules we know exist
+dnf -y module reset postgresql nginx
 dnf -y module enable nginx:1.22 -y
+dnf -y module disable postgresql
 
-# 3. Disable modules that are filtering your offline RPMs
-# We disable 'postgresql' to see postgresql15-server
-# We disable 'llvm' to see the llvm-devel version in your repo
-dnf -y module disable postgresql llvm
-
-# 4. Install using --allowerasing to handle library swaps
-dnf install -y --allowerasing --nobest \
+# 2. Install using the platform-id override. 
+# This tells DNF to ignore modular 'filtering' for this transaction.
+dnf install -y --allowerasing --nobest --module-platform-id=platform:el8 \
   python3.12 python3.12-devel python3.12-pip \
   gcc openssl-devel libffi-devel libxml2-devel libxslt-devel \
   libjpeg-turbo-devel zlib-devel \
