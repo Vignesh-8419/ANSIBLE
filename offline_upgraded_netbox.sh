@@ -64,26 +64,24 @@ rm -rf $NETBOX_ROOT
 log "Installing system dependencies..."
 dnf clean all
 
-# 1. Prepare modules
-dnf -y module reset postgresql nginx
+# 1. Prepare modules - DISABLE LLVM AND POSTGRES MODULES COMPLETELY
+dnf -y module reset postgresql nginx llvm
 dnf -y module enable nginx:1.22 -y
-dnf -y module disable postgresql -y
+dnf -y module disable postgresql llvm -y
 
 # 2. Fix the LLVM/Clang Dependency Loop
 mkdir -p /tmp/llvm
 log "Fetching compiler dependencies from repo server..."
-# We use a wildcard that captures llvm, clang, and their libs/devel components
 sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no root@${REPO_SERVER}:/var/www/html/repo/netbox_offline_repo/rpms/{llvm*,clang*} /tmp/llvm/
 
 cd /tmp/llvm
-# We install the specific versions we know work together (v19)
-# If v20 is in the folder, dnf might try to pick it. We force the known good set.
-dnf localinstall -y *19.1.7*.rpm || dnf localinstall -y *.rpm --skip-broken
+# Use the module-platform-id flag to bypass modular filtering
+dnf localinstall -y --module-platform-id=platform:el8 *19.1.7*.rpm || dnf localinstall -y *.rpm --skip-broken
 
 # 3. Install Postgres 15 and Core Services
 REPO_URL="https://${REPO_SERVER}/repo/netbox_offline_repo/rpms"
 
-dnf install -y --allowerasing --nogpgcheck --setopt=sslverify=false \
+dnf install -y --allowerasing --nogpgcheck --setopt=sslverify=false --module-platform-id=platform:el8 \
   $REPO_URL/postgresql15-15.15-1PGDG.rhel8.x86_64.rpm \
   $REPO_URL/postgresql15-libs-15.15-1PGDG.rhel8.x86_64.rpm \
   $REPO_URL/postgresql15-server-15.15-1PGDG.rhel8.x86_64.rpm \
