@@ -61,25 +61,25 @@ rm -rf $NETBOX_ROOT
 # ---------------- SYSTEM PACKAGES ----------------
 log "Installing system dependencies..."
 dnf clean all
-log "Enabling PostgreSQL 15 module..."
-dnf -y module reset postgresql
-dnf -y module enable postgresql:15
+dnf -y module reset postgresql nginx
+dnf -y module enable postgresql:15 nginx:1.22 -y
+
 dnf install -y \
   python3.12 python3.12-devel python3.12-pip \
   gcc openssl-devel libffi-devel libxml2-devel libxslt-devel \
   libjpeg-turbo-devel zlib-devel \
   redis nginx openssl \
-  postgresql15-server postgresql15-devel tar
-
-export PATH=$PATH:/usr/pgsql-15/bin
+  postgresql-server postgresql-devel tar
 
 # ---------------- DATABASE ----------------
 log "Initializing PostgreSQL 15..."
-[ ! -d "/var/lib/pgsql/15/data/base" ] && /usr/pgsql-15/bin/postgresql-15-setup initdb
-systemctl enable --now postgresql-15 redis
+# Modular PostgreSQL uses standard paths
+if [ ! -d "/var/lib/pgsql/data/base" ]; then
+    postgresql-setup --initdb
+fi
+systemctl enable --now postgresql redis
 
 log "Creating NetBox database..."
-cd /tmp
 sudo -u postgres psql <<EOF
 DROP DATABASE IF EXISTS $DB_NAME;
 DROP USER IF EXISTS $DB_USER;
