@@ -69,21 +69,26 @@ dnf -y module reset postgresql nginx
 dnf -y module enable nginx:1.22 -y
 dnf -y module disable postgresql -y
 
-mkdir /tmp/llvm || true
-echo "Directory /tmp/llvm is ready."
-sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no root@192.168.253.136:/var/www/html/repo/netbox_offline_repo/rpms/llvm* /tmp/llvm/
-sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no root@192.168.253.136:/var/www/html/repo/netbox_offline_repo/rpms/clang-devel* /tmp/llvm/
-cd /tmp/llvm
-dnf localinstall -y *.rpm
+# 2. Fix the LLVM/Clang Dependency Loop
+mkdir -p /tmp/llvm
+log "Fetching compiler dependencies from repo server..."
+# We use a wildcard that captures llvm, clang, and their libs/devel components
+sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no root@${REPO_SERVER}:/var/www/html/repo/netbox_offline_repo/rpms/{llvm*,clang*} /tmp/llvm/
 
-# 2. Install using the plugin disable flag
-# This prevents 'modular filtering' from hiding llvm-devel or postgresql15
-dnf install -y --allowerasing --nobest --nogpgcheck \
-  python3.12 python3.12-devel python3.12-pip \
-  gcc openssl-devel libffi-devel libxml2-devel libxslt-devel \
-  libjpeg-turbo-devel zlib-devel \
-  redis nginx openssl tar \
-  postgresql15-server postgresql15-devel llvm-devel
+cd /tmp/llvm
+# We install the specific versions we know work together (v19)
+# If v20 is in the folder, dnf might try to pick it. We force the known good set.
+dnf localinstall -y *19.1.7*.rpm || dnf localinstall -y *.rpm --skip-broken
+
+# 3. Install Postgres 15 and Core Services
+REPO_URL="https://${REPO_SERVER}/repo/netbox_offline_repo/rpms"
+
+dnf install -y --allowerasing --nogpgcheck --setopt=sslverify=false \
+  $REPO_URL/postgresql15-15.15-1PGDG.rhel8.x86_64.rpm \
+  $REPO_URL/postgresql15-libs-15.15-1PGDG.rhel8.x86_64.rpm \
+  $REPO_URL/postgresql15-server-15.15-1PGDG.rhel8.x86_64.rpm \
+  $REPO_URL/postgresql15-devel-15.15-1PGDG.rhel8.x86_64.rpm \
+  redis nginx python39 tar gcc
 
 # ---------------- DATABASE ----------------
 log "Initializing PostgreSQL 15..."
