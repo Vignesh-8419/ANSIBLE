@@ -62,11 +62,14 @@ rm -rf $NETBOX_ROOT
 log "Installing system dependencies..."
 dnf clean all
 
-# Disable the modules that are causing the "filtering"
-dnf -y module disable postgresql nginx
+# Reset and Enable the specific streams required
+dnf -y module reset postgresql nginx
+dnf -y module enable postgresql:15 nginx:1.22 -y
 
-# Install using --allowerasing to resolve the libxml2/gcc version conflicts
-dnf install -y --allowerasing \
+# The "Magic" Install Command:
+# --allowerasing: Swaps conflicting libxml2/gcc versions
+# --nobest: Allows install even if php-module dependencies are technically unsatisfied
+dnf install -y --allowerasing --nobest \
   python3.12 python3.12-devel python3.12-pip \
   gcc openssl-devel libffi-devel libxml2-devel libxslt-devel \
   libjpeg-turbo-devel zlib-devel \
