@@ -62,15 +62,14 @@ rm -rf $NETBOX_ROOT
 log "Installing system dependencies..."
 dnf clean all
 
-# 1. Reset and configure specific modules
+# 1. Prepare modules
 dnf -y module reset postgresql nginx
 dnf -y module enable nginx:1.22 -y
 dnf -y module disable postgresql -y
 
-# 2. Install dependencies
-# Removed the unrecognized --module-platform-id flag
-# Added --nogpgcheck just in case of local signature issues
-dnf install -y --allowerasing --nobest --nogpgcheck \
+# 2. Install using the plugin disable flag
+# This prevents 'modular filtering' from hiding llvm-devel or postgresql15
+dnf install -y --allowerasing --nobest --nogpgcheck --disableplugin=modular \
   python3.12 python3.12-devel python3.12-pip \
   gcc openssl-devel libffi-devel libxml2-devel libxslt-devel \
   libjpeg-turbo-devel zlib-devel \
