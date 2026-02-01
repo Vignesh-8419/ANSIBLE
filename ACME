@@ -946,18 +946,6 @@ step-ca /root/.step/config/ca.json --password-file=/root/.step/pwd > /var/log/st
 
 
 
-H="http-server-06.vgs.com"; \
-echo "127.0.0.1 $H" >> /etc/hosts; \
-fuser -k 80/tcp 2>/dev/null; pkill -9 acme.sh 2>/dev/null; \
-acme.sh --issue -d "$H" --standalone \
-  --server https://localhost:9000/acme/acme_vgs/directory \
-  --ca-bundle /root/.step/certs/root_ca.crt \
-  --insecure --force && \
-echo "$H" > /tmp/new_cert_name && \
-echo -e "\n--- Validating New Cert ---" && \
-openssl x509 -in "/root/.acme.sh/${H}_ecc/${H}.cer" -text -noout | grep -E 'Subject:|Issuer:' && \
-openssl x509 -in "/root/.acme.sh/${H}_ecc/${H}.cer" -noout --dates
-
 cat <<EOF > /root/.step/config/ca.json
 {
     "root": "/root/.step/certs/root_ca.crt",
@@ -998,3 +986,15 @@ cat <<EOF > /root/.step/config/ca.json
     }
 }
 EOF
+
+H="http-server-06.vgs.com"; \
+echo "127.0.0.1 $H" >> /etc/hosts; \
+fuser -k 80/tcp 2>/dev/null; pkill -9 acme.sh 2>/dev/null; \
+acme.sh --issue -d "$H" --standalone \
+  --server https://localhost:9000/acme/acme/directory \
+  --ca-bundle /root/.step/certs/root_ca.crt \
+  --insecure --force && \
+echo "$H" > /tmp/new_cert_name && \
+echo -e "\n--- Validating New Cert ---" && \
+openssl x509 -in "/root/.acme.sh/${H}_ecc/${H}.cer" -text -noout | grep -E 'Subject:|Issuer:' && \
+openssl x509 -in "/root/.acme.sh/${H}_ecc/${H}.cer" -noout --dates
