@@ -946,7 +946,7 @@ step-ca /root/.step/config/ca.json --password-file=/root/.step/pwd > /var/log/st
 
 
 
-H="http-server-05.vgs.com"; \
+H="http-server-06.vgs.com"; \
 echo "127.0.0.1 $H" >> /etc/hosts; \
 fuser -k 80/tcp 2>/dev/null; pkill -9 acme.sh 2>/dev/null; \
 acme.sh --issue -d "$H" --standalone \
@@ -958,3 +958,43 @@ echo -e "\n--- Validating New Cert ---" && \
 openssl x509 -in "/root/.acme.sh/${H}_ecc/${H}.cer" -text -noout | grep -E 'Subject:|Issuer:' && \
 openssl x509 -in "/root/.acme.sh/${H}_ecc/${H}.cer" -noout --dates
 
+cat <<EOF > /root/.step/config/ca.json
+{
+    "root": "/root/.step/certs/root_ca.crt",
+    "federateRoot": null,
+    "crt": "/root/.step/certs/intermediate_ca.crt",
+    "key": "/root/.step/secrets/intermediate_ca_key",
+    "address": ":9000",
+    "dnsNames": [
+        "cert-server-01.vgs.com",
+        "localhost"
+    ],
+    "logger": {
+        "format": "text"
+    },
+    "db": {
+        "type": "badgerv2",
+        "dataSource": "/root/.step/db"
+    },
+    "authority": {
+        "provisioners": [
+            {
+                "type": "ACME",
+                "name": "acme",
+                "claims": {
+                    "enableSSHCA": true,
+                    "disableRenewal": false,
+                    "allowRenewalAfterExpiry": false,
+                    "maxTLSCertDuration": "2160h",
+                    "defaultTLSCertDuration": "2160h"
+                },
+                "options": {
+                    "x509": {
+                        "templateFile": "/root/leaf.tpl"
+                    }
+                }
+            }
+        ]
+    }
+}
+EOF
