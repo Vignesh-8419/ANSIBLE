@@ -987,6 +987,12 @@ cat <<EOF > /root/.step/config/ca.json
 }
 EOF
 
+# Kill the existing CA process
+kill 32918
+
+# Wait a second for the lock to release, then start it back up
+step-ca /root/.step/config/ca.json --password-file=/root/.step/pwd > /var/log/step-ca.log 2>&1 &
+
 H="http-server-06.vgs.com"; \
 echo "127.0.0.1 $H" >> /etc/hosts; \
 fuser -k 80/tcp 2>/dev/null; pkill -9 acme.sh 2>/dev/null; \
