@@ -8,8 +8,8 @@
     - name: Fail if host is not tagged for PXE
       assert:
         that:
-          - "'pxe_rockyostag' in tags"
-        fail_msg: "Host {{ inventory_hostname }} is not tagged with pxe_rockyostag in NetBox"
+          - "'	pxe-rockyos-context' in tags"
+        fail_msg: "Host {{ inventory_hostname }} is not tagged with 	pxe-rockyos-context in NetBox"
 
     - name: Load and normalize NetBox config context
       set_fact:
