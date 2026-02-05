@@ -8,7 +8,7 @@
 # STEP 2: NETWORK CONFIGURATION
 - name: Add DHCP reservation and restart service
   shell: |
-    sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no root@192.168.253.160 <<EOF
+    sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no root@192.168.253.161 <<EOF
     sed -i '/# BEGIN ANSIBLE {{ server.hostname }}/,/# END ANSIBLE {{ server.hostname }}/d' /etc/dhcp/dhcpd.conf
     cat >> /etc/dhcp/dhcpd.conf <<DHCP_EOF
     # BEGIN ANSIBLE {{ server.hostname }}
