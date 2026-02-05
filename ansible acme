@@ -1,0 +1,24 @@
+# Define the domain
+H="ansible-server-01.vgs.com"
+
+# SCP the files over (replace with your ansible-server-01 IP if needed)
+scp /root/.acme.sh/${H}_ecc/${H}.cer root@ansible-server-01:/tmp/awx.crt
+scp /root/.acme.sh/${H}_ecc/${H}.key root@ansible-server-01:/tmp/awx.key
+scp /root/.step/certs/root_ca.crt root@ansible-server-01:/tmp/vgs_root_ca.crt
+
+kubectl get ingress -n awx
+kubectl patch ingress awx-ingress -n awx --type='merge' -p '
+{
+  "spec": {
+    "tls": [
+      {
+        "hosts": ["ansible-server-01.vgs.com"],
+        "secretName": "awx-server-tls"
+      }
+    ]
+  }
+}'
+kubectl get ingress -n awx
+cp /tmp/vgs_root_ca.crt /etc/pki/ca-trust/source/anchors/
+update-ca-trust extract
+curl -vI https://ansible-server-01.vgs.com
