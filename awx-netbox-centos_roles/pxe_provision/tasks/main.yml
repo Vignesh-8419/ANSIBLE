@@ -2,7 +2,7 @@
 # Step 1: Write the main GRUB dispatcher to the TFTP server
 - name: Force write GRUB dispatcher via SSH pipe
   shell: |
-    sshpass -p '{{ nb_ctx.ansible_password }}' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.161 "cat > /var/lib/tftpboot/grub2/grub.cfg" <<EOF
+    sshpass -p '{{ nb_ctx.vm_root_password }}' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@192.168.253.161 "cat > /var/lib/tftpboot/grub2/grub.cfg" <<EOF
     {{ lookup('template', 'grub-dispatcher.j2') }}
     EOF
   delegate_to: localhost
