@@ -1,0 +1,109 @@
+awx-manage shell <<EOF
+from awx.main.models import CredentialType, Credential, Organization
+
+# 1. Create Credential Type
+ctype, created = CredentialType.objects.get_or_create(
+    name="Netbox API Token",
+    defaults={
+        "kind": "cloud",
+        "inputs": {
+            "fields": [
+                {"id": "netbox_url", "type": "string", "label": "NetBox URL"},
+                {"id": "netbox_token", "type": "string", "label": "NetBox API Token", "secret": True}
+            ],
+            "required": ["netbox_token"]
+        },
+        "injectors": {
+            "env": {
+                "NETBOX_API": "{{ netbox_url }}",
+                "NETBOX_TOKEN": "{{ netbox_token }}"
+            }
+        }
+    }
+)
+print(f"Credential Type {'created' if created else 'already exists'}.")
+
+# 2. Create the Credential
+org = Organization.objects.get(name="Default")
+cred, created = Credential.objects.get_or_create(
+    name="Netbox Production Credential",
+    defaults={
+        "credential_type": ctype,
+        "organization": org,
+        "inputs": {
+            "netbox_url": "https://rocky-08-02.vgs.com/",
+            "netbox_token": "d5bcd13a503e86da9fe28a5e52b7f668932c4f2b"
+        }
+    }
+)
+print(f"Credential {'created' if created else 'already exists'}.")
+EOF
+
+
+awx-manage shell <<EOF
+from awx.main.models import Inventory, Organization
+
+# Get the default organization
+org = Organization.objects.get(name="Default")
+
+# List of inventories to create
+inventories = ["centos-07-servers", "rocky-8-servers"]
+
+for inv_name in inventories:
+    inv, created = Inventory.objects.get_or_create(
+        name=inv_name,
+        organization=org
+    )
+    status = "created" if created else "already exists"
+    print(f"Inventory '{inv_name}' {status}.")
+EOF
+
+awx-manage shell <<EOF
+from awx.main.models import Inventory, InventorySource, Project, Organization
+
+# 1. Setup Organization and Project
+org = Organization.objects.get(name="Default")
+repo_url = "https://github.com/Vignesh-8419/ANSIBLE"
+
+project, _ = Project.objects.get_or_create(
+    name="Inventory-Git-Repo",
+    defaults={
+        "organization": org,
+        "scm_type": "git",
+        "scm_url": repo_url,
+        "scm_update_on_launch": True
+    }
+)
+print("Project 'Inventory-Git-Repo' configured.")
+
+# 2. Define the Mapping
+configs = [
+    {
+        "inv_name": "rocky-8-servers",
+        "file": "rocky-8-servers_inventory.yml"
+    },
+    {
+        "inv_name": "centos-07-servers",
+        "file": "centos-07-servers_inventory.yml"
+    }
+]
+
+# 3. Create Sources
+for cfg in configs:
+    inv = Inventory.objects.get(name=cfg["inv_name"], organization=org)
+    
+    source, created = InventorySource.objects.get_or_create(
+        name=cfg["inv_name"], # Source name same as inventory name per your request
+        inventory=inv,
+        defaults={
+            "source": "scm",
+            "source_project": project,
+            "source_path": cfg["file"],
+            "overwrite": True,
+            "update_on_launch": True
+        }
+    )
+    status = "created" if created else "already exists/updated"
+    print(f"Source for {cfg['inv_name']} using {cfg['file']} {status}.")
+
+EOF
