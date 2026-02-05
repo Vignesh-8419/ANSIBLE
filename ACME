@@ -7,7 +7,11 @@ yum localinstall step-ca-0.30.0.rc2-1.x86_64.rpm -y
 curl https://get.acme.sh | sh -s email=my@example.com
 wget -O -  https://get.acme.sh | sh -s email=my@example.com
 git clone https://github.com/acmesh-official/acme.sh.git
-cd ./acme.sh
+source ~/.bashrc
+(crontab -l 2>/dev/null; echo "15 0 * * * \"/root/.acme.sh\"/acme.sh --cron --home \"/root/.acme.sh\" > /dev/null") | crontab -
+acme.sh --version
+mv /root/.acme.sh /tmp/acme_source
+cd /tmp/acme_source
 ./acme.sh --install -m my@example.com
 ls -la
 mkdir -p /root/.step/certs /root/.step/secrets
