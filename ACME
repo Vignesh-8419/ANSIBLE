@@ -1,8 +1,8 @@
 curl -LO https://github.com/smallstep/cli/releases/download/v0.24.4/step-cli_0.24.4_amd64.rpm
 curl -s https://install.smallstep.com/step-cli.repo | sudo tee /etc/yum.repos.d/smallstep.repo
-yum localinstall ./step-cli_0.24.4_amd64.rpm
+yum localinstall ./step-cli_0.24.4_amd64.rpm -y
 wget https://dl.smallstep.com/gh-release/certificates/gh-release-header/v0.30.0-rc2/step-ca-0.30.0.rc2-1.x86_64.rpm
-yum localinstall step-ca-0.30.0.rc2-1.x86_64.rpm
+yum localinstall step-ca-0.30.0.rc2-1.x86_64.rpm -y
 curl https://get.acme.sh | sh -s email=my@example.com
 wget -O -  https://get.acme.sh | sh -s email=my@example.com
 git clone https://github.com/acmesh-official/acme.sh.git
