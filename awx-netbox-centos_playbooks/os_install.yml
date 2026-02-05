@@ -8,8 +8,8 @@
     - name: Fail if host is not tagged for PXE
       assert:
         that:
-          - "'pxe_centostag' in tags"
-        fail_msg: "Host {{ inventory_hostname }} is not tagged with pxe_centostag in NetBox"
+          - "'pxe-centos-context' in tags"
+        fail_msg: "Host {{ inventory_hostname }} is not tagged with pxe-centos-context in NetBox"
 
     - name: Load and normalize NetBox config context
       set_fact:
