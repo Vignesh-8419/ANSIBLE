@@ -19,6 +19,7 @@ vmware-awx-context
     "vcenter_username": "administrator@vsphere.local",
     "vm_network": "VM Network",
     "vm_root_password": "Root@123",
+    "ansible_password": "Root@123",
     "vm_root_user": "root"
 }
 
