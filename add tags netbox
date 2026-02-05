@@ -33,3 +33,26 @@ curl -X POST -k "https://192.168.253.134/api/dcim/device-types/" \
     "model": "Generic x86 Server",
     "slug": "generic-x86-server"
   }'
+
+
+
+#!/bin/bash
+
+# NetBox API URL and token
+NETBOX_URL="https://192.168.253.134/api"
+TOKEN="d5bcd13a503e86da9fe28a5e52b7f668932c4f2b"
+
+# Site data
+SITE_NAME="VGS"
+SITE_SLUG="vgs"
+SITE_STATUS="active"  # Use status ID or string if supported
+
+# Create site via API
+curl -X POST -k "$NETBOX_URL/dcim/sites/" \
+  -H "Authorization: Token $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "'"$SITE_NAME"'",
+    "slug": "'"$SITE_SLUG"'",
+    "status": "'"$SITE_STATUS"'"
+  }'
