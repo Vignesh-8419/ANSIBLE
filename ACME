@@ -993,6 +993,9 @@ cat <<EOF > /root/.step/config/ca.json
 }
 EOF
 
+chmod +x /usr/local/bin/ca-watcher.sh
+nohup /usr/local/bin/ca-watcher.sh > /var/log/ca-watcher.log 2>&1 &
+
 # Kill the existing CA process
 kill 32918
 
