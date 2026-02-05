@@ -1,24 +1,47 @@
-# Define the domain
-H="ansible-server-01.vgs.com"
+H="ansible-server-06.vgs.com"; \
+echo "127.0.0.1 $H" >> /etc/hosts; \
+fuser -k 80/tcp 2>/dev/null; pkill -9 acme.sh 2>/dev/null; \
+acme.sh --issue -d "$H" --standalone \
+  --server https://localhost:9000/acme/acme/directory \
+  --ca-bundle /root/.step/certs/root_ca.crt \
+  --insecure --force && \
+echo "$H" > /tmp/new_cert_name && \
+echo -e "\n--- Validating New Cert ---" && \
+openssl x509 -in "/root/.acme.sh/${H}_ecc/${H}.cer" -text -noout | grep -E 'Subject:|Issuer:' && \
+openssl x509 -in "/root/.acme.sh/${H}_ecc/${H}.cer" -noout --date
 
-# SCP the files over (replace with your ansible-server-01 IP if needed)
-scp /root/.acme.sh/${H}_ecc/${H}.cer root@ansible-server-01:/tmp/awx.crt
-scp /root/.acme.sh/${H}_ecc/${H}.key root@ansible-server-01:/tmp/awx.key
-scp /root/.step/certs/root_ca.crt root@ansible-server-01:/tmp/vgs_root_ca.crt
 
-kubectl get ingress -n awx
-kubectl patch ingress awx-ingress -n awx --type='merge' -p '
+# 1. FROM YOUR CERTIFICATE SERVER: Copy the certs to the AWX server
+# Replace 'root' and 'ansible-server-01' with your actual user/hostname
+ scp /root/.acme.sh/ansible-server-06.vgs.com_ecc/ansible-server-06.vgs.com.cer root@ansible-server-01:/tmp/awx.crt
+ scp /root/.acme.sh/ansible-server-06.vgs.com_ecc/ansible-server-06.vgs.com.key root@ansible-server-01:/tmp/awx.key
+
+# 2. ON THE AWX SERVER: Create the Kubernetes Secret
+# This makes the certificate available to the cluster
+kubectl create secret tls awx-server-tls-secret \
+  --cert=/tmp/awx.crt \
+  --key=/tmp/awx.key \
+  -n awx
+
+# 3. Patch the AWX Object to use the new Certificate and Ingress
+# This tells the Operator to stop using self-signed certs and start the Ingress
+kubectl patch awx awx-server -n awx --type='merge' -p '
 {
   "spec": {
-    "tls": [
-      {
-        "hosts": ["ansible-server-01.vgs.com"],
-        "secretName": "awx-server-tls"
-      }
-    ]
+    "ingress_type": "ingress",
+    "ingress_tls_secret": "awx-server-tls-secret",
+    "hostname": "ansible-server-01.vgs.com"
   }
 }'
+
+# 4. Cleanup the temporary files for security
+rm /tmp/awx.crt /tmp/awx.key
+
+# 5. Verify the Ingress has been created by the Operator
 kubectl get ingress -n awx
-cp /tmp/vgs_root_ca.crt /etc/pki/ca-trust/source/anchors/
-update-ca-trust extract
+
+# 6. Final verification: Check the URL and the SSL handshake
 curl -vI https://ansible-server-01.vgs.com
+
+# 7. RETRIEVE YOUR ADMIN PASSWORD TO LOG IN
+kubectl get secret awx-server-admin-password -n awx -o jsonpath="{.data.password}" | base64 --decode; echo
