@@ -1,3 +1,4 @@
+yum install socket -y
 curl -LO https://github.com/smallstep/cli/releases/download/v0.24.4/step-cli_0.24.4_amd64.rpm
 curl -s https://install.smallstep.com/step-cli.repo | sudo tee /etc/yum.repos.d/smallstep.repo
 yum localinstall ./step-cli_0.24.4_amd64.rpm -y
