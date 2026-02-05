@@ -138,6 +138,7 @@ acme.sh --version
 
 H="http-server-01.vgs.com"; fuser -k 80/tcp 2>/dev/null; acme.sh --issue -d "$H" --standalone --server https://localhost:9000/acme/acme/directory --ca-bundle /root/.step/certs/root_ca.crt --insecure --force && openssl x509 -in "/root/.acme.sh/${H}_ecc/${H}.cer" -text -noout | grep -E 'Subject:|Issuer:'
 
+yum install postfix mailx -y
 
 vi /etc/postfix/sasl_passwd
 [smtp.gmail.com]:587    mailrelayserver2024@gmail.com:wyvl psbp ilbx hhre
