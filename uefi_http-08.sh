@@ -12,8 +12,8 @@ mkdir -p /var/lib/tftpboot/grub2
 
 # 3. Copy PXE/GRUB binaries
 cp -v /usr/share/syslinux/{pxelinux.0,ldlinux.c32,menu.c32,libutil.c32} /var/lib/tftpboot/
-cp -v /usr/share/grub2/grubx64.efi /var/lib/tftpboot/grub2/ || true
-cp -v /usr/share/shim/shimx64.efi /var/lib/tftpboot/grub2/ || true
+cp -v /boot/efi/EFI/rocky/grubx64.efi /var/lib/tftpboot/grub2/ || true
+cp -v /boot/efi/EFI/rocky/shimx64.efi /var/lib/tftpboot/grub2/ || true
 
 # 4. Configure firewall
 firewall-cmd --add-service={tftp,dhcp} --permanent
