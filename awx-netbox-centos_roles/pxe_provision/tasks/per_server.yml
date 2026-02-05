@@ -8,7 +8,7 @@
 # STEP 2: NETWORK CONFIGURATION
 - name: Add DHCP reservation and restart service
   shell: |
-    sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no root@192.168.253.161 <<EOF
+    sshpass -p '{{ nb_ctx.vm_root_password }}' ssh -o StrictHostKeyChecking=no root@192.168.253.161 <<EOF
     sed -i '/# BEGIN ANSIBLE {{ server.hostname }}/,/# END ANSIBLE {{ server.hostname }}/d' /etc/dhcp/dhcpd.conf
     cat >> /etc/dhcp/dhcpd.conf <<DHCP_EOF
     # BEGIN ANSIBLE {{ server.hostname }}
@@ -26,7 +26,7 @@
 
 - name: Generate per-host GRUB config
   shell: |
-    sshpass -p "{{ ansible_password }}" ssh -o StrictHostKeyChecking=no root@192.168.253.161 "cat > /var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') | lower }}" <<EOF
+    sshpass -p '{{ nb_ctx.vm_root_password }}' ssh -o StrictHostKeyChecking=no root@192.168.253.161 "cat > /var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | regex_replace(':','-') | lower }}" <<EOF
     {{ lookup('template', 'grub-centos7.j2') }}
     EOF
   delegate_to: localhost
