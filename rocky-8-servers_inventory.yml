@@ -3,6 +3,7 @@ plugin: netbox.netbox.nb_inventory
 api_endpoint: https://192.168.253.134
 token: d5bcd13a503e86da9fe28a5e52b7f668932c4f2b
 validate_certs: false
+timeout: 60
 
 # 1. STOP THE SCHEMA FETCH
 # This is the most important setting for low-memory servers
