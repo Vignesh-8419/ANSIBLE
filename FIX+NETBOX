@@ -6,6 +6,7 @@ After=network.target
 [Service]
 WorkingDirectory=/opt/netbox/netbox
 ExecStart=/opt/netbox/venv/bin/gunicorn --bind 127.0.0.1:8001 --timeout 120 --workers 3 netbox.wsgi
+ExecStart=/opt/netbox/venv/bin/gunicorn --bind 127.0.0.1:8001 --timeout 300 --workers 3 --worker-class gthread --threads 2 netbox.wsgi
 Restart=always
 
 [Install]
