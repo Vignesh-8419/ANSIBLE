@@ -3,7 +3,7 @@
 # --- CONFIGURATION ---
 SSHPASSWORD="Root@123"  # Replace with your root password
 IP_LIST="ips.txt"
-SCRIPT_NAME="setup_grub.sh"
+SCRIPT_NAME="enable-verbose-boot.sh"
 
 if [ ! -f "$IP_LIST" ]; then
     echo "Error: $IP_LIST not found."
