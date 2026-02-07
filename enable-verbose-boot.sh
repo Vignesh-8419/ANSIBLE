@@ -1,3 +1,4 @@
+#setup_grub.sh
 #!/bin/bash
 set -e
 
