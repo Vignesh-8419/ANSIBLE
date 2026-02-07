@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # --- CONFIGURATION ---
-SSHPASSWORD="YourActualPasswordHere"  # Replace with your root password
+SSHPASSWORD="Root@123"  # Replace with your root password
 IP_LIST="ips.txt"
 SCRIPT_NAME="setup_grub.sh"
 
