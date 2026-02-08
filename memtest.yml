@@ -1,45 +1,53 @@
 ---
-- name: Install and Configure MemTest86 for UEFI
-  hosts: rocky-8-servers
-  gather_facts: yes
+- name: Deploy Self-Compiled MemTest86+ to UEFI Servers
+  hosts: all
+  become: yes
   vars:
-    # Set this to the location of your memtest.efi binary
-    # If you don't have it on a server, I've included a download step
+    memtest_url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/mt86plus"
+    memtest_path: "/boot/efi/EFI/memtest/memtest.efi"
+
   tasks:
-    - name: Ensure Memtest EFI directory exists
+    - name: Ensure MemTest directory exists on EFI partition
       file:
-        path: /boot/efi/EFI/memtest
+        path: "/boot/efi/EFI/memtest"
         state: directory
         mode: '0755'
 
-    - name: Download MemTest86 EFI binary
-      # Using a direct link to the .efi is cleaner than unzipping the whole ISO
+    - name: Download MemTest86+ binary from GitHub
       get_url:
-        url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/memtest.efi"
-        dest: /boot/efi/EFI/memtest/memtest.efi
+        url: "{{ memtest_url }}"
+        dest: "{{ memtest_path }}"
         mode: '0755'
-        validate_certs: no
-      register: download_bin
 
-    - name: Add Memtest entry to GRUB custom configuration
+    - name: Configure GRUB 40_custom entry
+      copy:
+        dest: "/etc/grub.d/40_custom"
+        mode: '0755'
+        content: |
+          #!/bin/sh
+          exec tail -n +3 $0
+          
+          menuentry "MemTest86+ (Self-Compiled)" --class memtest86 {
+              insmod part_gpt
+              insmod fat
+              search --no-floppy --fs-uuid --set=root {{ ansible_mounts | lib_get_efi_uuid }}
+              linux /EFI/memtest/memtest.efi
+          }
+      # Note: We use a custom filter or manual shell if UUID logic gets complex
+      # For simplicity, let's use a shell-friendly version below:
+
+    - name: Alternative safe GRUB entry (Simple Version)
       blockinfile:
         path: /etc/grub.d/40_custom
         marker: "# {mark} ANSIBLE MANAGED MEMTEST"
         block: |
-          menuentry 'MemTest86 (UEFI Diagnostic)' --class memtest86 {
+          menuentry "MemTest86+ (Self-Compiled)" --class memtest86 {
               insmod part_gpt
               insmod fat
-              insmod search_fs_uuid
-              # Dynamically find the EFI partition UUID for the search command
-              search --no-floppy --fs-uuid --set=root {{ ansible_mounts | json_query('[?mount==`/boot/efi`].uuid | [0]') }}
-              chainloader /EFI/memtest/memtest.efi
+              set root='hd0,gpt1'
+              linux /EFI/memtest/memtest.efi
           }
-      register: grub_entry
 
-    - name: Rebuild GRUB Menu for UEFI
+    - name: Regenerate GRUB configuration
       command: grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
-      when: download_bin.changed or grub_entry.changed
-
-    - name: Reminder for Secure Boot
-      debug:
-        msg: "IMPORTANT: Ensure 'Secure Boot' is DISABLED in ESXi VM settings, or MemTest86 will not boot."
+      # For Rocky 9, you would target /boot/grub2/grub.cfg instead
