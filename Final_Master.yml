@@ -1,25 +1,30 @@
 ---
 - name: Step 1 & 2 - Integrated Hardware and OS Audit
-  hosts: all  # When you use --limit, 'all' becomes just that limited host
+  hosts: all
   gather_facts: no
   vars:
-    # Use the context from the current host in the loop
-    ctx: "{{ config_context }}"
-    ansible_user: "{{ ctx.vm_root_user }}"
-    ansible_password: "{{ ctx.vm_root_password }}"
+    # This logic tries to find your variables whether they are flat or nested
+    # It checks for 'nb_ctx', then 'config_context', then looks at the top level
+    esxi_user: "{{ nb_ctx.exsi_username | default(config_context.exsi_username | default(exsi_username)) }}"
+    esxi_pass: "{{ nb_ctx.exsi_password | default(config_context.exsi_password | default(exsi_password)) }}"
+    vm_user: "{{ nb_ctx.vm_root_user | default(config_context.vm_root_user | default(vm_root_user)) }}"
+    vm_pass: "{{ nb_ctx.vm_root_password | default(config_context.vm_root_password | default(vm_root_password)) }}"
     
-    # ESXi Credentials pulled from the same context
     esxi_host: "192.168.253.128"
-    esxi_user: "{{ ctx.exsi_username }}"
-    esxi_pass: "{{ ctx.exsi_password }}"
-    
+
   tasks:
-    # --- STEP 1: FIX HARDWARE VIA DELEGATION ---
+    # --- DEBUG: Run this if it fails again to see your variable names ---
+    - name: Debug Variable Structure
+      debug:
+        msg: "Look for your passwords here: {{ hostvars[inventory_hostname] }}"
+      tags: [never, debug]
+
+    # --- STEP 1: FIX HARDWARE ---
     - name: Fix Hardware on ESXi (Delegated)
       raw: |
         VMNAME="{{ inventory_hostname_short }}"
         VMID=$(vim-cmd vmsvc/getallvms | grep " $VMNAME " | awk '{print $1}')
-        [ -z "$VMID" ] && exit 0 # Skip if VM not found on this ESXi
+        [ -z "$VMID" ] && exit 0
         
         VMX_PATH=$(find /vmfs/volumes/ -name "${VMNAME}.vmx" | head -n 1)
         if ! grep -q "serial0.present = \"TRUE\"" "$VMX_PATH"; then
@@ -29,19 +34,21 @@
             VPORT=$((2000 + $VMID))
             printf 'serial0.present = "TRUE"\nserial0.yieldOnPoll = "TRUE"\nserial0.fileType = "network"\nserial0.fileName = "telnet://:%s"\nserial0.network.endPoint = "server"\n' "$VPORT" >> "$VMX_PATH"
             vim-cmd vmsvc/reload $VMID && sleep 1 && vim-cmd vmsvc/power.on $VMID
-            echo "Hardware fixed for $VMNAME"
         fi
       delegate_to: "{{ esxi_host }}"
       vars:
         ansible_user: "{{ esxi_user }}"
         ansible_password: "{{ esxi_pass }}"
-      # We only run this if the current host isn't the ESXi itself
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
       when: inventory_hostname != esxi_host
 
     # --- STEP 2: CONFIGURE GUEST OS ---
     - name: Wait for VM to be reachable
       wait_for_connection:
         timeout: 300
+      vars:
+        ansible_user: "{{ vm_user }}"
+        ansible_password: "{{ vm_pass }}"
       when: inventory_hostname != esxi_host
 
     - name: Check GRUB configuration
@@ -49,6 +56,9 @@
       register: grub_check
       ignore_errors: yes
       changed_when: false
+      vars:
+        ansible_user: "{{ vm_user }}"
+        ansible_password: "{{ vm_pass }}"
       when: inventory_hostname != esxi_host
 
     - name: Apply OS Fix
@@ -70,3 +80,6 @@
         - name: Reboot to apply changes
           reboot:
             reboot_timeout: 300
+      vars:
+        ansible_user: "{{ vm_user }}"
+        ansible_password: "{{ vm_pass }}"
