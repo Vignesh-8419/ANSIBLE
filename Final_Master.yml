@@ -33,7 +33,7 @@
         done
 
 - name: Step 2 - Guest OS Configuration
-  hosts: rocky-8-servers
+  hosts: all
   gather_facts: no
   vars:
     # Accessing the context for each specific VM
