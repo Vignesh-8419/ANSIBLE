@@ -1,0 +1,29 @@
+---
+- name: Manage OS Serial Console Only
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Enable Serial Console
+      shell: |
+        PARAMS=$(cat /proc/cmdline | sed 's/BOOT_IMAGE=[^ ]* //; s/console=ttyS0,[0-9]*//g; s/console=tty0//g' | awk '{$1=$1;print}')
+        sed -i '/GRUB_TERMINAL/d; /GRUB_SERIAL_COMMAND/d; /GRUB_CMDLINE_LINUX=/d' /etc/default/grub
+        echo "GRUB_CMDLINE_LINUX=\"$PARAMS console=tty0 console=ttyS0,115200 rhgb quiet\"" >> /etc/default/grub
+        echo 'GRUB_TERMINAL="serial console"' >> /etc/default/grub
+        echo 'GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"' >> /etc/default/grub
+      tags: enable
+
+    - name: Disable Serial Console
+      shell: |
+        PARAMS=$(cat /proc/cmdline | sed 's/BOOT_IMAGE=[^ ]* //; s/console=ttyS0,[0-9]*//g; s/console=tty0//g' | awk '{$1=$1;print}')
+        sed -i '/GRUB_TERMINAL/d; /GRUB_SERIAL_COMMAND/d; /GRUB_CMDLINE_LINUX=/d' /etc/default/grub
+        echo "GRUB_CMDLINE_LINUX=\"$PARAMS rhgb quiet\"" >> /etc/default/grub
+        echo 'GRUB_TERMINAL_OUTPUT="console"' >> /etc/default/grub
+      tags: disable
+
+    - name: Update GRUB Config
+      shell: |
+        if [ -f /boot/efi/EFI/rocky/grub.cfg ]; then T="/boot/efi/EFI/rocky/grub.cfg"
+        elif [ -f /boot/efi/EFI/centos/grub.cfg ]; then T="/boot/efi/EFI/centos/grub.cfg"
+        else T="/boot/grub2/grub.cfg"; fi
+        grub2-mkconfig -o $T
