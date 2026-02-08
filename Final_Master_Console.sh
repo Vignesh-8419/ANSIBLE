@@ -4,7 +4,16 @@
 ESXI_IP="192.168.253.128"
 ESXI_PASS='admin$22'
 VM_PASS='Root@123'
-VMLIST="ipa-server-01 ansible-server-01 rocky-08-02 http-server-01 cert-server-01 cent-07-01 cent-07-02 tftp-server-01 tftp-server-02"
+MY_HOSTNAME=$(hostname) # Detects 'dns-server-01'
+
+# --- STEP 0: FETCH ALL VMs FROM ESXI ---
+echo "[*] Fetching ALL VMs from ESXi ($ESXI_IP)..."
+VMLIST=$(sshpass -p "$ESXI_PASS" ssh -o StrictHostKeyChecking=no root@$ESXI_IP "vim-cmd vmsvc/getallvms" | awk 'NR>1 {print $2}')
+
+if [ -z "$VMLIST" ]; then
+    echo "[!] No VMs found on ESXi. Exiting."
+    exit 1
+fi
 
 # --- GENERATE THE LOCAL GRUB SCRIPT ---
 cat << 'EOF' > enable-verbose-boot.sh
@@ -44,38 +53,44 @@ chmod +x enable-verbose-boot.sh
 # --- MAIN LOOP ---
 for VMNAME in $VMLIST; do
     echo "=========================================================="
-    read -p "Begin Audit for $VMNAME? (y/n): " CONFIRM
+    read -p "Process VM: $VMNAME? (y/n): " CONFIRM
     [[ ! "$CONFIRM" =~ ^[Yy]$ ]] && echo "Skipping $VMNAME." && continue
 
     # 1. HARDWARE AUDIT & POWER ON
     echo "[*] Phase 1: ESXi Hardware & Power Check..."
+    
+    # Check if this is the DNS server itself
+    IS_SELF="false"
+    [[ "$VMNAME" == "$MY_HOSTNAME" ]] && IS_SELF="true"
+
     HW_STATUS=$(sshpass -p "$ESXI_PASS" ssh -o StrictHostKeyChecking=no root@$ESXI_IP "sh -s" <<ESX_EOF
         VMID=\$(vim-cmd vmsvc/getallvms | grep " $VMNAME " | awk '{print \$1}')
         if [ -z "\$VMID" ]; then echo "NOT_FOUND"; exit; fi
         
         VMX_PATH=\$(find /vmfs/volumes/ -name "${VMNAME}.vmx" | head -n 1)
         
-        # Check if serial hardware is present
         if ! grep -q "serial0.present = \"TRUE\"" "\$VMX_PATH"; then
-            echo "HARDWARE_MISSING"
-            # Kill process to allow VMX edit
-            WID=\$(localcli vm process list | grep -A 1 "$VMNAME" | grep "World ID" | awk '{print \$3}')
-            [ ! -z "\$WID" ] && localcli vm process kill --type=force --world-id=\$WID && sleep 2
-            
-            sed -i '/serial0/d' "\$VMX_PATH"
-            VPORT=\$((2000 + \$VMID))
-            echo "serial0.present = \"TRUE\"" >> "\$VMX_PATH"
-            echo "serial0.yieldOnPoll = \"TRUE\"" >> "\$VMX_PATH"
-            echo "serial0.fileType = \"network\"" >> "\$VMX_PATH"
-            echo "serial0.fileName = \"telnet://:\$VPORT\"" >> "\$VMX_PATH"
-            echo "serial0.network.endPoint = \"server\"" >> "\$VMX_PATH"
-            vim-cmd vmsvc/reload \$VMID
-            echo "HARDWARE_ADDED"
+            if [ "$IS_SELF" = "true" ]; then
+                echo "HARDWARE_MISSING_BUT_SELF"
+            else
+                echo "HARDWARE_MISSING"
+                WID=\$(localcli vm process list | grep -A 1 "$VMNAME" | grep "World ID" | awk '{print \$3}')
+                [ ! -z "\$WID" ] && localcli vm process kill --type=force --world-id=\$WID && sleep 2
+                
+                sed -i '/serial0/d' "\$VMX_PATH"
+                VPORT=\$((2000 + \$VMID))
+                echo "serial0.present = \"TRUE\"" >> "\$VMX_PATH"
+                echo "serial0.yieldOnPoll = \"TRUE\"" >> "\$VMX_PATH"
+                echo "serial0.fileType = \"network\"" >> "\$VMX_PATH"
+                echo "serial0.fileName = \"telnet://:\$VPORT\"" >> "\$VMX_PATH"
+                echo "serial0.network.endPoint = \"server\"" >> "\$VMX_PATH"
+                vim-cmd vmsvc/reload \$VMID
+                echo "HARDWARE_ADDED"
+            fi
         else
             echo "HARDWARE_OK"
         fi
 
-        # Ensure VM is Powered On
         STATE=\$(vim-cmd vmsvc/power.getstate \$VMID | tail -1)
         if [ "\$STATE" = "Powered off" ]; then
             vim-cmd vmsvc/power.on \$VMID > /dev/null
@@ -87,43 +102,37 @@ ESX_EOF
     )
 
     echo "  -> Status: $HW_STATUS"
-    [[ "$HW_STATUS" == *"NOT_FOUND"* ]] && echo "  [!] VM not found on ESXi. Skipping." && continue
+    
+    if [[ "$HW_STATUS" == *"HARDWARE_MISSING_BUT_SELF"* ]]; then
+        echo "  [!] WARNING: Serial hardware is missing on THIS DNS server."
+        echo "      I cannot fix it automatically without killing this script."
+        echo "      Proceeding to GRUB check anyway..."
+    fi
 
-    # 2. GUEST OS AUDIT (Only if Hardware/Power is ready)
-    VMIP=$(nslookup "$VMNAME" | grep -A 1 "Name:" | grep "Address" | awk '{print $2}' | head -n 1)
-    if [ -z "$VMIP" ]; then echo "  [!] DNS Error for $VMNAME. Skipping."; continue; fi
-
+    # 2. GUEST OS AUDIT
+    VMIP=$(nslookup "$VMNAME" | grep -A 1 "Address" | tail -1 | awk '{print $2}')
+    [[ -z "$VMIP" ]] && VMIP="127.0.0.1" # Fallback if self
+    
     echo "[*] Phase 2: Waiting for Guest SSH ($VMIP)..."
-    COUNT=0
-    READY=false
-    while [ $COUNT -lt 24 ]; do
-        if timeout 1 bash -c "</dev/tcp/$VMIP/22" 2>/dev/null; then
-            READY=true
-            break
-        fi
-        echo -n "."
-        sleep 5
-        ((COUNT++))
-    done
-    echo ""
-
-    if [ "$READY" = false ]; then
-        echo "  [!] Guest OS failed to start SSH. Skipping."
+    if ! timeout 2 bash -c "</dev/tcp/$VMIP/22" 2>/dev/null; then
+        echo "  [!] SSH Unreachable. Skipping."
         continue
     fi
 
     # 3. MEMTEST & GRUB CHECK
     echo "[*] Phase 3: Internal Config Check..."
-    sshpass -p "$VM_PASS" ssh -o StrictHostKeyChecking=no root@"$VMIP" "[ -f /boot/efi/EFI/memtest/memtest.efi ] && grep -q 'MemTest' /etc/grub.d/40_custom" 2>/dev/null
+    sshpass -p "$VM_PASS" ssh -o StrictHostKeyChecking=no root@"$VMIP" "[ -f /boot/efi/EFI/memtest/memtest.efi ]" 2>/dev/null
     if [ $? -eq 0 ]; then
-        echo "  [OK] MemTest and GRUB are already configured."
+        echo "  [OK] MemTest is already present."
     else
         echo "  [!] Config missing. Applying updates..."
-        sshpass -p "$VM_PASS" scp -o StrictHostKeyChecking=no enable-verbose-boot.sh root@"$VMIP":/tmp/
-        sshpass -p "$VM_PASS" ssh -o StrictHostKeyChecking=no root@"$VMIP" "chmod +x /tmp/enable-verbose-boot.sh && /tmp/enable-verbose-boot.sh && reboot"
-        echo "  [SUCCESS] Configuration applied. $VMNAME is rebooting."
+        # If it's self, just run it locally
+        if [ "$IS_SELF" = "true" ]; then
+            ./enable-verbose-boot.sh
+        else
+            sshpass -p "$VM_PASS" scp -o StrictHostKeyChecking=no enable-verbose-boot.sh root@"$VMIP":/tmp/
+            sshpass -p "$VM_PASS" ssh -o StrictHostKeyChecking=no root@"$VMIP" "chmod +x /tmp/enable-verbose-boot.sh && /tmp/enable-verbose-boot.sh && reboot"
+        fi
+        echo "  [SUCCESS] Configuration applied to $VMNAME."
     fi
 done
-
-echo "=========================================================="
-echo "AUDIT SEQUENCE COMPLETE"
