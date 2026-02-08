@@ -7,7 +7,7 @@ VM_PASS='Root@123'
 GITHUB_URL="https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-boot.sh"
 
 echo "=========================================================="
-echo "STEP 1: HARDWARE AUDIT (IRONCLAD POWER MANAGEMENT)"
+echo "STEP 1: HARDWARE AUDIT"
 echo "=========================================================="
 
 wget -q "$GITHUB_URL" -O enable-verbose-boot.sh || true
@@ -27,24 +27,12 @@ sshpass -p "$ESXI_PASS" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/d
         [ -z "$VMX_PATH" ] && continue
 
         if ! grep -q "serial0.present" "$VMX_PATH"; then
-            echo "Repairing $VMNAME..." >&2
-            
-            # 1. FORCE POWER OFF
-            # Using power.off usually works, but if it's stuck, we try a hard stop
+            echo "Repairing Hardware for $VMNAME..." >&2
             vim-cmd vmsvc/power.off $VMID > /dev/null 2>&1
             
-            # Wait loop: Check state until it is definitely Off
-            COUNT=0
-            while [ $COUNT -lt 15 ]; do
-                CURRENT_STATE=$(vim-cmd vmsvc/power.getstate $VMID | tail -1)
-                if [[ "$CURRENT_STATE" == *"Powered off"* ]]; then
-                    break
-                fi
-                sleep 2
-                let COUNT=COUNT+1
-            done
+            # Wait for off
+            while [[ "$(vim-cmd vmsvc/power.getstate $VMID | tail -1)" != *"Powered off"* ]]; do sleep 2; done
 
-            # 2. Inject Serial Config
             VM_PORT=$((2000 + $VMID))
             cat <<EOL >> "$VMX_PATH"
 serial0.present = "TRUE"
@@ -53,16 +41,9 @@ serial0.fileType = "network"
 serial0.fileName = "telnet://:$VM_PORT"
 serial0.network.endPoint = "server"
 EOL
-            
-            # 3. Reload and Power back on
             vim-cmd vmsvc/reload $VMID > /dev/null
-            sleep 3
-            # Try to power on; if it fails, wait and try once more
-            if ! vim-cmd vmsvc/power.on $VMID > /dev/null 2>&1; then
-                sleep 5
-                vim-cmd vmsvc/power.on $VMID > /dev/null 2>&1
-            fi
-            
+            sleep 2
+            vim-cmd vmsvc/power.on $VMID > /dev/null
             echo "$VMNAME|FIXED"
         else
             echo "$VMNAME|EXISTS"
@@ -75,7 +56,9 @@ echo "STEP 2: GUEST OS CONFIGURATION"
 echo "=========================================================="
 
 export SSHPASS="$VM_PASS"
+# Note: Removed -n from SCP_OPTS
 SSH_OPTS="-n -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=15"
+SCP_OPTS="-q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=15"
 
 while IFS='|' read -u 3 -r VMNAME STATUS; do
     [ -z "$VMNAME" ] && continue
@@ -84,27 +67,26 @@ while IFS='|' read -u 3 -r VMNAME STATUS; do
 
     echo "--- Analyzing $VMNAME ($VMIP) ---"
 
-    if [ "$STATUS" == "FIXED" ]; then
-        echo "  -> Waiting for SSH port 22..."
-        # Give it a long timeout to boot
-        until timeout 1 bash -c "</dev/tcp/$VMIP/22" 2>/dev/null; do 
-            echo -n "."
-            sleep 4
-        done
-        echo " Connected!"
-    fi
-    
-    ALREADY_DONE=$(sshpass -e ssh $SSH_OPTS root@"$VMIP" "grep 'console=ttyS0' /etc/default/grub" 2>/dev/null)
-    
-    if [ "$STATUS" == "FIXED" ] || [ -z "$ALREADY_DONE" ]; then
-        echo "  -> Deploying Serial Console Config..."
-        sshpass -e scp $SSH_OPTS enable-verbose-boot.sh root@"$VMIP":/tmp/
+    # Strict check: Does the grub file actually have the serial console AND is it the active config?
+    # If this fails, we force a re-run.
+    NEEDS_OS_FIX=$(sshpass -e ssh $SSH_OPTS root@"$VMIP" "grep 'console=ttyS0' /etc/default/grub && stat /boot/grub2/grub.cfg" 2>/dev/null)
+
+    if [ -z "$NEEDS_OS_FIX" ] || [ "$STATUS" == "FIXED" ]; then
+        echo "  -> Configuring Guest OS..."
+        
+        # Ensure SSH is up before SCP
+        until timeout 1 bash -c "</dev/tcp/$VMIP/22" 2>/dev/null; do echo -n "."; sleep 3; done
+        
+        sshpass -e scp $SCP_OPTS enable-verbose-boot.sh root@"$VMIP":/tmp/
         sshpass -e ssh $SSH_OPTS root@"$VMIP" "chmod +x /tmp/enable-verbose-boot.sh && /tmp/enable-verbose-boot.sh && reboot" &
+        echo "  -> Update triggered and rebooting."
     else
-        echo "  -> [OK] Already configured."
+        echo "  -> [OK] Already fully configured."
     fi
 done 3< $TMP_DATA
 
 wait
 rm -f $TMP_DATA
-echo "--- ALL TASKS COMPLETE ---"
+echo "=========================================================="
+echo "ALL SERVERS ARE NOW SYNCHRONIZED"
+echo "=========================================================="
