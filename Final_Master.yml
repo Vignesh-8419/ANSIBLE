@@ -29,14 +29,14 @@
                 
                 sed -i '/serial0/d' "$VMX_PATH"
                 VPORT=$((2000 + $VMID))
-                # The lines below are now safely inside the 'raw' block
+                # Note: These lines below MUST be indented further than the 'raw' keyword
                 cat <<EOL >> "$VMX_PATH"
-serial0.present = "TRUE"
-serial0.yieldOnPoll = "TRUE"
-serial0.fileType = "network"
-serial0.fileName = "telnet://:$VPORT"
-serial0.network.endPoint = "server"
-EOL
+                serial0.present = "TRUE"
+                serial0.yieldOnPoll = "TRUE"
+                serial0.fileType = "network"
+                serial0.fileName = "telnet://:$VPORT"
+                serial0.network.endPoint = "server"
+        EOL
                 vim-cmd vmsvc/reload $VMID
                 sleep 1
                 vim-cmd vmsvc/power.on $VMID
@@ -45,6 +45,8 @@ EOL
             fi
         done
       register: hw_output
+      # This ensures Step 1 only attempts to run if the ESXi host is in the current run
+      when: inventory_hostname == '192.168.253.128' or ansible_limit is not defined
 
 - name: Step 2 - Guest OS Configuration
   hosts: all
