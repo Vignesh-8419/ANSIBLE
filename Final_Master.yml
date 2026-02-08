@@ -1,16 +1,16 @@
 ---
 - name: Step 1 - Smart Hardware Audit on ESXi
-  hosts: esxi
+  hosts: 192.168.253.128
   gather_facts: no
   vars:
-    # Fallback to hardcoded if nb_ctx isn't passed for testing
-    ans_user: "{{ nb_ctx.exsi_username | default('root') }}"
-    ans_pass: "{{ nb_ctx.exsi_password | default('admin$22') }}"
+    # In AWX/Netbox, context is often stored in 'config_context'
+    # We use 'hostvars' to pull the credentials from one of your VMs
+    ctx: "{{ hostvars['http-server-01.vgs.com']['config_context'] }}"
+    ansible_user: "{{ ctx.exsi_username }}"
+    ansible_password: "{{ ctx.exsi_password }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
   tasks:
     - name: Run Hardware Injection Script on ESXi
-      vars:
-        ansible_user: "{{ ans_user }}"
-        ansible_password: "{{ ans_pass }}"
       raw: |
         LIMIT="{{ ansible_limit | default('all') }}"
         IDS=$(vim-cmd vmsvc/getallvms 2>/dev/null | awk 'NR>1 {print $1}' | grep -E '^[0-9]+$')
@@ -27,18 +27,20 @@
                 [ ! -z "$WID" ] && localcli vm process kill --type=force --world-id=$WID && sleep 2
                 sed -i '/serial0/d' "$VMX_PATH"
                 VPORT=$((2000 + $VMID))
-                # Using printf is safer for YAML parsing than cat <<EOL
                 printf 'serial0.present = "TRUE"\nserial0.yieldOnPoll = "TRUE"\nserial0.fileType = "network"\nserial0.fileName = "telnet://:%s"\nserial0.network.endPoint = "server"\n' "$VPORT" >> "$VMX_PATH"
                 vim-cmd vmsvc/reload $VMID && sleep 1 && vim-cmd vmsvc/power.on $VMID
             fi
         done
 
 - name: Step 2 - Guest OS Configuration
-  hosts: vms
+  hosts: rocky-8-servers
   gather_facts: no
   vars:
-    ansible_user: "{{ nb_ctx.vm_root_user | default('root') }}"
-    ansible_password: "{{ nb_ctx.vm_root_password | default('Root@123') }}"
+    # Accessing the context for each specific VM
+    ctx: "{{ config_context }}"
+    ansible_user: "{{ ctx.vm_root_user }}"
+    ansible_password: "{{ ctx.vm_root_password }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
     github_script_url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-boot.sh"
   tasks:
     - name: Wait for SSH
@@ -49,9 +51,10 @@
       shell: grep "console=ttyS0" /etc/default/grub
       register: grub_check
       ignore_errors: yes
+      changed_when: false
 
     - name: Apply Fix
-      when: grub_check.rc != 0
+      when: grub_check.rc is defined and grub_check.rc != 0
       block:
         - name: Download Script
           get_url:
