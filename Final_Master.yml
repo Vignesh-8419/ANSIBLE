@@ -9,17 +9,30 @@
   tasks:
     - name: Run Hardware Injection Script on ESXi
       raw: |
+        # Capture the limit from Ansible
+        LIMIT="{{ ansible_limit | default('all') }}"
+        
         IDS=$(vim-cmd vmsvc/getallvms 2>/dev/null | awk 'NR>1 {print $1}' | grep -E '^[0-9]+$')
         for VMID in $IDS; do
             VMNAME=$(vim-cmd vmsvc/getallvms | awk -v id="$VMID" '$1==id {print $2}')
+            
+            # 1. Skip if it's the DNS server
             [ "$VMNAME" == "dns-server-01" ] && continue
+            
+            # 2. If a limit is set, skip if VMNAME doesn't match the limit
+            # (Matches exactly or if the limit is 'all')
+            if [ "$LIMIT" != "all" ] && [[ "$LIMIT" != *"$VMNAME"* ]]; then
+                continue
+            fi
+
             VMX_PATH=$(find /vmfs/volumes/ -name "${VMNAME}.vmx" | head -n 1)
             [ -z "$VMX_PATH" ] && continue
 
             if ! grep -q "serial0.present = \"TRUE\"" "$VMX_PATH"; then
-                echo "Fixing $VMNAME"
+                echo "Repairing Hardware: $VMNAME"
                 WID=$(localcli vm process list | grep -A 1 "$VMNAME" | grep "World ID" | awk '{print $3}')
                 [ ! -z "$WID" ] && localcli vm process kill --type=force --world-id=$WID && sleep 2
+                
                 sed -i '/serial0/d' "$VMX_PATH"
                 VPORT=$((2000 + $VMID))
                 cat <<EOL >> "$VMX_PATH"
@@ -32,6 +45,8 @@ EOL
                 vim-cmd vmsvc/reload $VMID
                 sleep 1
                 vim-cmd vmsvc/power.on $VMID
+            else
+                echo "Hardware OK: $VMNAME"
             fi
         done
       register: hw_output
@@ -45,35 +60,34 @@ EOL
     ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
     github_script_url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-boot.sh"
   tasks:
-    # Protect ESXi from Guest OS tasks
-    - name: Wait for SSH to be available
-      wait_for_connection:
-        delay: 5
-        timeout: 300
-      when: inventory_hostname != '192.168.253.128'
-
-    - name: Check if GRUB is already configured
-      shell: grep "console=ttyS0" /etc/default/grub
-      register: grub_check
-      ignore_errors: yes
-      changed_when: false
-      when: inventory_hostname != '192.168.253.128'
-
-    - name: Apply Verbose Boot and Reboot
+    - name: Process VM Configuration
       block:
-        - name: Download script from GitHub
-          get_url:
-            url: "{{ github_script_url }}"
-            dest: /tmp/enable-verbose-boot.sh
-            mode: '0755'
-            validate_certs: no
+        - name: Wait for SSH
+          wait_for_connection:
+            delay: 5
+            timeout: 300
 
-        - name: Execute script
-          shell: /tmp/enable-verbose-boot.sh
+        - name: Check GRUB
+          shell: grep "console=ttyS0" /etc/default/grub
+          register: grub_check
+          ignore_errors: yes
+          changed_when: false
 
-        - name: Reboot VM
-          reboot:
-            reboot_timeout: 300
-      when: 
-        - inventory_hostname != '192.168.253.128'
-        - (grub_check.rc is defined and grub_check.rc != 0)
+        - name: Apply Script and Reboot
+          block:
+            - name: Download from GitHub
+              get_url:
+                url: "{{ github_script_url }}"
+                dest: /tmp/enable-verbose-boot.sh
+                mode: '0755'
+                validate_certs: no
+            
+            - name: Run Fix
+              shell: /tmp/enable-verbose-boot.sh
+
+            - name: Final Reboot
+              reboot:
+                reboot_timeout: 300
+          when: grub_check.rc != 0
+      # Only run if it's not the ESXi host (ansible handles the --limit automatically here)
+      when: inventory_hostname != '192.168.253.128'
