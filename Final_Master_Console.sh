@@ -6,15 +6,35 @@ ESXI_PASS='admin$22'
 VM_PASS='Root@123'
 
 # --- GENERATE THE LOCAL GRUB SCRIPT ---
-# This script handles the OS-specific differences between CentOS 7 and Rocky 8/9
 cat << 'EOF' > enable-verbose-boot.sh
 #!/bin/bash
 
 # Detect OS Version
 IS_CENTOS7=$(grep -q "release 7" /etc/redhat-release && echo "true" || echo "false")
 
+# 1. Ensure MemTest directory and binary exist
+mkdir -p /boot/efi/EFI/memtest
+if [ ! -f /boot/efi/EFI/memtest/memtest.efi ]; then
+    echo "Downloading MemTest86+ binary..."
+    curl -L -o /boot/efi/EFI/memtest/memtest.efi https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/mt86plus
+    chmod 755 /boot/efi/EFI/memtest/memtest.efi
+fi
+
+# 2. Configure MemTest and GRUB based on version
 if [ "$IS_CENTOS7" == "true" ]; then
     echo "Configuring for CentOS 7..."
+    # Custom Memtest entry for EL7 (using linuxefi)
+    cat << 'EOC' > /etc/grub.d/40_custom
+#!/bin/sh
+exec tail -n +3 $0
+menuentry "MemTest86+ (Self-Compiled)" --class memtest86 {
+    insmod part_gpt
+    insmod fat
+    set root='hd0,gpt1'
+    linuxefi /EFI/memtest/memtest.efi console=ttyS0,115200
+}
+EOC
+    # Main GRUB Defaults
     cat << 'EOG' > /etc/default/grub
 GRUB_TIMEOUT=10
 GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
@@ -25,10 +45,22 @@ GRUB_CMDLINE_LINUX="console=tty0 console=ttyS0,115200 crashkernel=auto rd.lvm.lv
 GRUB_DISABLE_RECOVERY="true"
 GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
 EOG
-    # Target CentOS 7 EFI Path
+    chmod +x /etc/grub.d/40_custom
     grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
 else
     echo "Configuring for Rocky / EL8+..."
+    # Custom Memtest entry for EL8/9 (using linux)
+    cat << 'EOC' > /etc/grub.d/40_custom
+#!/bin/sh
+exec tail -n +3 $0
+menuentry "MemTest86+ (Self-Compiled)" --class memtest86 {
+    insmod part_gpt
+    insmod fat
+    set root='hd0,gpt1'
+    linux /EFI/memtest/memtest.efi console=ttyS0,115200
+}
+EOC
+    # Main GRUB Defaults
     cat << 'EOG' > /etc/default/grub
 GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
 GRUB_DEFAULT=saved
@@ -40,13 +72,19 @@ GRUB_TIMEOUT=10
 GRUB_TERMINAL="serial console"
 GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
 EOG
-    # Target Rocky EFI Path
-    grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
+    chmod +x /etc/grub.d/40_custom
+    # Try Rocky path, fallback to standard EFI
+    if [ -d /boot/efi/EFI/rocky ]; then
+        grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
+    else
+        grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
+    fi
 fi
 EOF
 
 chmod +x enable-verbose-boot.sh
 
+# --- THE REST OF YOUR SCRIPT REMAINS THE SAME ---
 echo "=========================================================="
 echo "STEP 1: SMART HARDWARE AUDIT (ESXi)"
 echo "=========================================================="
@@ -119,7 +157,7 @@ for VMNAME in $VMLIST; do
     GRUB_CHECK=$(sshpass -e ssh $SSH_OPTS root@"$VMIP" "grep '^GRUB_TERMINAL=\"serial console\"' /etc/default/grub" 2>/dev/null)
 
     if [ -z "$GRUB_CHECK" ]; then
-        echo "  -> [!] Updating GRUB Config to 'serial console'..."
+        echo "  -> [!] Updating GRUB Config to 'serial console' and adding MemTest..."
         sshpass -e scp $SCP_OPTS enable-verbose-boot.sh root@"$VMIP":/tmp/
         sshpass -e ssh $SSH_OPTS root@"$VMIP" "chmod +x /tmp/enable-verbose-boot.sh && /tmp/enable-verbose-boot.sh && reboot" &
     else
