@@ -1,23 +1,28 @@
 ---
-- name: Deploy MemTest86+ with OS-specific GRUB logic
+- name: Deploy MemTest86+ with Serial Redirection
   hosts: all
   become: yes
   vars:
     memtest_url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/mt86plus"
-    # Use linuxefi for EL7, linux for everything else
+    # Logic: EL7 uses linuxefi, EL8/9 uses linux
     grub_linux_cmd: "{{ 'linuxefi' if ansible_distribution_major_version == '7' else 'linux' }}"
 
   tasks:
+    - name: Ensure MemTest directory exists on EFI partition
+      file:
+        path: "/boot/efi/EFI/memtest"
+        state: directory
+        mode: '0755'
+
     - name: Download MemTest86+
       get_url:
         url: "{{ memtest_url }}"
         dest: "/boot/efi/EFI/memtest/memtest.efi"
         mode: '0755'
-      # Ensure directory exists first
       register: download_bin
       until: download_bin is succeeded
 
-    - name: Configure GRUB 40_custom with correct linux command
+    - name: Configure GRUB 40_custom with Serial Console Redirection
       copy:
         dest: "/etc/grub.d/40_custom"
         mode: '0755'
@@ -29,13 +34,17 @@
               insmod part_gpt
               insmod fat
               set root='hd0,gpt1'
-              {{ grub_linux_cmd }} /EFI/memtest/memtest.efi
+              {{ grub_linux_cmd }} /EFI/memtest/memtest.efi console=ttyS0,115200
           }
 
-    - name: Run grub2-mkconfig for EL7
+    - name: Update GRUB config for CentOS 7
       command: grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
-      when: ansible_distribution_major_version == "7"
+      when: ansible_distribution == "CentOS" and ansible_distribution_major_version == "7"
 
-    - name: Run grub2-mkconfig for EL8/9
+    - name: Update GRUB config for Rocky Linux 8/9
+      command: grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
+      when: ansible_distribution == "Rocky" and ansible_distribution_major_version in ["8", "9"]
+
+    - name: General GRUB update fallback
       command: grub2-mkconfig -o /boot/grub2/grub.cfg
       when: ansible_distribution_major_version in ["8", "9"]
