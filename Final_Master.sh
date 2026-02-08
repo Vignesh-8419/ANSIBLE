@@ -5,9 +5,10 @@ ESXI_IP="192.168.253.128"
 ESXI_PASS='admin$22'
 VM_PASS='Root@123'
 GITHUB_URL="https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-boot.sh"
+FORCE_RECONFIG=true # Set to true to force OS update even if it looks done
 
 echo "=========================================================="
-echo "STEP 1: HARDWARE AUDIT"
+echo "STEP 1: HARDWARE AUDIT & INJECTION"
 echo "=========================================================="
 
 wget -q "$GITHUB_URL" -O enable-verbose-boot.sh || true
@@ -26,12 +27,15 @@ sshpass -p "$ESXI_PASS" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/d
         VMX_PATH=$(find /vmfs/volumes/ -name "${VMNAME}.vmx" | head -n 1)
         [ -z "$VMX_PATH" ] && continue
 
+        # If serial0 is missing, we MUST fix it
         if ! grep -q "serial0.present" "$VMX_PATH"; then
-            echo "Repairing Hardware for $VMNAME..." >&2
-            vim-cmd vmsvc/power.off $VMID > /dev/null 2>&1
+            echo "Hardware Missing for $VMNAME. Fixing..." >&2
             
-            # Wait for off
-            while [[ "$(vim-cmd vmsvc/power.getstate $VMID | tail -1)" != *"Powered off"* ]]; do sleep 2; done
+            # Ensure VM is off before editing VMX
+            if [[ "$(vim-cmd vmsvc/power.getstate $VMID | tail -1)" == *"Powered on"* ]]; then
+                vim-cmd vmsvc/power.off $VMID > /dev/null 2>&1
+                while [[ "$(vim-cmd vmsvc/power.getstate $VMID | tail -1)" != *"Powered off"* ]]; do sleep 2; done
+            fi
 
             VM_PORT=$((2000 + $VMID))
             cat <<EOL >> "$VMX_PATH"
@@ -56,7 +60,6 @@ echo "STEP 2: GUEST OS CONFIGURATION"
 echo "=========================================================="
 
 export SSHPASS="$VM_PASS"
-# Note: Removed -n from SCP_OPTS
 SSH_OPTS="-n -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=15"
 SCP_OPTS="-q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=15"
 
@@ -67,26 +70,25 @@ while IFS='|' read -u 3 -r VMNAME STATUS; do
 
     echo "--- Analyzing $VMNAME ($VMIP) ---"
 
-    # Strict check: Does the grub file actually have the serial console AND is it the active config?
-    # If this fails, we force a re-run.
-    NEEDS_OS_FIX=$(sshpass -e ssh $SSH_OPTS root@"$VMIP" "grep 'console=ttyS0' /etc/default/grub && stat /boot/grub2/grub.cfg" 2>/dev/null)
+    # Check if OS needs fix (unless we are forcing it)
+    ALREADY_DONE=$(sshpass -e ssh $SSH_OPTS root@"$VMIP" "grep 'console=ttyS0' /etc/default/grub" 2>/dev/null)
 
-    if [ -z "$NEEDS_OS_FIX" ] || [ "$STATUS" == "FIXED" ]; then
-        echo "  -> Configuring Guest OS..."
+    if [ "$STATUS" == "FIXED" ] || [ "$FORCE_RECONFIG" = true ] || [ -z "$ALREADY_DONE" ]; then
+        echo "  -> Configuring Guest OS (Hardware Status: $STATUS)..."
         
-        # Ensure SSH is up before SCP
+        # Wait for SSH to be ready
         until timeout 1 bash -c "</dev/tcp/$VMIP/22" 2>/dev/null; do echo -n "."; sleep 3; done
         
         sshpass -e scp $SCP_OPTS enable-verbose-boot.sh root@"$VMIP":/tmp/
         sshpass -e ssh $SSH_OPTS root@"$VMIP" "chmod +x /tmp/enable-verbose-boot.sh && /tmp/enable-verbose-boot.sh && reboot" &
-        echo "  -> Update triggered and rebooting."
+        echo "  -> Update triggered."
     else
-        echo "  -> [OK] Already fully configured."
+        echo "  -> [OK] Hardware and OS both appear correct."
     fi
 done 3< $TMP_DATA
 
 wait
 rm -f $TMP_DATA
 echo "=========================================================="
-echo "ALL SERVERS ARE NOW SYNCHRONIZED"
+echo "ALL SERVERS RE-SYNCHRONIZED"
 echo "=========================================================="
