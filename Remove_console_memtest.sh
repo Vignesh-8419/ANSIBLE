@@ -1,21 +1,31 @@
-# 1. Clean the 'Ghost' MemTest entry from all possible EFI locations
-sed -i '/menuentry "MemTest86+/,/}/d' /boot/efi/EFI/*/grub.cfg 2>/dev/null
+#!/bin/bash
 
-# 2. Extract current working LVM/Root parameters and strip out console settings
+# 1. FORCE REMOVE the MemTest block from the physical config file
+# This deletes everything from the menuentry line to the closing bracket }
+sed -i '/menuentry "MemTest86+/,/}/d' /boot/efi/EFI/centos/grub.cfg 2>/dev/null
+sed -i '/menuentry "MemTest86+/,/}/d' /boot/efi/EFI/rocky/grub.cfg 2>/dev/null
+
+# 2. Extract CURRENT working parameters from the running Kernel
+# This ensures we keep your LVM paths but strip the serial console
 PARAMS=$(cat /proc/cmdline | sed 's/BOOT_IMAGE=[^ ]* //; s/console=ttyS0,[0-9]*//g; s/console=tty0//g' | xargs)
 
-# 3. Update /etc/default/grub with clean parameters
+# 3. Wipe and Rebuild the GRUB default file to remove Serial redirection
+sed -i '/GRUB_TERMINAL/d' /etc/default/grub
+sed -i '/GRUB_SERIAL_COMMAND/d' /etc/default/grub
 sed -i '/GRUB_CMDLINE_LINUX=/d' /etc/default/grub
 echo "GRUB_CMDLINE_LINUX=\"$PARAMS\"" >> /etc/default/grub
+echo "GRUB_TERMINAL_OUTPUT=\"console\"" >> /etc/default/grub
 
-# 4. Detect OS and update the CORRECT grub.cfg
-if [ -f /etc/rocky-release ] || [ -f /etc/redhat-release ] && grep -q "Rocky" /etc/redhat-release; then
-    echo "Updating Rocky Linux..."
+# 4. OS Detection and Final Config Generation
+if [ -f /boot/efi/EFI/rocky/grub.cfg ]; then
+    echo "Processing Rocky Linux..."
     grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
-elif [ -f /etc/centos-release ] || grep -q "CentOS" /etc/redhat-release; then
-    echo "Updating CentOS..."
+elif [ -f /boot/efi/EFI/centos/grub.cfg ]; then
+    echo "Processing CentOS..."
     grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
-else
-    echo "Falling back to standard EFI path..."
-    grub2-mkconfig -o /boot/efi/EFI/BOOT/grub.cfg
 fi
+
+# 5. VERIFICATION
+echo "--- Post-Cleanup Check ---"
+grep -i "memtest" /boot/efi/EFI/*/grub.cfg
+grep "console=ttyS0" /etc/default/grub
