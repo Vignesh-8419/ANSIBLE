@@ -1,50 +1,41 @@
 ---
-- name: Deploy MemTest86+ with Serial Redirection
+- name: Install MemTest86+ Only
   hosts: all
   become: yes
   vars:
     memtest_url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/mt86plus"
-    # Logic: EL7 uses linuxefi, EL8/9 uses linux
-    grub_linux_cmd: "{{ 'linuxefi' if ansible_distribution_major_version == '7' else 'linux' }}"
+    efi_path: "/boot/efi/EFI/memtest"
 
   tasks:
-    - name: Ensure MemTest directory exists on EFI partition
+    - name: Ensure Memtest directory exists
       file:
-        path: "/boot/efi/EFI/memtest"
+        path: "{{ efi_path }}"
         state: directory
         mode: '0755'
 
-    - name: Download MemTest86+
+    - name: Download MemTest binary
       get_url:
         url: "{{ memtest_url }}"
-        dest: "/boot/efi/EFI/memtest/memtest.efi"
+        dest: "{{ efi_path }}/memtest.efi"
         mode: '0755'
-      register: download_bin
-      until: download_bin is succeeded
 
-    - name: Configure GRUB 40_custom with Serial Console Redirection
+    - name: Create 40_custom entry
       copy:
-        dest: "/etc/grub.d/40_custom"
+        dest: /etc/grub.d/40_custom
         mode: '0755'
         content: |
           #!/bin/sh
           exec tail -n +3 $0
-          
           menuentry "MemTest86+ (Self-Compiled)" --class memtest86 {
               insmod part_gpt
               insmod fat
               set root='hd0,gpt1'
-              {{ grub_linux_cmd }} /EFI/memtest/memtest.efi console=ttyS0,115200
+              {{ 'linuxefi' if ansible_distribution_major_version == '7' else 'linux' }} /EFI/memtest/memtest.efi
           }
 
-    - name: Update GRUB config for CentOS 7
-      command: grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
-      when: ansible_distribution == "CentOS" and ansible_distribution_major_version == "7"
-
-    - name: Update GRUB config for Rocky Linux 8/9
-      command: grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
-      when: ansible_distribution == "Rocky" and ansible_distribution_major_version in ["8", "9"]
-
-    - name: General GRUB update fallback
-      command: grub2-mkconfig -o /boot/grub2/grub.cfg
-      when: ansible_distribution_major_version in ["8", "9"]
+    - name: Regenerate GRUB configuration
+      shell: |
+        if [ -f /boot/efi/EFI/rocky/grub.cfg ]; then TARGET="/boot/efi/EFI/rocky/grub.cfg"
+        elif [ -f /boot/efi/EFI/centos/grub.cfg ]; then TARGET="/boot/efi/EFI/centos/grub.cfg"
+        else TARGET="/boot/grub2/grub.cfg"; fi
+        grub2-mkconfig -o $TARGET
