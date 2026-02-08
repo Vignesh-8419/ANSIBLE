@@ -17,7 +17,6 @@
         VMNAME="{{ inventory_hostname_short }}"
         VMID=$(vim-cmd vmsvc/getallvms | grep " $VMNAME " | awk '{print $1}')
         [ -z "$VMID" ] && exit 0
-        
         VMX_PATH=$(find /vmfs/volumes/ -name "${VMNAME}.vmx" | head -n 1)
         if ! grep -q "serial0.present = \"TRUE\"" "$VMX_PATH"; then
             WID=$(localcli vm process list | grep -A 1 "$VMNAME" | grep "World ID" | awk '{print $3}')
@@ -43,95 +42,60 @@
         ansible_password: "{{ vm_pass }}"
       when: inventory_hostname != esxi_host
 
-    - name: Check if exact Serial Terminal config is active
-      shell: grep '^GRUB_TERMINAL="serial console"' /etc/default/grub
-      register: grub_check
-      ignore_errors: yes
-      changed_when: false
-      vars:
-        ansible_user: "{{ vm_user }}"
-        ansible_password: "{{ vm_pass }}"
-      when: inventory_hostname != esxi_host
-
     - name: Apply OS Fix
-      when: 
-        - inventory_hostname != esxi_host
-        - (grub_check.rc != 0) or (force_reconfig | bool)
       block:
-        - name: Generate Version-Specific GRUB script on VM
+        - name: Generate Dynamic GRUB script
           copy:
             dest: /tmp/enable-verbose-boot.sh
             mode: '0755'
             content: |
               #!/bin/bash
-              IS_CENTOS7=$(grep -q "release 7" /etc/redhat-release && echo "true" || echo "false")
-              
-              # 1. DOWNLOAD AND VALIDATE BINARY
+              # 1. DOWNLOAD MEMTEST
               mkdir -p /boot/efi/EFI/memtest
-              echo "Downloading MemTest86+..."
-              curl -L -f -o /boot/efi/EFI/memtest/memtest.efi https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/mt86plus
-              
-              if [ $? -ne 0 ] || [ ! -s /boot/efi/EFI/memtest/memtest.efi ]; then
-                  echo "CRITICAL ERROR: MemTest download failed. Aborting GRUB update."
-                  exit 1
-              fi
-              chmod 755 /boot/efi/EFI/memtest/memtest.efi
+              curl -L -f -o /boot/efi/EFI/memtest/memtest.efi https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/mt86plus || exit 1
 
-              # 2. CONFIGURE GRUB FILES
-              update_configs() {
-                  local loader=$1
-                  local grub_out=$2
-                  
-                  # Update 40_custom
-                  cat <<EOC > /etc/grub.d/40_custom
+              # 2. DYNAMICALLY DETECT CURRENT KERNEL PARAMETERS (Prevents Initramfs errors)
+              # This pulls your existing LVM/UUID configs so we don't overwrite them with wrong paths
+              CURRENT_PARAMS=$(grep '^GRUB_CMDLINE_LINUX' /etc/default/grub | cut -d'"' -f2 | sed 's/console=ttyS0,[0-9]*//g' | sed 's/console=tty0//g' | xargs)
+              NEW_PARAMS="console=tty0 console=ttyS0,115200 $CURRENT_PARAMS"
+
+              # 3. CONFIGURE GRUB FILES
+              IS_CENTOS7=$(grep -q "release 7" /etc/redhat-release && echo "true" || echo "false")
+              LOADER="linux"
+              [ "$IS_CENTOS7" == "true" ] && LOADER="linuxefi"
+
+              # Update 40_custom
+              cat <<EOC > /etc/grub.d/40_custom
               #!/bin/sh
               exec tail -n +3 \$0
               menuentry "MemTest86+ (Self-Compiled)" --class memtest86 {
                   insmod part_gpt
                   insmod fat
                   set root='hd0,gpt1'
-                  $loader /EFI/memtest/memtest.efi console=ttyS0,115200
+                  $LOADER /EFI/memtest/memtest.efi console=ttyS0,115200
               }
               EOC
-                  chmod +x /etc/grub.d/40_custom
+              chmod +x /etc/grub.d/40_custom
 
-                  # Update /etc/default/grub
-                  if [ "$IS_CENTOS7" == "true" ]; then
-                    CMDLINE="console=tty0 console=ttyS0,115200 crashkernel=auto rd.lvm.lv=centos/root rd.lvm.lv=centos/swap"
-                  else
-                    CMDLINE="console=tty0 console=ttyS0,115200 crashkernel=auto resume=/dev/mapper/rl-swap rd.lvm.lv=rl/root rd.lvm.lv=rl/swap"
-                  fi
+              # Update /etc/default/grub (Using Dynamic NEW_PARAMS)
+              sed -i "s|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"$NEW_PARAMS\"|" /etc/default/grub
+              sed -i "/^GRUB_TERMINAL=/d" /etc/default/grub
+              echo 'GRUB_TERMINAL="serial console"' >> /etc/default/grub
+              echo 'GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"' >> /etc/default/grub
 
-                  cat <<EOG > /etc/default/grub
-              GRUB_TIMEOUT=10
-              GRUB_DISTRIBUTOR="\$(sed 's, release .*$,,g' /etc/system-release)"
-              GRUB_DEFAULT=saved
-              GRUB_DISABLE_SUBMENU=true
-              GRUB_TERMINAL="serial console"
-              GRUB_CMDLINE_LINUX="$CMDLINE"
-              GRUB_DISABLE_RECOVERY="true"
-              GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
-              EOG
-                  
-                  grub2-mkconfig -o $grub_out
-              }
-
-              # 3. DETECT PATHS AND EXECUTE
-              if [ "$IS_CENTOS7" == "true" ]; then
-                  update_configs "linuxefi" "/boot/efi/EFI/centos/grub.cfg"
+              # 4. RUN MKCONFIG
+              if [ -f /boot/efi/EFI/rocky/grub.cfg ]; then
+                  grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
+              elif [ -f /boot/efi/EFI/centos/grub.cfg ]; then
+                  grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
               else
-                  # Handle Rocky/EL8+ pathing
-                  if [ -f /boot/efi/EFI/rocky/grub.cfg ]; then
-                      update_configs "linux" "/boot/efi/EFI/rocky/grub.cfg"
-                  else
-                      update_configs "linux" "/boot/efi/EFI/centos/grub.cfg"
-                  fi
+                  grub2-mkconfig -o /boot/grub2/grub.cfg
               fi
 
-        - name: Execute Generated Script
+        - name: Execute Script and Reboot
           shell: /tmp/enable-verbose-boot.sh
         
-        - name: Reboot to apply changes
+        - name: Reboot
           reboot:
             reboot_timeout: 300
       vars:
