@@ -63,7 +63,7 @@ for VMNAME in $VMLIST; do
     [[ "$VMNAME" == "$MY_HOSTNAME" ]] && IS_SELF="true"
 
     # 1. HARDWARE AUDIT
-    echo "[*] Phase 1: ESXi Hardware Check..."
+    echo "[*] Phase 1: ESXi Hardware & Power Check..."
     HW_STATUS=$(sshpass -p "$ESXI_PASS" ssh -o StrictHostKeyChecking=no root@$ESXI_IP "sh -s" <<ESX_EOF
         VMID=\$(vim-cmd vmsvc/getallvms | grep " $VMNAME " | awk '{print \$1}')
         if [ -z "\$VMID" ]; then echo "NOT_FOUND"; exit; fi
@@ -85,7 +85,15 @@ for VMNAME in $VMLIST; do
                 echo "HARDWARE_ADDED"
             fi
         else echo "HARDWARE_OK"; fi
-        vim-cmd vmsvc/power.on \$VMID >/dev/null 2>&1
+        
+        # Power on if it's currently off
+        STATE=\$(vim-cmd vmsvc/power.getstate \$VMID | tail -1)
+        if [ "\$STATE" = "Powered off" ]; then
+            vim-cmd vmsvc/power.on \$VMID >/dev/null 2>&1
+            echo "POWERING_ON"
+        else
+            echo "ALREADY_RUNNING"
+        fi
 ESX_EOF
     )
     echo "  -> Status: $HW_STATUS"
@@ -102,14 +110,29 @@ ESX_EOF
         continue
     fi
 
-    # 3. GUEST OS AUDIT (SSH Check)
+    # 3. GUEST OS AUDIT (SSH Retry Loop)
     echo "[*] Phase 2: Waiting for Guest SSH ($VMIP)..."
-    if ! timeout 5 bash -c "</dev/tcp/$VMIP/22" 2>/dev/null; then
-        echo "  [!] SSH Unreachable. Skipping."
+    MAX_RETRIES=24 
+    RETRY_COUNT=0
+    READY=false
+
+    while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+        if timeout 2 bash -c "</dev/tcp/$VMIP/22" 2>/dev/null; then
+            READY=true
+            break
+        fi
+        echo -n "."
+        sleep 5
+        ((RETRY_COUNT++))
+    done
+    echo ""
+
+    if [ "$READY" = false ]; then
+        echo "  [!] SSH Unreachable after timeout. Skipping."
         continue
     fi
 
-    # 4. INTERNAL CONFIG AUDIT (Check before applying)
+    # 4. INTERNAL CONFIG AUDIT
     echo "[*] Phase 3: Internal Config Audit..."
     CHECK_CMD="[ -f /boot/efi/EFI/memtest/memtest.efi ] && grep -q 'MemTest86+' /etc/grub.d/40_custom"
 
@@ -121,7 +144,6 @@ ESX_EOF
             ./enable-verbose-boot.sh
         fi
     else
-        # Run check on remote server
         if sshpass -p "$VM_PASS" ssh -o StrictHostKeyChecking=no root@"$VMIP" "$CHECK_CMD" 2>/dev/null; then
             echo "  [OK] GRUB and MemTest already present on $VMNAME. Skipping."
         else
