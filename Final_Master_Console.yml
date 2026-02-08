@@ -11,7 +11,7 @@
     force_reconfig: false 
 
   tasks:
-    # --- STEP 1: HARDWARE ---
+    # --- STEP 1: HARDWARE (ESXi Level) ---
     - name: Fix Hardware on ESXi (Delegated)
       raw: |
         VMNAME="{{ inventory_hostname_short }}"
@@ -34,7 +34,7 @@
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
       when: inventory_hostname != esxi_host
 
-    # --- STEP 2: GUEST OS ---
+    # --- STEP 2: GUEST OS (Internal Config) ---
     - name: Wait for VM to be reachable
       wait_for_connection:
         timeout: 300
@@ -66,9 +66,23 @@
               #!/bin/bash
               IS_CENTOS7=$(grep -q "release 7" /etc/redhat-release && echo "true" || echo "false")
               
-              # Function to update MemTest with Serial Support
-              update_memtest() {
-                  local cmd=$1
+              # 1. DOWNLOAD AND VALIDATE BINARY
+              mkdir -p /boot/efi/EFI/memtest
+              echo "Downloading MemTest86+..."
+              curl -L -f -o /boot/efi/EFI/memtest/memtest.efi https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/mt86plus
+              
+              if [ $? -ne 0 ] || [ ! -s /boot/efi/EFI/memtest/memtest.efi ]; then
+                  echo "CRITICAL ERROR: MemTest download failed. Aborting GRUB update."
+                  exit 1
+              fi
+              chmod 755 /boot/efi/EFI/memtest/memtest.efi
+
+              # 2. CONFIGURE GRUB FILES
+              update_configs() {
+                  local loader=$1
+                  local grub_out=$2
+                  
+                  # Update 40_custom
                   cat <<EOC > /etc/grub.d/40_custom
               #!/bin/sh
               exec tail -n +3 \$0
@@ -76,39 +90,42 @@
                   insmod part_gpt
                   insmod fat
                   set root='hd0,gpt1'
-                  $cmd /EFI/memtest/memtest.efi console=ttyS0,115200
+                  $loader /EFI/memtest/memtest.efi console=ttyS0,115200
               }
               EOC
                   chmod +x /etc/grub.d/40_custom
+
+                  # Update /etc/default/grub
+                  if [ "$IS_CENTOS7" == "true" ]; then
+                    CMDLINE="console=tty0 console=ttyS0,115200 crashkernel=auto rd.lvm.lv=centos/root rd.lvm.lv=centos/swap"
+                  else
+                    CMDLINE="console=tty0 console=ttyS0,115200 crashkernel=auto resume=/dev/mapper/rl-swap rd.lvm.lv=rl/root rd.lvm.lv=rl/swap"
+                  fi
+
+                  cat <<EOG > /etc/default/grub
+              GRUB_TIMEOUT=10
+              GRUB_DISTRIBUTOR="\$(sed 's, release .*$,,g' /etc/system-release)"
+              GRUB_DEFAULT=saved
+              GRUB_DISABLE_SUBMENU=true
+              GRUB_TERMINAL="serial console"
+              GRUB_CMDLINE_LINUX="$CMDLINE"
+              GRUB_DISABLE_RECOVERY="true"
+              GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
+              EOG
+                  
+                  grub2-mkconfig -o $grub_out
               }
 
+              # 3. DETECT PATHS AND EXECUTE
               if [ "$IS_CENTOS7" == "true" ]; then
-                  update_memtest "linuxefi"
-                  cat << 'EOG' > /etc/default/grub
-              GRUB_TIMEOUT=10
-              GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
-              GRUB_DEFAULT=saved
-              GRUB_DISABLE_SUBMENU=true
-              GRUB_TERMINAL="serial console"
-              GRUB_CMDLINE_LINUX="console=tty0 console=ttyS0,115200 crashkernel=auto rd.lvm.lv=centos/root rd.lvm.lv=centos/swap console=tty0"
-              GRUB_DISABLE_RECOVERY="true"
-              GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
-              EOG
-                  grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
+                  update_configs "linuxefi" "/boot/efi/EFI/centos/grub.cfg"
               else
-                  update_memtest "linux"
-                  cat << 'EOG' > /etc/default/grub
-              GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
-              GRUB_DEFAULT=saved
-              GRUB_DISABLE_SUBMENU=true
-              GRUB_CMDLINE_LINUX="console=tty0 console=ttyS0,115200 crashkernel=auto resume=/dev/mapper/rl-swap rd.lvm.lv=rl/root rd.lvm.lv=rl/swap "
-              GRUB_DISABLE_RECOVERY="true"
-              GRUB_ENABLE_BLSCFG=true
-              GRUB_TIMEOUT=10
-              GRUB_TERMINAL="serial console"
-              GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
-              EOG
-                  grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
+                  # Handle Rocky/EL8+ pathing
+                  if [ -f /boot/efi/EFI/rocky/grub.cfg ]; then
+                      update_configs "linux" "/boot/efi/EFI/rocky/grub.cfg"
+                  else
+                      update_configs "linux" "/boot/efi/EFI/centos/grub.cfg"
+                  fi
               fi
 
         - name: Execute Generated Script
