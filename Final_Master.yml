@@ -1,71 +1,72 @@
 ---
-- name: Step 1 - Smart Hardware Audit on ESXi
-  hosts: 192.168.253.128
+- name: Step 1 & 2 - Integrated Hardware and OS Audit
+  hosts: all  # When you use --limit, 'all' becomes just that limited host
   gather_facts: no
   vars:
-    # In AWX/Netbox, context is often stored in 'config_context'
-    # We use 'hostvars' to pull the credentials from one of your VMs
-    ctx: "{{ hostvars['http-server-01.vgs.com']['config_context'] }}"
-    ansible_user: "{{ ctx.exsi_username }}"
-    ansible_password: "{{ ctx.exsi_password }}"
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-  tasks:
-    - name: Run Hardware Injection Script on ESXi
-      raw: |
-        LIMIT="{{ ansible_limit | default('all') }}"
-        IDS=$(vim-cmd vmsvc/getallvms 2>/dev/null | awk 'NR>1 {print $1}' | grep -E '^[0-9]+$')
-        for VMID in $IDS; do
-            VMNAME=$(vim-cmd vmsvc/getallvms | awk -v id="$VMID" '$1==id {print $2}')
-            [ "$VMNAME" == "dns-server-01" ] && continue
-            if [ "$LIMIT" != "all" ] && [[ "$LIMIT" != *"$VMNAME"* ]]; then continue; fi
-
-            VMX_PATH=$(find /vmfs/volumes/ -name "${VMNAME}.vmx" | head -n 1)
-            [ -z "$VMX_PATH" ] && continue
-
-            if ! grep -q "serial0.present = \"TRUE\"" "$VMX_PATH"; then
-                WID=$(localcli vm process list | grep -A 1 "$VMNAME" | grep "World ID" | awk '{print $3}')
-                [ ! -z "$WID" ] && localcli vm process kill --type=force --world-id=$WID && sleep 2
-                sed -i '/serial0/d' "$VMX_PATH"
-                VPORT=$((2000 + $VMID))
-                printf 'serial0.present = "TRUE"\nserial0.yieldOnPoll = "TRUE"\nserial0.fileType = "network"\nserial0.fileName = "telnet://:%s"\nserial0.network.endPoint = "server"\n' "$VPORT" >> "$VMX_PATH"
-                vim-cmd vmsvc/reload $VMID && sleep 1 && vim-cmd vmsvc/power.on $VMID
-            fi
-        done
-
-- name: Step 2 - Guest OS Configuration
-  hosts: all
-  gather_facts: no
-  vars:
-    # Accessing the context for each specific VM
+    # Use the context from the current host in the loop
     ctx: "{{ config_context }}"
     ansible_user: "{{ ctx.vm_root_user }}"
     ansible_password: "{{ ctx.vm_root_password }}"
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-    github_script_url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-boot.sh"
+    
+    # ESXi Credentials pulled from the same context
+    esxi_host: "192.168.253.128"
+    esxi_user: "{{ ctx.exsi_username }}"
+    esxi_pass: "{{ ctx.exsi_password }}"
+    
   tasks:
-    - name: Wait for SSH
+    # --- STEP 1: FIX HARDWARE VIA DELEGATION ---
+    - name: Fix Hardware on ESXi (Delegated)
+      raw: |
+        VMNAME="{{ inventory_hostname_short }}"
+        VMID=$(vim-cmd vmsvc/getallvms | grep " $VMNAME " | awk '{print $1}')
+        [ -z "$VMID" ] && exit 0 # Skip if VM not found on this ESXi
+        
+        VMX_PATH=$(find /vmfs/volumes/ -name "${VMNAME}.vmx" | head -n 1)
+        if ! grep -q "serial0.present = \"TRUE\"" "$VMX_PATH"; then
+            WID=$(localcli vm process list | grep -A 1 "$VMNAME" | grep "World ID" | awk '{print $3}')
+            [ ! -z "$WID" ] && localcli vm process kill --type=force --world-id=$WID && sleep 2
+            sed -i '/serial0/d' "$VMX_PATH"
+            VPORT=$((2000 + $VMID))
+            printf 'serial0.present = "TRUE"\nserial0.yieldOnPoll = "TRUE"\nserial0.fileType = "network"\nserial0.fileName = "telnet://:%s"\nserial0.network.endPoint = "server"\n' "$VPORT" >> "$VMX_PATH"
+            vim-cmd vmsvc/reload $VMID && sleep 1 && vim-cmd vmsvc/power.on $VMID
+            echo "Hardware fixed for $VMNAME"
+        fi
+      delegate_to: "{{ esxi_host }}"
+      vars:
+        ansible_user: "{{ esxi_user }}"
+        ansible_password: "{{ esxi_pass }}"
+      # We only run this if the current host isn't the ESXi itself
+      when: inventory_hostname != esxi_host
+
+    # --- STEP 2: CONFIGURE GUEST OS ---
+    - name: Wait for VM to be reachable
       wait_for_connection:
         timeout: 300
+      when: inventory_hostname != esxi_host
 
-    - name: Check GRUB
+    - name: Check GRUB configuration
       shell: grep "console=ttyS0" /etc/default/grub
       register: grub_check
       ignore_errors: yes
       changed_when: false
+      when: inventory_hostname != esxi_host
 
-    - name: Apply Fix
-      when: grub_check.rc is defined and grub_check.rc != 0
+    - name: Apply OS Fix
+      when: 
+        - inventory_hostname != esxi_host
+        - grub_check.rc is defined 
+        - grub_check.rc != 0
       block:
-        - name: Download Script
+        - name: Download Script from GitHub
           get_url:
-            url: "{{ github_script_url }}"
+            url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-boot.sh"
             dest: /tmp/enable-verbose-boot.sh
             mode: '0755'
             validate_certs: no
         
-        - name: Run Fix
+        - name: Execute Script
           shell: /tmp/enable-verbose-boot.sh
         
-        - name: Reboot
+        - name: Reboot to apply changes
           reboot:
             reboot_timeout: 300
