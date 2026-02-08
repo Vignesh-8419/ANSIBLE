@@ -9,18 +9,12 @@
   tasks:
     - name: Run Hardware Injection Script on ESXi
       raw: |
-        # Capture the limit from Ansible
         LIMIT="{{ ansible_limit | default('all') }}"
-        
         IDS=$(vim-cmd vmsvc/getallvms 2>/dev/null | awk 'NR>1 {print $1}' | grep -E '^[0-9]+$')
         for VMID in $IDS; do
             VMNAME=$(vim-cmd vmsvc/getallvms | awk -v id="$VMID" '$1==id {print $2}')
-            
-            # 1. Skip if it's the DNS server
             [ "$VMNAME" == "dns-server-01" ] && continue
             
-            # 2. If a limit is set, skip if VMNAME doesn't match the limit
-            # (Matches exactly or if the limit is 'all')
             if [ "$LIMIT" != "all" ] && [[ "$LIMIT" != *"$VMNAME"* ]]; then
                 continue
             fi
@@ -35,6 +29,7 @@
                 
                 sed -i '/serial0/d' "$VMX_PATH"
                 VPORT=$((2000 + $VMID))
+                # The lines below are now safely inside the 'raw' block
                 cat <<EOL >> "$VMX_PATH"
 serial0.present = "TRUE"
 serial0.yieldOnPoll = "TRUE"
@@ -89,5 +84,4 @@ EOL
               reboot:
                 reboot_timeout: 300
           when: grub_check.rc != 0
-      # Only run if it's not the ESXi host (ansible handles the --limit automatically here)
       when: inventory_hostname != '192.168.253.128'
