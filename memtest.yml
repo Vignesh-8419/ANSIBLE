@@ -1,13 +1,13 @@
 ---
-- name: Deploy Self-Compiled MemTest86+ to UEFI Servers
+- name: Deploy MemTest86+ with OS-specific GRUB logic
   hosts: all
   become: yes
   vars:
     memtest_url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/mt86plus"
-    memtest_path: "/boot/efi/EFI/memtest/memtest.efi"
+    memtest_efi_path: "/boot/efi/EFI/memtest/memtest.efi"
 
   tasks:
-    - name: Ensure MemTest directory exists on EFI partition
+    - name: Ensure EFI directory exists
       file:
         path: "/boot/efi/EFI/memtest"
         state: directory
@@ -16,10 +16,10 @@
     - name: Download MemTest86+ binary from GitHub
       get_url:
         url: "{{ memtest_url }}"
-        dest: "{{ memtest_path }}"
+        dest: "{{ memtest_efi_path }}"
         mode: '0755'
 
-    - name: Configure GRUB 40_custom entry
+    - name: Configure GRUB 40_custom
       copy:
         dest: "/etc/grub.d/40_custom"
         mode: '0755'
@@ -30,24 +30,21 @@
           menuentry "MemTest86+ (Self-Compiled)" --class memtest86 {
               insmod part_gpt
               insmod fat
-              search --no-floppy --fs-uuid --set=root {{ ansible_mounts | lib_get_efi_uuid }}
-              linux /EFI/memtest/memtest.efi
-          }
-      # Note: We use a custom filter or manual shell if UUID logic gets complex
-      # For simplicity, let's use a shell-friendly version below:
-
-    - name: Alternative safe GRUB entry (Simple Version)
-      blockinfile:
-        path: /etc/grub.d/40_custom
-        marker: "# {mark} ANSIBLE MANAGED MEMTEST"
-        block: |
-          menuentry "MemTest86+ (Self-Compiled)" --class memtest86 {
-              insmod part_gpt
-              insmod fat
               set root='hd0,gpt1'
               linux /EFI/memtest/memtest.efi
           }
 
-    - name: Regenerate GRUB configuration
+    - name: Update GRUB for EL7 (CentOS 7)
+      command: grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
+      when: ansible_distribution_major_version == "7"
+
+    - name: Update GRUB for EL8/9 (Rocky/CentOS Stream)
+      command: grub2-mkconfig -o /boot/grub2/grub.cfg
+      when: ansible_distribution_major_version in ["8", "9"]
+
+    - name: Optional - Refresh Rocky EFI stub (EL8/9 only)
       command: grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
-      # For Rocky 9, you would target /boot/grub2/grub.cfg instead
+      when: 
+        - ansible_distribution == "Rocky"
+        - ansible_distribution_major_version in ["8", "9"]
+      failed_when: false # Don't fail if the file doesn't exist
