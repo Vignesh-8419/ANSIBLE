@@ -6,9 +6,12 @@ ESXI_PASS='admin$22'
 VM_PASS='Root@123'
 MY_HOSTNAME=$(hostname)
 
+# SSH OPTIONS to ignore host key changes
+SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=QUIET"
+
 # --- STEP 0: FETCH ALL VMs FROM ESXI ---
 echo "[*] Fetching ALL VMs from ESXi ($ESXI_IP)..."
-VMLIST=$(sshpass -p "$ESXI_PASS" ssh -o StrictHostKeyChecking=no root@$ESXI_IP "vim-cmd vmsvc/getallvms" | awk 'NR>1 {print $2}')
+VMLIST=$(sshpass -p "$ESXI_PASS" ssh $SSH_OPTS root@$ESXI_IP "vim-cmd vmsvc/getallvms" | awk 'NR>1 {print $2}')
 
 if [ -z "$VMLIST" ]; then
     echo "[!] No VMs found on ESXi. Exiting."
@@ -64,7 +67,7 @@ for VMNAME in $VMLIST; do
 
     # 1. HARDWARE AUDIT
     echo "[*] Phase 1: ESXi Hardware & Power Check..."
-    HW_STATUS=$(sshpass -p "$ESXI_PASS" ssh -o StrictHostKeyChecking=no root@$ESXI_IP "sh -s" <<ESX_EOF
+    HW_STATUS=$(sshpass -p "$ESXI_PASS" ssh $SSH_OPTS root@$ESXI_IP "sh -s" <<ESX_EOF
         VMID=\$(vim-cmd vmsvc/getallvms | grep " $VMNAME " | awk '{print \$1}')
         if [ -z "\$VMID" ]; then echo "NOT_FOUND"; exit; fi
         VMX_PATH=\$(find /vmfs/volumes/ -name "${VMNAME}.vmx" | head -n 1)
@@ -86,7 +89,6 @@ for VMNAME in $VMLIST; do
             fi
         else echo "HARDWARE_OK"; fi
         
-        # Power on if it's currently off
         STATE=\$(vim-cmd vmsvc/power.getstate \$VMID | tail -1)
         if [ "\$STATE" = "Powered off" ]; then
             vim-cmd vmsvc/power.on \$VMID >/dev/null 2>&1
@@ -144,12 +146,13 @@ ESX_EOF
             ./enable-verbose-boot.sh
         fi
     else
-        if sshpass -p "$VM_PASS" ssh -o StrictHostKeyChecking=no root@"$VMIP" "$CHECK_CMD" 2>/dev/null; then
+        # Using SSH_OPTS here to ignore fingerprint errors
+        if sshpass -p "$VM_PASS" ssh $SSH_OPTS root@"$VMIP" "$CHECK_CMD" 2>/dev/null; then
             echo "  [OK] GRUB and MemTest already present on $VMNAME. Skipping."
         else
             echo "  [!] Config missing on $VMNAME. Updating..."
-            sshpass -p "$VM_PASS" scp -o StrictHostKeyChecking=no enable-verbose-boot.sh root@"$VMIP":/tmp/
-            sshpass -p "$VM_PASS" ssh -o StrictHostKeyChecking=no root@"$VMIP" "bash /tmp/enable-verbose-boot.sh && reboot"
+            sshpass -p "$VM_PASS" scp $SSH_OPTS enable-verbose-boot.sh root@"$VMIP":/tmp/
+            sshpass -p "$VM_PASS" ssh $SSH_OPTS root@"$VMIP" "bash /tmp/enable-verbose-boot.sh && reboot"
             echo "  [SUCCESS] Configuration applied to $VMNAME."
         fi
     fi
