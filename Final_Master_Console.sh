@@ -4,14 +4,40 @@
 ESXI_IP="192.168.253.128"
 ESXI_PASS='admin$22'
 VM_PASS='Root@123'
-GITHUB_URL="https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-boot.sh"
+
+# --- NEW: GENERATE THE LOCAL GRUB SCRIPT WITH YOUR EXACT CONFIG ---
+cat << 'EOF' > enable-verbose-boot.sh
+#!/bin/bash
+# Detect OS Version
+EL_VERSION=$(grep -oE '[0-9]' /etc/redhat-release | head -1)
+
+# 1. Update /etc/default/grub with your exact requested config
+cat << 'EOG' > /etc/default/grub
+GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
+GRUB_DEFAULT=saved
+GRUB_DISABLE_SUBMENU=true
+GRUB_CMDLINE_LINUX="console=tty0 console=ttyS0,115200 crashkernel=auto resume=/dev/mapper/rl-swap rd.lvm.lv=rl/root rd.lvm.lv=rl/swap "
+GRUB_DISABLE_RECOVERY="true"
+GRUB_ENABLE_BLSCFG=true
+GRUB_TIMEOUT=10
+GRUB_TERMINAL="serial console"
+GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
+EOG
+
+# 2. Regenerate GRUB config based on EL Version
+if [ "$EL_VERSION" -eq "7" ]; then
+    grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
+else
+    # Rocky / CentOS 8/9
+    grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
+fi
+EOF
+
+chmod +x enable-verbose-boot.sh
 
 echo "=========================================================="
 echo "STEP 1: SMART HARDWARE AUDIT"
 echo "=========================================================="
-
-wget -q "$GITHUB_URL" -O enable-verbose-boot.sh || true
-chmod +x enable-verbose-boot.sh
 
 sshpass -p "$ESXI_PASS" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$ESXI_IP << 'EOF'
     IDS=$(vim-cmd vmsvc/getallvms 2>/dev/null | awk 'NR>1 {print $1}' | grep -E '^[0-9]+$')
@@ -62,7 +88,6 @@ for VMNAME in $VMLIST; do
 
     echo "--- Analyzing $VMNAME ($VMIP) ---"
     
-    # NEW: Patient Wait Loop
     echo -n "  -> Waiting for SSH service to start..."
     COUNT=0
     until timeout 1 bash -c "</dev/tcp/$VMIP/22" 2>/dev/null || [ $COUNT -eq 30 ]; do
@@ -78,15 +103,15 @@ for VMNAME in $VMLIST; do
         echo " ONLINE."
     fi
 
-    # Check and Fix GRUB
-    GRUB_CHECK=$(sshpass -e ssh $SSH_OPTS root@"$VMIP" "grep 'console=ttyS0' /etc/default/grub" 2>/dev/null)
+    # Check and Fix GRUB - Looking for your specific serial input config
+    GRUB_CHECK=$(sshpass -e ssh $SSH_OPTS root@"$VMIP" "grep 'GRUB_TERMINAL=\"serial console\"' /etc/default/grub" 2>/dev/null)
 
     if [ -z "$GRUB_CHECK" ]; then
-        echo "  -> [!] GRUB Config missing. Applying..."
+        echo "  -> [!] GRUB Config missing or incorrect. Applying your exact config..."
         sshpass -e scp $SCP_OPTS enable-verbose-boot.sh root@"$VMIP":/tmp/
         sshpass -e ssh $SSH_OPTS root@"$VMIP" "chmod +x /tmp/enable-verbose-boot.sh && /tmp/enable-verbose-boot.sh && reboot" &
     else
-        echo "  -> [OK] GRUB already configured."
+        echo "  -> [OK] GRUB matches your requested configuration."
     fi
 done
 
