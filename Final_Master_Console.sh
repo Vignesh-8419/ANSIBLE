@@ -43,21 +43,22 @@ chmod +x enable-verbose-boot.sh
 
 # --- MAIN LOOP ---
 for VMNAME in $VMLIST; do
-    echo "----------------------------------------------------------"
-    read -p "Process $VMNAME? (y/n): " CONFIRM
-    [[ ! "$CONFIRM" =~ ^[Yy]$ ]] && echo "Skipping." && continue
+    echo "=========================================================="
+    read -p "Begin Audit for $VMNAME? (y/n): " CONFIRM
+    [[ ! "$CONFIRM" =~ ^[Yy]$ ]] && echo "Skipping $VMNAME." && continue
 
-    # 1. HARDWARE AUDIT (ESXi compatible shell)
-    echo "[*] Checking/Fixing Hardware on ESXi..."
-    sshpass -p "$ESXI_PASS" ssh -o StrictHostKeyChecking=no root@$ESXI_IP "sh -s" <<ESX_EOF
+    # 1. HARDWARE AUDIT & POWER ON
+    echo "[*] Phase 1: ESXi Hardware & Power Check..."
+    HW_STATUS=$(sshpass -p "$ESXI_PASS" ssh -o StrictHostKeyChecking=no root@$ESXI_IP "sh -s" <<ESX_EOF
         VMID=\$(vim-cmd vmsvc/getallvms | grep " $VMNAME " | awk '{print \$1}')
-        if [ -z "\$VMID" ]; then echo "VM not found"; exit; fi
+        if [ -z "\$VMID" ]; then echo "NOT_FOUND"; exit; fi
         
         VMX_PATH=\$(find /vmfs/volumes/ -name "${VMNAME}.vmx" | head -n 1)
         
+        # Check if serial hardware is present
         if ! grep -q "serial0.present = \"TRUE\"" "\$VMX_PATH"; then
-            echo "Adding Serial Hardware to \$VMNAME..."
-            # Force kill if running to edit VMX
+            echo "HARDWARE_MISSING"
+            # Kill process to allow VMX edit
             WID=\$(localcli vm process list | grep -A 1 "$VMNAME" | grep "World ID" | awk '{print \$3}')
             [ ! -z "\$WID" ] && localcli vm process kill --type=force --world-id=\$WID && sleep 2
             
@@ -69,36 +70,60 @@ for VMNAME in $VMLIST; do
             echo "serial0.fileName = \"telnet://:\$VPORT\"" >> "\$VMX_PATH"
             echo "serial0.network.endPoint = \"server\"" >> "\$VMX_PATH"
             vim-cmd vmsvc/reload \$VMID
+            echo "HARDWARE_ADDED"
+        else
+            echo "HARDWARE_OK"
         fi
 
-        # Always ensure it is Powered On
+        # Ensure VM is Powered On
         STATE=\$(vim-cmd vmsvc/power.getstate \$VMID | tail -1)
         if [ "\$STATE" = "Powered off" ]; then
-            echo "Powering on \$VMNAME..."
-            vim-cmd vmsvc/power.on \$VMID
+            vim-cmd vmsvc/power.on \$VMID > /dev/null
+            echo "POWERED_ON"
         else
-            echo "\$VMNAME is already powered on."
+            echo "ALREADY_RUNNING"
         fi
 ESX_EOF
+    )
 
-    # 2. GUEST OS AUDIT
+    echo "  -> Status: $HW_STATUS"
+    [[ "$HW_STATUS" == *"NOT_FOUND"* ]] && echo "  [!] VM not found on ESXi. Skipping." && continue
+
+    # 2. GUEST OS AUDIT (Only if Hardware/Power is ready)
     VMIP=$(nslookup "$VMNAME" | grep -A 1 "Name:" | grep "Address" | awk '{print $2}' | head -n 1)
-    echo "[*] Waiting for Guest SSH ($VMNAME @ $VMIP)..."
-    
-    # Wait up to 2 minutes for SSH to become ready
+    if [ -z "$VMIP" ]; then echo "  [!] DNS Error for $VMNAME. Skipping."; continue; fi
+
+    echo "[*] Phase 2: Waiting for Guest SSH ($VMIP)..."
     COUNT=0
-    until timeout 1 bash -c "</dev/tcp/$VMIP/22" 2>/dev/null || [ $COUNT -eq 24 ]; do
+    READY=false
+    while [ $COUNT -lt 24 ]; do
+        if timeout 1 bash -c "</dev/tcp/$VMIP/22" 2>/dev/null; then
+            READY=true
+            break
+        fi
+        echo -n "."
         sleep 5
         ((COUNT++))
     done
+    echo ""
 
-    if ! timeout 1 bash -c "</dev/tcp/$VMIP/22" 2>/dev/null; then
-        echo " [!] Timed out waiting for SSH. Moving to next."
+    if [ "$READY" = false ]; then
+        echo "  [!] Guest OS failed to start SSH. Skipping."
         continue
     fi
 
-    echo "  -> SSH Ready. Running GRUB Update..."
-    sshpass -p "$VM_PASS" scp -o StrictHostKeyChecking=no enable-verbose-boot.sh root@"$VMIP":/tmp/
-    sshpass -p "$VM_PASS" ssh -o StrictHostKeyChecking=no root@"$VMIP" "chmod +x /tmp/enable-verbose-boot.sh && /tmp/enable-verbose-boot.sh && reboot"
-    echo "[SUCCESS] $VMNAME configured and rebooting."
+    # 3. MEMTEST & GRUB CHECK
+    echo "[*] Phase 3: Internal Config Check..."
+    sshpass -p "$VM_PASS" ssh -o StrictHostKeyChecking=no root@"$VMIP" "[ -f /boot/efi/EFI/memtest/memtest.efi ] && grep -q 'MemTest' /etc/grub.d/40_custom" 2>/dev/null
+    if [ $? -eq 0 ]; then
+        echo "  [OK] MemTest and GRUB are already configured."
+    else
+        echo "  [!] Config missing. Applying updates..."
+        sshpass -p "$VM_PASS" scp -o StrictHostKeyChecking=no enable-verbose-boot.sh root@"$VMIP":/tmp/
+        sshpass -p "$VM_PASS" ssh -o StrictHostKeyChecking=no root@"$VMIP" "chmod +x /tmp/enable-verbose-boot.sh && /tmp/enable-verbose-boot.sh && reboot"
+        echo "  [SUCCESS] Configuration applied. $VMNAME is rebooting."
+    fi
 done
+
+echo "=========================================================="
+echo "AUDIT SEQUENCE COMPLETE"
