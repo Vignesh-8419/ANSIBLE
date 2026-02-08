@@ -43,9 +43,10 @@ EOL
     ansible_user: "{{ nb_ctx.vm_root_user }}"
     ansible_password: "{{ nb_ctx.vm_root_password }}"
     ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    github_script_url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-boot.sh"
   tasks:
-    # We skip the ESXi IP so it doesn't try to run Linux commands on the hypervisor
-    - name: Skip ESXi and Wait for VM SSH
+    # Protect ESXi from Guest OS tasks
+    - name: Wait for SSH to be available
       wait_for_connection:
         delay: 5
         timeout: 300
@@ -60,11 +61,12 @@ EOL
 
     - name: Apply Verbose Boot and Reboot
       block:
-        - name: Copy script to VM
-          copy:
-            src: ./enable-verbose-boot.sh
+        - name: Download script from GitHub
+          get_url:
+            url: "{{ github_script_url }}"
             dest: /tmp/enable-verbose-boot.sh
             mode: '0755'
+            validate_certs: no
 
         - name: Execute script
           shell: /tmp/enable-verbose-boot.sh
@@ -74,4 +76,4 @@ EOL
             reboot_timeout: 300
       when: 
         - inventory_hostname != '192.168.253.128'
-        - grub_check.rc != 0
+        - (grub_check.rc is defined and grub_check.rc != 0)
