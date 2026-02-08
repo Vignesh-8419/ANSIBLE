@@ -11,7 +11,7 @@
     force_reconfig: false 
 
   tasks:
-    # --- STEP 1: HARDWARE (Unchanged) ---
+    # --- STEP 1: HARDWARE ---
     - name: Fix Hardware on ESXi (Delegated)
       raw: |
         VMNAME="{{ inventory_hostname_short }}"
@@ -64,11 +64,26 @@
             mode: '0755'
             content: |
               #!/bin/bash
-              # Detect OS Version and Distribution
               IS_CENTOS7=$(grep -q "release 7" /etc/redhat-release && echo "true" || echo "false")
               
+              # Function to update MemTest with Serial Support
+              update_memtest() {
+                  local cmd=$1
+                  cat <<EOC > /etc/grub.d/40_custom
+              #!/bin/sh
+              exec tail -n +3 \$0
+              menuentry "MemTest86+ (Self-Compiled)" --class memtest86 {
+                  insmod part_gpt
+                  insmod fat
+                  set root='hd0,gpt1'
+                  $cmd /EFI/memtest/memtest.efi console=ttyS0,115200
+              }
+              EOC
+                  chmod +x /etc/grub.d/40_custom
+              }
+
               if [ "$IS_CENTOS7" == "true" ]; then
-                  # Config for CentOS 7
+                  update_memtest "linuxefi"
                   cat << 'EOG' > /etc/default/grub
               GRUB_TIMEOUT=10
               GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
@@ -81,7 +96,7 @@
               EOG
                   grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
               else
-                  # Config for Rocky / EL8+
+                  update_memtest "linux"
                   cat << 'EOG' > /etc/default/grub
               GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
               GRUB_DEFAULT=saved
