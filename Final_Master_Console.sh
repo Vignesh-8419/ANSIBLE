@@ -4,19 +4,16 @@
 ESXI_IP="192.168.253.128"
 ESXI_PASS='admin$22'
 VM_PASS='Root@123'
-
-# --- THE LIST OF POTENTIAL TARGETS ---
 VMLIST="ipa-server-01 ansible-server-01 rocky-08-02 http-server-01 cert-server-01 cent-07-01 cent-07-02 tftp-server-01 tftp-server-02"
 
 # --- GENERATE THE LOCAL GRUB SCRIPT ---
 cat << 'EOF' > enable-verbose-boot.sh
 #!/bin/bash
-# Logic to configure MemTest and Serial Console
 mkdir -p /boot/efi/EFI/memtest
 curl -L -f -o /boot/efi/EFI/memtest/memtest.efi https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/mt86plus || exit 1
 chmod 755 /boot/efi/EFI/memtest/memtest.efi
 EFI_UUID=$(lsblk -no UUID $(df /boot/efi | tail -1 | awk '{print $1}'))
-CURRENT_PARAMS=$(grep '^GRUB_CMDLINE_LINUX' /etc/default/grub | cut -d'"' -f2 | sed 's/console=ttyS0,[0-9]*//g' | sed 's/console=tty0//g' | xargs)
+CURRENT_PARAMS=$(grep '^GRUB_CMDLINE_LINUX' /etc/default/grub | cut -d'"' -f2 | sed 's/console=ttyS0,[0-9]*//g; s/console=tty0//g' | xargs)
 NEW_PARAMS="console=tty0 console=ttyS0,115200 $CURRENT_PARAMS"
 IS_CENTOS7=$(grep -q "release 7" /etc/redhat-release && echo "true" || echo "false")
 LOADER=$([ "$IS_CENTOS7" == "true" ] && echo "linuxefi" || echo "linux")
@@ -38,69 +35,70 @@ echo 'GRUB_TERMINAL="serial console"' >> /etc/default/grub
 echo 'GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"' >> /etc/default/grub
 echo 'GRUB_TIMEOUT=10' >> /etc/default/grub
 
-if [ -f /boot/efi/EFI/rocky/grub.cfg ]; then grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
-elif [ -f /boot/efi/EFI/centos/grub.cfg ]; then grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
-else grub2-mkconfig -o /boot/grub2/grub.cfg; fi
+[ -f /boot/efi/EFI/rocky/grub.cfg ] && T="/boot/efi/EFI/rocky/grub.cfg"
+[ -f /boot/efi/EFI/centos/grub.cfg ] && T="/boot/efi/EFI/centos/grub.cfg"
+grub2-mkconfig -o ${T:-/boot/grub2/grub.cfg}
 EOF
 chmod +x enable-verbose-boot.sh
 
-# --- INTERACTIVE PROCESSING LOOP ---
+# --- MAIN LOOP ---
 for VMNAME in $VMLIST; do
     echo "----------------------------------------------------------"
-    read -p "Perform action on $VMNAME? (y/n): " CONFIRM
-    if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-        echo "Skipping $VMNAME."
-        continue
-    fi
+    read -p "Process $VMNAME? (y/n): " CONFIRM
+    [[ ! "$CONFIRM" =~ ^[Yy]$ ]] && echo "Skipping." && continue
 
-    # 1. HARDWARE AUDIT ON ESXi
-    echo "[*] Checking ESXi Hardware for $VMNAME..."
-    sshpass -p "$ESXI_PASS" ssh -o StrictHostKeyChecking=no root@$ESXI_IP bash -s <<ESX_EOF
+    # 1. HARDWARE AUDIT (ESXi compatible shell)
+    echo "[*] Checking/Fixing Hardware on ESXi..."
+    sshpass -p "$ESXI_PASS" ssh -o StrictHostKeyChecking=no root@$ESXI_IP "sh -s" <<ESX_EOF
         VMID=\$(vim-cmd vmsvc/getallvms | grep " $VMNAME " | awk '{print \$1}')
-        if [ -z "\$VMID" ]; then echo "[!] VM $VMNAME not found."; exit; fi
+        if [ -z "\$VMID" ]; then echo "VM not found"; exit; fi
+        
         VMX_PATH=\$(find /vmfs/volumes/ -name "${VMNAME}.vmx" | head -n 1)
         
         if ! grep -q "serial0.present = \"TRUE\"" "\$VMX_PATH"; then
-            echo "[!] Fixing Hardware for $VMNAME..."
+            echo "Adding Serial Hardware to \$VMNAME..."
+            # Force kill if running to edit VMX
             WID=\$(localcli vm process list | grep -A 1 "$VMNAME" | grep "World ID" | awk '{print \$3}')
             [ ! -z "\$WID" ] && localcli vm process kill --type=force --world-id=\$WID && sleep 2
+            
             sed -i '/serial0/d' "\$VMX_PATH"
             VPORT=\$((2000 + \$VMID))
-            cat <<EOL >> "\$VMX_PATH"
-serial0.present = "TRUE"
-serial0.yieldOnPoll = "TRUE"
-serial0.fileType = "network"
-serial0.fileName = "telnet://:\$VPORT"
-serial0.network.endPoint = "server"
-EOL
+            echo "serial0.present = \"TRUE\"" >> "\$VMX_PATH"
+            echo "serial0.yieldOnPoll = \"TRUE\"" >> "\$VMX_PATH"
+            echo "serial0.fileType = \"network\"" >> "\$VMX_PATH"
+            echo "serial0.fileName = \"telnet://:\$VPORT\"" >> "\$VMX_PATH"
+            echo "serial0.network.endPoint = \"server\"" >> "\$VMX_PATH"
             vim-cmd vmsvc/reload \$VMID
+        fi
+
+        # Always ensure it is Powered On
+        STATE=\$(vim-cmd vmsvc/power.getstate \$VMID | tail -1)
+        if [ "\$STATE" = "Powered off" ]; then
+            echo "Powering on \$VMNAME..."
             vim-cmd vmsvc/power.on \$VMID
         else
-            echo "[OK] Hardware looks good."
+            echo "\$VMNAME is already powered on."
         fi
 ESX_EOF
 
     # 2. GUEST OS AUDIT
     VMIP=$(nslookup "$VMNAME" | grep -A 1 "Name:" | grep "Address" | awk '{print $2}' | head -n 1)
-    if [ -z "$VMIP" ]; then echo "[!] DNS Error for $VMNAME"; continue; fi
+    echo "[*] Waiting for Guest SSH ($VMNAME @ $VMIP)..."
+    
+    # Wait up to 2 minutes for SSH to become ready
+    COUNT=0
+    until timeout 1 bash -c "</dev/tcp/$VMIP/22" 2>/dev/null || [ $COUNT -eq 24 ]; do
+        sleep 5
+        ((COUNT++))
+    done
 
-    echo "[*] Checking Guest OS at $VMIP..."
-    if ! timeout 2 bash -c "</dev/tcp/$VMIP/22" 2>/dev/null; then
-        echo " [!] $VMNAME is OFFLINE."
+    if ! timeout 1 bash -c "</dev/tcp/$VMIP/22" 2>/dev/null; then
+        echo " [!] Timed out waiting for SSH. Moving to next."
         continue
     fi
 
-    MEM_CHECK=$(sshpass -p "$VM_PASS" ssh -o StrictHostKeyChecking=no root@"$VMIP" "[ -f /boot/efi/EFI/memtest/memtest.efi ] && echo 'FOUND'" 2>/dev/null)
-
-    if [ -z "$MEM_CHECK" ]; then
-        echo "  -> [!] Updating GRUB and rebooting..."
-        sshpass -p "$VM_PASS" scp -o StrictHostKeyChecking=no enable-verbose-boot.sh root@"$VMIP":/tmp/
-        sshpass -p "$VM_PASS" ssh -o StrictHostKeyChecking=no root@"$VMIP" "chmod +x /tmp/enable-verbose-boot.sh && /tmp/enable-verbose-boot.sh && reboot"
-    else
-        echo "  -> [OK] MemTest already configured."
-    fi
+    echo "  -> SSH Ready. Running GRUB Update..."
+    sshpass -p "$VM_PASS" scp -o StrictHostKeyChecking=no enable-verbose-boot.sh root@"$VMIP":/tmp/
+    sshpass -p "$VM_PASS" ssh -o StrictHostKeyChecking=no root@"$VMIP" "chmod +x /tmp/enable-verbose-boot.sh && /tmp/enable-verbose-boot.sh && reboot"
+    echo "[SUCCESS] $VMNAME configured and rebooting."
 done
-
-echo "=========================================================="
-echo "INTERACTIVE AUDIT COMPLETE"
-echo "=========================================================="
