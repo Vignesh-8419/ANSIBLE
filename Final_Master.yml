@@ -3,17 +3,16 @@
   hosts: all
   gather_facts: no
   vars:
-    # 1. Access the first item in the config_context list [0]
-    # 2. Extract specific fields
     esxi_user: "{{ config_context[0].exsi_username }}"
     esxi_pass: "{{ config_context[0].exsi_password }}"
     vm_user: "{{ config_context[0].vm_root_user }}"
     vm_pass: "{{ config_context[0].vm_root_password }}"
-    
     esxi_host: "192.168.253.128"
+    # Set this to true in AWX Extra Vars to override the skipping
+    force_reconfig: false 
 
   tasks:
-    # --- STEP 1: FIX HARDWARE VIA ESXi ---
+    # --- STEP 1: HARDWARE ---
     - name: Fix Hardware on ESXi (Delegated)
       raw: |
         VMNAME="{{ inventory_hostname_short }}"
@@ -34,10 +33,9 @@
         ansible_user: "{{ esxi_user }}"
         ansible_password: "{{ esxi_pass }}"
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-      # Skip if the host being processed is the ESXi itself
       when: inventory_hostname != esxi_host
 
-    # --- STEP 2: CONFIGURE GUEST OS ---
+    # --- STEP 2: GUEST OS ---
     - name: Wait for VM to be reachable
       wait_for_connection:
         timeout: 300
@@ -46,8 +44,9 @@
         ansible_password: "{{ vm_pass }}"
       when: inventory_hostname != esxi_host
 
-    - name: Check GRUB configuration
-      shell: grep "console=ttyS0" /etc/default/grub
+    - name: Check if Serial Console is active in GRUB
+      # Improved grep to ensure the line is actually active (not commented out)
+      shell: grep "^GRUB_CMDLINE_LINUX.*console=ttyS0" /etc/default/grub
       register: grub_check
       ignore_errors: yes
       changed_when: false
@@ -57,10 +56,10 @@
       when: inventory_hostname != esxi_host
 
     - name: Apply OS Fix
+      # FIX: Run if grep fails OR if we explicitly ask to force it
       when: 
         - inventory_hostname != esxi_host
-        - grub_check.rc is defined 
-        - grub_check.rc != 0
+        - (grub_check.rc != 0) or (force_reconfig | bool)
       block:
         - name: Download Script from GitHub
           get_url:
