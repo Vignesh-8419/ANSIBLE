@@ -4,73 +4,85 @@
 ESXI_IP="192.168.253.128"
 ESXI_PASS='admin$22'
 VM_PASS='Root@123'
-MY_NAME="dns-server-01"
 GITHUB_URL="https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-boot.sh"
 
-# Get local IPs
-MY_IPS=$(hostname -I)
-
 echo "=========================================================="
-echo "STEP 1: CONFIGURING ESXi HARDWARE & RESOLVING IPs"
+echo "STEP 1: HARDWARE AUDIT (CLEANED)"
 echo "=========================================================="
 
 wget -q "$GITHUB_URL" -O enable-verbose-boot.sh || true
 chmod +x enable-verbose-boot.sh
 
-TMP_VMS="/tmp/vm_list.txt"
-> $TMP_VMS
+TMP_DATA="/tmp/vm_audit.txt"
+> $TMP_DATA
 
-# Fetch VM names from ESXi
-sshpass -p "$ESXI_PASS" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$ESXI_IP << 'EOF' > $TMP_VMS
-    IDS=$(vim-cmd vmsvc/getallvms | awk 'NR>1 {print $1}')
+# Fetch ONLY valid VMs. Grep -v handles the "Skipping invalid VM" noise.
+sshpass -p "$ESXI_PASS" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$ESXI_IP << 'EOF' > $TMP_DATA
+    # Get IDs of VMs that are NOT invalid
+    IDS=$(vim-cmd vmsvc/getallvms 2>/dev/null | awk 'NR>1 {print $1}' | grep -E '^[0-9]+$')
+    
     for VMID in $IDS; do
         VMNAME=$(vim-cmd vmsvc/getallvms | awk -v id="$VMID" '$1==id {print $2}')
-        [ "$VMNAME" == "dns-server-01" ] && continue
-        echo "$VMNAME"
+        [ -z "$VMNAME" ] || [ "$VMNAME" == "dns-server-01" ] && continue
+
+        VMX_PATH=$(find /vmfs/volumes/ -name "${VMNAME}.vmx" | head -n 1)
+        [ -z "$VMX_PATH" ] && continue
+
+        if ! grep -q "serial0.present" "$VMX_PATH"; then
+            STATE=$(vim-cmd vmsvc/power.getstate $VMID | grep -v "Retrieved")
+            if [[ "$STATE" == *"Powered on"* ]]; then
+                vim-cmd vmsvc/power.off $VMID > /dev/null
+                sleep 3
+            fi
+
+            VM_PORT=$((2000 + $VMID))
+            printf "serial0.present = \"TRUE\"\nserial0.yieldOnPoll = \"TRUE\"\nserial0.fileType = \"network\"\nserial0.fileName = \"telnet://:$VM_PORT\"\nserial0.network.endPoint = \"server\"\n" >> "$VMX_PATH"
+            
+            vim-cmd vmsvc/reload $VMID > /dev/null
+            sleep 2
+            vim-cmd vmsvc/power.on $VMID > /dev/null
+            echo "$VMNAME|FIXED"
+        else
+            echo "$VMNAME|EXISTS"
+        fi
     done
 EOF
 
 echo "=========================================================="
-echo "STEP 2: SMART GUEST OS UPDATE"
+echo "STEP 2: GUEST OS CONFIGURATION"
 echo "=========================================================="
 
-# ADDED -t -t to force a TTY allocation
-# ADDED -o BatchMode=no to ensure it doesn't try to fail fast without a password
-SSH_BASE_OPTS="-t -t -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=15 -o BatchMode=no"
+export SSHPASS="$VM_PASS"
+SSH_OPTS="-n -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=15"
 
-while read -u 3 -r VMNAME; do
+while IFS='|' read -u 3 -r VMNAME STATUS; do
     [ -z "$VMNAME" ] && continue
     
     VMIP=$(nslookup "$VMNAME" | grep -A 1 "Name:" | grep "Address" | awk '{print $2}' | head -n 1)
     [ -z "$VMIP" ] && continue
-    [[ $MY_IPS =~ $VMIP ]] && continue
 
     echo "--- Analyzing $VMNAME ($VMIP) ---"
-    
-    # Check if console is already configured
-    # We use sshpass -p here to keep it simple and direct
-    ALREADY_DONE=$(sshpass -p "$VM_PASS" ssh $SSH_BASE_OPTS root@"$VMIP" "grep 'console=ttyS0' /etc/default/grub" 2>/dev/null)
-    EXIT_CODE=$?
 
-    if [ $EXIT_CODE -eq 0 ] && [ -n "$ALREADY_DONE" ]; then
-        echo "  -> [OK] Serial console already active. Skipping."
-    elif [ $EXIT_CODE -eq 0 ] || [ $EXIT_CODE -eq 1 ]; then
-        # If grep fails (Code 1 from grep, but 0 from SSH), it means config is missing
-        if [[ "$ALREADY_DONE" != *"console=ttyS0"* ]]; then
-            echo "  -> Config missing. Updating $VMNAME..."
-            sshpass -p "$VM_PASS" scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null enable-verbose-boot.sh root@"$VMIP":/tmp/ >/dev/null 2>&1
-            sshpass -p "$VM_PASS" ssh $SSH_BASE_OPTS root@"$VMIP" "chmod +x /tmp/enable-verbose-boot.sh && /tmp/enable-verbose-boot.sh && reboot" &
-        fi
+    if [ "$STATUS" == "FIXED" ]; then
+        echo "  -> VM was rebooted for Hardware. Waiting for SSH..."
+        until timeout 1 bash -c "</dev/tcp/$VMIP/22" 2>/dev/null; do echo -n "."; sleep 3; done
+        echo " Connected!"
+    fi
+    
+    ALREADY_DONE=$(sshpass -e ssh $SSH_OPTS root@"$VMIP" "grep 'console=ttyS0' /etc/default/grub" 2>/dev/null)
+    
+    if [ "$STATUS" == "FIXED" ] || [ -z "$ALREADY_DONE" ]; then
+        echo "  -> Applying Verbose Boot..."
+        sshpass -e scp $SSH_OPTS enable-verbose-boot.sh root@"$VMIP":/tmp/
+        sshpass -e ssh $SSH_OPTS root@"$VMIP" "chmod +x /tmp/enable-verbose-boot.sh && /tmp/enable-verbose-boot.sh && reboot" &
     else
-        echo "  -> [ERROR] SSH failed (Code $EXIT_CODE). Manual check: sshpass -p '$VM_PASS' ssh $VMIP"
+        echo "  -> [OK] Already configured."
     fi
 
-    sleep 1
-
-done 3< $TMP_VMS
+done 3< $TMP_DATA
 
 wait
-rm -f $TMP_VMS
+rm -f $TMP_DATA
 echo "=========================================================="
-echo "DEPLOYMENT COMPLETE"
+echo "ALL VALID VMS SYNCHRONIZED"
 echo "=========================================================="
