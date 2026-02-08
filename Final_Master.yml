@@ -1,89 +1,68 @@
 ---
 - name: Step 1 - Smart Hardware Audit on ESXi
-  hosts: 192.168.253.128
+  hosts: esxi
   gather_facts: no
   vars:
-    ansible_user: "{{ nb_ctx.exsi_username }}"
-    ansible_password: "{{ nb_ctx.exsi_password }}"
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    # Fallback to hardcoded if nb_ctx isn't passed for testing
+    ans_user: "{{ nb_ctx.exsi_username | default('root') }}"
+    ans_pass: "{{ nb_ctx.exsi_password | default('admin$22') }}"
   tasks:
     - name: Run Hardware Injection Script on ESXi
+      vars:
+        ansible_user: "{{ ans_user }}"
+        ansible_password: "{{ ans_pass }}"
       raw: |
         LIMIT="{{ ansible_limit | default('all') }}"
         IDS=$(vim-cmd vmsvc/getallvms 2>/dev/null | awk 'NR>1 {print $1}' | grep -E '^[0-9]+$')
         for VMID in $IDS; do
             VMNAME=$(vim-cmd vmsvc/getallvms | awk -v id="$VMID" '$1==id {print $2}')
             [ "$VMNAME" == "dns-server-01" ] && continue
-            
-            if [ "$LIMIT" != "all" ] && [[ "$LIMIT" != *"$VMNAME"* ]]; then
-                continue
-            fi
+            if [ "$LIMIT" != "all" ] && [[ "$LIMIT" != *"$VMNAME"* ]]; then continue; fi
 
             VMX_PATH=$(find /vmfs/volumes/ -name "${VMNAME}.vmx" | head -n 1)
             [ -z "$VMX_PATH" ] && continue
 
             if ! grep -q "serial0.present = \"TRUE\"" "$VMX_PATH"; then
-                echo "Repairing Hardware: $VMNAME"
                 WID=$(localcli vm process list | grep -A 1 "$VMNAME" | grep "World ID" | awk '{print $3}')
                 [ ! -z "$WID" ] && localcli vm process kill --type=force --world-id=$WID && sleep 2
-                
                 sed -i '/serial0/d' "$VMX_PATH"
                 VPORT=$((2000 + $VMID))
-                # Note: These lines below MUST be indented further than the 'raw' keyword
-                cat <<EOL >> "$VMX_PATH"
-                serial0.present = "TRUE"
-                serial0.yieldOnPoll = "TRUE"
-                serial0.fileType = "network"
-                serial0.fileName = "telnet://:$VPORT"
-                serial0.network.endPoint = "server"
-        EOL
-                vim-cmd vmsvc/reload $VMID
-                sleep 1
-                vim-cmd vmsvc/power.on $VMID
-            else
-                echo "Hardware OK: $VMNAME"
+                # Using printf is safer for YAML parsing than cat <<EOL
+                printf 'serial0.present = "TRUE"\nserial0.yieldOnPoll = "TRUE"\nserial0.fileType = "network"\nserial0.fileName = "telnet://:%s"\nserial0.network.endPoint = "server"\n' "$VPORT" >> "$VMX_PATH"
+                vim-cmd vmsvc/reload $VMID && sleep 1 && vim-cmd vmsvc/power.on $VMID
             fi
         done
-      register: hw_output
-      # This ensures Step 1 only attempts to run if the ESXi host is in the current run
-      when: inventory_hostname == '192.168.253.128' or ansible_limit is not defined
 
 - name: Step 2 - Guest OS Configuration
-  hosts: all
+  hosts: vms
   gather_facts: no
   vars:
-    ansible_user: "{{ nb_ctx.vm_root_user }}"
-    ansible_password: "{{ nb_ctx.vm_root_password }}"
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    ansible_user: "{{ nb_ctx.vm_root_user | default('root') }}"
+    ansible_password: "{{ nb_ctx.vm_root_password | default('Root@123') }}"
     github_script_url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-boot.sh"
   tasks:
-    - name: Process VM Configuration
+    - name: Wait for SSH
+      wait_for_connection:
+        timeout: 300
+
+    - name: Check GRUB
+      shell: grep "console=ttyS0" /etc/default/grub
+      register: grub_check
+      ignore_errors: yes
+
+    - name: Apply Fix
+      when: grub_check.rc != 0
       block:
-        - name: Wait for SSH
-          wait_for_connection:
-            delay: 5
-            timeout: 300
-
-        - name: Check GRUB
-          shell: grep "console=ttyS0" /etc/default/grub
-          register: grub_check
-          ignore_errors: yes
-          changed_when: false
-
-        - name: Apply Script and Reboot
-          block:
-            - name: Download from GitHub
-              get_url:
-                url: "{{ github_script_url }}"
-                dest: /tmp/enable-verbose-boot.sh
-                mode: '0755'
-                validate_certs: no
-            
-            - name: Run Fix
-              shell: /tmp/enable-verbose-boot.sh
-
-            - name: Final Reboot
-              reboot:
-                reboot_timeout: 300
-          when: grub_check.rc != 0
-      when: inventory_hostname != '192.168.253.128'
+        - name: Download Script
+          get_url:
+            url: "{{ github_script_url }}"
+            dest: /tmp/enable-verbose-boot.sh
+            mode: '0755'
+            validate_certs: no
+        
+        - name: Run Fix
+          shell: /tmp/enable-verbose-boot.sh
+        
+        - name: Reboot
+          reboot:
+            reboot_timeout: 300
