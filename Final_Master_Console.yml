@@ -53,37 +53,44 @@
               # 1. DOWNLOAD MEMTEST
               mkdir -p /boot/efi/EFI/memtest
               curl -L -f -o /boot/efi/EFI/memtest/memtest.efi https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/mt86plus || exit 1
+              chmod 755 /boot/efi/EFI/memtest/memtest.efi
 
-              # 2. DYNAMICALLY DETECT CURRENT KERNEL PARAMETERS (Prevents Initramfs errors)
-              # This pulls your existing LVM/UUID configs so we don't overwrite them with wrong paths
+              # 2. BACKUP EXISTING CONFIGS
+              cp /etc/default/grub /etc/default/grub.bak.$(date +%F_%T)
+              [ -f /etc/grub.d/40_custom ] && cp /etc/grub.d/40_custom /etc/grub.d/40_custom.bak.$(date +%F_%T)
+
+              # 3. DYNAMICALLY DETECT BOOT & EFI PARAMETERS
+              # Get UUID of the EFI partition to avoid "hd0,gpt1" guesswork
+              EFI_UUID=$(lsblk -no UUID $(df /boot/efi | tail -1 | awk '{print $1}'))
+              
+              # Pull existing LVM/UUID configs to prevent Initramfs errors
               CURRENT_PARAMS=$(grep '^GRUB_CMDLINE_LINUX' /etc/default/grub | cut -d'"' -f2 | sed 's/console=ttyS0,[0-9]*//g' | sed 's/console=tty0//g' | xargs)
               NEW_PARAMS="console=tty0 console=ttyS0,115200 $CURRENT_PARAMS"
 
-              # 3. CONFIGURE GRUB FILES
+              # 4. CONFIGURE 40_CUSTOM (MemTest)
               IS_CENTOS7=$(grep -q "release 7" /etc/redhat-release && echo "true" || echo "false")
               LOADER="linux"
               [ "$IS_CENTOS7" == "true" ] && LOADER="linuxefi"
 
-              # Update 40_custom
               cat <<EOC > /etc/grub.d/40_custom
               #!/bin/sh
               exec tail -n +3 \$0
               menuentry "MemTest86+ (Self-Compiled)" --class memtest86 {
                   insmod part_gpt
                   insmod fat
-                  set root='hd0,gpt1'
+                  search --no-floppy --fs-uuid --set=root $EFI_UUID
                   $LOADER /EFI/memtest/memtest.efi console=ttyS0,115200
               }
               EOC
               chmod +x /etc/grub.d/40_custom
 
-              # Update /etc/default/grub (Using Dynamic NEW_PARAMS)
+              # 5. UPDATE /etc/default/grub
               sed -i "s|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"$NEW_PARAMS\"|" /etc/default/grub
               sed -i "/^GRUB_TERMINAL=/d" /etc/default/grub
               echo 'GRUB_TERMINAL="serial console"' >> /etc/default/grub
               echo 'GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"' >> /etc/default/grub
 
-              # 4. RUN MKCONFIG
+              # 6. RUN MKCONFIG TO THE CORRECT EFI PATH
               if [ -f /boot/efi/EFI/rocky/grub.cfg ]; then
                   grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
               elif [ -f /boot/efi/EFI/centos/grub.cfg ]; then
