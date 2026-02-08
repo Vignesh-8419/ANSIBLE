@@ -34,7 +34,7 @@
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
       when: inventory_hostname != esxi_host
 
-    # --- STEP 2: GUEST OS (Updated Audit Logic) ---
+    # --- STEP 2: GUEST OS ---
     - name: Wait for VM to be reachable
       wait_for_connection:
         timeout: 300
@@ -44,7 +44,6 @@
       when: inventory_hostname != esxi_host
 
     - name: Check if exact Serial Terminal config is active
-      # Changed to check for your specific GRUB_TERMINAL setting
       shell: grep '^GRUB_TERMINAL="serial console"' /etc/default/grub
       register: grub_check
       ignore_errors: yes
@@ -59,16 +58,31 @@
         - inventory_hostname != esxi_host
         - (grub_check.rc != 0) or (force_reconfig | bool)
       block:
-        - name: Generate exact GRUB script on VM
+        - name: Generate Version-Specific GRUB script on VM
           copy:
             dest: /tmp/enable-verbose-boot.sh
             mode: '0755'
             content: |
               #!/bin/bash
-              EL_VERSION=$(grep -oE '[0-9]' /etc/redhat-release | head -1)
+              # Detect OS Version and Distribution
+              IS_CENTOS7=$(grep -q "release 7" /etc/redhat-release && echo "true" || echo "false")
               
-              # Write your exact required GRUB config
-              cat << 'EOG' > /etc/default/grub
+              if [ "$IS_CENTOS7" == "true" ]; then
+                  # Config for CentOS 7
+                  cat << 'EOG' > /etc/default/grub
+              GRUB_TIMEOUT=10
+              GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
+              GRUB_DEFAULT=saved
+              GRUB_DISABLE_SUBMENU=true
+              GRUB_TERMINAL="serial console"
+              GRUB_CMDLINE_LINUX="console=tty0 console=ttyS0,115200 crashkernel=auto rd.lvm.lv=centos/root rd.lvm.lv=centos/swap console=tty0"
+              GRUB_DISABLE_RECOVERY="true"
+              GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
+              EOG
+                  grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
+              else
+                  # Config for Rocky / EL8+
+                  cat << 'EOG' > /etc/default/grub
               GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
               GRUB_DEFAULT=saved
               GRUB_DISABLE_SUBMENU=true
@@ -79,11 +93,6 @@
               GRUB_TERMINAL="serial console"
               GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
               EOG
-
-              # Run the correct config generator based on version
-              if [ "$EL_VERSION" -eq "7" ]; then
-                  grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
-              else
                   grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
               fi
 
