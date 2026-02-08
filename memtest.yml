@@ -4,22 +4,20 @@
   become: yes
   vars:
     memtest_url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/mt86plus"
-    memtest_efi_path: "/boot/efi/EFI/memtest/memtest.efi"
+    # Use linuxefi for EL7, linux for everything else
+    grub_linux_cmd: "{{ 'linuxefi' if ansible_distribution_major_version == '7' else 'linux' }}"
 
   tasks:
-    - name: Ensure EFI directory exists
-      file:
-        path: "/boot/efi/EFI/memtest"
-        state: directory
-        mode: '0755'
-
-    - name: Download MemTest86+ binary from GitHub
+    - name: Download MemTest86+
       get_url:
         url: "{{ memtest_url }}"
-        dest: "{{ memtest_efi_path }}"
+        dest: "/boot/efi/EFI/memtest/memtest.efi"
         mode: '0755'
+      # Ensure directory exists first
+      register: download_bin
+      until: download_bin is succeeded
 
-    - name: Configure GRUB 40_custom
+    - name: Configure GRUB 40_custom with correct linux command
       copy:
         dest: "/etc/grub.d/40_custom"
         mode: '0755'
@@ -31,20 +29,13 @@
               insmod part_gpt
               insmod fat
               set root='hd0,gpt1'
-              linux /EFI/memtest/memtest.efi
+              {{ grub_linux_cmd }} /EFI/memtest/memtest.efi
           }
 
-    - name: Update GRUB for EL7 (CentOS 7)
+    - name: Run grub2-mkconfig for EL7
       command: grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
       when: ansible_distribution_major_version == "7"
 
-    - name: Update GRUB for EL8/9 (Rocky/CentOS Stream)
+    - name: Run grub2-mkconfig for EL8/9
       command: grub2-mkconfig -o /boot/grub2/grub.cfg
       when: ansible_distribution_major_version in ["8", "9"]
-
-    - name: Optional - Refresh Rocky EFI stub (EL8/9 only)
-      command: grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
-      when: 
-        - ansible_distribution == "Rocky"
-        - ansible_distribution_major_version in ["8", "9"]
-      failed_when: false # Don't fail if the file doesn't exist
