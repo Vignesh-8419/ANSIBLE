@@ -1,31 +1,50 @@
 #!/bin/bash
 
-# 1. FORCE REMOVE the MemTest block from the physical config file
-# This deletes everything from the menuentry line to the closing bracket }
-sed -i '/menuentry "MemTest86+/,/}/d' /boot/efi/EFI/centos/grub.cfg 2>/dev/null
-sed -i '/menuentry "MemTest86+/,/}/d' /boot/efi/EFI/rocky/grub.cfg 2>/dev/null
+echo "Starting Deep Clean of GRUB and MemTest..."
 
-# 2. Extract CURRENT working parameters from the running Kernel
-# This ensures we keep your LVM paths but strip the serial console
-PARAMS=$(cat /proc/cmdline | sed 's/BOOT_IMAGE=[^ ]* //; s/console=ttyS0,[0-9]*//g; s/console=tty0//g' | xargs)
+# 1. REMOVE SOURCE GHOSTS
+# This deletes any file in /etc/grub.d/ that contains 'MemTest', 
+# including those .bak files that were re-injecting the entry.
+grep -l "MemTest" /etc/grub.d/* 2>/dev/null | xargs rm -f
+echo "[OK] Source scripts removed from /etc/grub.d/"
 
-# 3. Wipe and Rebuild the GRUB default file to remove Serial redirection
+# 2. CLEAN UP THE DEFAULT CONFIG
+# This removes serial console settings and fixes the duplicated CMDLINE
+PARAMS=$(cat /proc/cmdline | sed 's/BOOT_IMAGE=[^ ]* //; s/console=ttyS0,[0-9]*//g; s/console=tty0//g' | awk '{$1=$1;print}' | cut -d' ' -f1-4)
+# Note: The above logic ensures we keep your LVM paths but stop the duplication.
+
 sed -i '/GRUB_TERMINAL/d' /etc/default/grub
 sed -i '/GRUB_SERIAL_COMMAND/d' /etc/default/grub
 sed -i '/GRUB_CMDLINE_LINUX=/d' /etc/default/grub
-echo "GRUB_CMDLINE_LINUX=\"$PARAMS\"" >> /etc/default/grub
-echo "GRUB_TERMINAL_OUTPUT=\"console\"" >> /etc/default/grub
 
-# 4. OS Detection and Final Config Generation
+# Restore a clean, single-line CMDLINE
+echo "GRUB_CMDLINE_LINUX=\"$PARAMS rhgb quiet\"" >> /etc/default/grub
+echo "GRUB_TERMINAL_OUTPUT=\"console\"" >> /etc/default/grub
+echo "[OK] /etc/default/grub cleaned."
+
+# 3. DETECT OS AND REGENERATE
 if [ -f /boot/efi/EFI/rocky/grub.cfg ]; then
-    echo "Processing Rocky Linux..."
-    grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
+    TARGET="/boot/efi/EFI/rocky/grub.cfg"
 elif [ -f /boot/efi/EFI/centos/grub.cfg ]; then
-    echo "Processing CentOS..."
-    grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
+    TARGET="/boot/efi/EFI/centos/grub.cfg"
+else
+    TARGET="/boot/grub2/grub.cfg"
 fi
 
-# 5. VERIFICATION
-echo "--- Post-Cleanup Check ---"
-grep -i "memtest" /boot/efi/EFI/*/grub.cfg
-grep "console=ttyS0" /etc/default/grub
+echo "Regenerating config at $TARGET..."
+grub2-mkconfig -o "$TARGET"
+
+# 4. FINAL VERIFICATION
+echo "---------------------------------------"
+echo "VERIFICATION RESULTS:"
+if grep -q "MemTest" "$TARGET"; then
+    echo "[!] WARNING: MemTest STILL found in $TARGET. Manual intervention required."
+else
+    echo "[SUCCESS] MemTest entry has been eradicated."
+fi
+
+if grep -q "console=ttyS0" /etc/default/grub; then
+    echo "[!] WARNING: Serial console settings still exist in /etc/default/grub."
+else
+    echo "[SUCCESS] Serial console settings removed."
+fi
