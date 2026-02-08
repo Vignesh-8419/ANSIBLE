@@ -3,23 +3,17 @@
   hosts: all
   gather_facts: no
   vars:
-    # This logic tries to find your variables whether they are flat or nested
-    # It checks for 'nb_ctx', then 'config_context', then looks at the top level
-    esxi_user: "{{ nb_ctx.exsi_username | default(config_context.exsi_username | default(exsi_username)) }}"
-    esxi_pass: "{{ nb_ctx.exsi_password | default(config_context.exsi_password | default(exsi_password)) }}"
-    vm_user: "{{ nb_ctx.vm_root_user | default(config_context.vm_root_user | default(vm_root_user)) }}"
-    vm_pass: "{{ nb_ctx.vm_root_password | default(config_context.vm_root_password | default(vm_root_password)) }}"
+    # 1. Access the first item in the config_context list [0]
+    # 2. Extract specific fields
+    esxi_user: "{{ config_context[0].exsi_username }}"
+    esxi_pass: "{{ config_context[0].exsi_password }}"
+    vm_user: "{{ config_context[0].vm_root_user }}"
+    vm_pass: "{{ config_context[0].vm_root_password }}"
     
     esxi_host: "192.168.253.128"
 
   tasks:
-    # --- DEBUG: Run this if it fails again to see your variable names ---
-    - name: Debug Variable Structure
-      debug:
-        msg: "Look for your passwords here: {{ hostvars[inventory_hostname] }}"
-      tags: [never, debug]
-
-    # --- STEP 1: FIX HARDWARE ---
+    # --- STEP 1: FIX HARDWARE VIA ESXi ---
     - name: Fix Hardware on ESXi (Delegated)
       raw: |
         VMNAME="{{ inventory_hostname_short }}"
@@ -40,6 +34,7 @@
         ansible_user: "{{ esxi_user }}"
         ansible_password: "{{ esxi_pass }}"
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+      # Skip if the host being processed is the ESXi itself
       when: inventory_hostname != esxi_host
 
     # --- STEP 2: CONFIGURE GUEST OS ---
