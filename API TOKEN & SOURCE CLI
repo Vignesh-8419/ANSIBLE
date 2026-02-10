@@ -109,3 +109,42 @@ for cfg in configs:
     print(f"Source for {cfg['inv_name']} using {cfg['file']} {status}.")
 
 EOF
+
+
+
+from awx.main.models import Organization, Project, JobTemplate, Inventory
+
+# 1. Setup Organization
+org = Organization.objects.get(name="Default")
+repo_url = "https://github.com/Vignesh-8419/ANSIBLE"
+
+# 2. Create the Project
+project, _ = Project.objects.get_or_create(
+    name="Inventory-Git-Repo",
+    defaults={
+        "organization": org,
+        "scm_type": "git",
+        "scm_url": repo_url,
+        "scm_update_on_launch": True
+    }
+)
+print(f"Project '{project.name}' configured.")
+
+# 3. Create the Template
+# Note: A template REQUIRES an inventory. We'll grab the 'Default' one.
+inventory = Inventory.objects.get(name="Default")
+
+template, created = JobTemplate.objects.get_or_create(
+    name="Netbox-AWX-GOLDENTEMPLATE_CENTOS_07",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "Netbox-AWX-GOLDENTEMPLATE_CENTOS_07.yml",
+        "job_type": "run",
+    }
+)
+
+if created:
+    print(f"Template '{template.name}' created.")
+else:
+    print(f"Template '{template.name}' already exists.")
