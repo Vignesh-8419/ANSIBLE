@@ -112,7 +112,7 @@ EOF
 
 
 
-kubectl exec -it deployment/awx-server-task -n awx -c awx-server-task -- awx-manage shell <<EOF
+awx-manage shell <<EOF
 from awx.main.models import Organization, Project, JobTemplate, Inventory
 
 # 1. Setup Organization and Project
