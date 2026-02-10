@@ -1,4 +1,4 @@
-kubectl exec -it awx-server-task-664bb985bb-bqldq -n awx -c awx-server-task -- bash
+kubectl exec -it awx-server-task-7d4d448f96-5kvfj -n awx -c awx-server-task -- bash
 
 awx-manage shell <<EOF
 from awx.main.models import CredentialType, Credential, Organization
