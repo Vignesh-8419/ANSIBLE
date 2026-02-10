@@ -141,3 +141,149 @@ patch-el8-context
     }
   ]
 }
+
+
+===============================================================
+===============================================================
+===============================================================
+
+for TAG in "vmware-awx-context" "pxe-centos-context" "pxe-rockyos-context" "patch-context" "repo-config-context" "centostorocky-context" "patch-el8-context"; do
+  curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac5" \
+  -H "Content-Type: application/json" \
+  https://192.168.253.134/api/extras/tags/ \
+  -d "{\"name\": \"$TAG\", \"slug\": \"$TAG\"}"
+done
+
+#vmware-awx-context
+curl -X POST -k \
+-H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac5" \
+-H "Content-Type: application/json" \
+https://192.168.253.134/api/extras/config-contexts/ \
+-d '{
+    "name": "vmware-awx-context",
+    "weight": 1000,
+    "tags": ["vmware-awx-context"],
+    "data": {
+        "centos_template_name": "GOLDENTEMPLATE_CENTOS_07",
+        "datacenter_name": "Datacenter",
+        "datastore": "datastore1",
+        "dns_primary": "192.168.253.151",
+        "dns_servers": ["192.168.253.151", "8.8.8.8"],
+        "folder": "vm",
+        "gateway": "192.168.253.2",
+        "guest_domain": "vgs.com",
+        "infra_dns_pass": "Root@123",
+        "infra_dns_user": "root",
+        "netmask": "255.255.255.0",
+        "vcenter_hostname": "192.168.253.129",
+        "vcenter_password": "Vigneshv12$",
+        "vcenter_username": "administrator@vsphere.local",
+        "vm_network": "VM Network",
+        "exsi_hostname": "192.168.253.128",
+        "exsi_password": "admin$22",
+        "exsi_username": "root",
+        "vm_root_password": "Root@123",
+        "ansible_password": "Root@123",
+        "vm_root_user": "root"
+    }
+}'
+
+
+#pxe-centos-context
+curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac5" \
+-H "Content-Type: application/json" https://192.168.253.134/api/extras/config-contexts/ \
+-d '{
+    "name": "pxe-centos-context", "weight": 1000, "tags": ["pxe-centos-context"],
+    "data": {
+        "centos_kickstart_url": "http://192.168.253.136/repo/centos/kickstart/centos.cfg",
+        "centos_template_name": "GOLDENTEMPLATE_CENTOS_07",
+        "http_server": "192.168.253.136", "pxe_folder": "/var/lib/tftpboot",
+        "vm_root_password": "Root@123", "vm_root_user": "root"
+    }
+}'
+
+
+#pxe-rockyos-context
+curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac5" \
+-H "Content-Type: application/json" https://192.168.253.134/api/extras/config-contexts/ \
+-d '{
+    "name": "pxe-rockyos-context", "weight": 1000, "tags": ["pxe-rockyos-context"],
+    "data": {
+        "http_server": "192.168.253.136",
+        "rockyos_kickstart_url": "http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg",
+        "pxe_folder": "/var/lib/tftpboot",
+        "rockyos_template_name": "GOLDENTEMPLATE_ROCKYOS_08",
+        "vm_root_password": "Root@123", "vm_root_user": "root"
+    }
+}'
+
+
+
+#patch-context
+curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac5" \
+-H "Content-Type: application/json" https://192.168.253.134/api/extras/config-contexts/ \
+-d '{
+    "name": "patch-context", "weight": 1000, "tags": ["patch-context"],
+    "data": {
+        "dns_primary": "192.168.253.151", "guest_domain": "vgs.com",
+        "httpd_server_url": "http://192.168.253.136/repo/",
+        "iso_share_pass": "Vigneshv12$", "iso_share_user": "vigne",
+        "repo_mount_path": "//192.168.29.241/ISO", "repo_mount_point": "/var/www/html/repo",
+        "repositories": [
+            {"folder": "centos", "id": "base", "name": "CentOS Base Repo"},
+            {"folder": "installed_rhel7", "id": "patch", "name": "CentOS Patch Repo"}
+        ]
+    }
+}'
+
+
+#repo-config-context
+curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac5" \
+-H "Content-Type: application/json" https://192.168.253.134/api/extras/config-contexts/ \
+-d '{
+    "name": "repo-config-context", "weight": 1000, "tags": ["repo-config-context"],
+    "data": {
+        "repo_mount_path": "//192.168.31.87/ISO", "repo_mount_point": "/var/www/html/repo",
+        "iso_share_user": "vigne", "iso_share_pass": "Vigneshv12$", "http_server_ip": "192.168.253.136"
+    }
+}'
+
+
+
+#centostorocky-context
+curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac5" \
+-H "Content-Type: application/json" https://192.168.253.134/api/extras/config-contexts/ \
+-d '{
+    "name": "centostorocky-context", "weight": 1000, "tags": ["centostorocky-context"],
+    "data": {
+        "ansible_hostname": "ansible-server-01.vgs.com", "dns_primary": "192.168.253.151",
+        "guest_domain": "vgs.com", "httpd_server_url": "http://192.168.253.136/repo/",
+        "vault_repositories": [
+            {"id": "base", "name": "CentOS Vault Base", "url": "https://vault.centos.org/7.9.2009/os/x86_64/"},
+            {"id": "updates", "name": "CentOS Vault Updates", "url": "https://vault.centos.org/7.9.2009/updates/x86_64/"},
+            {"id": "extras", "name": "CentOS Vault Extras", "url": "https://vault.centos.org/7.9.2009/extras/x86_64/"}
+        ],
+        "rocky8_repos": [
+            {"id": "rocky8-baseos", "name": "Rocky Linux 8 - BaseOS", "folder": "rocky8/BaseOS/"},
+            {"id": "rocky8-appstream", "name": "Rocky Linux 8 - AppStream", "folder": "rocky8/AppStream/"}
+        ]
+    }
+}'
+
+
+
+#patch-el8-context
+curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac5" \
+-H "Content-Type: application/json" https://192.168.253.134/api/extras/config-contexts/ \
+-d '{
+    "name": "patch-el8-context", "weight": 1000, "tags": ["patch-el8-context"],
+    "data": {
+        "httpd_server_url": "http://192.168.253.136/repo/",
+        "repositories": [
+            {"id": "rocky8-baseos", "name": "Rocky Linux 8 BaseOS", "folder": "rocky8/BaseOS"},
+            {"id": "rocky8-appstream", "name": "Rocky Linux 8 AppStream", "folder": "rocky8/Appstream"},
+            {"id": "rocky8-rhel-installed", "name": "Rocky Linux 8 Installed RHEL", "folder": "installed_rhel8"}
+        ]
+    }
+}'
+
