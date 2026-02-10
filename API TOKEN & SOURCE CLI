@@ -112,11 +112,38 @@ EOF
 
 
 
-kubectl exec -it deployment/awx-server-task -n awx -c awx-server-task -- awx-manage shell -c "
-from awx.main.models import Organization, Project, JobTemplate, Inventory;
-org = Organization.objects.get(name='Default');
-inv = Inventory.objects.get(name='Default');
-proj, _ = Project.objects.get_or_create(name='GOLDENTEMPLATE_ROCKYOS-08', defaults={'organization': org, 'scm_type': 'git', 'scm_url': 'https://github.com/Vignesh-8419/ANSIBLE', 'scm_update_on_launch': True});
-temp, _ = JobTemplate.objects.get_or_create(name='Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_08', defaults={'project': proj, 'inventory': inv, 'playbook': 'Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_08.yml', 'job_type': 'run'});
-proj.update();
-print('\n--- SUCCESS ---\nProject and Template created.\nSync triggered.')"
+kubectl exec -it deployment/awx-server-task -n awx -c awx-server-task -- awx-manage shell <<EOF
+from awx.main.models import Organization, Project, JobTemplate, Inventory
+
+# 1. Setup Organization and Project
+org = Organization.objects.get(name="Default")
+repo_url = "https://github.com/Vignesh-8419/ANSIBLE"
+
+project, _ = Project.objects.get_or_create(
+    name="GOLDENTEMPLATE_ROCKYOS-08",
+    defaults={
+        "organization": org,
+        "scm_type": "git",
+        "scm_url": repo_url,
+        "scm_update_on_launch": True
+    }
+)
+
+# 2. Setup Inventory and Template
+inventory = Inventory.objects.get(name="Default")
+
+template, _ = JobTemplate.objects.get_or_create(
+    name="Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_08",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_08.yml",
+        "job_type": "run",
+    }
+)
+
+# 3. Start Sync
+project.update()
+
+print("DONE: Project and Template configured and Sync started.")
+EOF
