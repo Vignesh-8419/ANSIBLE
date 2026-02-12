@@ -1,12 +1,8 @@
 #!/bin/bash
 # setup_grub.sh
 
-# 1. Grab current LVM/Resume settings to maintain boot stability
-LVM_VARS=$(grep -o "rd.lvm.lv=[^ ]*" /proc/cmdline | tr '\n' ' ')
-RESUME_VAR=$(grep -o "resume=[^ ]*" /proc/cmdline)
-
-# 2. Configure /etc/default/grub
-# Added console=ttyS0,9600 to the CMDLINE below
+# 1. Configure /etc/default/grub
+# We define the order strictly here: tty1 first, ttyS0 LAST.
 cat <<EOF > /etc/default/grub
 GRUB_TIMEOUT=5
 GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
@@ -19,17 +15,19 @@ GRUB_DISABLE_RECOVERY="true"
 GRUB_ENABLE_BLSCFG=true
 EOF
 
-echo "Updating GRUB defaults for Kernel logs followed by Service logs..."
+echo "Cleaning up old console arguments and setting ttyS0 as primary..."
 
-# 3. Apply to all kernels (Crucial for Rocky/CentOS 8 BLS)
-# We add console=ttyS0,9600 here so grubby doesn't overwrite our file settings
-grubby --update-kernel=ALL --remove-args="rhgb quiet"
+# 2. Critical Step: Remove ALL existing console/quiet/rhgb arguments first
+# This prevents 'console=tty1' from appearing after 'ttyS0' in the final boot string.
+grubby --update-kernel=ALL --remove-args="rhgb quiet console"
+
+# 3. Re-add them in the specific order: tty1 then ttyS0
 grubby --update-kernel=ALL --args="loglevel=7 systemd.show_status=true console=tty1 console=ttyS0,9600"
 
-# 4. Disable the graphical splash screen
+# 4. Disable graphical splash
 systemctl mask plymouth-start.service 2>/dev/null
 
-# 5. Build the final GRUB configuration based on OS and Boot Mode
+# 5. Build final GRUB configuration
 if [ -d /sys/firmware/efi ]; then
     TARGET=$(find /boot/efi/EFI -name grub.cfg | grep -E 'rocky|centos|redhat' | head -n 1)
 else
@@ -40,8 +38,8 @@ if [ -n "$TARGET" ]; then
     echo "Regenerating GRUB at $TARGET..."
     grub2-mkconfig -o "$TARGET"
 else
-    echo "Error: Could not find grub.cfg. Check /boot/efi/EFI/"
+    echo "Error: Could not find grub.cfg."
     exit 1
 fi
 
-echo "Done. On reboot: Hardware logs (dmesg) will show first, then the [ OK ] list."
+echo "Done. Please reboot and check your PuTTY window (Port 2001)."
