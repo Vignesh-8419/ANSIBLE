@@ -1,78 +1,47 @@
 #setup_grub.sh
 #!/bin/bash
-set -e
 
-echo "==== Enable Verbose Boot + Serial Console (EL7 / EL8) ===="
+# 1. Grab current LVM/Resume settings to maintain boot stability
+LVM_VARS=$(grep -o "rd.lvm.lv=[^ ]*" /proc/cmdline | tr '\n' ' ')
+RESUME_VAR=$(grep -o "resume=[^ ]*" /proc/cmdline)
 
-# Detect OS major version
-OS_MAJOR=$(rpm -E %rhel 2>/dev/null || echo 0)
+# 2. Configure /etc/default/grub
+# loglevel=7: Shows full dmesg (hardware logs) at the start
+# systemd.show_status=true: Shows the [ OK ] messages immediately after
+cat <<EOF > /etc/default/grub
+GRUB_TIMEOUT=5
+GRUB_DISTRIBUTOR="\$(sed 's, release .*$,,g' /etc/system-release)"
+GRUB_DEFAULT=saved
+GRUB_DISABLE_SUBMENU=true
+GRUB_TERMINAL_OUTPUT="console"
+GRUB_CMDLINE_LINUX="console=tty1 loglevel=7 systemd.show_status=true $LVM_VARS $RESUME_VAR"
+GRUB_DISABLE_RECOVERY="true"
+GRUB_ENABLE_BLSCFG=true
+EOF
 
-if [[ "$OS_MAJOR" -ne 7 && "$OS_MAJOR" -ne 8 ]]; then
-    echo "Unsupported OS version: RHEL $OS_MAJOR"
-    exit 1
-fi
+echo "Updating GRUB defaults for Kernel logs followed by Service logs..."
 
-echo "Detected RHEL / EL version: $OS_MAJOR"
+# 3. Apply to all kernels (Crucial for Rocky/CentOS 8 BLS)
+grubby --update-kernel=ALL --remove-args="rhgb quiet"
+grubby --update-kernel=ALL --args="loglevel=7 systemd.show_status=true console=tty1"
 
-GRUB_DEFAULT_FILE="/etc/default/grub"
+# 4. Disable the graphical splash screen
+systemctl mask plymouth-start.service 2>/dev/null
 
-if [[ ! -f $GRUB_DEFAULT_FILE ]]; then
-    echo "ERROR: $GRUB_DEFAULT_FILE not found"
-    exit 1
-fi
-
-# Backup grub file
-BACKUP="/etc/default/grub.$(date +%F_%H%M%S).bak"
-cp -a "$GRUB_DEFAULT_FILE" "$BACKUP"
-echo "Backup created: $BACKUP"
-
-# Remove rhgb and quiet
-sed -i 's/\brhgb\b//g' "$GRUB_DEFAULT_FILE"
-sed -i 's/\bquiet\b//g' "$GRUB_DEFAULT_FILE"
-
-# Ensure console settings
-if ! grep -q 'console=ttyS0' "$GRUB_DEFAULT_FILE"; then
-    sed -i 's/GRUB_CMDLINE_LINUX="/GRUB_CMDLINE_LINUX="console=tty0 console=ttyS0,115200 /' \
-        "$GRUB_DEFAULT_FILE"
-fi
-
-# Normalize spacing
-sed -i 's/  */ /g' "$GRUB_DEFAULT_FILE"
-
-echo
-echo "Updated GRUB_CMDLINE_LINUX:"
-grep GRUB_CMDLINE_LINUX "$GRUB_DEFAULT_FILE"
-
-# Determine firmware type
-if [[ -d /sys/firmware/efi ]]; then
-    FIRMWARE="UEFI"
+# 5. Build the final GRUB configuration based on OS and Boot Mode
+if [ -d /sys/firmware/efi ]; then
+    # Search for the EFI config path (handles rocky, centos, and redhat directories)
+    TARGET=$(find /boot/efi/EFI -name grub.cfg | grep -E 'rocky|centos|redhat' | head -n 1)
 else
-    FIRMWARE="BIOS"
+    TARGET="/boot/grub2/grub.cfg"
 fi
 
-echo "Firmware detected: $FIRMWARE"
-
-# Regenerate GRUB config based on OS + firmware
-if [[ "$OS_MAJOR" -eq 7 ]]; then
-    echo "Generating GRUB config for EL7"
-
-    if [[ "$FIRMWARE" == "UEFI" ]]; then
-        grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
-    else
-        grub2-mkconfig -o /boot/grub2/grub.cfg
-    fi
-
-elif [[ "$OS_MAJOR" -eq 8 ]]; then
-    echo "Generating GRUB config for EL8"
-
-    if [[ "$FIRMWARE" == "UEFI" ]]; then
-        grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg 2>/dev/null || \
-        grub2-mkconfig -o /boot/efi/EFI/redhat/grub.cfg
-    else
-        grub2-mkconfig -o /boot/grub2/grub.cfg
-    fi
+if [ -n "$TARGET" ]; then
+    echo "Regenerating GRUB at $TARGET..."
+    grub2-mkconfig -o "$TARGET"
+else
+    echo "Error: Could not find grub.cfg. Check /boot/efi/EFI/"
+    exit 1
 fi
 
-echo
-echo "SUCCESS: Verbose boot + serial console enabled"
-echo "Reboot the system to apply changes"
+echo "Done. On reboot: Hardware logs (dmesg) will show first, then the [ OK ] list."
