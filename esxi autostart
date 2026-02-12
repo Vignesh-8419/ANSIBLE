@@ -22,8 +22,9 @@ Time: 06:57:34   Date: 01/20/2026   UTC
    Mode: TPM
    Require Executables Only From Installed VIBs: false
    Require Secure Boot: true
-[root@localhost:~] esxcli system settings encryption recovery list
+[root@localhost:~]  esxcli system settings encryption recovery list
 Recovery ID                             Key
 --------------------------------------  ---
-{51640D4C-6CF8-48D7-81E9-D867CD844D92}  072512-279302-061261-639928-516069-538268-309205-215816-081991-345288-294425-163339-576302-591835-423239-336571
+{A9A16DEF-4E63-4AD5-AF39-3D14B391A939}  490974-534370-692287-157204-482079-219598-568068-314222-283324-229293-720367-144914-687259-080643-183692-459485
 [root@localhost:~]
+
