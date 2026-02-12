@@ -6,8 +6,6 @@ LVM_VARS=$(grep -o "rd.lvm.lv=[^ ]*" /proc/cmdline | tr '\n' ' ')
 RESUME_VAR=$(grep -o "resume=[^ ]*" /proc/cmdline)
 
 # 2. Configure /etc/default/grub
-# loglevel=7: Shows full dmesg (hardware logs) at the start
-# systemd.show_status=true: Shows the [ OK ] messages immediately after
 cat <<EOF > /etc/default/grub
 GRUB_TIMEOUT=5
 GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
@@ -15,6 +13,7 @@ GRUB_DEFAULT=saved
 GRUB_DISABLE_SUBMENU=true
 GRUB_TERMINAL="console serial"
 GRUB_SERIAL_COMMAND="serial --speed=9600 --unit=0 --word=8 --parity=no --stop=1"
+# ADDED console=ttyS0,9600 below
 GRUB_CMDLINE_LINUX="rd.lvm.lv=rl/root rd.lvm.lv=rl/swap resume=/dev/mapper/rl-swap loglevel=7 systemd.show_status=true console=tty1 console=ttyS0,9600"
 GRUB_DISABLE_RECOVERY="true"
 GRUB_ENABLE_BLSCFG=true
