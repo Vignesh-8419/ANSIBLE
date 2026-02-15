@@ -131,6 +131,22 @@ until [ "$(curl -s -L -o /dev/null -w "%{http_code}" http://$VIP --connect-timeo
     sleep 15
 done
 
+kubectl patch ingress awx-ingress -n awx --type='merge' -p '
+{
+  "metadata": {
+    "annotations": {
+      "traefik.ingress.kubernetes.io/router.entrypoints": "web,websecure"
+    }
+  },
+  "spec": {
+    "tls": [
+      {
+        "hosts": ["192.168.253.145"]
+      }
+    ]
+  }
+}'
+
 echo -e "\n-------------------------------------------------------"
 echo "✅ AWX IS READY!"
 echo "🌐 URL: http://$VIP"
