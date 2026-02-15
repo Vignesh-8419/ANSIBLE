@@ -51,6 +51,8 @@ EOF
 # 7. Copy kernel/initrd from repo server
 mkdir -p /var/lib/tftpboot/grub2
 mkdir -p /var/lib/tftpboot/centos
+chmod 777 /var/lib/tftpboot
+chmod -R 777 /var/lib/tftpboot
 sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
   root@192.168.253.136:/var/www/html/repo/centos/isolinux/vmlinuz /var/lib/tftpboot/centos/
 
