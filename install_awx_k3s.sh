@@ -116,21 +116,6 @@ spec:
               number: 80
 EOF
 
-# --- 9. The Wait Loop ---
-echo "⏳ Waiting for AWX UI at http://$VIP..."
-echo "Monitoring database & migration status..."
-
-# Loop until we get a 200 OK
-until [ "$(curl -s -L -o /dev/null -w "%{http_code}" http://$VIP --connect-timeout 5)" == "200" ]; do
-    printf "."
-    # Check if pods are stuck in ImagePullBackOff or Error
-    STATUS=$(kubectl get pods -n $NAMESPACE | grep "awx-server-postgres" | awk '{print $3}' || echo "Pending")
-    if [[ "$STATUS" == *"Error"* ]] || [[ "$STATUS" == *"CrashLoop"* ]]; then
-        echo -e "\n⚠️  Postgres pod is in $STATUS state. Check logs with: kubectl logs -n $NAMESPACE -l app.kubernetes.io/name=postgres"
-    fi
-    sleep 15
-done
-
 kubectl patch ingress awx-ingress -n awx --type='merge' -p '
 {
   "metadata": {
@@ -146,6 +131,22 @@ kubectl patch ingress awx-ingress -n awx --type='merge' -p '
     ]
   }
 }'
+
+# --- 9. The Wait Loop ---
+echo "⏳ Waiting for AWX UI at http://$VIP..."
+echo "Monitoring database & migration status..."
+
+# Loop until we get a 200 OK
+until [ "$(curl -s -L -o /dev/null -w "%{http_code}" http://$VIP --connect-timeout 5)" == "200" ]; do
+    printf "."
+    # Check if pods are stuck in ImagePullBackOff or Error
+    STATUS=$(kubectl get pods -n $NAMESPACE | grep "awx-server-postgres" | awk '{print $3}' || echo "Pending")
+    if [[ "$STATUS" == *"Error"* ]] || [[ "$STATUS" == *"CrashLoop"* ]]; then
+        echo -e "\n⚠️  Postgres pod is in $STATUS state. Check logs with: kubectl logs -n $NAMESPACE -l app.kubernetes.io/name=postgres"
+    fi
+    sleep 15
+done
+
 
 echo -e "\n-------------------------------------------------------"
 echo "✅ AWX IS READY!"
