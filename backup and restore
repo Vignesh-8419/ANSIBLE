@@ -85,8 +85,14 @@ EOF
 #################################
 cat > /etc/default/grub << EOF
 GRUB_TIMEOUT=5
-GRUB_DEFAULT=0
+GRUB_DISTRIBUTOR="Rocky Linux"
+GRUB_DEFAULT=saved
+GRUB_DISABLE_SUBMENU=true
+GRUB_TERMINAL="console serial"
+GRUB_SERIAL_COMMAND="serial --speed=9600 --unit=0 --word=8 --parity=no --stop=1"
 GRUB_CMDLINE_LINUX="root=/dev/mapper/rl-root ro rhgb quiet console=tty0 console=ttyS0,115200"
+GRUB_DISABLE_RECOVERY="true"
+GRUB_ENABLE_BLSCFG=true
 EOF
 
 #################################
