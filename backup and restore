@@ -1,0 +1,122 @@
+mkdir -p /backup
+
+xfsdump \
+  -l 0 \
+  -L root_full_backup \
+  -M root_full_backup \
+  -f /backup/root_backup.dump \
+  /
+############################
+# 1. WIPE & PARTITION DISK (UEFI + LVM)
+############################
+wipefs -a /dev/sda
+
+parted /dev/sda --script mklabel gpt
+parted /dev/sda --script mkpart EFI fat32 1MiB 601MiB
+parted /dev/sda --script set 1 esp on
+parted /dev/sda --script mkpart LVM 601MiB 100%
+
+mkfs.vfat -F32 /dev/sda1
+
+############################
+# 2. CREATE LVM STRUCTURE
+############################
+pvcreate /dev/sda2
+vgcreate rockyos /dev/sda2
+lvcreate -L 4G -n swap rockyos
+lvcreate -l 100%FREE -n root rockyos
+
+mkfs.xfs /dev/rockyos/root
+mkswap /dev/rockyos/swap
+
+############################
+# 3. MOUNT TARGET SYSTEM
+############################
+mount /dev/rockyos/root /mnt/sysimage
+mkdir -p /mnt/sysimage/boot/efi
+mount /dev/sda1 /mnt/sysimage/boot/efi
+
+############################
+# 4. MOUNT BACKUP SHARE (EDIT IF NEEDED)
+############################
+mkdir -p /mnt/samba
+mount -t cifs //192.168.29.241/ISO /mnt/samba \
+  -o username=vigne,password=Vigneshv12$,rw
+
+############################
+# 5. RESTORE ROOT FILESYSTEM
+############################
+xfsrestore -f /mnt/samba/root_backup.dump /mnt/sysimage
+
+############################
+# 6. PREPARE CHROOT
+############################
+mount --bind /dev  /mnt/sysimage/dev
+mount --bind /proc /mnt/sysimage/proc
+mount --bind /sys  /mnt/sysimage/sys
+mount --bind /run  /mnt/sysimage/run
+
+chroot /mnt/sysimage /bin/bash
+
+############################
+# 7. FIX FSTAB (LVM BASED)
+############################
+cat > /etc/fstab << EOF
+/dev/mapper/rockyos-root  /          xfs   defaults 0 0
+/dev/mapper/rockyos-swap  swap       swap  defaults 0 0
+/dev/sda1                 /boot/efi  vfat  defaults,uid=0,gid=0,umask=077 0 2
+EOF
+
+############################
+# 8. FIX GRUB KERNEL CMDLINE
+############################
+cat > /etc/default/grub << EOF
+GRUB_TIMEOUT=5
+GRUB_DEFAULT=0
+GRUB_CMDLINE_LINUX="root=/dev/mapper/rockyos-root ro rhgb quiet console=tty0 console=ttyS0,115200"
+EOF
+
+############################
+# 9. INSTALL LVM + KERNEL
+############################
+dnf install -y lvm2 kernel kernel-core kernel-modules
+
+############################
+# 10. REBUILD INITRAMFS (CRITICAL)
+############################
+dracut -f --regenerate-all
+
+############################
+# 11. INSTALL EFI GRUB
+############################
+dnf reinstall -y \
+  grub2-common \
+  grub2-tools \
+  grub2-tools-efi \
+  grub2-efi-x64 \
+  shim
+
+mkdir -p /boot/efi/EFI/rocky
+grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
+grub2-mkconfig -o /boot/grub2/grub.cfg
+
+############################
+# 12. REGISTER EFI BOOT ENTRY
+############################
+efibootmgr --create \
+  --disk /dev/sda \
+  --part 1 \
+  --label "RockyLinux" \
+  --loader '\EFI\rocky\shimx64.efi'
+
+############################
+# 13. SELINUX RELABEL
+############################
+touch /.autorelabel
+
+############################
+# 14. EXIT & REBOOT
+############################
+exit
+umount -R /mnt/sysimage
+reboot
