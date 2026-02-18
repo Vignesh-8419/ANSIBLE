@@ -124,4 +124,5 @@ efibootmgr --create \
 touch /.autorelabel
 exit
 umount -R /mnt/sysimage
+umount -l /mnt/sysimage
 reboot
