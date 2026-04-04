@@ -12,7 +12,7 @@ awx inventory create \
   --name "VGS-CLUSTER" \
   --organization "Default" \
   --conf.host https://192.168.253.145/ \
-  --conf.token "eHUkWYP0lj273vhM03ZTTlvUDxMQW3" \
+  --conf.token "fsJySiwm6p9zvXx9ukmvBqj1pZfSsr" \
   -k
 
 
@@ -44,7 +44,7 @@ Latest Kube
 
 
 #!/bin/bash
-TOKEN="eHUkWYP0lj273vhM03ZTTlvUDxMQW3"
+TOKEN="fsJySiwm6p9zvXx9ukmvBqj1pZfSsr"
 HOST="http://192.168.253.145"
 INV_NAME="VGS-CLUSTER"
 
