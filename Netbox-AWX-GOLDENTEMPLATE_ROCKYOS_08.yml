@@ -51,7 +51,7 @@
       delegate_to: localhost
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
-   # --- PHASE 3: GUEST CONFIGURATION ---
+    # --- PHASE 3: GUEST CONFIGURATION ---
     - name: Force SSH connection details for guest
       set_fact:
         ansible_host: "{{ target_ip }}"
@@ -83,6 +83,19 @@
       delegate_to: localhost
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
     
+    - name: Test raw SSH command from AWX EE
+      ansible.builtin.command: >
+        sshpass -p '{{ nb_ctx.vm_root_password }}'
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+        {{ nb_ctx.vm_root_user }}@{{ target_ip }} 'whoami'
+      delegate_to: localhost
+      register: raw_ssh_test
+      ignore_errors: yes
+    
+    - name: Show raw SSH test result
+      debug:
+        var: raw_ssh_test
+
     - name: Wait for SSH login
       ansible.builtin.wait_for_connection:
         delay: 5
