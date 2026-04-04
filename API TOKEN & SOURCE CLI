@@ -34,7 +34,7 @@ cred, created = Credential.objects.get_or_create(
         "organization": org,
         "inputs": {
             "netbox_url": "https://rocky-08-02.vgs.com/",
-            "netbox_token": "d5bcd13a503e86da9fe28a5e52b7f668932c4f2b"
+            "netbox_token": "af1c7f0bd49b4785f425fb65f06ad48c6979cf77"
         }
     }
 )
