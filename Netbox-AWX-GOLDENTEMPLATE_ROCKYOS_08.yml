@@ -52,16 +52,15 @@
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
     # --- PHASE 3: GUEST CONFIGURATION ---
-    - name: Force SSH connection details for guest
+    - name: Force guest connection variables
       set_fact:
         ansible_host: "{{ target_ip }}"
         ansible_user: "{{ nb_ctx.vm_root_user }}"
         ansible_ssh_pass: "{{ nb_ctx.vm_root_password }}"
         ansible_connection: ssh
-      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
-    
-    - name: Reset SSH connection so AWX uses new vars
-      meta: reset_connection
+        ansible_python_interpreter: /usr/bin/python3
+        ansible_ssh_transfer_method: scp
+        ansible_shell_type: sh
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
     
     - name: Show connection details
@@ -71,6 +70,7 @@
           - "ansible_host={{ ansible_host }}"
           - "ansible_user={{ ansible_user }}"
           - "target_ip={{ target_ip }}"
+          - "ansible_python_interpreter={{ ansible_python_interpreter }}"
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
     
     - name: Wait for SSH port 22 from AWX EE
@@ -83,23 +83,32 @@
       delegate_to: localhost
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
     
-    - name: Test raw SSH command from AWX EE
-      ansible.builtin.command: >
-        sshpass -p '{{ nb_ctx.vm_root_password }}'
-        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
-        {{ nb_ctx.vm_root_user }}@{{ target_ip }} 'whoami'
-      delegate_to: localhost
-      register: raw_ssh_test
-      ignore_errors: yes
+    - name: Wait until Python3 is ready in guest
+      ansible.builtin.raw: test -x /usr/bin/python3
+      register: python_ready
+      retries: 30
+      delay: 10
+      until: python_ready.rc == 0
+      changed_when: false
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
     
-    - name: Show raw SSH test result
+    - name: Test raw access
+      ansible.builtin.raw: |
+        whoami
+        python3 --version
+      register: raw_result
+      changed_when: false
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+    
+    - name: Show raw bootstrap result
       debug:
-        var: raw_ssh_test
-
-    - name: Wait for SSH login
-      ansible.builtin.wait_for_connection:
-        delay: 5
-        timeout: 300
+        var: raw_result
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+    
+    - name: Gather minimal facts after Python is ready
+      ansible.builtin.setup:
+        gather_subset:
+          - min
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
     
     - name: Set Hostname and Network inside Guest
