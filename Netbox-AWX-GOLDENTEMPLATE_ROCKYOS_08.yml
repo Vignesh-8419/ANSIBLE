@@ -92,7 +92,7 @@
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
     
     - name: Install Python3 if missing
-      ansible.builtin.raw: dnf -y install python3
+      ansible.builtin.raw: dnf -y install python3.9
       become: yes
       when:
         - inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
