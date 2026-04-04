@@ -52,12 +52,6 @@
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
     # --- PHASE 3: GUEST CONFIGURATION ---
-    - name: Guest Configuration Block
-      block:
-        - name: Wait for SSH (Timeout 10 mins)
-          ansible.builtin.wait_for_connection:
-            delay: 15
-            timeout: 600
 
         - name: Set Hostname and Network inside Guest
           ansible.builtin.shell: |
