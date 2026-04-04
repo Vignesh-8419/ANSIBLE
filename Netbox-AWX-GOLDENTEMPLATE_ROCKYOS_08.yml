@@ -52,83 +52,23 @@
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
     # --- PHASE 3: GUEST CONFIGURATION ---
-    - name: Phase 3 - Force guest connection variables
-      set_fact:
-        ansible_host: "{{ target_ip }}"
+    - name: Guest Configuration Block
+      block:
+        - name: Wait for SSH (Timeout 10 mins)
+          ansible.builtin.wait_for_connection:
+            delay: 15
+            timeout: 600
+
+        - name: Set Hostname and Network inside Guest
+          ansible.builtin.shell: |
+            hostnamectl set-hostname {{ inventory_hostname }}
+            OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
+            nmcli connection modify "$OLD_NAME" connection.id "ens192"
+            nmcli connection modify "ens192" ipv4.dns "{{ nb_ctx.dns_servers | join(' ') }}"
+            nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
+            nmcli connection up "ens192"
+          become: yes
+      vars:
         ansible_user: "{{ nb_ctx.vm_root_user }}"
         ansible_ssh_pass: "{{ nb_ctx.vm_root_password }}"
-        ansible_connection: ssh
-        ansible_ssh_transfer_method: scp
-        ansible_shell_type: sh
-      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
-    
-    - name: Show connection details
-      debug:
-        msg:
-          - "inventory_hostname={{ inventory_hostname }}"
-          - "ansible_host={{ ansible_host }}"
-          - "ansible_user={{ ansible_user }}"
-          - "target_ip={{ target_ip }}"
-      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
-    
-    - name: Wait for SSH port 22 from AWX EE
-      ansible.builtin.wait_for:
-        host: "{{ target_ip }}"
-        port: 22
-        delay: 10
-        timeout: 300
-        state: started
-      delegate_to: localhost
-      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
-    
-    - name: Check if Python3 exists
-      ansible.builtin.raw: which python3
-      register: python_check
-      ignore_errors: yes
-      changed_when: false
-      retries: 5
-      delay: 5
-      until: python_check.stdout != ""
-      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
-    
-    - name: Install Python3 if missing
-      ansible.builtin.raw: dnf -y install python3.9
-      become: yes
-      when:
-        - inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
-        - python_check.rc != 0
-      register: python_install
-    
-    - name: Set ansible_python_interpreter fact
-      set_fact:
-        ansible_python_interpreter: /usr/bin/python3
-      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
-    
-    - name: Test raw access
-      ansible.builtin.raw: |
-        whoami
-        python3 --version
-      register: raw_result
-      changed_when: false
-      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
-    
-    - name: Show raw bootstrap result
-      debug:
-        var: raw_result
-      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
-    
-    - name: Gather minimal facts after Python is ready
-      ansible.builtin.setup:
-        gather_subset:
-          - min
-      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
-    
-    - name: Set Hostname and Network inside Guest
-      ansible.builtin.shell: |
-        hostnamectl set-hostname {{ inventory_hostname }}
-        OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
-        nmcli connection modify "$OLD_NAME" ipv4.dns "{{ nb_ctx.dns_servers | join(' ') }}"
-        nmcli connection modify "$OLD_NAME" ipv4.ignore-auto-dns yes
-        nmcli connection up "$OLD_NAME"
-      become: yes
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
