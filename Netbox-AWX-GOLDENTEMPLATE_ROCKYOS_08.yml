@@ -52,13 +52,12 @@
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
     # --- PHASE 3: GUEST CONFIGURATION ---
-    - name: Force guest connection variables
+    - name: Phase 3 - Force guest connection variables
       set_fact:
         ansible_host: "{{ target_ip }}"
         ansible_user: "{{ nb_ctx.vm_root_user }}"
         ansible_ssh_pass: "{{ nb_ctx.vm_root_password }}"
         ansible_connection: ssh
-        ansible_python_interpreter: /usr/bin/python3
         ansible_ssh_transfer_method: scp
         ansible_shell_type: sh
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
@@ -70,7 +69,6 @@
           - "ansible_host={{ ansible_host }}"
           - "ansible_user={{ ansible_user }}"
           - "target_ip={{ target_ip }}"
-          - "ansible_python_interpreter={{ ansible_python_interpreter }}"
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
     
     - name: Wait for SSH port 22 from AWX EE
@@ -83,13 +81,27 @@
       delegate_to: localhost
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
     
-    - name: Wait until Python3 is ready in guest
-      ansible.builtin.raw: test -x /usr/bin/python3
-      register: python_ready
-      retries: 30
-      delay: 10
-      until: python_ready.rc == 0
+    - name: Check if Python3 exists
+      ansible.builtin.raw: which python3
+      register: python_check
+      ignore_errors: yes
       changed_when: false
+      retries: 5
+      delay: 5
+      until: python_check.stdout != ""
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+    
+    - name: Install Python3 if missing
+      ansible.builtin.raw: dnf -y install python3
+      become: yes
+      when:
+        - inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+        - python_check.rc != 0
+      register: python_install
+    
+    - name: Set ansible_python_interpreter fact
+      set_fact:
+        ansible_python_interpreter: /usr/bin/python3
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
     
     - name: Test raw access
