@@ -51,24 +51,50 @@
       delegate_to: localhost
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
-    # --- PHASE 3: GUEST CONFIGURATION ---
-    - name: Guest Configuration Block
-      block:
-        - name: Wait for SSH (Timeout 10 mins)
-          ansible.builtin.wait_for_connection:
-            delay: 15
-            timeout: 600
-
-        - name: Set Hostname and Network inside Guest
-          ansible.builtin.shell: |
-            hostnamectl set-hostname {{ inventory_hostname }}
-            OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
-            nmcli connection modify "$OLD_NAME" connection.id "ens192"
-            nmcli connection modify "ens192" ipv4.dns "{{ nb_ctx.dns_servers | join(' ') }}"
-            nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
-            nmcli connection up "ens192"
-          become: yes
-      vars:
+   # --- PHASE 3: GUEST CONFIGURATION ---
+    - name: Force SSH connection details for guest
+      set_fact:
+        ansible_host: "{{ target_ip }}"
         ansible_user: "{{ nb_ctx.vm_root_user }}"
         ansible_ssh_pass: "{{ nb_ctx.vm_root_password }}"
+        ansible_connection: ssh
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+    
+    - name: Reset SSH connection so AWX uses new vars
+      meta: reset_connection
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+    
+    - name: Show connection details
+      debug:
+        msg:
+          - "inventory_hostname={{ inventory_hostname }}"
+          - "ansible_host={{ ansible_host }}"
+          - "ansible_user={{ ansible_user }}"
+          - "target_ip={{ target_ip }}"
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+    
+    - name: Wait for SSH port 22 from AWX EE
+      ansible.builtin.wait_for:
+        host: "{{ target_ip }}"
+        port: 22
+        delay: 10
+        timeout: 300
+        state: started
+      delegate_to: localhost
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+    
+    - name: Wait for SSH login
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 300
+      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+    
+    - name: Set Hostname and Network inside Guest
+      ansible.builtin.shell: |
+        hostnamectl set-hostname {{ inventory_hostname }}
+        OLD_NAME=$(nmcli -t -f NAME connection show --active | head -n 1)
+        nmcli connection modify "$OLD_NAME" ipv4.dns "{{ nb_ctx.dns_servers | join(' ') }}"
+        nmcli connection modify "$OLD_NAME" ipv4.ignore-auto-dns yes
+        nmcli connection up "$OLD_NAME"
+      become: yes
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
