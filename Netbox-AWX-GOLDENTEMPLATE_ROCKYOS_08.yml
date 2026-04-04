@@ -53,6 +53,8 @@
 
     # --- PHASE 3: GUEST CONFIGURATION ---
 
+    - name: Guest Configuration Block
+      block:
         - name: Set Hostname and Network inside Guest
           ansible.builtin.shell: |
             hostnamectl set-hostname {{ inventory_hostname }}
