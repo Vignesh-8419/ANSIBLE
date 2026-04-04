@@ -206,6 +206,7 @@ firewall-cmd --reload || true
 systemctl daemon-reexec
 systemctl daemon-reload
 systemctl enable --now netbox netbox-worker nginx
+setenforce 0
 
 # ---------------- DONE ----------------
 log "----------------------------------------"
