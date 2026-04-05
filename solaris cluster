@@ -1,0 +1,347 @@
+cd /nfs/repo
+lofiadm -a osc-4_4-repo-full.iso /dev/lofi/1
+mount -F hsfs /dev/lofi/1 /mnt/
+pkg set-publisher -p file:///mnt/repo
+zfs create -o mountpoint=/repo -o quota=25G rpool/repo
+zfs create -o mountpoint=/patchrepo -o quota=25G rpool/patchrepo
+mkdir -p /var/repository/s11u4
+ls
+mv * /var/repository/s11u4/
+cd /var/repository/s11u4/
+ls
+vi install-repo.ksh
+vi install-repo.ksh
+chmod 755 install-repo.ksh
+./install-repo.ksh -d /repo
+pkg set-publisher -G '*' -M '*' -g /repo solaris
+pkg set-publisher -G '*' -M '*' -g /repo solaris
+pkg change-facet facet.version-lock.ha-cluster/group-package/ha-cluster-incorporation=false
+pkg install --accept ha-cluster-full
+pkg install ha-cluster-quorum-server-full
+svccfg
+select /network/dns/client:default
+setprop config/search = astring:("vs.com")
+setprop config/nameserver = net_address:("192.168.1.109" "172.16.0.102")
+setprop config/domain = astring:("vs.com")
+refresh
+validate
+quit
+
+tar -cvf SOL_REPO.tar SOL_REPO
+
+gzip SOL_REPO.tar
+
+tar -xvf SOL_REPO.tar.gz && rm -rf SOL_REPO.tar.gz
+
+sudo pkgrepo verify -i ignore_dep_file -s /var/tmp/writable-repo
+
+sudo pkgadd -d /nfs/repo ha-cluster-full
+
+
+dism /online /Enable-Feature /FeatureName:TelnetClient
+
+pkg remove ha-cluster-full
+pkg uninstall ha-cluster-quorum-server-full
+
+pkg publisher ;pkg unset-publisher solaris; pkg set-publisher -g /nfs/repos/REPO/ solaris; pkg publisher 
+
+iscsiadm add static-config iqn.2024-10.org.freenas.ctl:quorumdisk,192.168.253.137:3260
+iscsiadm add discovery-address 192.168.253.136:3260
+iscsiadm remove discovery-address 192.168.253.154:3260
+
+iqn.2024-10.org.freenas.ctl
+
+iscsiadm add static-config iqn.2005-10.org.freenas.ctl:vddd1,192.168.253.158:3260
+
+svcadm enable svc:/network/iscsi/initiator:default
+iscsiadm add static-config iqn.2005-10.org.freenas.ctl:quorum,192.168.253.139:3260
+iscsiadm remove static-config iqn.2005-10.org.freenas.ctl:quorum,192.168.253.134:3260
+
+iscsiadm add static-config iqn.2005-10.org.freenas.ctl:quorumdisk,192.168.253.137:3260
+iscsiadm add static-config iqn.2005-10.org.freenas.ctl:quorumdisk,192.168.253.134:3260
+iscsiadm add static-config iqn.2005-10.org.freenas.ctl:vdcn5,192.168.253.145:3260
+
+
+iscsiadm remove static-config iqn.2005-10.org.freenas.ctl:vddd1,192.168.253.158:3260
+iscsiadm add static-config iqn.2005-10.org.freenas.ctl:vddd1,192.168.253.158:3260
+iscsiadm modify discovery --sendtargets enable
+iscsiadm modify discovery --static enable
+iscsiadm modify discovery --iSNS enable
+devfsadm -C -i iscsi
+
+cluster set -p global_fencing=pathcount   ========= issue clq slow
+
+cluster set -p global_fencing=pathcount
+cluster show -t global
+clq remove d5
+cldevice set -p default_fencing=nofencing 5
+cldevice set -p default_fencing=global 5
+clq add d5
+clq show
+
+echo "192.168.253.136 testunix03.vs.com testunix03" | sudo tee -a /etc/hosts; echo "192.168.253.139 testunix04.vs.com testunix04" | sudo tee -a /etc/hosts; echo "192.168.253.140 testunix02.vs.com testunix02" | sudo tee -a /etc/hosts ; echo "192.168.253.142 testunix01.vs.com testunix01" | sudo tee -a /etc/hosts
+
+
+echo "192.168.253.134 cluster01.vs.com cluster01" | sudo tee -a /etc/hosts ; echo "192.168.253.135 cluster02 # Cluster Node" | sudo tee -a /etc/hosts ; echo "192.168.253.111 vddp5 deapvip5" | sudo tee -a /etc/hosts
+
+iscsiadm add static-config iqn.2005-10.org.freenas.ctl:vddn5,192.168.253.140:3260
+iscsiadm add static-config iqn.2005-10.org.freenas.ctl:quorumdisk,192.168.253.140:3260
+iscsiadm modify discovery --sendtargets disable
+iscsiadm modify discovery --static enable
+iscsiadm modify discovery --iSNS enable
+devfsadm -C -i iscsi
+
+iscsiadm add static-config iqn.2005-10.org.freenas.ctl:vddca,192.168.253.158:3260
+svcadm restart svc:/network/iscsi/initiator:default
+iscsiadm modify discovery --sendtargets enable
+iscsiadm modify discovery --static enable
+iscsiadm modify discovery --iSNS enable
+devfsadm -C -i iscsi
+
+
+
+
+iqn.1986-03.com.sun:01:b61c9e0d0068.66f44f6a
+iscsiadm list initiator-node
+iscsiadm modify initiator-node -N iqn.1986-03.com.sun:01:0547b5482d26.671d4531
+
+
+
+iscsiadm modify discovery --sendtargets disable
+iscsiadm modify discovery --static disable
+iscsiadm modify discovery --iSNS disable
+
+pkg change-facet facet.version-lock.ha-cluster/group-package/ha-cluster-incorporation=true
+svccfg -s svc:/network/rpc/bind:default setprop config/local_only = boolean: false
+svcadm refresh svc:/network/rpc/bind:default
+/usr/cluster/bin/clauth enable -n cluster01
+
+
+echo " export PATH=$PATH:/usr/cluster/bin " | sudo tee -a .profile ; source .profile
+export PATH=$PATH:/usr/cluster/bin
+
+beadm create beforepatch
+pkg set-publisher -G '*' -M '*' -g /patchrepo solaris
+pkg unset-publisher solaris; pkg publisher ;pkg set-publisher -g /nfs/repos/patchrepo solaris;pkg set-publisher -g /nfs/repos/repo solaris
+pkg update -nv --accept
+pkg update --be-name 11.4.31 --accept
+
+beadm create sol11.4.1.4.0 ; beadm activate sol11.4.1.4.0
+
+
+rm -rf sol-11_4-repo_3of5.zip sol-11_4-repo_4of5.zip sol-11_4-repo_2of5.zip sol-11_4-repo_1of5.zip sol-11_4-repo_5of5.zip
+
+pkg change-facet facet.version-lock.ha-cluster/group-package/ha-cluster-incorporation=false
+
+Workaround: "change-facet" version-lock to false to workaround the error.
+
+# pkg change-facet facet.version-lock.ha-cluster/group-package/ha-cluster-incorporation=false
+ Once the upgrade is done set the property back to true or it will prevent future updates from working.
+
+# pkg change-facet facet.version-lock.ha-cluster/group-package/ha-cluster-incorporation=true
+ 
+ 
+ http://pkg.oracle.com/solaris/release/
+
+Solution: This is fixed in OSC 4.4 SRU1.
+
+202464642
+
+76251
+
+set zfs:zfs_arc_max_percent = 90
+
+cluster set -p global_fencing=pathcount
+
+
+svccfg -s network/dns/client setprop config/nameserver = net_address: "(192.168.253.239)"
+svccfg -s network/dns/client setprop config/search = astring: "vs.com"
+
+
+svcadm refresh network/dns/client
+nscfg export svc:/network/dns/client:default
+
+cat /etc/resolv.conf
+
+
+svccfg -s name-service/switch setprop config/host = astring: "files dns"
+svcadm refresh name-service/switch
+
+lucreate -c first_disk -m /:/dev/dsk/c1t0d0s0:ufs \
+-m /usr:/dev/dsk/c1t1d0s0:ufs -n second_disk
+
+
+echo "cluster01 group sc_ipmp0 -failover" > /etc/hostname.e1000g0
+
+
+cat /etc/hostname.e1000g0
+root@cluster01:~# cluster set -p installmode=disabled global
+cluster:  (C359315) "global" is not the name of this cluster.
+root@cluster01:~# cluster set -p installmode=disabled clusternodes
+root@cluster01:~#  cluster show -t global | grep installmode
+  installmode:                                     disabled
+root@cluster01:~#
+ group sc_ipmp0 -failover
+
+
+/usr/cluster/lib/sc/cmm_ctl -d
+
+set idle_cpu_no_deep_c=1 
+
+# pwd
+/
+# uname -a
+SunOS cluster01 5.10 Generic_153154-08 i86pc i386 i86pc
+# hostname
+cluster01
+#
+
+sudo sync; echo 1 > /proc/sys/vm/drop_caches
+
+
+hostname should be visible instead of #
+
+mkdir -p /nfs/repos
+sudo mount -F nfs 192.168.253.149:/nfs/repos /nfs/repos
+
+sudo mount -F nfs 192.168.253.136:/root/packages /root/packages
+
+sudo mount -F nfs 192.168.253.136:/root/rhel8_packages /root/rhel8_packages
+
+Install NFS
+NFS is a built-in function in Red Hat Enterprise Linux (RHEL) 9, but there's a package of utilities that you can install on the computer serving as the NFS host and on the Linux workstations that will interface with NFS:
+
+sudo yum install nfs-utils
+
+mkdir -p /repo-local ; echo "192.168.253.151:/repo-local  /repo-local  nfs  defaults        0 0" | sudo tee -a /etc/fstab ; mount -a
+
+
+mkdir -p /repo-local ;echo "192.168.253.151:/repo-local  -  /repo-local nfs  -  yes  -" | sudo tee -a /etc/vfstab; mount -a
+
+sudo systemctl enable --now nfs-server
+
+sudo systemctl enable --now rpcbind
+
+sudo mkdir -p /nfs/repos
+
+echo "/var/lib/pulp/ 192.168.253.0/24(rw,no_root_squash,insecure)" > /etc/exports
+
+sudo chown root:root /REPO
+sudo chmod 777 /REPO
+
+sudo exportfs -r
+
+sudo firewall-cmd --add-service nfs --permanent
+
+firewall-cmd --reload
+
+192.168.122.17:/nfs/repos   /nfs/imports/myshare/  nfs  rw 0 0
+
+192.168.253.210:/nfs/repos - /nfs/imports/myshare nfs - yes ro,soft
+
+[root@rhel7 ~]# cat /etc/exports
+/nfs/repos 192.168.253.0/24(rw,no_root_squash,insecure) > /etc/exports
+[root@rhel7 ~]#
+
+
+/export/home/ldapadm/Oracle/Middleware/Oracle_Home/asinst_1/OUD/config/server-nopass.key
+
+
+clrs set -g vdcnf -p Resource_dependencies+=deapvind deapvinf
+
+vi dns_config.sh
+#!/bin/bash
+svccfg
+select /network/dns/client:default
+setprop config/search = astring:("vgs.com")
+setprop config/nameserver = net_address:("192.168.253.150")
+setprop config/domain = astring:("vgs.com")
+refresh
+validate
+quit
+EOF
+chmod +x dns_config.sh
+cp /root/dns_config.sh /etc/init.d/dns_config.sh
+ln -s /etc/init.d/dns_config.sh /etc/rc3.d/S99dns_config.sh
+
+
+#!/bin/sh
+su - ldapadm -c "/export/home/ldapadm/start-ds.sh" > /tmp/start-ds.log 2>&1
+echo "Script executed at $(date)" >> /tmp/start-ds-execution.log
+
+
+chmod +x start-ds.sh
+cp /root/start-ds.sh /etc/init.d/start-ds.sh
+ln -s /etc/init.d/start-ds.sh /etc/rc3.d/S99start-ds.sh
+
+svccfg -s timezone:default setprop timezone/localtime = astring: "Asia/Kolkata"
+svcadm refresh svc:/system/timezone:default
+
+vi /etc/inet/ntp.conf
+
+# Use servers from the NTP pool project
+server 0.pool.ntp.org iburst
+server 1.pool.ntp.org iburst
+server 2.pool.ntp.org iburst
+server 3.pool.ntp.org iburst
+
+# Drift file to store the frequency error
+driftfile /var/ntp/ntp.drift
+
+# Statistics directory
+statsdir /var/ntp/ntpstats/
+
+filegen peerstats file peerstats type day enable
+filegen loopstats file loopstats type day enable
+
+# Disable authentication for simplicity
+disable auth
+
+
+
+vi /etc/ssh/sshd_config
+
+1.PubkeyAuthentication yes
+
+2.PasswordAuthentication yes
+
+3.GSSAPIKeyExchange no
+
+4.GSSAPICleanupCredentials no
+
+systemctl restart sshd
+
+ssh-keygen
+
+chmod 777 /root/.ssh/id_rsa.pub 
+
+ssh-copy-id -i /root/.ssh/id_rsa.pub user@ipaddress
+
+[LocalRepo]
+name=Local Repository
+baseurl=file:///nfs/repos/rhel7_packages/
+enabled=1
+gpgcheck=0
+
+http://pkg.oracle.com/solaris/release/
+
+
+[root@testunix01 yum.repos.d]# cat rhel8.repo
+[InstallMedia-BaseOS]
+name=Red Hat Enterprise Linux 8 - BaseOS
+metadata_expire=-1
+gpgcheck=1
+enabled=1
+baseurl=file:///mnt/BaseOS/
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+
+[InstallMedia-AppStream]
+name=Red Hat Enterprise Linux 8 - AppStream
+metadata_expire=-1
+gpgcheck=1
+enabled=1
+baseurl=file:///mnt/AppStream/
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+
+
+sudo pkg update --accept --no-backup-be --ignore-missing
