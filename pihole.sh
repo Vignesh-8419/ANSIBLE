@@ -1,74 +1,86 @@
 #!/bin/bash
 
-echo "installing GIT"
+set -e
 
-sudo yum install -y git
+echo "=================================="
+echo "      Pi-hole Clean Installer      "
+echo "=================================="
 
-echo "installed GIT"
+# -------------------------------
+# 0. TEMP DNS FIX (CRITICAL)
+# -------------------------------
+echo ">>> Setting temporary DNS (upstream)"
+cp /etc/resolv.conf /etc/resolv.conf.backup || true
+echo "nameserver 8.8.8.8" > /etc/resolv.conf
 
-echo "downloading git"
+# -------------------------------
+# 1. Install dependencies
+# -------------------------------
+echo ">>> Installing dependencies"
+yum install -y epel-release
+yum install -y git curl psmisc
 
-curl -O https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/pihole-customdns.sh
+# -------------------------------
+# 2. Stop & Clean existing Pi-hole
+# -------------------------------
+echo ">>> Stopping and cleaning old installation"
+systemctl stop pihole-FTL 2>/dev/null || true
+killall -9 pihole-FTL 2>/dev/null || true
+rm -rf /etc/pihole /etc/.pihole /var/www/html/admin /opt/pihole
 
-chmod +x /root/pihole-customdns.sh
-
-git clone --depth 1 https://github.com/Vignesh-8419/pihole Pi-hole
-
-cd Pi-hole/automated\ install/
-
-echo "Config PIHOLE file"
-
-
-echo "enabling firewall"
-
-firewall-cmd --add-service=dns --permanent
-
-firewall-cmd --add-service=http --permanent
-
-firewall-cmd --add-service=https --permanent
-
+# -------------------------------
+# 3. Firewall
+# -------------------------------
+echo ">>> Configuring firewall"
+firewall-cmd --permanent --add-service=dns || true
+firewall-cmd --permanent --add-service=http || true
+firewall-cmd --permanent --add-service=https || true
 firewall-cmd --reload
 
-echo "enabled firewall"
+# -------------------------------
+# 4. SELinux
+# -------------------------------
+echo ">>> Configuring SELinux"
+setenforce 0 2>/dev/null || true
+sed -i 's/^SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config || true
 
-echo "Configured PIHOLE file"
+# -------------------------------
+# 5. Install Pi-hole
+# -------------------------------
+echo ">>> Installing Pi-hole"
+curl -sSL https://install.pi-hole.net | bash /dev/stdin --unattended
 
-setenforce 0
+# -------------------------------
+# 6. Configure Upstream DNS (The Fix)
+# -------------------------------
+echo ">>> Configuring upstream DNS to 192.168.253.2"
 
-echo "config selinux"
+# We manually inject the DNS settings into the config file
+mkdir -p /etc/pihole
+cat <<EOF > /etc/pihole/setupVars.conf
+PIHOLE_DNS_1=192.168.253.2
+PIHOLE_DNS_2=8.8.4.4
+DNS_FQDN_REQUIRED=true
+DNS_BOGUS_PRIV=true
+DNSSEC=false
+REV_SERVER=false
+EOF
 
-export PIHOLE_SELINUX=true
+# Apply the changes
+pihole -g || true
+systemctl restart pihole-FTL
 
-echo "configured selinux"
+# -------------------------------
+# 7. Restore & Status
+# -------------------------------
+echo ">>> Restoring original DNS"
+mv -f /etc/resolv.conf.backup /etc/resolv.conf || true
 
-bash basic-install.sh
+echo ">>> Checking status"
+pihole status || true
 
-#vi /etc/pihole/pihole.toml
-#[webserver]
-  # 'r' tells FTL to redirect HTTP traffic to the first available HTTPS port
-#  port = "80r,443os,[::]:80r,[::]:443os"
-#systemctl restart pihole-FTL
-
-# 1. Generate a new key and certificate for your specific domain
-#openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
-#  -keyout /etc/pihole/tls.key -out /etc/pihole/tls.crt \
-#  -subj "/CN=dns-server-01.vgs.com" \
-#  -addext "subjectAltName=DNS:dns-server-01.vgs.com,DNS:pi.hole"
-
-# 2. Combine them into the tls.pem file that pihole-FTL uses
-#cat /etc/pihole/tls.key /etc/pihole/tls.crt > /etc/pihole/tls.pem
-
-# 3. Fix permissions
-#chown pihole:pihole /etc/pihole/tls.*
-#chmod 644 /etc/pihole/tls.crt /etc/pihole/tls.pem
-#chmod 600 /etc/pihole/tls.key
-
-# 4. Restart Pi-hole FTL
-#systemctl restart pihole-FTL
-
-# Add permissions for web traffic
-#firewall-cmd --permanent --add-service=http
-#firewall-cmd --permanent --add-service=https
-
-# Reload to apply changes
-#firewall-cmd --reload
+IP=$(hostname -I | awk '{print $1}')
+echo "=================================="
+echo "   Installation Task Complete     "
+echo "   Web UI: http://$IP/admin       "
+echo "=================================="
