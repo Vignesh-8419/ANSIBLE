@@ -8,6 +8,10 @@ echo "installed GIT"
 
 echo "downloading git"
 
+curl -O https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/pihole-customdns.sh
+
+chmod +x /root/pihole-customdns.sh
+
 git clone --depth 1 https://github.com/Vignesh-8419/pihole Pi-hole
 
 cd Pi-hole/automated\ install/
