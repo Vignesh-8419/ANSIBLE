@@ -26,6 +26,15 @@ echo "Interface           : $INTERFACE"
 echo "kube-rbac-proxy     : $KUBE_RBAC_PROXY_IMAGE"
 echo "============================================================"
 
+
+# Pre-flight check: ensure cgroup v2 is active
+if [ "$(stat -fc %T /sys/fs/cgroup/)" != "cgroup2fs" ]; then
+  echo "❌ ERROR: Host is not running cgroup v2."
+  echo "Please edit /etc/default/grub and add:"
+  echo 'systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false'
+  echo "Then run: grub2-mkconfig -o /boot/grub2/grub.cfg && reboot"
+  exit 1
+  
 # -----------------------------
 # 2. Install prerequisites
 # -----------------------------
