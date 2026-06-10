@@ -182,6 +182,16 @@ spec:
 EOF
 kubectl apply -f awx-instance.yaml
 
+echo "⏳ Waiting for AWX Deployment to be created..."
+for i in {1..60}; do
+    if kubectl get deployment awx-server -n "$NAMESPACE" >/dev/null 2>&1; then
+        echo "✅ AWX Deployment created."
+        break
+    fi
+    sleep 10
+done
+
+
 # -----------------------------
 # 15. Create Ingress
 # -----------------------------
