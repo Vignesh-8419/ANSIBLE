@@ -34,6 +34,8 @@ if [ "$(stat -fc %T /sys/fs/cgroup/)" != "cgroup2fs" ]; then
   echo 'systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false'
   echo "Then run: grub2-mkconfig -o /boot/grub2/grub.cfg && reboot"
   exit 1
+fi
+
   
 # -----------------------------
 # 2. Install prerequisites
