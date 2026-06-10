@@ -240,7 +240,6 @@ kubectl apply -f awx-ingress.yaml
 kubectl patch ingress awx-ingress -n "$NAMESPACE" --type='merge' -p \
 '{"metadata":{"annotations":{"traefik.ingress.kubernetes.io/router.entrypoints":"web,websecure"}}}' || true
 
-
 # -----------------------------
 # 16. Wait for AWX pods
 # -----------------------------
