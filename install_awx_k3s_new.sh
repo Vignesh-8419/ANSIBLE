@@ -182,6 +182,7 @@ spec:
 EOF
 kubectl apply -f awx-instance.yaml
 
+# Wait for Deployment to be created (prevents NotFound error)
 echo "⏳ Waiting for AWX Deployment to be created..."
 for i in {1..60}; do
     if kubectl get deployment awx-server -n "$NAMESPACE" >/dev/null 2>&1; then
@@ -191,6 +192,25 @@ for i in {1..60}; do
     sleep 10
 done
 
+# -----------------------------
+# 14a. Stream migration logs
+# -----------------------------
+echo "📜 Streaming AWX migration logs..."
+MIGRATION_POD=$(kubectl get pods -n "$NAMESPACE" \
+  -l app.kubernetes.io/name=awx-server-migration \
+  -o name | head -1 | cut -d/ -f2)
+
+if [ -n "$MIGRATION_POD" ]; then
+  echo "✅ Found migration pod: $MIGRATION_POD"
+  echo "⏳ Streaming logs until migrations finish..."
+  # Stream logs and save them to a file
+  kubectl logs -n "$NAMESPACE" "$MIGRATION_POD" -f | tee /tmp/awx-migration.log
+  # After stream ends, print the last line
+  echo "✅ Migration finished. Last line was:"
+  tail -n 1 /tmp/awx-migration.log
+else
+  echo "⚠️ No migration pod found yet. Continuing..."
+fi
 
 # -----------------------------
 # 15. Create Ingress
@@ -220,11 +240,13 @@ kubectl apply -f awx-ingress.yaml
 kubectl patch ingress awx-ingress -n "$NAMESPACE" --type='merge' -p \
 '{"metadata":{"annotations":{"traefik.ingress.kubernetes.io/router.entrypoints":"web,websecure"}}}' || true
 
+
 # -----------------------------
 # 16. Wait for AWX pods
 # -----------------------------
 echo "⏳ Waiting for AWX pods..."
 kubectl rollout status deployment/awx-server -n "$NAMESPACE" --timeout=1200s
+
 
 # -----------------------------
 # 17. Wait for AWX UI
