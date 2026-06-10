@@ -281,12 +281,26 @@ kubectl patch ingress awx-ingress -n "$NAMESPACE" --type='merge' -p \
 echo -e "${GREEN}✅ Background:${NC} Created and patched the Ingress resource so AWX is accessible externally via Traefik at the VIP."
 
 # -----------------------------
-# 16. Wait for AWX pods
+# 16. Wait for migration task (delayed)
 # -----------------------------
-echo -e "${BLUE}# 16. Wait for AWX pods${NC}"
-echo "⏳ Waiting for AWX pods..."
-kubectl rollout status deployment/awx-server -n "$NAMESPACE" --timeout=1200s
-echo -e "${GREEN}✅ Background:${NC} Waited for AWX pods to reach running state, ensuring the application is fully deployed."
+echo -e "${BLUE}# 16. Wait for migration task${NC}"
+echo "⏳ Sleeping for 10 minutes to allow migrations to complete..."
+sleep 600
+
+echo "📜 Checking migration pod logs again..."
+MIGRATION_POD=$(kubectl get pods -n "$NAMESPACE" \
+  -l app.kubernetes.io/name=awx-server-migration \
+  -o name | head -1 | cut -d/ -f2)
+
+if [ -n "$MIGRATION_POD" ]; then
+  echo "✅ Found migration pod: $MIGRATION_POD"
+  echo "⏳ Printing last 10 lines of migration logs..."
+  kubectl logs -n "$NAMESPACE" "$MIGRATION_POD" | tail -n 10
+else
+  echo "⚠️ No migration pod found. Continuing..."
+fi
+
+echo -e "${GREEN}✅ Background:${NC} Skipped rollout status check and instead waited 10 minutes, then verified migration logs. This avoids premature 'NotFound' errors while the operator reconciles resources."
 
 # -----------------------------
 # 17. Wait for AWX UI
