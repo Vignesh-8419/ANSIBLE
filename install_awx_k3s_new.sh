@@ -31,7 +31,8 @@ echo "============================================================"
 if [ "$(stat -fc %T /sys/fs/cgroup/)" != "cgroup2fs" ]; then
   echo "❌ ERROR: Host is not running cgroup v2."
   echo "Please edit /etc/default/grub and add:"
-  echo 'systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false'
+  echo 'GRUB_CMDLINE_LINUX="rd.lvm.lv=rl/root rd.lvm.lv=rl/swap resume=/dev/mapper/rl-swap loglevel=7 systemd.show_status=true console=ttyS0,9600 console=tty0 systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false"
+'
   echo "Then run: grub2-mkconfig -o /boot/grub2/grub.cfg && reboot"
   exit 1
 fi
