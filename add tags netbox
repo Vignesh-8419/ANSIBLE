@@ -1,14 +1,14 @@
-curl -k -H "Authorization: Token f1a38ec5a79cbd13994e1d44658d3d62ff83f734" https://192.168.253.134/api/dcim/interfaces/?device_id=2
+curl -k -H "Authorization: Token 066273001ddc82c7a004ee2f730b62e4c0b067a0" https://192.168.253.134/api/dcim/interfaces/?device_id=2
 	 
 # Create tag (if not already created)
 curl -X POST https://192.168.253.134/api/extras/tags/ \
-  -H "Authorization: Token f1a38ec5a79cbd13994e1d44658d3d62ff83f734" \
+  -H "Authorization: Token 066273001ddc82c7a004ee2f730b62e4c0b067a0" \
   -H "Content-Type: application/json" \
   -d '{"name": "new-build-rockyos", "slug": "new-build-rockyos"}'
 
 
 curl -X POST -k "https://192.168.253.134/api/dcim/device-roles/" \
-  -H "Authorization: Token f1a38ec5a79cbd13994e1d44658d3d62ff83f734" \
+  -H "Authorization: Token 066273001ddc82c7a004ee2f730b62e4c0b067a0" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Server",
@@ -18,7 +18,7 @@ curl -X POST -k "https://192.168.253.134/api/dcim/device-roles/" \
 
 
 curl -X POST -k "https://192.168.253.134/api/dcim/manufacturers/" \
-  -H "Authorization: Token f1a38ec5a79cbd13994e1d44658d3d62ff83f734" \
+  -H "Authorization: Token 066273001ddc82c7a004ee2f730b62e4c0b067a0" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Generic",
@@ -26,7 +26,7 @@ curl -X POST -k "https://192.168.253.134/api/dcim/manufacturers/" \
   }'
 
 curl -X POST -k "https://192.168.253.134/api/dcim/device-types/" \
-  -H "Authorization: Token f1a38ec5a79cbd13994e1d44658d3d62ff83f734" \
+  -H "Authorization: Token 066273001ddc82c7a004ee2f730b62e4c0b067a0" \
   -H "Content-Type: application/json" \
   -d '{
     "manufacturer": 1,
@@ -40,7 +40,7 @@ curl -X POST -k "https://192.168.253.134/api/dcim/device-types/" \
 
 # NetBox API URL and token
 NETBOX_URL="https://192.168.253.134/api"
-TOKEN="f1a38ec5a79cbd13994e1d44658d3d62ff83f734"
+TOKEN="066273001ddc82c7a004ee2f730b62e4c0b067a0"
 
 # Site data
 SITE_NAME="VGS"
