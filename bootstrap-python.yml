@@ -14,7 +14,7 @@
     - name: Install Python 3.12
       raw: |
         dnf install -y python3.12
-      when: python39_check.rc != 0
+      when: python3_12_check.rc != 0
 
     - name: Set Python interpreter for subsequent tasks
       set_fact:
