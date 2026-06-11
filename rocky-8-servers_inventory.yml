@@ -1,7 +1,7 @@
 ---
 plugin: netbox.netbox.nb_inventory
 api_endpoint: https://192.168.253.134
-token: af1c7f0bd49b4785f425fb65f06ad48c6979cf77
+token: 066273001ddc82c7a004ee2f730b62e4c0b067a0
 validate_certs: false
 timeout: 180
 
