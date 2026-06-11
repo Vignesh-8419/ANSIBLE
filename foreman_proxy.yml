@@ -1,6 +1,7 @@
 - name: Run Foreman proxy setup script from GitHub
   hosts: all
   become: true
+  gather_facts: false
   tasks:
 
     - name: Download foreman_proxy.sh from GitHub to remote host
