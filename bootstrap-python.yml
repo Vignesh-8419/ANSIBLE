@@ -1,27 +1,27 @@
 ---
-- name: Bootstrap Python 3.9 on managed hosts
+- name: Bootstrap Python 3.12 on managed hosts
   hosts: all
   gather_facts: false
   become: true
 
   tasks:
-    - name: Check if Python 3.9 is already installed
-      raw: test -x /usr/bin/python3.9
-      register: python39_check
+    - name: Check if Python 3.12 is already installed
+      raw: test -x /usr/bin/python3.12
+      register: python3_12_check
       changed_when: false
       failed_when: false
 
-    - name: Install Python 3.9
+    - name: Install Python 3.12
       raw: |
-        dnf install -y python39
+        dnf install -y python3.12
       when: python39_check.rc != 0
 
     - name: Set Python interpreter for subsequent tasks
       set_fact:
         ansible_python_interpreter: /usr/bin/python3.9
 
-    - name: Verify Python 3.9 installation
-      raw: /usr/bin/python3.9 --version
+    - name: Verify Python 3.12 installation
+      raw: /usr/bin/python3.12 --version
       register: python_version
 
     - name: Display installed version
