@@ -1,3 +1,5 @@
+---
 collections:
-#  - name: netbox.netbox
   - name: community.vmware
+  - name: netbox.netbox
+    version: "3.23.0"
