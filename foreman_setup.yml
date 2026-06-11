@@ -1,6 +1,7 @@
 - name: Run Foreman setup script from GitHub
   hosts: all
   become: true
+  gather_facts: false
   tasks:
 
     - name: Download foreman.sh from GitHub to remote host
