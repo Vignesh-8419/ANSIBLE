@@ -52,10 +52,22 @@ systemctl enable --now postgresql-15 redis
 
 log "Creating NetBox database"
 sudo -u postgres psql <<EOF
-DROP DATABASE IF EXISTS $DB_NAME;
-DROP USER IF EXISTS $DB_USER;
-CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';
-CREATE DATABASE $DB_NAME OWNER $DB_USER;
+DO \$\$
+BEGIN
+   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$DB_USER') THEN
+      CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';
+   END IF;
+END
+\$\$;
+
+DO \$\$
+BEGIN
+   IF NOT EXISTS (SELECT FROM pg_database WHERE datname = '$DB_NAME') THEN
+      CREATE DATABASE $DB_NAME OWNER $DB_USER;
+   END IF;
+END
+\$\$;
+
 ALTER SCHEMA public OWNER TO $DB_USER;
 EOF
 
@@ -122,12 +134,17 @@ log "Running migrations"
 redis-cli -n 0 flushdb
 redis-cli -n 1 flushdb
 
-python3 netbox/manage.py migrate
-python3 netbox/manage.py collectstatic --noinput
+DJANGO_SETTINGS_MODULE=netbox.settings python3 netbox/manage.py migrate
+DJANGO_SETTINGS_MODULE=netbox.settings python3 netbox/manage.py collectstatic --noinput
 
 # ---------------- ADMIN USER ----------------
 log "Creating admin user"
-echo "from django.contrib.auth import get_user_model; User=get_user_model(); User.objects.create_superuser('netadmin','admin@example.com','Netbox12345678')" | python3 netbox/manage.py shell
+DJANGO_SETTINGS_MODULE=netbox.settings python3 netbox/manage.py shell <<EOF
+from django.contrib.auth import get_user_model
+User = get_user_model()
+if not User.objects.filter(username="netadmin").exists():
+    User.objects.create_superuser("netadmin","admin@example.com","Netbox12345678")
+EOF
 
 # ---------------- SYSTEMD ----------------
 log "Installing systemd services"
@@ -135,7 +152,8 @@ log "Installing systemd services"
 cat <<EOF > /etc/systemd/system/netbox.service
 [Unit]
 Description=NetBox WSGI Service
-After=network.target
+After=network.target postgresql-15.service redis.service
+Requires=postgresql-15.service redis.service
 
 [Service]
 Environment="DJANGO_SETTINGS_MODULE=netbox.settings"
@@ -150,9 +168,11 @@ EOF
 cat <<EOF > /etc/systemd/system/netbox-worker.service
 [Unit]
 Description=NetBox RQ Worker
-After=network.target
+After=network.target postgresql-15.service redis.service
+Requires=postgresql-15.service redis.service
 
 [Service]
+Environment="DJANGO_SETTINGS_MODULE=netbox.settings"
 WorkingDirectory=$NETBOX_ROOT/netbox
 ExecStart=$NETBOX_ROOT/venv/bin/python3 manage.py rqworker
 Restart=always
