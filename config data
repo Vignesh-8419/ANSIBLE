@@ -148,7 +148,7 @@ patch-el8-context
 ===============================================================
 
 for TAG in "vmware-awx-context" "pxe-centos-context" "pxe-rockyos-context" "patch-context" "repo-config-context" "centostorocky-context" "patch-el8-context"; do
-  curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac5" \
+  curl -X POST -k -H "Authorization: Token 066273001ddc82c7a004ee2f730b62e4c0b067a0" \
   -H "Content-Type: application/json" \
   https://192.168.253.134/api/extras/tags/ \
   -d "{\"name\": \"$TAG\", \"slug\": \"$TAG\"}"
@@ -156,7 +156,7 @@ done
 
 #vmware-awx-context
 curl -X POST -k \
--H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac5" \
+-H "Authorization: Token 066273001ddc82c7a004ee2f730b62e4c0b067a0" \
 -H "Content-Type: application/json" \
 https://192.168.253.134/api/extras/config-contexts/ \
 -d '{
@@ -190,7 +190,7 @@ https://192.168.253.134/api/extras/config-contexts/ \
 
 
 #pxe-centos-context
-curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac5" \
+curl -X POST -k -H "Authorization: Token 066273001ddc82c7a004ee2f730b62e4c0b067a0" \
 -H "Content-Type: application/json" https://192.168.253.134/api/extras/config-contexts/ \
 -d '{
     "name": "pxe-centos-context", "weight": 1000, "tags": ["pxe-centos-context"],
@@ -204,7 +204,7 @@ curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac
 
 
 #pxe-rockyos-context
-curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac5" \
+curl -X POST -k -H "Authorization: Token 066273001ddc82c7a004ee2f730b62e4c0b067a0" \
 -H "Content-Type: application/json" https://192.168.253.134/api/extras/config-contexts/ \
 -d '{
     "name": "pxe-rockyos-context", "weight": 1000, "tags": ["pxe-rockyos-context"],
@@ -220,7 +220,7 @@ curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac
 
 
 #patch-context
-curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac5" \
+curl -X POST -k -H "Authorization: Token 066273001ddc82c7a004ee2f730b62e4c0b067a0" \
 -H "Content-Type: application/json" https://192.168.253.134/api/extras/config-contexts/ \
 -d '{
     "name": "patch-context", "weight": 1000, "tags": ["patch-context"],
@@ -238,7 +238,7 @@ curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac
 
 
 #repo-config-context
-curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac5" \
+curl -X POST -k -H "Authorization: Token 066273001ddc82c7a004ee2f730b62e4c0b067a0" \
 -H "Content-Type: application/json" https://192.168.253.134/api/extras/config-contexts/ \
 -d '{
     "name": "repo-config-context", "weight": 1000, "tags": ["repo-config-context"],
@@ -251,7 +251,7 @@ curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac
 
 
 #centostorocky-context
-curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac5" \
+curl -X POST -k -H "Authorization: Token 066273001ddc82c7a004ee2f730b62e4c0b067a0" \
 -H "Content-Type: application/json" https://192.168.253.134/api/extras/config-contexts/ \
 -d '{
     "name": "centostorocky-context", "weight": 1000, "tags": ["centostorocky-context"],
@@ -273,7 +273,7 @@ curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac
 
 
 #patch-el8-context
-curl -X POST -k -H "Authorization: Token e25d40b3982acdce31a6c964b0076b83f09cdac5" \
+curl -X POST -k -H "Authorization: Token 066273001ddc82c7a004ee2f730b62e4c0b067a0" \
 -H "Content-Type: application/json" https://192.168.253.134/api/extras/config-contexts/ \
 -d '{
     "name": "patch-el8-context", "weight": 1000, "tags": ["patch-el8-context"],
