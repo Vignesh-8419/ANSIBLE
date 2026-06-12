@@ -1,7 +1,7 @@
 ---
 plugin: netbox.netbox.nb_inventory
 api_endpoint: https://192.168.253.134
-token: 066273001ddc82c7a004ee2f730b62e4c0b067a0
+token: 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd
 validate_certs: false
 
 # 1. STOP THE SCHEMA FETCH
