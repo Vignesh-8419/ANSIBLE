@@ -154,29 +154,31 @@ EOF
 
 
 awx-manage shell <<'EOF'
-from awx.main.models import Organization, Project, JobTemplate, Inventory
+from awx.main.models import Project, JobTemplate
 
-# Existing objects
-org = Organization.objects.get(name="Default")
 project = Project.objects.get(name="Inventory-Git-Repo")
-inventory = Inventory.objects.get(name="Default")
 
-# Create Job Template if it doesn't already exist
-template, created = JobTemplate.objects.get_or_create(
-    name="GOLDENTEMPLATE_ROCKYOS_08",
-    defaults={
-        "project": project,
-        "inventory": inventory,
-        "playbook": "Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_08.yml",
-        "job_type": "run",
-    }
+jt, created = JobTemplate.objects.get_or_create(
+    name="GOLDENTEMPLATE_ROCKYOS_08"
 )
 
-# Sync existing project from Git
+jt.project = project
+jt.playbook = "Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_08.yml"
+jt.job_type = "run"
+
+# Prompt for inventory when launching
+jt.ask_inventory_on_launch = True
+
+# No default inventory
+jt.inventory = None
+
+jt.save()
+
+# Sync project
 project.update()
 
 if created:
-    print("DONE: Job Template created and project synced.")
+    print("DONE: Job Template created with inventory prompt enabled.")
 else:
-    print("DONE: Job Template already exists and project synced.")
+    print("DONE: Job Template updated with inventory prompt enabled.")
 EOF
