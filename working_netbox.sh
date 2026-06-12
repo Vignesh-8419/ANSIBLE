@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # ---------------- CONFIGURATION ----------------
-FQDN="rocky-08-02.vgs.com"
-IPADDRESS="192.168.253.134"
+FQDN="rocky-08-03.vgs.com"
+IPADDRESS="192.168.253.143"
 NETBOX_VERSION="v4.4.9"
 
 DB_NAME="netbox"
