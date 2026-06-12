@@ -182,3 +182,22 @@ if created:
 else:
     print("DONE: Job Template updated with inventory prompt enabled.")
 EOF
+
+
+===================
+===================
+If you want to hardcode an inventory instead of being prompted, change these lines:
+
+Remove:
+
+jt.ask_inventory_on_launch = True
+jt.inventory = None
+
+Replace with:
+
+from awx.main.models import Inventory
+
+inventory = Inventory.objects.get(name="rocky-8-servers")
+
+jt.inventory = inventory
+jt.ask_inventory_on_launch = False
