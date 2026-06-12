@@ -68,52 +68,8 @@ Example:
 
 ---
 
-# Step 2 – Create NetBox Tag
 
-## Purpose
-
-Creates a reusable tag for newly provisioned Rocky Linux systems.
-
-### Tag Details
-
-| Property | Value             |
-| -------- | ----------------- |
-| Name     | new-build-rockyos |
-| Slug     | new-build-rockyos |
-
-## Command
-
-```bash
-curl -X POST \
--k \
-"https://192.168.253.143/api/extras/tags/" \
--H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
--H "Content-Type: application/json" \
--d '{
-  "name": "new-build-rockyos",
-  "slug": "new-build-rockyos"
-}'
-```
-
-## Verification
-
-Navigate to:
-
-```text
-NetBox → Organization → Tags
-```
-
-Verify:
-
-```text
-new-build-rockyos
-```
-
-exists.
-
----
-
-# Step 3 – Create Device Role
+# Step 2 – Create Device Role
 
 ## Purpose
 
@@ -158,7 +114,7 @@ exists.
 
 ---
 
-# Step 4 – Create Manufacturer
+# Step 3 – Create Manufacturer
 
 ## Purpose
 
@@ -203,7 +159,7 @@ exists.
 
 ---
 
-# Step 5 – Create Device Type
+# Step 4 – Create Device Type
 
 ## Purpose
 
@@ -250,7 +206,7 @@ exists.
 
 ---
 
-# Step 6 – Create Site
+# Step 5 – Create Site
 
 ## Purpose
 
