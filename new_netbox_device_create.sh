@@ -2,8 +2,8 @@
 set -e
 
 # ---------------- CONFIG ----------------
-NETBOX_URL="https://192.168.253.134/api"
-NETBOX_TOKEN="d16af27a4c533af154c60b7f6687f824f60183ba"
+NETBOX_URL="https://192.168.253.143/api"
+NETBOX_TOKEN="83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
 HDR="Content-Type: application/json"
 
 SSH_USER="root"
