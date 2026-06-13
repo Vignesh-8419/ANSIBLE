@@ -367,13 +367,13 @@ print_header "COPYING UEFI FILES"
 
 mkdir -p /var/lib/tftpboot/grub2
 
-sshpass -p '${SSH_PASSWORD}' scp \
+sshpass -p 'Root@123' scp \
 -o StrictHostKeyChecking=no \
 -o UserKnownHostsFile=/dev/null \
 root@${FOREMAN_SERVER}:/boot/efi/EFI/rocky/shimx64.efi \
 /var/lib/tftpboot/grub2/
 
-sshpass -p '${SSH_PASSWORD}' scp \
+sshpass -p 'Root@123' scp \
 -o StrictHostKeyChecking=no \
 -o UserKnownHostsFile=/dev/null \
 root@${FOREMAN_SERVER}:/boot/efi/EFI/rocky/grub.cfg \
