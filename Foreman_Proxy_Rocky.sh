@@ -295,7 +295,10 @@ foreman-installer \
   --foreman-proxy-oauth-consumer-key "${OAUTH_KEY}" \
   --foreman-proxy-oauth-consumer-secret "${OAUTH_SECRET}" \
   --foreman-proxy-tftp true \
-  --foreman-proxy-tftp-servername "${PROXY_SERVER}"
+  --foreman-proxy-tftp-servername "${PROXY_SERVER}" \
+  --enable-foreman-proxy-plugin-tftp true \
+  --enable-foreman-proxy-plugin-templates true \
+  --foreman-proxy-httpboot true
 
 print_success "Smart Proxy configured"
 
