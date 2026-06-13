@@ -322,13 +322,14 @@ foreman-installer \
   --scenario katello \
   --foreman-proxy-dhcp true \
   --foreman-proxy-dhcp-managed true \
-  --foreman-proxy-dhcp-server "${FQDN_HOST}" \
+  --foreman-proxy-dhcp-server "rocky-08-01.vgs.com" \
+  --foreman-proxy-dhcp-interface "ens192" \
   --foreman-proxy-dhcp-config "/etc/dhcp/dhcpd.conf" \
   --foreman-proxy-dhcp-leases "/var/lib/dhcpd/dhcpd.leases" \
   --foreman-proxy-tftp true \
   --foreman-proxy-tftp-managed true \
   --foreman-proxy-tftp-root "/var/lib/tftpboot" \
-  --foreman-proxy-tftp-servername "${FQDN_HOST}" \
+  --foreman-proxy-tftp-servername "rocky-08-01.vgs.com" \
   --foreman-proxy-templates true
 
 ##############################################
