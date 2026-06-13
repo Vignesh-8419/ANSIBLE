@@ -308,11 +308,12 @@ print_success "Proxy packages installed"
 
 EOF
 
-##############################################
-# Append Smart Proxy Configuration Section
-##############################################
-
 cat >> /tmp/proxy_remote.sh <<EOF
+OAUTH_KEY="${OAUTH_KEY}"
+OAUTH_SECRET="${OAUTH_SECRET}"
+EOF
+
+cat >> /tmp/proxy_remote.sh <<'EOF'
 
 ##############################################
 # STEP 6: CONFIGURING SMART PROXY
@@ -322,7 +323,7 @@ print_header "CONFIGURING SMART PROXY"
 
 print_step "Running Foreman installer..."
 
-INTERFACE=\$(ip route | awk '/default/ {print \$5; exit}')
+INTERFACE=$(ip route | awk '/default/ {print $5; exit}')
 
 foreman-installer \
   --scenario foreman-proxy-content \
