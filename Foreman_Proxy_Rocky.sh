@@ -290,15 +290,11 @@ foreman-installer \
   --certs-tar-file "/root/${PROXY_SERVER}-certs.tar.gz" \
   --foreman-proxy-register-in-foreman true \
   --foreman-proxy-foreman-base-url "https://${FOREMAN_SERVER}" \
-  --foreman-proxy-trusted-hosts "${FOREMAN_SERVER}" \
-  --foreman-proxy-trusted-hosts "${PROXY_SERVER}" \
   --foreman-proxy-oauth-consumer-key "${OAUTH_KEY}" \
   --foreman-proxy-oauth-consumer-secret "${OAUTH_SECRET}" \
   --foreman-proxy-tftp true \
-  --foreman-proxy-tftp-servername "${PROXY_SERVER}" \
   --enable-foreman-proxy-plugin-tftp true \
-  --enable-foreman-proxy-plugin-templates true \
-  --foreman-proxy-httpboot true
+  --enable-foreman-proxy-plugin-templates true
 
 print_success "Smart Proxy configured"
 
