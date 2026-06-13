@@ -322,16 +322,25 @@ print_header "CONFIGURING SMART PROXY"
 
 print_step "Running Foreman installer..."
 
+INTERFACE=$(ip route | awk '/default/ {print $5; exit}')
+
 foreman-installer \
   --scenario foreman-proxy-content \
   --certs-tar-file "/root/${PROXY_SERVER}-certs.tar.gz" \
   --foreman-proxy-register-in-foreman true \
-  --foreman-proxy-foreman-base-url "https://${FOREMAN_SERVER}" \
+  --foreman-proxy-foreman-base-url "https://rocky-08-01.vgs.com" \
+  --foreman-proxy-trusted-hosts "rocky-08-01.vgs.com" \
+  --foreman-proxy-trusted-hosts "rocky-08-02.vgs.com" \
   --foreman-proxy-oauth-consumer-key "${OAUTH_KEY}" \
   --foreman-proxy-oauth-consumer-secret "${OAUTH_SECRET}" \
+  --foreman-proxy-dhcp true \
+  --foreman-proxy-dhcp-interface "${INTERFACE}" \
+  --foreman-proxy-dns true \
+  --foreman-proxy-dns-interface "${INTERFACE}" \
   --foreman-proxy-tftp true \
-  --enable-foreman-proxy-plugin-tftp true \
-  --enable-foreman-proxy-plugin-templates true
+  --foreman-proxy-tftp-managed true \
+  --foreman-proxy-tftp-root "/var/lib/tftpboot" \
+  --foreman-proxy-tftp-servername "rocky-08-02.vgs.com"
 
 print_success "Smart Proxy configured"
 
