@@ -221,7 +221,7 @@ ens192
 ### Cluster
 
 ```text
-VMware-Production
+rocky-8-servers
 ```
 
 ---
