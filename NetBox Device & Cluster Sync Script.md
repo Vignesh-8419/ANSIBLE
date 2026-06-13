@@ -244,6 +244,8 @@ SITE_ID=1
 DEVICETYPE_ID=1
 DEVICEROLE_ID=1
 
+yum install sshpass -y
+
 # ---------------- HELPERS ----------------
 slugify() {
     echo "$1" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | sed 's/[^a-z0-9-]//g'
