@@ -127,7 +127,7 @@ cat > /tmp/proxy_remote.sh <<'EOF'
 #!/bin/bash
 set -euo pipefail
 
-export TERM=\${TERM:-xterm}
+export TERM=${TERM:-xterm}
 
 FOREMAN_SERVER="${FOREMAN_SERVER}"
 FOREMAN_IP="${FOREMAN_IP}"
@@ -143,25 +143,25 @@ NC='\033[0m'
 
 print_header() {
     echo
-    echo -e "\${BLUE}============================================================\${NC}"
-    echo -e "\${CYAN}\$1\${NC}"
-    echo -e "\${BLUE}============================================================\${NC}"
+    echo -e "${BLUE}============================================================${NC}"
+    echo -e "${CYAN}$1${NC}"
+    echo -e "${BLUE}============================================================${NC}"
     echo
 }
 
 print_step() {
-    echo -e "\${YELLOW}[INFO]\${NC} \$1"
+    echo -e "${YELLOW}[INFO]${NC} $1"
 }
 
 print_success() {
-    echo -e "\${GREEN}[ OK ]\${NC} \$1"
+    echo -e "${GREEN}[ OK ]${NC} $1"
 }
 
 print_error() {
     echo -e "\${RED}[FAIL]\${NC} \$1"
 }
 
-trap 'print_error "Script failed at line \$LINENO"; exit 1' ERR
+trap 'print_error "Script failed at line $LINENO"; exit 1' ERR
 
 ##############################################
 # Host Entries
