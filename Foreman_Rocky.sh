@@ -303,7 +303,10 @@ print_header "STEP 10: CONFIGURING FOREMAN"
 
 print_step "Running Foreman installer..."
 
-foreman-installer --scenario katello
+foreman-installer \
+  --scenario katello \
+  --foreman-proxy-tftp true \
+  --foreman-proxy-templates true
 
 
 ##############################################
