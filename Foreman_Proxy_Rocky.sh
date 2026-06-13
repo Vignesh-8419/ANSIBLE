@@ -131,8 +131,15 @@ export TERM=${TERM:-xterm}
 
 FOREMAN_SERVER="rocky-08-01.vgs.com"
 FOREMAN_IP="192.168.253.133"
+
 PROXY_SERVER="rocky-08-02.vgs.com"
 PROXY_IP="192.168.253.134"
+
+REPO_MOUNT="//192.168.31.87/ISO"
+MOUNT_POINT="/var/www/html/repo"
+
+ISO_USERNAME="vigne"
+ISO_PASSWORD='Vigneshv12$'
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
