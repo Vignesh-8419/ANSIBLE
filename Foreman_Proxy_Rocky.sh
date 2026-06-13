@@ -181,18 +181,18 @@ print_success "/etc/hosts updated"
 print_header "PRE-CHECK: VERIFYING SYSTEM PATCH LEVEL"
 
 TARGET_KERNEL="4.18.0-553.132.1.el8_10.x86_64"
-CURRENT_KERNEL="$(uname -r)"
+CURRENT_KERNEL="\$(uname -r)"
 
-print_step "Current running kernel: ${CURRENT_KERNEL}"
-print_step "Required kernel level: ${TARGET_KERNEL}"
+print_step "Current running kernel: \${CURRENT_KERNEL}"
+print_step "Required kernel level: \${TARGET_KERNEL}"
 
-if [[ "${CURRENT_KERNEL}" == "${TARGET_KERNEL}" ]]; then
+if [[ "\${CURRENT_KERNEL}" == "\${TARGET_KERNEL}" ]]; then
     print_success "System is already at the required patch level."
     print_step "Proceeding with Foreman installation..."
 else
     echo
-    echo -e "${YELLOW}[INFO]${NC} System patch level does not match the required version."
-    echo -e "${YELLOW}[INFO]${NC} Upgrading system packages to obtain kernel ${TARGET_KERNEL}."
+    echo -e "\${YELLOW}[INFO]\${NC} System patch level does not match the required version."
+    echo -e "\${YELLOW}[INFO]\${NC} Upgrading system packages to obtain kernel \${TARGET_KERNEL}."
 
     print_step "Refreshing DNF metadata..."
     dnf makecache -y
@@ -200,14 +200,14 @@ else
     print_step "Installing all available updates..."
     dnf upgrade -y
 
-    NEWEST_KERNEL="$(rpm -q kernel --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' | sort -V | tail -1)"
+    NEWEST_KERNEL="\$(rpm -q kernel --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' | sort -V | tail -1)"
 
     echo
     echo -e "${GREEN}============================================================${NC}"
     echo -e "${GREEN}System patching completed successfully.${NC}"
-    echo -e "${GREEN}Latest installed kernel: ${NEWEST_KERNEL}${NC}"
+    echo -e "\${GREEN}Latest installed kernel: \${NEWEST_KERNEL}\${NC}"
 
-    if [[ "${NEWEST_KERNEL}" == "${TARGET_KERNEL}" ]]; then
+    if [[ "\${NEWEST_KERNEL}" == "\${TARGET_KERNEL}" ]]; then
         echo -e "${YELLOW}Please reboot the server to boot into ${TARGET_KERNEL} and run this script again.${NC}"
     else
         echo -e "${RED}Warning: Target kernel ${TARGET_KERNEL} was not installed.${NC}"
