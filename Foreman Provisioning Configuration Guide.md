@@ -87,7 +87,7 @@ Configured operating systems:
 Navigate to:
 
 ```
-Hosts → Templates → Provisioning Templates
+Hosts → Templates → Provisioning Templates (available on Foreman PXE UEFI Kickstart Templates.md)
 ```
 
 Filtered using keyword:
