@@ -6,6 +6,7 @@
     fqdn: "http-server-01.vgs.com"
     ssl_key:  "/etc/pki/tls/private/pvt.pem"
     ssl_cert: "/etc/pki/tls/certs/crt.pem"
+    ansible_python_interpreter: /usr/libexec/platform-python
 
   tasks:
     - name: Create directory and mount CIFS share
