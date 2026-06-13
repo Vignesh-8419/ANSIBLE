@@ -24,14 +24,8 @@
             state: mounted
 
     - name: Install required packages
-      yum:
-        name:
-          - httpd
-          - mod_ssl
-          - createrepo
-          - firewalld
-          - openssl
-        state: present
+      raw: |
+        dnf install -y httpd mod_ssl createrepo firewalld openssl
 
     - name: Start firewalld and allow HTTP/HTTPS
       block:
