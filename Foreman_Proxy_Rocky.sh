@@ -312,7 +312,7 @@ EOF
 # Append Smart Proxy Configuration Section
 ##############################################
 
-cat >> /tmp/proxy_remote.sh <<'EOF'
+cat >> /tmp/proxy_remote.sh <<EOF
 
 ##############################################
 # STEP 6: CONFIGURING SMART PROXY
