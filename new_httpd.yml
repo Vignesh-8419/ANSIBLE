@@ -1,5 +1,9 @@
+```yaml
 ---
+# ============================================================================
 # Play 1: Bootstrap Python 3.9
+# ============================================================================
+
 - name: Bootstrap Python 3.9 on Rocky 8
   hosts: all
   become: yes
@@ -16,8 +20,11 @@
       meta: reset_connection
 
 
-# Play 2: Configure HTTPS Repo Server
-- name: Rocky 8 Repo Server → HTTPS + HTTP to HTTPS redirect
+# ============================================================================
+# Play 2: Configure Rocky 8 HTTPS Repo Server
+# ============================================================================
+
+- name: Rocky 8 Repo Server → HTTPS + HTTP to HTTPS Redirect
   hosts: all
   become: yes
   gather_facts: yes
@@ -31,6 +38,10 @@
 
   tasks:
 
+    ##########################################################################
+    # Install Packages
+    ##########################################################################
+
     - name: Install required packages
       raw: |
         dnf install -y \
@@ -40,8 +51,14 @@
           firewalld \
           openssl \
           cifs-utils
+      changed_when: false
 
-    - name: Create repo directory
+
+    ##########################################################################
+    # Repository Mount
+    ##########################################################################
+
+    - name: Create repository directory
       file:
         path: /var/www/html/repo
         state: directory
@@ -55,9 +72,10 @@
         opts: "username=vigne,password=Vigneshv12$,rw,dir_mode=0777,file_mode=0777,vers=3.0"
         state: mounted
 
-    - name: Start and enable firewalld
-      raw: |
-        systemctl enable --now firewalld
+
+    ##########################################################################
+    # Firewalld
+    ##########################################################################
 
     - name: Configure firewalld
       raw: |
@@ -70,6 +88,12 @@
           || firewall-cmd --permanent --add-service=https
 
         firewall-cmd --reload
+      changed_when: false
+
+
+    ##########################################################################
+    # Apache Access Configuration
+    ##########################################################################
 
     - name: Allow access to /var/www/html
       blockinfile:
@@ -81,6 +105,12 @@
               AllowOverride None
               Require all granted
           </Directory>
+      notify: restart httpd
+
+
+    ##########################################################################
+    # SSL Certificate
+    ##########################################################################
 
     - name: Generate private key
       command: openssl genrsa -out {{ ssl_key }} 2048
@@ -101,6 +131,11 @@
         path: "{{ ssl_key }}"
         mode: '0600'
 
+
+    ##########################################################################
+    # SSL Virtual Host
+    ##########################################################################
+
     - name: Configure SSL VirtualHost
       blockinfile:
         path: /etc/httpd/conf.d/ssl.conf
@@ -113,6 +148,11 @@
           SSLCertificateKeyFile {{ ssl_key }}
       notify: restart httpd
 
+
+    ##########################################################################
+    # HTTP → HTTPS Redirect
+    ##########################################################################
+
     - name: Configure HTTP to HTTPS redirect
       copy:
         dest: /etc/httpd/conf.d/ssl-redirect.conf
@@ -120,15 +160,14 @@
         content: |
           <VirtualHost *:80>
               ServerName {{ fqdn }}
-              RewriteEngine On
-              RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [L,R=301]
+              Redirect permanent / https://{{ fqdn }}/
           </VirtualHost>
       notify: restart httpd
 
-    - name: Remove broken mod_rewrite symlink
-      file:
-        path: /etc/httpd/conf.modules.d/00-rewrite.conf
-        state: absent
+
+    ##########################################################################
+    # Apache
+    ##########################################################################
 
     - name: Start and enable Apache
       service:
@@ -136,14 +175,22 @@
         state: started
         enabled: yes
 
+    - name: Apply pending Apache changes
+      meta: flush_handlers
+
     - name: Verify Apache configuration
       command: apachectl configtest
       register: apache_test
       changed_when: false
 
-    - name: Test HTTP to HTTPS redirect
+
+    ##########################################################################
+    # Validation
+    ##########################################################################
+
+    - name: Test HTTP → HTTPS redirect
       uri:
-        url: "http://{{ fqdn }}"
+        url: "http://192.168.253.136"
         follow_redirects: none
         validate_certs: no
       register: redirect_test
@@ -156,11 +203,16 @@
           - redirect_test.status == 301
           - redirect_test.location is defined
           - "'https://' in redirect_test.location"
-        success_msg: "SUCCESS → HTTP redirects to HTTPS ({{ redirect_test.location }})"
-        fail_msg: "FAILED → HTTP redirect is not working"
+        success_msg: >
+          SUCCESS → HTTP redirects to HTTPS
+          ({{ redirect_test.location }})
+        fail_msg: >
+          FAILED → HTTP redirect is not working
+
 
   handlers:
     - name: restart httpd
       service:
         name: httpd
         state: restarted
+```
