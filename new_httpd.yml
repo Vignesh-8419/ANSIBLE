@@ -56,10 +56,14 @@
         state: mounted
 
     - name: Start and enable firewalld
-      service:
-        name: firewalld
-        state: started
-        enabled: yes
+      raw: |
+        systemctl enable --now firewalld
+
+    - name: Open HTTP and HTTPS in firewall
+      raw: |
+        firewall-cmd --permanent --add-service=http
+        firewall-cmd --permanent --add-service=https
+        firewall-cmd --reload
 
     - name: Allow HTTP and HTTPS through firewall
       firewalld:
