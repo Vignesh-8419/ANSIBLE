@@ -11,12 +11,12 @@ This repository contains custom Foreman PXE GRUB2 templates for automated Rocky 
 * Kickstart Source:
 
   ```
-  http://192.168.253.131/repo/rocky8/kickstart/rockyos.cfg
+  http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg
   ```
 * Installation Repository:
 
   ```
-  http://192.168.253.131/repo/rocky8/
+  http://192.168.253.136/repo/rocky8/
   ```
 
 ```erb
@@ -32,8 +32,8 @@ set timeout=5
 
 menuentry 'Install RockyOS via Kickstart' {
     linuxefi /rockyos/vmlinuz \
-        inst.stage2=http://192.168.253.131/repo/rocky8/ \
-        inst.ks=http://192.168.253.131/repo/rocky8/kickstart/rockyos.cfg \
+        inst.stage2=http://192.168.253.136/repo/rocky8/ \
+        inst.ks=http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg \
         inst.text inst.default_fstype=ext4 \
         inst.ks.device=bootif BOOTIF=01-${net_default_mac} \
         hostname=<%= @host.name %>
@@ -89,7 +89,7 @@ menuentry 'Install CentOS via Kickstart' {
 Ensure the following repositories are accessible:
 
 ```text
-http://192.168.253.131/repo/rocky8/
+http://192.168.253.136/repo/rocky8/
 http://192.168.253.136/repo/centos/
 ```
 
