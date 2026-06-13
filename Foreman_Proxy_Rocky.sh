@@ -123,7 +123,7 @@ print_success "OAuth credentials extracted"
 
 print_header "BUILDING REMOTE INSTALLER"
 
-cat > /tmp/proxy_remote.sh <<EOF
+cat > /tmp/proxy_remote.sh <<'EOF'
 #!/bin/bash
 set -euo pipefail
 
@@ -203,21 +203,21 @@ else
     NEWEST_KERNEL="\$(rpm -q kernel --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' | sort -V | tail -1)"
 
     echo
-    echo -e "${GREEN}============================================================${NC}"
-    echo -e "${GREEN}System patching completed successfully.${NC}"
+    echo -e "\${GREEN}============================================================\${NC}"
+    echo -e "\${GREEN}System patching completed successfully.\${NC}"
     echo -e "\${GREEN}Latest installed kernel: \${NEWEST_KERNEL}\${NC}"
-
+    
     if [[ "\${NEWEST_KERNEL}" == "\${TARGET_KERNEL}" ]]; then
-        echo -e "${YELLOW}Please reboot the server to boot into ${TARGET_KERNEL} and run this script again.${NC}"
+        echo -e "\${YELLOW}Please reboot the server to boot into \${TARGET_KERNEL} and run this script again.\${NC}"
     else
-        echo -e "${RED}Warning: Target kernel ${TARGET_KERNEL} was not installed.${NC}"
-        echo -e "${RED}Installed latest kernel: ${NEWEST_KERNEL}${NC}"
-        echo -e "${RED}Verify that the correct Rocky Linux 8.10 repositories are enabled.${NC}"
+        echo -e "\${RED}Warning: Target kernel \${TARGET_KERNEL} was not installed.\${NC}"
+        echo -e "\${RED}Installed latest kernel: \${NEWEST_KERNEL}\${NC}"
+        echo -e "\${RED}Verify that the correct Rocky Linux 8.10 repositories are enabled.\${NC}"
     fi
-
-    echo -e "${GREEN}============================================================${NC}"
+    
+    echo -e "\${GREEN}============================================================\${NC}"
     echo
-
+    
     exit 0
 fi
 
