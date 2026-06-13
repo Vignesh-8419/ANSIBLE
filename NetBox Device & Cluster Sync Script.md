@@ -218,7 +218,19 @@ ens192
 192.168.253.100/24
 ```
 
-### Cluster
+### Cluster Type
+
+```text
+Physical
+```
+
+### Cluster Group name
+
+```text
+rocky-8-servers
+```
+
+### Cluster name 
 
 ```text
 rocky-8-servers
