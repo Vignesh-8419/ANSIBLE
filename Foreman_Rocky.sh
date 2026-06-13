@@ -97,36 +97,45 @@ fi
 
 print_header "PRE-CHECK: VERIFYING SYSTEM PATCH LEVEL"
 
-print_step "Refreshing DNF metadata..."
-dnf makecache -y >/dev/null 2>&1
+TARGET_KERNEL="4.18.0-553.132.1.el8_10.x86_64"
+CURRENT_KERNEL="$(uname -r)"
 
-print_step "Checking whether updates are available..."
+print_step "Current running kernel: ${CURRENT_KERNEL}"
+print_step "Required kernel level: ${TARGET_KERNEL}"
 
-if dnf check-update >/dev/null 2>&1; then
-    print_success "Server is already running the latest packages."
+if [[ "${CURRENT_KERNEL}" == "${TARGET_KERNEL}" ]]; then
+    print_success "System is already at the required patch level."
     print_step "Proceeding with Foreman installation..."
 else
-    DNF_RC=$?
+    echo
+    echo -e "${YELLOW}[INFO]${NC} System patch level does not match the required version."
+    echo -e "${YELLOW}[INFO]${NC} Upgrading system packages to obtain kernel ${TARGET_KERNEL}."
 
-    if [[ ${DNF_RC} -eq 100 ]]; then
-        echo
-        echo -e "${YELLOW}[INFO]${NC} Updates are available."
+    print_step "Refreshing DNF metadata..."
+    dnf makecache -y
 
-        print_step "Installing all available updates..."
-        dnf upgrade -y
+    print_step "Installing all available updates..."
+    dnf upgrade -y
 
-        echo
-        echo -e "${GREEN}============================================================${NC}"
-        echo -e "${GREEN}System patching completed successfully.${NC}"
-        echo -e "${YELLOW}Please reboot the server and run this script again.${NC}"
-        echo -e "${GREEN}============================================================${NC}"
-        echo
+    NEWEST_KERNEL="$(rpm -q kernel --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' | sort -V | tail -1)"
 
-        exit 0
+    echo
+    echo -e "${GREEN}============================================================${NC}"
+    echo -e "${GREEN}System patching completed successfully.${NC}"
+    echo -e "${GREEN}Latest installed kernel: ${NEWEST_KERNEL}${NC}"
+
+    if [[ "${NEWEST_KERNEL}" == "${TARGET_KERNEL}" ]]; then
+        echo -e "${YELLOW}Please reboot the server to boot into ${TARGET_KERNEL} and run this script again.${NC}"
     else
-        print_error "Unable to determine update status (DNF returned code ${DNF_RC})."
-        exit 1
+        echo -e "${RED}Warning: Target kernel ${TARGET_KERNEL} was not installed.${NC}"
+        echo -e "${RED}Installed latest kernel: ${NEWEST_KERNEL}${NC}"
+        echo -e "${RED}Verify that the correct Rocky Linux 8.10 repositories are enabled.${NC}"
     fi
+
+    echo -e "${GREEN}============================================================${NC}"
+    echo
+
+    exit 0
 fi
 
 ##############################################
