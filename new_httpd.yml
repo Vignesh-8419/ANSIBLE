@@ -106,17 +106,18 @@
       register: apache_test
       changed_when: false
 
-    - name: Verify HTTP access locally
-      command: curl -I http://127.0.0.1
+    - name: Verify HTTP access to repository locally
+      command: curl -I http://127.0.0.1/repo/
       register: http_test
       changed_when: false
 
-    - name: Confirm HTTP access works
+    - name: Confirm HTTP repository access works
       assert:
         that:
-          - "'200 OK' in http_test.stdout"
-        success_msg: "SUCCESS → HTTP web server is accessible."
-        fail_msg: "FAILED → HTTP web server is not responding correctly."
+          - http_test.rc == 0
+          - "'HTTP/1.1 200' in http_test.stdout"
+        success_msg: "SUCCESS → HTTP repository is accessible."
+        fail_msg: "FAILED → HTTP repository is not accessible. Output: {{ http_test.stdout }}"
 
   handlers:
     - name: restart httpd
