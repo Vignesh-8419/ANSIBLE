@@ -59,21 +59,17 @@
       raw: |
         systemctl enable --now firewalld
 
-    - name: Open HTTP and HTTPS in firewall
+    - name: Configure firewalld
       raw: |
-        firewall-cmd --permanent --add-service=http
-        firewall-cmd --permanent --add-service=https
-        firewall-cmd --reload
+        systemctl enable --now firewalld
 
-    - name: Allow HTTP and HTTPS through firewall
-      firewalld:
-        service: "{{ item }}"
-        permanent: yes
-        immediate: yes
-        state: enabled
-      loop:
-        - http
-        - https
+        firewall-cmd --permanent --query-service=http \
+          || firewall-cmd --permanent --add-service=http
+
+        firewall-cmd --permanent --query-service=https \
+          || firewall-cmd --permanent --add-service=https
+
+        firewall-cmd --reload
 
     - name: Allow access to /var/www/html
       blockinfile:
