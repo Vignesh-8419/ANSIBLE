@@ -5,8 +5,8 @@
 # ANSI Color Codes for beautiful terminal/screen output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
+BLUE='\033[0;33m'
+YELLOW='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Print Header Function to standardize output across tasks
@@ -14,11 +14,11 @@ print_header() {
     local message="$1"
     local type="$2"
     case "$type" in
-        "info")    echo -e "${BLUE}[INFO] ${message}${NC}" ;;
+        "info")    echo -e "${YELLOW}[INFO] ${message}${NC}" ;;
         "success") echo -e "${GREEN}[SUCCESS] ${message}${NC}" ;;
-        "warn")    echo -e "${YELLOW}[WARN] ${message}${NC}" ;;
+        "warn")    echo -e "${BLUE}[WARN] ${message}${NC}" ;;
         "error")   echo -e "${RED}[ERROR] ${message}${NC}" ;;
-        *)         echo -e "${BLUE}=== ${message} ===${NC}" ;;
+        *)         echo -e "${YELLOW}=== ${message} ===${NC}" ;;
     esac
 }
 
