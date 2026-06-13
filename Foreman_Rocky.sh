@@ -305,6 +305,8 @@ print_step "Running Foreman installer..."
 
 foreman-installer \
   --scenario katello \
+  --foreman-proxy-dhcp true \
+  --foreman-proxy-dhcp-managed true \
   --foreman-proxy-tftp true \
   --foreman-proxy-templates true
 
