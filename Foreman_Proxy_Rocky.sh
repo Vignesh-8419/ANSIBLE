@@ -322,7 +322,7 @@ print_header "CONFIGURING SMART PROXY"
 
 print_step "Running Foreman installer..."
 
-INTERFACE=\$(ip route | awk '/default/ {print \$5; exit}')
+INTERFACE=$(ip route | awk '/default/ {print $5; exit}')
 
 foreman-installer \
   --scenario foreman-proxy-content \
@@ -334,9 +334,9 @@ foreman-installer \
   --foreman-proxy-oauth-consumer-key "${OAUTH_KEY}" \
   --foreman-proxy-oauth-consumer-secret "${OAUTH_SECRET}" \
   --foreman-proxy-dhcp true \
-  --foreman-proxy-dhcp-interface "\${INTERFACE}" \
+  --foreman-proxy-dhcp-interface "${INTERFACE}" \
   --foreman-proxy-dns true \
-  --foreman-proxy-dns-interface "\${INTERFACE}" \
+  --foreman-proxy-dns-interface "${INTERFACE}" \
   --foreman-proxy-tftp true \
   --foreman-proxy-tftp-managed true \
   --foreman-proxy-tftp-root "/var/lib/tftpboot" \
