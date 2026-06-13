@@ -276,7 +276,7 @@ Register host:
 
 ```bash
 subscription-manager register \
-  --org="Default Organization" \
+  --org="Default_Organization" \
   --activationkey="rocky8-prod-key"
 ```
 
