@@ -427,6 +427,20 @@ chmod +x /tmp/proxy_remote.sh
 print_success "Remote installer created"
 
 ##############################################
+# Remove Old Remote Installer
+##############################################
+
+print_header "REMOVING OLD REMOTE INSTALLER"
+
+sshpass -p "$SSH_PASSWORD" ssh \
+-o StrictHostKeyChecking=no \
+-o UserKnownHostsFile=/dev/null \
+root@"$PROXY_SERVER" \
+"rm -f /root/proxy_remote.sh"
+
+print_success "Old remote installer removed"
+
+##############################################
 # Transfer Files
 ##############################################
 
