@@ -2,6 +2,7 @@
 - name: Rocky 8 Repo Server → HTTPS + HTTP to HTTPS redirect (Final Working Version)
   hosts: all
   become: yes
+  gather_facts: no
   vars:
     fqdn: "http-server-01.vgs.com"
     ssl_key:  "/etc/pki/tls/private/pvt.pem"
