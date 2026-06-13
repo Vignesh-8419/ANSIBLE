@@ -310,14 +310,38 @@ print_success "Katello installed."
 
 print_header "STEP 10: CONFIGURING FOREMAN"
 
+print_step "Installing DHCP packages..."
+
+dnf install -y dhcp-server
+
+print_success "DHCP packages installed."
+
 print_step "Running Foreman installer..."
 
 foreman-installer \
   --scenario katello \
   --foreman-proxy-dhcp true \
   --foreman-proxy-dhcp-managed true \
+  --foreman-proxy-dhcp-server "${FQDN_HOST}" \
+  --foreman-proxy-dhcp-config "/etc/dhcp/dhcpd.conf" \
+  --foreman-proxy-dhcp-leases "/var/lib/dhcpd/dhcpd.leases" \
   --foreman-proxy-tftp true \
+  --foreman-proxy-tftp-managed true \
+  --foreman-proxy-tftp-root "/var/lib/tftpboot" \
+  --foreman-proxy-tftp-servername "${FQDN_HOST}" \
   --foreman-proxy-templates true
+
+##############################################
+# STEP 10A: VERIFY FOREMAN FEATURES
+##############################################
+
+print_header "STEP 10A: VERIFYING FOREMAN FEATURES"
+
+sleep 30
+
+hammer proxy refresh-features --name "${FQDN_HOST}" || true
+
+print_success "Features refreshed."
 
 
 ##############################################
@@ -333,10 +357,20 @@ firewall-cmd --add-service=tftp --permanent
 firewall-cmd --add-service=http --permanent
 firewall-cmd --add-service=https --permanent
 firewall-cmd --add-port=8140/tcp --permanent
+firewall-cmd --add-port=67/udp --permanent
+firewall-cmd --add-port=68/udp --permanent
+firewall-cmd --add-port=69/udp --permanent
 
 firewall-cmd --reload
 
 print_success "Firewall configuration completed."
+
+print_step "Starting DHCP service..."
+
+systemctl enable dhcpd
+systemctl restart dhcpd
+
+print_success "DHCP service started."
 
 ##############################################
 # Configure TFTP Boot Files
