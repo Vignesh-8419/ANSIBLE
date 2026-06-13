@@ -20,10 +20,10 @@
 
 
 # ============================================================================
-# Play 2: Configure Rocky 8 HTTPS Repo Server
+# Play 2: Configure HTTP Repository Server
 # ============================================================================
 
-- name: Rocky 8 Repo Server → HTTPS + HTTP to HTTPS Redirect
+- name: Configure Rocky 8 HTTP Repo Server
   hosts: all
   become: yes
   gather_facts: yes
@@ -31,31 +31,17 @@
   vars:
     ansible_python_interpreter: /usr/bin/python3.9
 
-    fqdn: "http-server-01.vgs.com"
-    ssl_key: "/etc/pki/tls/private/pvt.pem"
-    ssl_cert: "/etc/pki/tls/certs/crt.pem"
-
   tasks:
-
-    ##########################################################################
-    # Install Packages
-    ##########################################################################
 
     - name: Install required packages
       raw: |
         dnf install -y \
           httpd \
-          mod_ssl \
           createrepo \
           firewalld \
           openssl \
           cifs-utils
       changed_when: false
-
-
-    ##########################################################################
-    # Repository Mount
-    ##########################################################################
 
     - name: Create repository directory
       file:
@@ -71,11 +57,6 @@
         opts: "username=vigne,password=Vigneshv12$,rw,dir_mode=0777,file_mode=0777,vers=3.0"
         state: mounted
 
-
-    ##########################################################################
-    # Firewalld
-    ##########################################################################
-
     - name: Configure firewalld
       raw: |
         systemctl enable --now firewalld
@@ -83,16 +64,8 @@
         firewall-cmd --permanent --query-service=http \
           || firewall-cmd --permanent --add-service=http
 
-        firewall-cmd --permanent --query-service=https \
-          || firewall-cmd --permanent --add-service=https
-
         firewall-cmd --reload
       changed_when: false
-
-
-    ##########################################################################
-    # Apache Access Configuration
-    ##########################################################################
 
     - name: Allow access to /var/www/html
       blockinfile:
@@ -106,75 +79,13 @@
           </Directory>
       notify: restart httpd
 
-
-    ##########################################################################
-    # SSL Certificate
-    ##########################################################################
-
-    - name: Generate private key
-      command: openssl genrsa -out {{ ssl_key }} 2048
-      args:
-        creates: "{{ ssl_key }}"
-
-    - name: Generate self-signed certificate
-      command: >
-        openssl req -new -x509 -days 365
-        -key {{ ssl_key }}
-        -out {{ ssl_cert }}
-        -subj "/C=IN/ST=Tamil Nadu/L=Chennai/O=VGS.COM/OU=VGS.COM/CN={{ fqdn }}"
-      args:
-        creates: "{{ ssl_cert }}"
-
-    - name: Secure private key permissions
-      file:
-        path: "{{ ssl_key }}"
-        mode: '0600'
-
-
-    ##########################################################################
-    # SSL Virtual Host
-    ##########################################################################
-
-    - name: Configure SSL VirtualHost
-      blockinfile:
-        path: /etc/httpd/conf.d/ssl.conf
-        insertafter: "^<VirtualHost.*443>"
-        marker: "# {mark} ANSIBLE MANAGED SSL CONFIG"
-        block: |
-          ServerName {{ fqdn }}
-          SSLEngine on
-          SSLCertificateFile {{ ssl_cert }}
-          SSLCertificateKeyFile {{ ssl_key }}
-      notify: restart httpd
-
-
-    ##########################################################################
-    # HTTP → HTTPS Redirect
-    ##########################################################################
-
-    - name: Configure HTTP to HTTPS redirect
-      copy:
-        dest: /etc/httpd/conf.d/ssl-redirect.conf
-        mode: '0644'
-        content: |
-          <VirtualHost *:80>
-              ServerName {{ fqdn }}
-              Redirect permanent / https://{{ fqdn }}/
-          </VirtualHost>
-      notify: restart httpd
-
-
-    ##########################################################################
-    # Apache
-    ##########################################################################
-
     - name: Start and enable Apache
       service:
         name: httpd
         state: started
         enabled: yes
 
-    - name: Apply pending Apache changes
+    - name: Apply Apache changes
       meta: flush_handlers
 
     - name: Verify Apache configuration
@@ -182,32 +93,17 @@
       register: apache_test
       changed_when: false
 
+    - name: Verify HTTP access locally
+      command: curl -I http://127.0.0.1
+      register: http_test
+      changed_when: false
 
-    ##########################################################################
-    # Validation
-    ##########################################################################
-
-    - name: Test HTTP → HTTPS redirect
-      uri:
-        url: "http://192.168.253.136"
-        follow_redirects: none
-        validate_certs: no
-      register: redirect_test
-      delegate_to: localhost
-      ignore_errors: true
-
-    - name: Confirm redirect works
+    - name: Confirm HTTP access works
       assert:
         that:
-          - redirect_test.status == 301
-          - redirect_test.location is defined
-          - "'https://' in redirect_test.location"
-        success_msg: >
-          SUCCESS → HTTP redirects to HTTPS
-          ({{ redirect_test.location }})
-        fail_msg: >
-          FAILED → HTTP redirect is not working
-
+          - "'200 OK' in http_test.stdout"
+        success_msg: "SUCCESS → HTTP web server is accessible."
+        fail_msg: "FAILED → HTTP web server is not responding correctly."
 
   handlers:
     - name: restart httpd
