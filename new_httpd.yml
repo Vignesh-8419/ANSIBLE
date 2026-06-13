@@ -66,6 +66,19 @@
 
         firewall-cmd --reload
       changed_when: false
+    # Remove old HTTPS redirect configuration
+    - name: Remove old HTTPS redirect configuration
+      file:
+        path: /etc/httpd/conf.d/ssl-redirect.conf
+        state: absent
+      notify: restart httpd
+
+    # Remove SSL configuration
+    - name: Remove SSL configuration
+      file:
+        path: /etc/httpd/conf.d/ssl.conf
+        state: absent
+      notify: restart httpd
 
     - name: Allow access to /var/www/html
       blockinfile:
