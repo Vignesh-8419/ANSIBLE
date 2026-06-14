@@ -131,8 +131,8 @@ print_header "ENABLING REDIS 7.2 REPOSITORY"
 
 dnf install -y https://rpms.remirepo.net/enterprise/remi-release-8.rpm
 
-dnf module reset redis -y
-dnf module enable redis:remi-7.2 -y
+# Enable the specific remi repository containing newer Redis versions
+dnf config-manager --set-enabled remi
 
 ############################################################
 # INSTALL PACKAGES
