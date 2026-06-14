@@ -398,6 +398,27 @@ print_success "Foreman proxy services configured successfully."
 print_success "Foreman and Katello configuration completed."
 
 ##############################################
+# STEP 12: Cleanup - Unmount ISO Repository
+##############################################
+
+print_header "STEP 12: CLEANUP - UNMOUNTING ISO REPOSITORY"
+
+if findmnt -rno TARGET "$MOUNT_POINT" >/dev/null 2>&1; then
+    print_step "ISO is currently mounted at ${MOUNT_POINT}. Unmounting..."
+    
+    # Using lazy unmount (-l) ensures the script won't hang if a process is still looking at the directory
+    umount -l "$MOUNT_POINT"
+    
+    if ! findmnt -rno TARGET "$MOUNT_POINT" >/dev/null 2>&1; then
+        print_success "ISO share unmounted successfully."
+    else
+        print_error "Failed to completely unmount ISO share from ${MOUNT_POINT}."
+    fi
+else
+    print_success "ISO share is already unmounted or wasn't loaded."
+fi
+
+##############################################
 # Completion
 ##############################################
 
