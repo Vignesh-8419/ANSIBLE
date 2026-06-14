@@ -14,7 +14,7 @@
   tasks:
     - name: Display Target Environment Info
       ansible.builtin.debug:
-        msg: "Processing Agent Node Workflow for {{ inventory_hostname }} running Kernel {{ ansible_kernel }}"
+        msg: "Processing Agent Node Workflow for {{ inventory_hostname }}"
 
     - name: Create backup repository directory
       ansible.builtin.file:
@@ -37,10 +37,10 @@
             cmd: "mv {{ item.path }} /etc/yum.repos.d/{{ backup_dir_name }}/"
           loop: "{{ found_repos.files }}"
           when: found_repos.matched > 0
-          # Ansible needs explicitly bypassed tracking since we are manually shifting package configurations
           changed_when: true 
 
-    - name: Handle Repository Mounting and Local Config Profiles
+    # --- MAIN ENGINE BLOCK ---
+    - name: Main Patching Engine Lifecycle
       block:
         - name: Ensure target mount point directory exists
           ansible.builtin.file:
@@ -90,8 +90,37 @@
                 sslverify=0
                 module_hotfixes=true
 
+        - name: Flush package manager cache and build metadata tracking logs
+          ansible.builtin.dnf:
+            update_cache: true
+            clear_cache: true
+
+        - name: Start structural system patching
+          ansible.builtin.dnf:
+            name: "*"
+            state: latest
+            disablerepo: "*"
+            enablerepo: "rocky8-baseos,rocky8-appstream,rocky8-rhel-installed"
+            allow_erasing: true
+            exclude: "glibc*,libstdc++*,perl*,gcc*"
+          register: dnf_output
+
+        - name: Conditional Lifecycle Reboot Trigger
+          block:
+            - name: Schedule system reboot if updates occurred
+              ansible.builtin.reboot:
+                reboot_timeout: 600
+                msg: "Automated offline patching cycle completed by Ansible AWX. System rebooting."
+              when: dnf_output.changed
+              
+            - name: Notify no updates needed
+              ansible.builtin.debug:
+                msg: "No updates required. Node packages match repository snapshot exactly. No reboot required."
+              when: not dnf_output.changed
+
       rescue:
-        - name: [ROLLBACK] Restore original repos due to mount/profile failure
+        # Fixed: Added quotes around the bracketed name string to satisfy the YAML parser
+        - name: "[ROLLBACK] Restore original repos due to run failure"
           ansible.builtin.shell: |
             if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
                 mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
@@ -99,23 +128,8 @@
             fi
           failed_when: true # Ensures playbook correctly reports host failure in AWX dashboard
 
-    - name: Flush package manager cache and build metadata tracking logs
-      ansible.builtin.dnf:
-        update_cache: true
-        clear_cache: true
-
-    - name: Start structural system patching
-      ansible.builtin.dnf:
-        name: "*"
-        state: latest
-        disablerepo: "*"
-        enablerepo: "rocky8-baseos,rocky8-appstream,rocky8-rhel-installed"
-        allow_erasing: true
-        exclude: "glibc*,libstdc++*,perl*,gcc*"
-      register: dnf_output
-
-    - name: Baseline Rollback Operations (Cleanup Profiles & Umount)
       always:
+        # Fixed: Safely handles baseline rollbacks regardless of task success/failure
         - name: Purge temporary local repository profiles
           ansible.builtin.file:
             path: "/etc/yum.repos.d/{{ item }}"
@@ -137,16 +151,3 @@
           ansible.posix.mount:
             path: "{{ mount_point }}"
             state: unmounted
-
-    - name: Conditional Lifecycle Reboot Trigger
-      block:
-        - name: Schedule system reboot if updates occurred
-          ansible.builtin.reboot:
-            reboot_timeout: 600
-            msg: "Automated offline patching cycle completed by Ansible AWX. System rebooting."
-          when: dnf_output.changed
-          
-        - name: Notify no updates needed
-          ansible.builtin.debug:
-            msg: "No updates required. Node packages match repository snapshot exactly. No reboot required."
-          when: not dnf_output.changed
