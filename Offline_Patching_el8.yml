@@ -12,6 +12,21 @@
     backup_dir_name: "backup_repos_original"
 
   tasks:
+# --- PRE-TASKS / INFRASTRUCTURE VERIFICATION ---
+    - name: "[PRE-TASK] Ensure Default Gateway is present"
+      ansible.builtin.shell: |
+        if ! ip route show | grep -q '^default'; then
+            echo "Default gateway missing! Adding {{ default_gw }}..."
+            ip route add default via {{ default_gw }}
+            exit 2
+        else
+            echo "Default gateway already configured."
+            exit 0
+        fi
+      register: gw_check
+      failed_when: false
+      changed_when: gw_check.rc == 2
+
     - name: Display Target Environment Info
       ansible.builtin.debug:
         msg: "Processing Agent Node Workflow for {{ inventory_hostname }}"
