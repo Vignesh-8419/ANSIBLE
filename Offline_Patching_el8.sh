@@ -81,7 +81,6 @@ fi
 # THE TARGET CORE ENGINE (INJECTED WORKER)
 # -----------------------------------------------------------------------------
 node_lifecycle_worker() {
-    # Quoting 'EOF' prevents local master server bash shell expansion errors over SSH
     cat << 'EOF'
         set -e
 
@@ -91,7 +90,6 @@ node_lifecycle_worker() {
 
         log_node_info "Kernel Release: $(uname -r)"
 
-        # 1. Backup original repositories
         log_node_info "Backing up original repositories..."
         mkdir -p /etc/yum.repos.d/${BACKUP_DIR_NAME}
         
@@ -100,7 +98,6 @@ node_lifecycle_worker() {
         fi
         log_node_ok "Repository backup saved to /etc/yum.repos.d/${BACKUP_DIR_NAME}/"
 
-        # 2. Check and Mount CIFS Share
         log_node_info "Checking network ISO share mount status..."
         mkdir -p ${MOUNT_POINT}
         
@@ -122,7 +119,6 @@ node_lifecycle_worker() {
             log_node_ok "ISO share is already actively mounted."
         fi
 
-        # 3. Create Offline Repo Configurations
         log_node_info "Generating localized offline repository files..."
 
         cat <<REPO_EOF > /etc/yum.repos.d/rocky8-baseos.repo
@@ -157,17 +153,17 @@ REPO_EOF
 
         log_node_ok "Temporary repository configuration profiles applied."
 
-        # 4. Patch Execution with real-time streaming and dependency relaxation
         log_node_info "Flushing package manager tracking logs..."
         dnf clean all > /dev/null
         
+        log_node_info "Building isolated local metadata cache..."
+        dnf makecache --disablerepo=* --enablerepo=rocky8-baseos,rocky8-appstream,rocky8-rhel-installed > /dev/null
+
         log_node_info "Starting structural system patching..."
         
         TMP_LOG=$(mktemp)
-        
         set +e
-        # Using global exclusions explicitly to stop chasing the lagging baseline packages cleanly
-        dnf update -y --allowerasing --nobest -x glibc*,libstdc++*,perl*,gcc* 2>&1 | tee "$TMP_LOG"
+        dnf update -y --disablerepo=* --enablerepo=rocky8-baseos,rocky8-appstream,rocky8-rhel-installed --allowerasing --nobest -x glibc*,libstdc++*,perl*,gcc* 2>&1 | tee "$TMP_LOG"
         DNF_EXIT_CODE=${PIPESTATUS[0]}
         set -e
 
@@ -187,10 +183,7 @@ REPO_EOF
             fi
         fi
 
-        # 5. Restore Environment & Unmount
         log_node_info "Initiating system baseline rollback operations..."
-        
-        # Explicit target cleanup ensures isolation
         rm -f /etc/yum.repos.d/rocky8-baseos.repo \
               /etc/yum.repos.d/rocky8-appstream.repo \
               /etc/yum.repos.d/rocky8-rhel-installed.repo
@@ -209,7 +202,6 @@ REPO_EOF
         umount -l ${MOUNT_POINT} || true
         log_node_ok "Volume unmounted."
 
-        # 6. Reboot Strategy Handling
         if [ "$NEEDS_REBOOT" = true ]; then
             log_node_ok "Reboot required. Scheduling system reboot in 1 minute..."
             shutdown -r +1 "Automated offline patching cycle completed. System rebooting." &
@@ -225,91 +217,92 @@ EOF
 }
 
 # -----------------------------------------------------------------------------
-# RUN ORCHESTRATION PIPELINE (PARALLELIZED)
+# RUN ORCHESTRATION PIPELINE
 # -----------------------------------------------------------------------------
 print_header "OFFLINE INFRASTRUCTURE PATCHING ORCHESTRATOR"
 log_info "Targeting nodes: ${TARGET_NODES[*]}"
 echo ""
 
-# Temporary directory to keep isolated execution outputs
 LOG_DIR=$(mktemp -d)
 declare -A NODE_PIDS
 
+# 1. Touch all log files first so they exist immediately for our stream engine
+for NODE in "${TARGET_NODES[@]}"; do
+    NODE=$(echo "$NODE" | xargs)
+    touch "${LOG_DIR}/${NODE}.log"
+done
+
+# 2. Start the Live Stream Engine in the background
+# It reads lines from all logs dynamically and adds a clean [NODE] tag to each line
+log_info "Initializing live tracking streams..."
+echo "----------------------------------------------------------------------"
+tail -q -f "${LOG_DIR}"/*.log | while read -r line; do
+    echo -e "$line"
+done &
+STREAM_PID=$!
+
+# 3. Dispatch the Parallel Node Operations
 for NODE in "${TARGET_NODES[@]}"; do
     NODE=$(echo "$NODE" | xargs)
     
-    # We execute each node logic inside an asynchronous subshell block `(...) &`
     (
-        # Create an isolated temporary file to capture logs so outputs don't interlace on the screen
         NODE_LOG="${LOG_DIR}/${NODE}.log"
         {
-            print_header "PROCESSING AGENT NODE: ${NODE}"
+            # Explicitly prefix lines inside the log file to identify who is talking
+            echo -e "${COLOR_BLUE}[$NODE]${COLOR_RESET} ======================================================================"
+            echo -e "${COLOR_BLUE}[$NODE] PROCESSING AGENT NODE WORKFLOW${COLOR_RESET}"
+            echo -e "${COLOR_BLUE}[$NODE] ======================================================================"
             
             EXPORT_ENV="COLOR_INFO='${COLOR_INFO}' COLOR_OK='${COLOR_OK}' COLOR_FAIL='${COLOR_FAIL}' COLOR_BLUE='${COLOR_BLUE}' COLOR_RESET='${COLOR_RESET}' REPO_MOUNT='${REPO_MOUNT}' MOUNT_POINT='${MOUNT_POINT}' CIFS_USER='${CIFS_USER}' CIFS_PASS='${CIFS_PASS}' BACKUP_DIR_NAME='${BACKUP_DIR_NAME}'"
 
             if [ "$NODE" = "localhost" ] || [ "$NODE" = "127.0.0.1" ]; then
-                log_info "Executing local lifecycle loop operations on Master Server directly..."
-                if eval "$EXPORT_ENV; $(node_lifecycle_worker)"; then
-                    log_ok "Master Server patching pipeline executed cleanly."
+                if eval "$EXPORT_ENV; $(node_lifecycle_worker)" 2>&1 | sed "s/^/\x1b[0;34m[$NODE]\x1b[0m /"; then
                     exit 0
                 else
-                    log_fail "Master Server update run experienced an execution fault."
                     exit 1
                 fi
             else
-                log_info "Connecting to remote system node via SSH: ${NODE}..."
-                
-                if sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${NODE}" "$EXPORT_ENV bash -s" << EOF
+                if sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${NODE}" "$EXPORT_ENV bash -s" << EOF 2>&1 | sed "s/^/\x1b[0;34m[$NODE]\x1b[0m /"
 $(node_lifecycle_worker)
 EOF
                 then
-                    log_ok "Node Execution Workflow completed for system target: ${NODE}"
                     exit 0
                 else
-                    log_fail "Critical communication or process breakdown observed on Node target: ${NODE}"
                     exit 1
                 fi
             fi
-        } > "$NODE_LOG" 2>&1
+        } >> "$NODE_LOG"
     ) &
-    
-    # Track background Process ID (PID) maps to identify completion statuses
     NODE_PIDS["$NODE"]=$!
 done
 
-log_info "All parallel workflows dispatched. Waiting for nodes to finish..."
-echo "----------------------------------------------------------------------"
-
-# -----------------------------------------------------------------------------
-# COLLATING RESULTS & CLEANUP
-# -----------------------------------------------------------------------------
+# 4. Wait for all target systems to finish tasks
 declare -A NODE_STATUSES
-
-# Wait for all individual node processes to terminate
 for NODE in "${!NODE_PIDS[@]}"; do
     PID=${NODE_PIDS[$NODE]}
     wait "$PID"
     NODE_STATUSES["$NODE"]=$?
-    
-    # Stream the completely buffered logs out cleanly for readability
-    cat "${LOG_DIR}/${NODE}.log"
-    echo ""
 done
 
-# Cleanup log directory
-rm -rf "$LOG_DIR"
+# Stop the background log viewer stream engine safely
+sleep 1
+kill "$STREAM_PID" 2>/dev/null
+wait "$STREAM_PID" 2>/dev/null
+echo ""
 
-# Summary Table
+# 5. Output Summary Table
 print_header "COMPLETED SYSTEM PATCHING ORCHESTRATION PROFILE SUMMARY"
-printf "%-25s | %-10s\n" "NODE TARGET" "STATUS"
+printf "%-35s | %-10s\n" "NODE TARGET" "STATUS"
 echo "----------------------------------------------------------------------"
 for NODE in "${TARGET_NODES[@]}"; do
     NODE=$(echo "$NODE" | xargs)
     STATUS_CODE=${NODE_STATUSES["$NODE"]}
     if [ "$STATUS_CODE" -eq 0 ]; then
-        printf "%-25s | ${COLOR_OK}SUCCESS${COLOR_RESET}\n" "$NODE"
+        printf "%-35s | ${COLOR_OK}SUCCESS${COLOR_RESET}\n" "$NODE"
     else
-        printf "%-25s | ${COLOR_FAIL}FAILED (Exit: %s)${COLOR_RESET}\n" "$NODE" "$STATUS_CODE"
+        printf "%-35s | ${COLOR_FAIL}FAILED (Exit: %s)${COLOR_RESET}\n" "$NODE" "$STATUS_CODE"
     fi
 done
 echo "----------------------------------------------------------------------"
+
+rm -rf "$LOG_DIR"
