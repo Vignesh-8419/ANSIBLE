@@ -84,7 +84,7 @@ if [ -f "$CONFIG_FILE" ]; then
     cp "$CONFIG_FILE" "${CONFIG_FILE}.bak"
 fi
 
-# Write fresh configuration block to the file
+# Write fresh configuration block to the file (including domain)
 cat << EOF > "$CONFIG_FILE"
 TYPE=Ethernet
 PROXY_METHOD=none
@@ -100,10 +100,11 @@ IPADDR=$JUST_IP
 PREFIX=$PREFIX
 GATEWAY=$GATEWAY
 DNS1=$DNS_SERVER
+DOMAIN=vgs.com
 EOF
 
 if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✔ Step 2 Success: Configuration written to $CONFIG_FILE.${NC}"
+    echo -e "${GREEN}✔ Step 2 Success: Configuration written to $CONFIG_FILE with domain.${NC}"
     echo "Changes will take full effect after the reboot."
 else
     echo -e "${RED}❌ Step 2 Failed: Could not write to $CONFIG_FILE. Exiting.${NC}"
