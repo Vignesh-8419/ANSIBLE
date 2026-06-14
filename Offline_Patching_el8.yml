@@ -2,7 +2,7 @@
 - name: Offline Infrastructure Patching Orchestrator
   hosts: all
   gather_facts: no
-  any_errors_fatal: false # Mimics your script's behavior where one node failure doesn't kill others
+  any_errors_fatal: false # One node failure doesn't halt others
   
   vars:
     repo_mount: "//192.168.31.87/ISO"
@@ -90,10 +90,10 @@
                 sslverify=0
                 module_hotfixes=true
 
+        # UPDATED: Clean package manager cache cleanly via shell execution
         - name: Flush package manager cache and build metadata tracking logs
-          ansible.builtin.dnf:
-            update_cache: true
-            clear_cache: true
+          ansible.builtin.shell: dnf clean all
+          changed_when: true
 
         - name: Start structural system patching
           ansible.builtin.dnf:
@@ -119,17 +119,15 @@
               when: not dnf_output.changed
 
       rescue:
-        # Fixed: Added quotes around the bracketed name string to satisfy the YAML parser
         - name: "[ROLLBACK] Restore original repos due to run failure"
           ansible.builtin.shell: |
             if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
                 mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
                 rmdir /etc/yum.repos.d/{{ backup_dir_name }}
             fi
-          failed_when: true # Ensures playbook correctly reports host failure in AWX dashboard
+          failed_when: true # Keeps standard AWX error notification visible on dashboard
 
       always:
-        # Fixed: Safely handles baseline rollbacks regardless of task success/failure
         - name: Purge temporary local repository profiles
           ansible.builtin.file:
             path: "/etc/yum.repos.d/{{ item }}"
