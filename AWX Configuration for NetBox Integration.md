@@ -281,6 +281,43 @@ Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_08.yml
 
 ## Command
 
+```text
+awx-manage shell <<EOF
+from awx.main.models import Inventory, Project, JobTemplate
+
+# 1. Fetch existing dependencies
+try:
+    project = Project.objects.get(name="Inventory-Git-Repo")
+    inventory = Inventory.objects.get(name="rocky-8-servers")
+except (Project.DoesNotExist, Inventory.DoesNotExist) as e:
+    print(f"Error: Missing required dependency. {e}")
+    exit(1)
+
+# 2. Create or Update the Job Template
+jt, created = JobTemplate.objects.get_or_create(
+    name="GOLDENTEMPLATE_ROCKYOS-08",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_08.yml",
+        "ask_inventory_on_launch": False  # As per Step 6 (Hardcoded option)
+    }
+)
+
+# 3. Update attributes if it already existed
+if not created:
+    jt.project = project
+    jt.inventory = inventory
+    jt.playbook = "Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_08.yml"
+    jt.ask_inventory_on_launch = False
+    jt.save()
+
+print(f"Job Template 'GOLDENTEMPLATE_ROCKYOS-08' {'created' if created else 'updated'} successfully.")
+EOF
+```
+
+## Command
+
 Paste the AWX shell block from your SOP that creates:
 
 * GOLDENTEMPLATE_ROCKYOS-08
