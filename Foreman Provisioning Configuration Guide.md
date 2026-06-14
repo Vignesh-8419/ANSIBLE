@@ -196,7 +196,7 @@ Navigate to: `Configure → Host Groups`
 | **Host Group** | Name | VGS HOSTS ROCKY 8 |
 | | Content Source | rocky-08-01.vgs.com |
 | **Network** | Domain | vgs.com |
-| | IPv4 Subnet | vgs-subnet-centos |
+| | IPv4 Subnet | vgs-subnet-rocky |
 | **Operating System**| Architecture | x86_64 |
 | | Operating System | RockyLinux 8.10 |
 | | Root Password | \*\*\*\*\*\*\*\* |
