@@ -1,0 +1,152 @@
+---
+- name: Offline Infrastructure Patching Orchestrator
+  hosts: patch_targets
+  gather_facts: true
+  any_errors_fatal: false # Mimics your script's behavior where one node failure doesn't kill others
+  
+  vars:
+    repo_mount: "//192.168.31.87/ISO"
+    mount_point: "/var/www/html/repo"
+    cifs_user: "vigne"
+    cifs_pass: "Vigneshv12$"
+    backup_dir_name: "backup_repos_original"
+
+  tasks:
+    - name: Display Target Environment Info
+      ansible.builtin.debug:
+        msg: "Processing Agent Node Workflow for {{ inventory_hostname }} running Kernel {{ ansible_kernel }}"
+
+    - name: Create backup repository directory
+      ansible.builtin.file:
+        path: "/etc/yum.repos.d/{{ backup_dir_name }}"
+        state: directory
+        mode: '0755'
+
+    - name: Back up existing repo configurations
+      block:
+        - name: Find original repository files
+          ansible.builtin.find:
+            paths: /etc/yum.repos.d
+            patterns: "*.repo"
+            file_type: file
+            depth: 1
+          register: found_repos
+
+        - name: Move production repo configs to backup directory
+          ansible.builtin.command:
+            cmd: "mv {{ item.path }} /etc/yum.repos.d/{{ backup_dir_name }}/"
+          loop: "{{ found_repos.files }}"
+          when: found_repos.matched > 0
+          # Ansible needs explicitly bypassed tracking since we are manually shifting package configurations
+          changed_when: true 
+
+    - name: Handle Repository Mounting and Local Config Profiles
+      block:
+        - name: Ensure target mount point directory exists
+          ansible.builtin.file:
+            path: "{{ mount_point }}"
+            state: directory
+            mode: '0777'
+
+        - name: Mount network ISO share via CIFS
+          ansible.posix.mount:
+            path: "{{ mount_point }}"
+            src: "{{ repo_mount }}"
+            fstype: cifs
+            opts: "username={{ cifs_user }},password={{ cifs_pass }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
+            state: mounted
+
+        - name: Generate localized offline repository profiles
+          ansible.builtin.copy:
+            dest: "/etc/yum.repos.d/{{ item.filename }}"
+            content: "{{ item.content }}"
+            mode: '0644'
+          loop:
+            - filename: "rocky8-baseos.repo"
+              content: |
+                [rocky8-baseos]
+                name=Rocky Linux 8 BaseOS
+                baseurl=file://{{ mount_point }}/rocky8/BaseOS
+                enabled=1
+                gpgcheck=0
+                sslverify=0
+                module_hotfixes=true
+            - filename: "rocky8-appstream.repo"
+              content: |
+                [rocky8-appstream]
+                name=Rocky Linux 8 AppStream
+                baseurl=file://{{ mount_point }}/rocky8/AppStream
+                enabled=1
+                gpgcheck=0
+                sslverify=0
+                module_hotfixes=true
+            - filename: "rocky8-rhel-installed.repo"
+              content: |
+                [rocky8-rhel-installed]
+                name=Rocky Linux 8 Installed RHEL
+                baseurl=file://{{ mount_point }}/installed_rhel8
+                enabled=1
+                gpgcheck=0
+                sslverify=0
+                module_hotfixes=true
+
+      rescue:
+        - name: [ROLLBACK] Restore original repos due to mount/profile failure
+          ansible.builtin.shell: |
+            if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
+                mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
+                rmdir /etc/yum.repos.d/{{ backup_dir_name }}
+            fi
+          failed_when: true # Ensures playbook correctly reports host failure in AWX dashboard
+
+    - name: Flush package manager cache and build metadata tracking logs
+      ansible.builtin.dnf:
+        update_cache: true
+        clear_cache: true
+
+    - name: Start structural system patching
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+        disablerepo: "*"
+        enablerepo: "rocky8-baseos,rocky8-appstream,rocky8-rhel-installed"
+        allow_erasing: true
+        exclude: "glibc*,libstdc++*,perl*,gcc*"
+      register: dnf_output
+
+    - name: Baseline Rollback Operations (Cleanup Profiles & Umount)
+      always:
+        - name: Purge temporary local repository profiles
+          ansible.builtin.file:
+            path: "/etc/yum.repos.d/{{ item }}"
+            state: absent
+          loop:
+            - rocky8-baseos.repo
+            - rocky8-appstream.repo
+            - rocky8-rhel-installed.repo
+
+        - name: Restore production repository profiles from backup
+          ansible.builtin.shell: |
+            if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
+                mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
+                rmdir /etc/yum.repos.d/{{ backup_dir_name }}
+            fi
+          changed_when: true
+
+        - name: Detach shared ISO repository volume cleanly
+          ansible.posix.mount:
+            path: "{{ mount_point }}"
+            state: unmounted
+
+    - name: Conditional Lifecycle Reboot Trigger
+      block:
+        - name: Schedule system reboot if updates occurred
+          ansible.builtin.reboot:
+            reboot_timeout: 600
+            msg: "Automated offline patching cycle completed by Ansible AWX. System rebooting."
+          when: dnf_output.changed
+          
+        - name: Notify no updates needed
+          ansible.builtin.debug:
+            msg: "No updates required. Node packages match repository snapshot exactly. No reboot required."
+          when: not dnf_output.changed
