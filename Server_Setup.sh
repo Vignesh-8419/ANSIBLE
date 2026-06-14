@@ -11,7 +11,7 @@ NC='\x1b[0m' # No Color
 print_header() {
     clear
     echo -e "${BLUE}==================================================${NC}"
-    echo -e "${BLUE}          SYSTEM CONFIGURATION WIZARD             ${NC}"
+    echo -e "${BLUE}         SYSTEM CONFIGURATION WIZARD              ${NC}"
     echo -e "${BLUE}==================================================${NC}"
 }
 
@@ -23,17 +23,9 @@ fi
 
 print_header
 
-# ------------------------------------------
-# AUTOMATIC INTERFACE DETECTION
-# ------------------------------------------
-INTERFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -v 'lo' | head -n 1)
-
-if [ -z "$INTERFACE" ]; then
-    echo -e "${RED}❌ Error: No network interface detected! Exiting.${NC}"
-    exit 1
-else
-    echo -e "${GREEN}✔ Automatically detected interface:${NC} ${YELLOW}$INTERFACE${NC}\n"
-fi
+# Target interface hardcoded as per your requirement
+INTERFACE="ens192"
+CONFIG_FILE="/etc/sysconfig/network-scripts/ifcfg-$INTERFACE"
 
 # ------------------------------------------
 # USER PROMPTS
@@ -43,8 +35,14 @@ read -p "$(echo -e ${YELLOW}"Please provide IP address with netmask (e.g., 192.1
 read -p "$(echo -e ${YELLOW}"Please provide gateway: "${NC})" GATEWAY
 read -p "$(echo -e ${YELLOW}"Please provide dns server: "${NC})" DNS_SERVER
 
-# Extract pure IP address from CIDR for the /etc/hosts entry
+# Extract pure IP address and Subnet Prefix (e.g., 24) from CIDR
 JUST_IP=$(echo "$FULL_IP_CIDR" | cut -d'/' -f1)
+PREFIX=$(echo "$FULL_IP_CIDR" | cut -s -d'/' -f2)
+
+# Default to prefix 24 if user forgot to provide the slash notation
+if [ -z "$PREFIX" ]; then
+    PREFIX="24"
+fi
 
 print_header
 
@@ -76,40 +74,39 @@ else
 fi
 
 # ------------------------------------------
-# STEP 2: Configure Network
+# STEP 2: Configure Network via ifcfg-ens192
 # ------------------------------------------
-echo -e "${YELLOW}[Step 2] Configuring network interface: $INTERFACE${NC}"
+echo -e "${YELLOW}[Step 2] Configuring network interface: $INTERFACE via network-scripts${NC}"
 
-# Check if NetworkManager has a connection profile matching the interface name
-nmcli connection show "$INTERFACE" > /dev/null 2>&1
-if [ $? -ne 0 ]; then
-    INTERFACE_PROFILE=$(nmcli -t -f DEVICE,NAME connection show --active | grep "^${INTERFACE}:" | cut -d: -f2)
-    if [ -z "$INTERFACE_PROFILE" ]; then
-        INTERFACE_PROFILE=$INTERFACE
-    fi
-else
-    INTERFACE_PROFILE=$INTERFACE
+# Backup existing configuration if it exists
+if [ -f "$CONFIG_FILE" ]; then
+    echo "Backing up existing configuration to ${CONFIG_FILE}.bak"
+    cp "$CONFIG_FILE" "${CONFIG_FILE}.bak"
 fi
 
-# Apply Network Settings (Explicit separation to fix parsing error)
-nmcli connection modify "$INTERFACE_PROFILE" ipv4.addresses "$FULL_IP_CIDR"
-nmcli connection modify "$INTERFACE_PROFILE" ipv4.gateway "$GATEWAY"
-nmcli connection modify "$INTERFACE_PROFILE" ipv4.dns "$DNS_SERVER"
-nmcli connection modify "$INTERFACE_PROFILE" ipv4.method manual
-nmcli connection modify "$INTERFACE_PROFILE" connection.autoconnect yes
+# Write fresh configuration block to the file
+cat << EOF > "$CONFIG_FILE"
+TYPE=Ethernet
+PROXY_METHOD=none
+BROWSER_ONLY=no
+BOOTPROTO=none
+DEFROUTE=yes
+IPV4_FAILURE_FATAL=no
+IPV6INIT=no
+NAME=$INTERFACE
+DEVICE=$INTERFACE
+ONBOOT=yes
+IPADDR=$JUST_IP
+PREFIX=$PREFIX
+GATEWAY=$GATEWAY
+DNS1=$DNS_SERVER
+EOF
 
 if [ $? -eq 0 ]; then
-    echo "Applying network changes..."
-    nmcli connection up "$INTERFACE_PROFILE"
-    
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✔ Step 2 Success: Network configured and interface is UP.${NC}\n"
-    else
-        echo -e "${RED}❌ Step 2 Failed: Could not bring up the interface. Exiting.${NC}"
-        exit 1
-    fi
+    echo -e "${GREEN}✔ Step 2 Success: Configuration written to $CONFIG_FILE.${NC}"
+    echo "Changes will take full effect after the reboot."
 else
-    echo -e "${RED}❌ Step 2 Failed: Could not modify NetworkManager settings. Exiting.${NC}"
+    echo -e "${RED}❌ Step 2 Failed: Could not write to $CONFIG_FILE. Exiting.${NC}"
     exit 1
 fi
 
