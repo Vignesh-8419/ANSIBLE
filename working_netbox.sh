@@ -19,6 +19,12 @@ ADMIN_PASS="Netbox12345678"
 NETBOX_ROOT="/opt/netbox"
 PYTHON_BIN="/usr/bin/python3.12"
 
+# SSL Directory Paths
+SSL_DIR_CERT="/etc/pki/tls/certs"
+SSL_DIR_KEY="/etc/pki/tls/private"
+CERT_FILE="${SSL_DIR_CERT}/netbox.crt"
+KEY_FILE="${SSL_DIR_KEY}/netbox.key"
+
 ############################################################
 # COLORS
 ############################################################
@@ -109,7 +115,6 @@ pkill -9 gunicorn 2>/dev/null || true
 ############################################################
 print_header "CONFIGURING REPOSITORIES"
 
-# Nuke any residual broken remi files BEFORE running any dnf commands
 log_info "Cleaning up old repository configurations..."
 rm -f /etc/yum.repos.d/remi*.repo
 
@@ -153,7 +158,6 @@ enabled=1
 gpgcheck=0
 EOF
 
-# Clear tracking constraints and activate the redis:remi-7.2 appstream module
 dnf module reset redis -y
 dnf module enable redis:remi-7.2 -y
 
@@ -184,6 +188,20 @@ dnf install -y \
     postgresql15-devel
 
 export PATH=$PATH:/usr/pgsql-15/bin
+
+############################################################
+# FIREWALL RULES
+############################################################
+print_header "CONFIGURING FIREWALL"
+
+if systemctl is-active --quiet firewalld || systemctl is-enabled --quiet firewalld; then
+    log_info "Adding HTTPS to public zone configurations..."
+    firewall-cmd --add-service=https --permanent
+    firewall-cmd --reload
+    log_info "Firewall configurations reloaded."
+else
+    log_warn "Firewalld is not active. Skipping web service port layout access adjustments."
+fi
 
 ############################################################
 # POSTGRESQL
@@ -337,6 +355,25 @@ EOF
 log_info "NetBox configuration created"
 
 ############################################################
+# GUNICORN CONFIGURATION
+############################################################
+print_header "CONFIGURING GUNICORN"
+
+log_info "Creating gunicorn.py engine configuration parameters..."
+cat > "${NETBOX_ROOT}/gunicorn.py" <<EOF
+# /opt/netbox/gunicorn.py
+bind = '127.0.0.1:8001'
+workers = 5
+threads = 3
+timeout = 120
+max_requests = 5000
+max_requests_jitter = 1000
+user = 'root'
+EOF
+
+log_info "Gunicorn layout configured on port 8001"
+
+############################################################
 # REDIS CLEANUP
 ############################################################
 print_header "CLEANING REDIS DATABASES"
@@ -393,5 +430,137 @@ else:
 EOF
 
 log_info "Admin account verified"
+
+############################################################
+# SYSTEMD SERVICES
+############################################################
+print_header "CREATING SYSTEMD SERVICE UNITS"
+
+log_info "Writing /etc/systemd/system/netbox.service..."
+############################################################
+# SYSTEMD SERVICES
+############################################################
+print_header "CREATING SYSTEMD SERVICE UNITS"
+
+log_info "Writing /etc/systemd/system/netbox.service..."
+cat > /etc/systemd/system/netbox.service <<EOF
+[Unit]
+Description=NetBox WSGI Service
+Documentation=https://docs.netbox.dev/
+After=network.target postgresql-15.service redis.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=${NETBOX_ROOT}
+# FIX IS HERE: Added --pythonpath ${NETBOX_ROOT}/netbox 
+ExecStart=${NETBOX_ROOT}/venv/bin/gunicorn --pythonpath ${NETBOX_ROOT}/netbox --config ${NETBOX_ROOT}/gunicorn.py netbox.wsgi
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+log_info "Writing /etc/systemd/system/netbox-worker.service..."
+cat > /etc/systemd/system/netbox-worker.service <<EOF
+[Unit]
+Description=NetBox Request Queue Worker
+Documentation=https://docs.netbox.dev/
+After=network.target postgresql-15.service redis.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=${NETBOX_ROOT}
+ExecStart=${NETBOX_ROOT}/venv/bin/python netbox/manage.py rqworker
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+log_info "Reloading systemd backend engines and initializing operational frames..."
+systemctl daemon-reload
+systemctl enable --now netbox netbox-worker
+
+############################################################
+# SSL CERTIFICATE GENERATION
+############################################################
+print_header "GENERATING SELF-SIGNED SSL CERTIFICATE"
+
+if [[ ! -f "$CERT_FILE" ]]; then
+    log_info "Target identity key pairs missing. Building self-signed profile context..."
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout "$KEY_FILE" \
+        -out "$CERT_FILE" \
+        -subj "/C=US/ST=State/L=City/O=VGS/OU=IT/CN=${FQDN}"
+
+    chmod 600 "$KEY_FILE"
+    log_info "SSL cryptographic profile mapped successfully."
+else
+    log_info "Identified pre-existing SSL schema file at ${CERT_FILE}. Retention activated."
+fi
+
+############################################################
+# NGINX CONFIGURATION
+############################################################
+print_header "CONFIGURING NGINX HTTP PROXY LAYER"
+
+log_info "Creating Nginx configuration file under /etc/nginx/conf.d/netbox.conf..."
+cat > /etc/nginx/conf.d/netbox.conf <<EOF
+server {
+    listen 80;
+    server_name ${FQDN} ${IPADDRESS};
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name ${FQDN} ${IPADDRESS};
+
+    ssl_certificate ${CERT_FILE};
+    ssl_certificate_key ${KEY_FILE};
+
+    client_max_body_size 25m;
+
+    location /static/ {
+        alias ${NETBOX_ROOT}/netbox/static/;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8001;
+        proxy_set_header X-Forwarded-Host \$http_host;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+}
+EOF
+
+log_info "Activating Nginx HTTP service frames..."
+systemctl enable --now nginx
+
+############################################################
+# FINAL VALIDATION & REPORT
+############################################################
+print_header "VERIFYING ALL SYSTEM COMPONENT STATUSES"
+
+services_to_check=("postgresql-15" "redis" "netbox" "netbox-worker" "nginx")
+global_status_success=0
+
+for service in "${services_to_check[@]}"; do
+    if systemctl is-active --quiet "$service"; then
+        log_info "Service status '$service': RUNNING"
+    else
+        log_error "Service status '$service': FAILED (Check 'systemctl status $service')"
+        global_status_success=1
+    fi
+done
+
+echo
 print_line
-log_info "Netbox preparation phase complete!"
+if [[ $global_status_success -eq 0 ]]; then
+    log_info "NetBox deployment execution sequence fully complete!"
+    log_info "URL Path Access Point: https://${IPADDRESS} or https://${FQDN}"
+    log_info "Admin User Account Credentials: ID: ${ADMIN_USER} | PW: ${ADMIN_PASS}"
+else
+    log_error "NetBox processing ended with runtime service validation faults."
+fi
+print_line
