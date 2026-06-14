@@ -1,7 +1,7 @@
 ---
 - name: Offline Infrastructure Patching Orchestrator
-  hosts: patch_targets
-  gather_facts: true
+  hosts: all
+  gather_facts: no
   any_errors_fatal: false # Mimics your script's behavior where one node failure doesn't kill others
   
   vars:
