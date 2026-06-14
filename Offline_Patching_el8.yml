@@ -10,6 +10,7 @@
     cifs_user: "vigne"
     cifs_pass: "Vigneshv12$"
     backup_dir_name: "backup_repos_original"
+    default_gw: "192.168.253.2"
 
   tasks:
 # --- PRE-TASKS / INFRASTRUCTURE VERIFICATION ---
