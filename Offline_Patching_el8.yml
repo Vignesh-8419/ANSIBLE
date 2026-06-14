@@ -94,15 +94,24 @@
           ansible.builtin.shell: dnf clean all
           changed_when: true
 
+        # FIXED: Forces Ansible to drop python3.12 and use the system default core python environment for DNF bindings
         - name: Start structural system patching
           ansible.builtin.dnf:
             name: "*"
             state: latest
             disablerepo: "*"
             enablerepo: "rocky8-baseos,rocky8-appstream,rocky8-rhel-installed"
-            allowerasing: true # FIXED: Removed the underscore to match valid DNF module parameters
+            allowerasing: true
             exclude: "glibc*,libstdc++*,perl*,gcc*"
+          vars:
+            ansible_python_interpreter: /usr/libexec/platform-python
           register: dnf_output
+
+        # NOTE: If the step above STILL gives you python binding trouble, replace it with this shell equivalent:
+        # - name: Start structural system patching (Shell Alternative)
+        #   ansible.builtin.shell: |
+        #     dnf update -y --disablerepo=* --enablerepo=rocky8-baseos,rocky8-appstream,rocky8-rhel-installed --allowerasing --nobest -x glibc*,libstdc++*,perl*,gcc*
+        #   register: dnf_output_shell
 
         - name: Conditional Lifecycle Reboot Trigger
           block:
