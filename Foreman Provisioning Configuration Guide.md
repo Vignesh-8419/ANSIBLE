@@ -1,10 +1,10 @@
 # Foreman Provisioning Configuration Guide
 
-This document describes the Foreman configuration used for PXE-based provisioning of CentOS 7 and Rocky Linux 8 systems.
+This document describes the Foreman configuration used for PXE-based provisioning of CentOS 7 and Rocky Linux 8 systems across the infrastructure.
 
 ---
 
-# Environment Details
+## Environment Details
 
 | Component | Value |
 |-----------|---------|
@@ -18,17 +18,13 @@ This document describes the Foreman configuration used for PXE-based provisionin
 
 ---
 
-# Installation Media Configuration
+## Installation Media Configuration
 
-Navigate to:
+Navigate to: `Hosts → Provisioning Setup → Installation Media`
 
-```
-Hosts → Provisioning Setup → Installation Media
-```
+The following installation media have been configured:
 
-The following installation media have been configured.
-
-## CentOS 7 Remote
+### CentOS 7 Remote
 
 | Parameter | Value |
 |------------|---------|
@@ -37,13 +33,9 @@ The following installation media have been configured.
 | OS Family | Red Hat |
 | Operating System | CentOSLinux 7 |
 
-### Purpose
+* **Purpose:** Used as the package source during CentOS 7 operating system installation.
 
-Used as the package source during CentOS 7 operating system installation.
-
----
-
-## Rocky 8 Remote
+### Rocky 8 Remote
 
 | Parameter | Value |
 |------------|---------|
@@ -52,19 +44,13 @@ Used as the package source during CentOS 7 operating system installation.
 | OS Family | Red Hat |
 | Operating System | RockyLinux 8.10 |
 
-### Purpose
-
-Used as the package repository for Rocky Linux 8 provisioning.
+* **Purpose:** Used as the package repository for Rocky Linux 8 provisioning.
 
 ---
 
-# Operating Systems Configuration
+## Operating Systems Configuration
 
-Navigate to:
-
-```
-Hosts → Provisioning Setup → Operating Systems
-```
+Navigate to: `Hosts → Provisioning Setup → Operating Systems`
 
 Configured operating systems:
 
@@ -72,35 +58,17 @@ Configured operating systems:
 |------------------|----------------|
 | CentOSLinux 7 | 1 |
 | Rocky Linux 8.10 | 2 |
-| Rocky Linux 8.10 | 0 |
 
-## Notes
-
-- CentOS Linux 7 is available for provisioning.
-- Rocky Linux 8.10 definitions exist for multiple provisioning scenarios.
-- Host count indicates systems currently associated with each operating system entry.
+* **Note:** Host count indicates systems currently associated with each operating system entry.
 
 ---
 
-# PXE Provisioning Templates
+## PXE Provisioning Templates
 
-Navigate to:
+Navigate to: `Hosts → Templates → Provisioning Templates`
+*Filtered using keyword: `UEFI`*
 
-```
-Hosts → Templates → Provisioning Templates (available on Foreman PXE UEFI Kickstart Templates.md)
-```
-
-Filtered using keyword:
-
-```
-UEFI
-```
-
-Configured templates:
-
----
-
-## PXEGrub2 CentOS UEFI Static Kickstart
+### PXEGrub2 CentOS UEFI Static Kickstart
 
 | Parameter | Value |
 |------------|---------|
@@ -108,26 +76,18 @@ Configured templates:
 | Locked | No |
 | Snippet | No |
 
-### Purpose
+* **Purpose:** Provides UEFI PXE boot instructions for CentOS 7 automated installations.
 
-Provides UEFI PXE boot instructions for CentOS 7 automated installations.
-
----
-
-## pxegrub2_mac
+### pxegrub2_mac
 
 | Parameter | Value |
 |------------|---------|
 | Type | Snippet |
 | Locked | Yes |
 
-### Purpose
+* **Purpose:** Reusable PXE template snippet utilized by other provisioning templates.
 
-Reusable PXE template snippet utilized by other provisioning templates.
-
----
-
-## PXEGrub2 Rocky8 UEFI Static Kickstart
+### PXEGrub2 Rocky8 UEFI Static Kickstart
 
 | Parameter | Value |
 |------------|---------|
@@ -135,25 +95,15 @@ Reusable PXE template snippet utilized by other provisioning templates.
 | Locked | No |
 | Snippet | No |
 
-### Purpose
-
-Supplies UEFI PXE boot configuration for Rocky Linux 8 kickstart deployments.
+* **Purpose:** Supplies UEFI PXE boot configuration for Rocky Linux 8 kickstart deployments.
 
 ---
 
-# Smart Proxy Configuration
+## Smart Proxy Configuration
 
-Navigate to:
+Navigate to: `Infrastructure → Smart Proxies`
 
-```
-Infrastructure → Smart Proxies
-```
-
-Two Smart Proxies have been configured.
-
----
-
-## Smart Proxy: rocky-08-01.vgs.com
+### Smart Proxy: rocky-08-01.vgs.com
 
 | Parameter | Value |
 |------------|---------|
@@ -161,21 +111,10 @@ Two Smart Proxies have been configured.
 | Organization | Default Organization |
 | Status | Healthy |
 
-### Enabled Features
+* **Enabled Features:** DHCP, TFTP, Templates, Logs, Pulpcore
+* **Purpose:** Acts as the provisioning proxy for CentOS-based deployments.
 
-- DHCP
-- TFTP
-- Templates
-- Logs
-- Pulpcore
-
-### Purpose
-
-Acts as the provisioning proxy for CentOS-based deployments.
-
----
-
-## Smart Proxy: rocky-08-02.vgs.com
+### Smart Proxy: rocky-08-02.vgs.com
 
 | Parameter | Value |
 |------------|---------|
@@ -183,99 +122,123 @@ Acts as the provisioning proxy for CentOS-based deployments.
 | Organization | Default Organization |
 | Status | Healthy |
 
-### Enabled Features
-
-- Container Gateway
-- DHCP
-- DNS
-- Logs
-- Pulpcore
-- Additional proxy services
-
-### Purpose
-
-Provides provisioning and content management services for Rocky Linux deployments.
+* **Enabled Features:** Container Gateway, DHCP, DNS, Logs, Pulpcore, Additional proxy services
+* **Purpose:** Provides provisioning and content management services for Rocky Linux deployments.
 
 ---
 
-# Subnet Configuration
+## Subnet Configuration
 
-Navigate to:
+Navigate to: `Infrastructure → Subnets`
 
-```
-Infrastructure → Subnets
-```
+### vgs-subnet-centos
 
-Configured subnets:
+| Tab | Parameter | Value |
+|:---|:---|:---|
+| **Subnet** | Name | vgs-subnet-centos |
+| | Network Address | 192.168.253.0 |
+| | Network Prefix | 24 |
+| | Netmask | 255.255.255.0 |
+| | Gateway Address | 192.168.253.2 |
+| | Primary DNS Server | 192.168.253.151 |
+| | IPAM | DHCP |
+| | Start of IP Range | 192.168.253.10 |
+| | End of IP Range | 192.168.253.240 |
+| | Boot Mode | DHCP |
+| **Domains**| Selected Domains | vgs.com |
+| **Proxies**| DHCP Proxy | rocky-08-01.vgs.com |
+| | TFTP Proxy | rocky-08-01.vgs.com |
+| | Reverse DNS Proxy | *None (Empty)* |
+| | Template Proxy | rocky-08-01.vgs.com |
+
+### vgs-subnet-rocky
+
+| Tab | Parameter | Value |
+|:---|:---|:---|
+| **Subnet** | Name | vgs-subnet-rocky |
+| | Network Address | 192.168.253.0 |
+| | Network Prefix | 24 |
+| | Netmask | 255.255.255.0 |
+| | Gateway Address | 192.168.253.2 |
+| | Primary DNS Server | 192.168.253.151 |
+| | IPAM | DHCP |
+| | Start of IP Range | 192.168.253.10 |
+| | End of IP Range | 192.168.253.240 |
+| | Boot Mode | DHCP |
+| **Domains**| Selected Domains | vgs.com |
+| **Proxies**| DHCP Proxy | rocky-08-02.vgs.com |
+| | TFTP Proxy | rocky-08-02.vgs.com |
+| | Reverse DNS Proxy | *None (Empty)* |
+| | Template Proxy | rocky-08-02.vgs.com |
 
 ---
 
-## vgs-subnet-centos
+## Host Groups Configuration
 
-| Parameter | Value |
-|------------|---------|
-| Network Address | 192.168.253.0/24 |
-| Domain | vgs.com |
-| DHCP Proxy | rocky-08-01.vgs.com |
-| Hosts | 1 |
+Navigate to: `Configure → Host Groups`
 
-### Purpose
+### VGS HOSTS CENTOS 7
 
-Subnet dedicated to CentOS provisioning activities.
+| Tab | Parameter | Value |
+|:---|:---|:---|
+| **Host Group** | Name | VGS HOSTS CENTOS 7 |
+| | Content Source | rocky-08-01.vgs.com |
+| **Network** | Domain | vgs.com |
+| | IPv4 Subnet | vgs-subnet-centos |
+| **Operating System**| Architecture | x86_64 |
+| | Operating System | CentOSLinux 7 |
+| | Root Password | \*\*\*\*\*\*\*\* |
+
+### VGS HOSTS ROCKY 8
+
+| Tab | Parameter | Value |
+|:---|:---|:---|
+| **Host Group** | Name | VGS HOSTS ROCKY 8 |
+| | Content Source | rocky-08-01.vgs.com |
+| **Network** | Domain | vgs.com |
+| | IPv4 Subnet | vgs-subnet-centos |
+| **Operating System**| Architecture | x86_64 |
+| | Operating System | RockyLinux 8.10 |
+| | Root Password | \*\*\*\*\*\*\*\* |
 
 ---
 
-## vgs-subnet-rocky
+## Provisioning Workflow
 
-| Parameter | Value |
-|------------|---------|
-| Network Address | 192.168.253.0/24 |
-| Domain | vgs.com |
-| DHCP Proxy | rocky-08-02.vgs.com |
-| Hosts | 0 |
-
-### Purpose
-
-Subnet associated with Rocky Linux provisioning.
-
----
-
-# Provisioning Workflow
-
-The provisioning process follows the sequence below:
+The system provisioning process follows the sequential operations sequence below:
 
 ```
 Host Boot
     ↓
-DHCP Assignment
+DHCP Assignment (Allocated from Pool range .10 - .240)
     ↓
-Smart Proxy Selection
+Smart Proxy Selection (rocky-08-01 vs rocky-08-02)
     ↓
 TFTP/PXE Boot
     ↓
-PXEGrub2 UEFI Template
+PXEGrub2 UEFI Template Execution
     ↓
-Kickstart Configuration
+Kickstart Configuration Processing
     ↓
-Installation Media Repository
+Installation Media Repository Call
     ↓
 Automated Operating System Deployment
 ```
 
 ---
 
-# Validation Checklist
+## Validation Checklist
 
-- [x] Installation media configured for CentOS and Rocky Linux.
-- [x] Operating systems created in Foreman.
-- [x] UEFI PXE templates available.
-- [x] Smart Proxies registered and healthy.
-- [x] DHCP proxies assigned to subnets.
-- [x] Repository URLs accessible.
-- [x] Foreman ready for automated PXE provisioning.
+- [x] Subnets (`vgs-subnet-centos`, `vgs-subnet-rocky`) defined with matching IPAM ranges.
+- [x] DHCP, TFTP, and Template proxies correctly mapped per subnet sub-tab.
+- [x] Host Groups (`VGS HOSTS CENTOS 7` and `VGS HOSTS ROCKY 8`) configured for automated deployment.
+- [x] Installation media configured and reachable for CentOS and Rocky Linux.
+- [x] Operating systems configured in Foreman.
+- [x] UEFI PXE templates verified and ready.
+- [x] Smart Proxies registered and running healthy status flags.
 
 ---
 
-# Conclusion
+## Conclusion
 
-The Foreman environment is configured to provision CentOS 7 and Rocky Linux 8.10 systems using UEFI PXE boot, Kickstart automation, installation media repositories, Smart Proxies, and subnet-specific DHCP services. This setup enables centralized and repeatable operating system deployments across the infrastructure.
+The Foreman environment is fully configured to provision CentOS 7 and Rocky Linux 8.10 systems using UEFI PXE boot, Kickstart automation, installation media repositories, Smart Proxies, and subnet-specific DHCP services. This setup enables centralized, controlled, and repeatable operating system deployments across the enterprise network.
