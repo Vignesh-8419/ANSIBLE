@@ -15,6 +15,9 @@ SSH_PASS='Root@123'
 # Backup directory name inside /etc/yum.repos.d/
 BACKUP_DIR_NAME="backup_repos_original"
 
+# NEW: Synced default gateway configuration from variables
+DEFAULT_GW="192.168.253.2"
+
 # -----------------------------------------------------------------------------
 # COLOR DEFINITIONS
 # -----------------------------------------------------------------------------
@@ -40,8 +43,8 @@ display_usage() {
     echo "Usage: $0 --node=<node1,node2,localhost,...>"
     echo ""
     echo "Options:"
-    echo "  --node=     Comma-separated list of IP addresses or hostnames to patch."
-    echo "              Use 'localhost' to include the master server."
+    echo "  --node=      Comma-separated list of IP addresses or hostnames to patch."
+    echo "               Use 'localhost' to include the master server."
     echo ""
     echo "Example:"
     echo "  $0 --node=192.168.253.10,192.168.253.11,localhost"
@@ -88,6 +91,16 @@ node_lifecycle_worker() {
         log_node_ok()   { echo -e "${COLOR_OK}  -> [OK] $1${COLOR_RESET}"; }
         log_node_fail() { echo -e "${COLOR_FAIL}  -> [FAIL] $1${COLOR_RESET}"; }
 
+        # --- NEW PRE-TASK: GATEWAY CHECK ---
+        log_node_info "Verifying Network Topology Routes..."
+        if ! ip route show | grep -q '^default'; then
+            log_node_info "Default gateway missing! Dynamically appending fallback via ${DEFAULT_GW}..."
+            ip route add default via "${DEFAULT_GW}"
+            log_node_ok "Fallback route appended successfully."
+        else
+            log_node_ok "Valid structural network gateway already present."
+        fi
+
         log_node_info "Kernel Release: $(uname -r)"
 
         log_node_info "Backing up original repositories..."
@@ -103,17 +116,21 @@ node_lifecycle_worker() {
         
         if ! findmnt -rn ${MOUNT_POINT} > /dev/null; then
             log_node_info "ISO share not detected. Mounting target volume..."
-            mount -t cifs "${REPO_MOUNT}" "${MOUNT_POINT}" \
-                -o username="${CIFS_USER}",password="${CIFS_PASS}",rw,dir_mode=0777,file_mode=0777,vers=3.0 || {
-                    log_node_fail "Mount failed! Restoring original repos before exit..."
-                    if [ -d "/etc/yum.repos.d/${BACKUP_DIR_NAME}" ]; then
-                        if ls /etc/yum.repos.d/${BACKUP_DIR_NAME}/*.repo &>/dev/null; then
-                            mv /etc/yum.repos.d/${BACKUP_DIR_NAME}/*.repo /etc/yum.repos.d/
-                        fi
-                        rmdir /etc/yum.repos.d/${BACKUP_DIR_NAME}
+            
+            # FIXED: Also add entry to /etc/fstab to replicate what ansible.posix.mount does
+            echo "${REPO_MOUNT} ${MOUNT_POINT} cifs username=${CIFS_USER},password=${CIFS_PASS},rw,dir_mode=0777,file_mode=0777,vers=3.0 0 0" >> /etc/fstab
+            
+            mount "${MOUNT_POINT}" || {
+                log_node_fail "Mount failed! Stripping invalid fstab config and restoring profiles..."
+                sed -i "\#${MOUNT_POINT}#d" /etc/fstab
+                if [ -d "/etc/yum.repos.d/${BACKUP_DIR_NAME}" ]; then
+                    if ls /etc/yum.repos.d/${BACKUP_DIR_NAME}/*.repo &>/dev/null; then
+                        mv /etc/yum.repos.d/${BACKUP_DIR_NAME}/*.repo /etc/yum.repos.d/
                     fi
-                    exit 1
-                }
+                    rmdir /etc/yum.repos.d/${BACKUP_DIR_NAME}
+                fi
+                exit 1
+            }
             log_node_ok "Mount successful."
         else
             log_node_ok "ISO share is already actively mounted."
@@ -198,9 +215,12 @@ REPO_EOF
             log_node_fail "Backup repository directory not found! Tracking integrity anomaly."
         fi
 
-        log_node_info "Detaching shared ISO repository volume..."
+        log_node_info "Detaching shared ISO repository volume cleanly..."
         umount -l ${MOUNT_POINT} || true
-        log_node_ok "Volume unmounted."
+        
+        # FIXED: Cleans out the mount point mapping string from /etc/fstab completely (Replicates state: absent)
+        sed -i "\#${MOUNT_POINT}#d" /etc/fstab
+        log_node_ok "Volume unmounted and clean fstab lifecycle verification complete."
 
         if [ "$NEEDS_REBOOT" = true ]; then
             log_node_ok "Reboot required. Scheduling system reboot in 1 minute..."
@@ -233,7 +253,6 @@ for NODE in "${TARGET_NODES[@]}"; do
 done
 
 # 2. Start the Live Stream Engine in the background
-# It reads lines from all logs dynamically and adds a clean [NODE] tag to each line
 log_info "Initializing live tracking streams..."
 echo "----------------------------------------------------------------------"
 tail -q -f "${LOG_DIR}"/*.log | while read -r line; do
@@ -248,12 +267,12 @@ for NODE in "${TARGET_NODES[@]}"; do
     (
         NODE_LOG="${LOG_DIR}/${NODE}.log"
         {
-            # Explicitly prefix lines inside the log file to identify who is talking
-            echo -e "${COLOR_BLUE}[$NODE]${COLOR_RESET} ======================================================================"
+            echo -e "${COLOR_BLUE}[$NODE] ${COLOR_RESET}======================================================================"
             echo -e "${COLOR_BLUE}[$NODE] PROCESSING AGENT NODE WORKFLOW${COLOR_RESET}"
             echo -e "${COLOR_BLUE}[$NODE] ======================================================================"
             
-            EXPORT_ENV="COLOR_INFO='${COLOR_INFO}' COLOR_OK='${COLOR_OK}' COLOR_FAIL='${COLOR_FAIL}' COLOR_BLUE='${COLOR_BLUE}' COLOR_RESET='${COLOR_RESET}' REPO_MOUNT='${REPO_MOUNT}' MOUNT_POINT='${MOUNT_POINT}' CIFS_USER='${CIFS_USER}' CIFS_PASS='${CIFS_PASS}' BACKUP_DIR_NAME='${BACKUP_DIR_NAME}'"
+            # FIXED: Added DEFAULT_GW into the exported environmental layer passing down to the worker
+            EXPORT_ENV="COLOR_INFO='${COLOR_INFO}' COLOR_OK='${COLOR_OK}' COLOR_FAIL='${COLOR_FAIL}' COLOR_BLUE='${COLOR_BLUE}' COLOR_RESET='${COLOR_RESET}' REPO_MOUNT='${REPO_MOUNT}' MOUNT_POINT='${MOUNT_POINT}' CIFS_USER='${CIFS_USER}' CIFS_PASS='${CIFS_PASS}' BACKUP_DIR_NAME='${BACKUP_DIR_NAME}' DEFAULT_GW='${DEFAULT_GW}'"
 
             if [ "$NODE" = "localhost" ] || [ "$NODE" = "127.0.0.1" ]; then
                 if eval "$EXPORT_ENV; $(node_lifecycle_worker)" 2>&1 | sed "s/^/\x1b[0;34m[$NODE]\x1b[0m /"; then
