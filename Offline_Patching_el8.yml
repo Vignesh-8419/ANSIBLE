@@ -90,7 +90,6 @@
                 sslverify=0
                 module_hotfixes=true
 
-        # UPDATED: Clean package manager cache cleanly via shell execution
         - name: Flush package manager cache and build metadata tracking logs
           ansible.builtin.shell: dnf clean all
           changed_when: true
@@ -101,7 +100,7 @@
             state: latest
             disablerepo: "*"
             enablerepo: "rocky8-baseos,rocky8-appstream,rocky8-rhel-installed"
-            allow_erasing: true
+            allowerasing: true # FIXED: Removed the underscore to match valid DNF module parameters
             exclude: "glibc*,libstdc++*,perl*,gcc*"
           register: dnf_output
 
