@@ -141,7 +141,8 @@
             fi
           changed_when: true
 
+  # FIXED: Changed state to 'absent' to unmount and remove the /etc/fstab line permanently
         - name: Detach shared ISO repository volume cleanly
           ansible.posix.mount:
             path: "{{ mount_point }}"
-            state: unmounted
+            state: absent
