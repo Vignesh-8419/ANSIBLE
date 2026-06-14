@@ -52,6 +52,19 @@ The following installation media have been configured:
 
 Navigate to: `Hosts → Provisioning Setup → Operating Systems`
 
+`Operating Systems 
+        |
+Name: RockyLinux
+        |
+Major Version: 8.10
+        |
+Family: Redhat
+        |`
+
+`Partition Tables -> Partition Tables: Kickstart Default`
+`Installation Media -> Installation Media: CentOS 07 Remote`
+`submit (After submit again select CentOS 07 Remoet from Operating system and got to template tab select PXEGrub2 template: PXEGrub2 CentOS UEFI Static Kickstart)`
+
 Configured operating systems:
 
 | Operating System | Hosts Assigned |
