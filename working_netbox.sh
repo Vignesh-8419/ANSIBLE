@@ -129,10 +129,14 @@ dnf -qy module disable postgresql
 ############################################################
 print_header "ENABLING REDIS 7.2 REPOSITORY"
 
+# 1. Install the Remi repository configuration
 dnf install -y https://rpms.remirepo.net/enterprise/remi-release-8.rpm
 
-# Enable the specific remi repository containing newer Redis versions
-dnf config-manager --set-enabled remi
+# 2. Reset any default system Redis module tracking
+dnf module reset redis -y
+
+# 3. Enable the specific 7.2 stream provided by Remi's modular build
+dnf module enable redis:remi-7.2 -y
 
 ############################################################
 # INSTALL PACKAGES
