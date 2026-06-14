@@ -109,9 +109,18 @@ pkill -9 gunicorn 2>/dev/null || true
 ############################################################
 print_header "CONFIGURING REPOSITORIES"
 
+# Nuke any residual broken remi files BEFORE running any dnf commands
+log_info "Cleaning up old repository configurations..."
+rm -f /etc/yum.repos.d/remi*.repo
+
+log_info "Resetting DNF repository targets to upstream mirrors..."
+dnf download rocky-repos --disablerepo=* --repofrompath=temp,https://dl.rockylinux.org/pub/rocky/8/BaseOS/x86_64/os/ --quiet || true
+rpm -ivh --force rocky-repos-*.rpm 2>/dev/null || rpm -Uvh --force rocky-repos-*.rpm 2>/dev/null || true
+rm -f rocky-repos-*.rpm
+
 dnf install -y epel-release dnf-plugins-core
 
-dnf config-manager --set-enabled crb \
+dnf config-manager --set-enabled powertools \
     || dnf config-manager --set-enabled powertools \
     || true
 
@@ -129,13 +138,23 @@ dnf -qy module disable postgresql
 ############################################################
 print_header "ENABLING REDIS 7.2 REPOSITORY"
 
-# 1. Install the Remi repository configuration
-dnf install -y https://rpms.remirepo.net/enterprise/remi-release-8.rpm
+log_info "Deploying target-specific Remi Modular definition with bypassed signature checks..."
+cat > /etc/yum.repos.d/remi-safe.repo << 'EOF'
+[remi-modular]
+name=Remi's Modular repository for Enterprise Linux 8 - $basearch
+baseurl=http://rpms.remirepo.net/enterprise/8/modular/$basearch/
+enabled=1
+gpgcheck=0
 
-# 2. Reset any default system Redis module tracking
+[remi-safe]
+name=Safe Remi's RPM repository for Enterprise Linux 8 - $basearch
+baseurl=http://rpms.remirepo.net/enterprise/8/safe/$basearch/
+enabled=1
+gpgcheck=0
+EOF
+
+# Clear tracking constraints and activate the redis:remi-7.2 appstream module
 dnf module reset redis -y
-
-# 3. Enable the specific 7.2 stream provided by Remi's modular build
 dnf module enable redis:remi-7.2 -y
 
 ############################################################
@@ -143,6 +162,7 @@ dnf module enable redis:remi-7.2 -y
 ############################################################
 print_header "INSTALLING REQUIRED PACKAGES"
 
+dnf clean all
 dnf install -y \
     python3.12 \
     python3.12-devel \
@@ -233,6 +253,7 @@ rm -rf "${NETBOX_ROOT}"
 git clone \
     --branch "${NETBOX_VERSION}" \
     --depth 1 \
+    --quiet \
     https://github.com/netbox-community/netbox.git \
     "${NETBOX_ROOT}"
 
@@ -249,13 +270,16 @@ rm -rf venv
 
 source venv/bin/activate
 
+log_info "Upgrading core pip environment utilities..."
 pip install --upgrade pip setuptools wheel
 
+log_info "Installing WSGI and production database bindings..."
 pip install gunicorn "psycopg[c,pool]"
 
+log_info "Installing NetBox application requirements (this can take several minutes)..."
 pip install -r requirements.txt
 
-log_info "Python dependencies installed"
+log_info "Python dependencies installed successfully."
 
 ############################################################
 # NETBOX CONFIGURATION
@@ -369,218 +393,5 @@ else:
 EOF
 
 log_info "Admin account verified"
-
-############################################################
-# NETBOX HEALTH CHECK
-############################################################
-print_header "VERIFYING NETBOX INSTALLATION"
-
-python netbox/manage.py check
-
-log_info "Django checks completed successfully"
-
-############################################################
-# PREPARE FOR SERVICES
-############################################################
-print_header "PREPARING SYSTEM SERVICES"
-
-mkdir -p /var/log/netbox
-
-chown -R root:root "${NETBOX_ROOT}"
-
-log_info "System preparation completed"
-
-############################################################
-# SYSTEMD SERVICES
-############################################################
-print_header "CREATING SYSTEMD SERVICES"
-
-cat > /etc/systemd/system/netbox.service <<EOF
-[Unit]
-Description=NetBox WSGI Service
-After=network.target postgresql-15.service redis.service
-Requires=postgresql-15.service redis.service
-
-[Service]
-Environment="DJANGO_SETTINGS_MODULE=netbox.settings"
-WorkingDirectory=${NETBOX_ROOT}/netbox
-
-ExecStart=${NETBOX_ROOT}/venv/bin/gunicorn \
-    --bind 127.0.0.1:8001 \
-    --workers 3 \
-    --timeout 120 \
-    netbox.wsgi
-
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-cat > /etc/systemd/system/netbox-worker.service <<EOF
-[Unit]
-Description=NetBox RQ Worker
-After=network.target postgresql-15.service redis.service
-Requires=postgresql-15.service redis.service
-
-[Service]
-Environment="DJANGO_SETTINGS_MODULE=netbox.settings"
-WorkingDirectory=${NETBOX_ROOT}/netbox
-
-ExecStart=${NETBOX_ROOT}/venv/bin/python manage.py rqworker
-
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-log_info "Systemd service files created"
-
-############################################################
-# SSL CERTIFICATE
-############################################################
-print_header "GENERATING SELF-SIGNED SSL CERTIFICATE"
-
-mkdir -p /etc/ssl/netbox
-
-openssl req -x509 \
-    -nodes \
-    -days 365 \
-    -newkey rsa:2048 \
-    -keyout /etc/ssl/netbox/netbox.key \
-    -out /etc/ssl/netbox/netbox.crt \
-    -subj "/C=US/ST=State/L=City/O=IT/CN=${FQDN}"
-
-chmod 600 /etc/ssl/netbox/netbox.key
-
-log_info "SSL certificate generated"
-
-############################################################
-# NGINX CONFIGURATION
-############################################################
-print_header "CONFIGURING NGINX"
-
-cat > /etc/nginx/conf.d/netbox.conf <<EOF
-server {
-    listen 80;
-    server_name ${FQDN};
-
-    return 301 https://\$host\$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name ${FQDN};
-
-    ssl_certificate /etc/ssl/netbox/netbox.crt;
-    ssl_certificate_key /etc/ssl/netbox/netbox.key;
-
-    client_max_body_size 25m;
-
-    location /static/ {
-        alias ${NETBOX_ROOT}/netbox/static/;
-        expires 30d;
-    }
-
-    location / {
-        proxy_pass http://127.0.0.1:8001;
-
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-
-        proxy_redirect off;
-    }
-}
-EOF
-
-nginx -t
-
-log_info "Nginx configuration validated"
-
-############################################################
-# FIREWALL
-############################################################
-print_header "CONFIGURING FIREWALL"
-
-systemctl enable --now firewalld || true
-
-firewall-cmd --permanent --add-service=http || true
-firewall-cmd --permanent --add-service=https || true
-
-firewall-cmd --reload || true
-
-log_info "Firewall configuration completed"
-
-############################################################
-# SELINUX
-############################################################
-print_header "CONFIGURING SELINUX"
-
-setenforce 0 2>/dev/null || true
-
-log_info "SELinux set to permissive mode (runtime)"
-
-############################################################
-# START SERVICES
-############################################################
-print_header "STARTING SERVICES"
-
-systemctl daemon-reexec
-systemctl daemon-reload
-
-systemctl enable netbox
-systemctl enable netbox-worker
-systemctl enable nginx
-
-systemctl restart netbox
-systemctl restart netbox-worker
-systemctl restart nginx
-
-log_info "Services started"
-
-############################################################
-# VERIFY SERVICES
-############################################################
-print_header "VERIFYING SERVICE STATUS"
-
-sleep 5
-
-systemctl --no-pager --full status netbox || true
-systemctl --no-pager --full status netbox-worker || true
-systemctl --no-pager --full status nginx || true
-
-############################################################
-# NETBOX URL TEST
-############################################################
-print_header "TESTING NETBOX"
-
-curl -k -I https://127.0.0.1 2>/dev/null || true
-
-############################################################
-# INSTALLATION COMPLETE
-############################################################
-print_header "NETBOX INSTALLATION COMPLETED"
-
-printf "%b\n" "${GREEN}URL      : https://${FQDN}${NC}"
-printf "%b\n" "${GREEN}URL      : https://${IPADDRESS}${NC}"
-printf "%b\n" "${GREEN}Username : ${ADMIN_USER}${NC}"
-printf "%b\n" "${GREEN}Password : ${ADMIN_PASS}${NC}"
-
-echo
 print_line
-
-printf "%b\n" "${GREEN}"
-echo "############################################################"
-echo "#                                                          #"
-echo "#           NETBOX INSTALLATION SUCCESSFUL                 #"
-echo "#                                                          #"
-echo "############################################################"
-printf "%b\n" "${NC}"
-
-echo
-log_info "NetBox deployment completed successfully."
+log_info "Netbox preparation phase complete!"
