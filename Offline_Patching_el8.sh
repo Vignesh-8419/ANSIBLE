@@ -40,8 +40,8 @@ display_usage() {
     echo "Usage: $0 --node=<node1,node2,localhost,...>"
     echo ""
     echo "Options:"
-    echo "  --node=    Comma-separated list of IP addresses or hostnames to patch."
-    echo "             Use 'localhost' to include the master server."
+    echo "  --node=     Comma-separated list of IP addresses or hostnames to patch."
+    echo "              Use 'localhost' to include the master server."
     echo ""
     echo "Example:"
     echo "  $0 --node=192.168.253.10,192.168.253.11,localhost"
@@ -161,7 +161,7 @@ REPO_EOF
         log_node_info "Flushing package manager tracking logs..."
         dnf clean all > /dev/null
         
-        log_node_info "Starting structural system patching (Streaming live progress)..."
+        log_node_info "Starting structural system patching..."
         
         TMP_LOG=$(mktemp)
         
@@ -225,38 +225,91 @@ EOF
 }
 
 # -----------------------------------------------------------------------------
-# RUN ORCHESTRATION PIPELINE
+# RUN ORCHESTRATION PIPELINE (PARALLELIZED)
 # -----------------------------------------------------------------------------
 print_header "OFFLINE INFRASTRUCTURE PATCHING ORCHESTRATOR"
 log_info "Targeting nodes: ${TARGET_NODES[*]}"
 echo ""
 
+# Temporary directory to keep isolated execution outputs
+LOG_DIR=$(mktemp -d)
+declare -A NODE_PIDS
+
 for NODE in "${TARGET_NODES[@]}"; do
     NODE=$(echo "$NODE" | xargs)
-    print_header "PROCESSING AGENT NODE: ${NODE}"
     
-    EXPORT_ENV="COLOR_INFO='${COLOR_INFO}' COLOR_OK='${COLOR_OK}' COLOR_FAIL='${COLOR_FAIL}' COLOR_BLUE='${COLOR_BLUE}' COLOR_RESET='${COLOR_RESET}' REPO_MOUNT='${REPO_MOUNT}' MOUNT_POINT='${MOUNT_POINT}' CIFS_USER='${CIFS_USER}' CIFS_PASS='${CIFS_PASS}' BACKUP_DIR_NAME='${BACKUP_DIR_NAME}'"
+    # We execute each node logic inside an asynchronous subshell block `(...) &`
+    (
+        # Create an isolated temporary file to capture logs so outputs don't interlace on the screen
+        NODE_LOG="${LOG_DIR}/${NODE}.log"
+        {
+            print_header "PROCESSING AGENT NODE: ${NODE}"
+            
+            EXPORT_ENV="COLOR_INFO='${COLOR_INFO}' COLOR_OK='${COLOR_OK}' COLOR_FAIL='${COLOR_FAIL}' COLOR_BLUE='${COLOR_BLUE}' COLOR_RESET='${COLOR_RESET}' REPO_MOUNT='${REPO_MOUNT}' MOUNT_POINT='${MOUNT_POINT}' CIFS_USER='${CIFS_USER}' CIFS_PASS='${CIFS_PASS}' BACKUP_DIR_NAME='${BACKUP_DIR_NAME}'"
 
-    if [ "$NODE" = "localhost" ] || [ "$NODE" = "127.0.0.1" ]; then
-        log_info "Executing local lifecycle loop operations on Master Server directly..."
-        if eval "$EXPORT_ENV; $(node_lifecycle_worker)"; then
-            log_ok "Master Server patching pipeline executed cleanly."
-        else
-            log_fail "Master Server update run experienced an execution fault."
-        fi
-    else
-        log_info "Connecting to remote system node via SSH: ${NODE}..."
-        
-        if sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${NODE}" "$EXPORT_ENV bash -s" << EOF
+            if [ "$NODE" = "localhost" ] || [ "$NODE" = "127.0.0.1" ]; then
+                log_info "Executing local lifecycle loop operations on Master Server directly..."
+                if eval "$EXPORT_ENV; $(node_lifecycle_worker)"; then
+                    log_ok "Master Server patching pipeline executed cleanly."
+                    exit 0
+                else
+                    log_fail "Master Server update run experienced an execution fault."
+                    exit 1
+                fi
+            else
+                log_info "Connecting to remote system node via SSH: ${NODE}..."
+                
+                if sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 "${SSH_USER}@${NODE}" "$EXPORT_ENV bash -s" << EOF
 $(node_lifecycle_worker)
 EOF
-        then
-            log_ok "Node Execution Workflow completed for system target: ${NODE}"
-        else
-            log_fail "Critical communication or process breakdown observed on Node target: ${NODE}"
-        fi
-    fi
+                then
+                    log_ok "Node Execution Workflow completed for system target: ${NODE}"
+                    exit 0
+                else
+                    log_fail "Critical communication or process breakdown observed on Node target: ${NODE}"
+                    exit 1
+                fi
+            fi
+        } > "$NODE_LOG" 2>&1
+    ) &
+    
+    # Track background Process ID (PID) maps to identify completion statuses
+    NODE_PIDS["$NODE"]=$!
+done
+
+log_info "All parallel workflows dispatched. Waiting for nodes to finish..."
+echo "----------------------------------------------------------------------"
+
+# -----------------------------------------------------------------------------
+# COLLATING RESULTS & CLEANUP
+# -----------------------------------------------------------------------------
+declare -A NODE_STATUSES
+
+# Wait for all individual node processes to terminate
+for NODE in "${!NODE_PIDS[@]}"; do
+    PID=${NODE_PIDS[$NODE]}
+    wait "$PID"
+    NODE_STATUSES["$NODE"]=$?
+    
+    # Stream the completely buffered logs out cleanly for readability
+    cat "${LOG_DIR}/${NODE}.log"
     echo ""
 done
 
+# Cleanup log directory
+rm -rf "$LOG_DIR"
+
+# Summary Table
 print_header "COMPLETED SYSTEM PATCHING ORCHESTRATION PROFILE SUMMARY"
+printf "%-25s | %-10s\n" "NODE TARGET" "STATUS"
+echo "----------------------------------------------------------------------"
+for NODE in "${TARGET_NODES[@]}"; do
+    NODE=$(echo "$NODE" | xargs)
+    STATUS_CODE=${NODE_STATUSES["$NODE"]}
+    if [ "$STATUS_CODE" -eq 0 ]; then
+        printf "%-25s | ${COLOR_OK}SUCCESS${COLOR_RESET}\n" "$NODE"
+    else
+        printf "%-25s | ${COLOR_FAIL}FAILED (Exit: %s)${COLOR_RESET}\n" "$NODE" "$STATUS_CODE"
+    fi
+done
+echo "----------------------------------------------------------------------"
