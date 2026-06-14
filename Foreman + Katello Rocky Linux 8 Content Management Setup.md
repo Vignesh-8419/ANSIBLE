@@ -119,6 +119,10 @@ Create Product:
 Rocky8
 ```
 
+```text
+Restrict to Architecture - No restriction (Else repositories will be empty)
+```
+
 Add repositories:
 
 ```text
