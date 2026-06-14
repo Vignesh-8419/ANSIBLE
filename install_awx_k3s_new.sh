@@ -29,11 +29,11 @@ INTERFACE=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
 
 echo "============================================================"
 echo "🚀 Starting AWX installation on K3s"
-echo "Namespace           : $NAMESPACE"
-echo "Operator Version    : $OPERATOR_VERSION"
-echo "VIP                 : $VIP"
-echo "Interface           : $INTERFACE"
-echo "kube-rbac-proxy     : $KUBE_RBAC_PROXY_IMAGE"
+echo "Namespace            : $NAMESPACE"
+echo "Operator Version     : $OPERATOR_VERSION"
+echo "VIP                  : $VIP"
+echo "Interface            : $INTERFACE"
+echo "kube-rbac-proxy      : $KUBE_RBAC_PROXY_IMAGE"
 echo "============================================================"
 echo -e "${GREEN}✅ Background:${NC} Defined variables for namespace, operator version, VIP, admin password, and proxy image."
 
