@@ -2,6 +2,10 @@
 
 This repository contains custom Foreman PXE GRUB2 templates for automated Rocky Linux and CentOS installations using Kickstart over HTTP.
 
+```text
+Hosts -> Templates -> Provisioning Templates
+```
+
 ## Templates Included
 
 ### 1. PXEGrub2 RockyOS UEFI Static Kickstart
