@@ -95,7 +95,7 @@ Navigate to: `Hosts → Templates → Provisioning Templates`
 | Locked | No |
 | Snippet | No |
 
-* **Purpose:** Supplies UEFI PXE boot configuration for Rocky Linux 8 kickstart deployments.
+* **Purpose:** Supplies UEFI PXE boot configuration for Rocky Linux 8 kickstart deployments Please find readme file on Vignesh-8419/ANSIBLE - Foreman PXE UEFI Kickstart Templates.md.
 
 ---
 
