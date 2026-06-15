@@ -1,11 +1,16 @@
 #!/bin/bash
 
-### Detect primary interface (default route)
+# Detect interface from default route
 iface=$(ip route | awk '/default/ {print $5}' | head -n1)
 
+# Fallback: first non-loopback interface that has an IPv4 address
 if [ -z "$iface" ]; then
-  echo "ERROR: No default interface detected"
-  exit 1
+    iface=$(ip -o -4 addr show | awk '!/ lo / {print $2; exit}')
+fi
+
+if [ -z "$iface" ]; then
+    echo "ERROR: No active network interface detected"
+    exit 1
 fi
 
 echo "Detected interface: $iface"
