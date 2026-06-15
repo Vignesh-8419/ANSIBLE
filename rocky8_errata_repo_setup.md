@@ -71,3 +71,7 @@ modifyrepo_c /tmp/errata/errata.xml /var/www/html/local_repo/Rocky8-AppStream/re
 
 # 13. Run localized modification tools to officially inject errata records into Updates channel
 modifyrepo_c /tmp/errata/errata.xml /var/www/html/local_repo/Rocky8-Updates/repodata/
+
+##foreman-installer --enable-foreman-proxy-plugin-remote-execution-script
+Go to Hosts > Run Job.Set Job category to Commands and Job template to Run Command - SSH.Select your target group of servers using the Search Query bar.Paste the script above into the Command field.Scroll down to Scheduling, select Once, set your target maintenance window time, and click Submit.
+[ "$(uname -r)" = "4.18.0-553.132.1.el8_10.x86_64" ] && echo "Target kernel already active. Skipping." || (echo "Outdated kernel found. Patching..." && dnf update -y && shutdown -r +1 "Patch applied. Rebooting.")
