@@ -120,7 +120,7 @@ Rocky8
 ```
 
 ```text
-Restrict to Architecture - No restriction (Else repositories will be empty)
+Restrict to OS - No restriction (Else repositories will be empty)
 ```
 
 Add repositories:
