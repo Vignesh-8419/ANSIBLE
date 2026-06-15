@@ -346,6 +346,27 @@ rocky-08-01
 
 Import the virtual machine into Foreman.
 
+## Bulk import
+
+``` text
+#!/bin/bash
+
+USER="admin"
+PASS="password"
+CR_ID=1
+
+for VM in server01 server02 server03; do
+    echo "Importing $VM..."
+
+    hammer host create \
+        --name "$VM" \
+        --compute-resource-id "$CR_ID" \
+        --managed true \
+        --organization "Default Organization" \
+        --location "Default Location"
+done
+```
+
 ---
 
 # Verify Host Association
