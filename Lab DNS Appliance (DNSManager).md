@@ -75,7 +75,7 @@ wails doctor
 💻 Code Catalog Map
 Deploy the files below into your configured workspace folders:
 
-FILE: C:\Projects\DNSManager\wails.json
+## FILE: C:\Projects\DNSManager\wails.json
 JSON
 {
   "$schema": "[https://wails.io/schemas/config.v2.json](https://wails.io/schemas/config.v2.json)",
