@@ -75,7 +75,7 @@ wails doctor
 💻 Code Catalog Map
 Deploy the files below into your configured workspace folders:
 
-## FILE: C:\Projects\DNSManager\wails.json
+## ##FILE: C:\Projects\DNSManager\wails.json
 JSON
 {
   "$schema": "[https://wails.io/schemas/config.v2.json](https://wails.io/schemas/config.v2.json)",
@@ -88,7 +88,7 @@ JSON
     "email": "sysadmin@vgs.com"
   }
 }
-FILE: C:\Projects\DNSManager\go.mod
+##FILE: C:\Projects\DNSManager\go.mod
 Go
 module DNSManager
 
@@ -99,7 +99,7 @@ require (
 	[github.com/wailsapp/wails/v2](https://github.com/wailsapp/wails/v2) v2.9.2
 	modernc.org/sqlite v1.34.5
 )
-FILE: C:\Projects\DNSManager\main.go
+##FILE: C:\Projects\DNSManager\main.go
 Go
 package main
 
@@ -135,7 +135,7 @@ func main() {
 		println("Error:", err.Error())
 	}
 }
-FILE: C:\Projects\DNSManager\app.go
+##FILE: C:\Projects\DNSManager\app.go
 Go
 package main
 
@@ -184,7 +184,7 @@ func (a *App) AddRecord(hostname string, ip string, recordType string) error {
 func (a *App) DeleteRecord(id int) error {
 	return database.DeleteRecord(id)
 }
-FILE: C:\Projects\DNSManager\database\sqlite.go
+##FILE: C:\Projects\DNSManager\database\sqlite.go
 Go
 package database
 
@@ -261,7 +261,7 @@ func DeleteRecord(id int) error {
 	_, err := DB.Exec("DELETE FROM records WHERE id = ?", id)
 	return err
 }
-FILE: C:\Projects\DNSManager\dns\dns.go
+##FILE: C:\Projects\DNSManager\dns\dns.go
 Go
 package dns
 
@@ -390,7 +390,7 @@ func hostnameExistsInDB(hostname string) bool {
 	}
 	return false
 }
-FILE: C:\Projects\DNSManager\frontend\package.json
+##FILE: C:\Projects\DNSManager\frontend\package.json
 JSON
 {
   "name": "frontend",
@@ -413,7 +413,7 @@ JSON
     "vite": "^5.1.4"
   }
 }
-FILE: C:\Projects\DNSManager\frontend\src\main.jsx
+##FILE: C:\Projects\DNSManager\frontend\src\main.jsx
 JavaScript
 import React from 'react'
 import ReactDOM from 'react-dom/client'
@@ -425,7 +425,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <App />
   </React.StrictMode>,
 )
-FILE: C:\Projects\DNSManager\frontend\src\style.css
+##FILE: C:\Projects\DNSManager\frontend\src\style.css
 CSS
 body {
     margin: 0;
@@ -433,7 +433,7 @@ body {
     background-color: #121824;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
-FILE: C:\Projects\DNSManager\frontend\src\App.jsx
+##FILE: C:\Projects\DNSManager\frontend\src\App.jsx
 JavaScript
 import { useEffect, useState } from 'react';
 import {
