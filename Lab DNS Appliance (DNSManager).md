@@ -1,33 +1,84 @@
-# MASTER ARCHITECTURE & IMPLEMENTATION GUIDE: VGS LAB DNS APPLIANCE
-# Generated: 2026-06-18
-# Frameworks: Go 1.25.11, Wails v2, React (Vite)
-# Database: modernc.org/sqlite (Pure-Go / CGO-Disabled)
+Markdown
+# VGS Lab DNS Appliance (DNSManager)
 
-================================================================================
-SECTION 1: POWERSHELL ENVIRONMENT SETUP & INITIALIZATION
-================================================================================
-# Run the following commands in an elevated PowerShell Window (Run as Administrator)
-# This aligns local environment paths, updates system variables, and structures the project workspace.
+An enterprise-grade, split-horizon local DNS appliance desktop management console built using **Go**, **Wails (Vite + React)**, and a pure-Go implementation of **SQLite**.
 
-# 1. Update Path Environment Variables for the active session and user scope
+This application functions as a dedicated local infrastructure gateway for private homelabs. It allows systems administrators to dynamically provision, modify, and purge localized core infrastructure network records (`A`, `AAAA`, `CNAME`, `PTR`) for hypervisors (VMware ESXi, vCenter instances) and enterprise Linux server clusters (Rocky Linux, CentOS) via an embedded modern UI dashboard. Concurrently, the engine seamlessly proxies all non-local public requests to upstream internet DNS authorities over optimized socket connections.
+
+Because we are utilizing `modernc.org/sqlite`, **CGO is entirely disabled**. This eliminates any requirement for a local C-compiler (MSYS2/GCC) on Windows, providing a fast, native, and friction-free compilation workflow using your manually installed environment components.
+
+---
+
+## 🏗️ Core Architecture & Split-Horizon Logic
+
+The appliance utilizes a single-binary architecture with an isolated backend service loop and an embedded data persistence layer, eliminating the need for a separate database or engine process.
+
+### 1. Database Schema (`database/sqlite.go`)
+Data persistence is handled by a local `records.db` file driven by a pure-Go SQLite driver (`modernc.org/sqlite`). This driver works entirely in user space, sidestepping Windows CGO/C-compiler toolchain requirements.
+
+```sql
+CREATE TABLE IF NOT EXISTS records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hostname TEXT NOT NULL,
+    ip TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'A',
+    ttl INTEGER DEFAULT 60
+);
+2. Resolution Processing Pipeline (dns/dns.go)
+The application binds to port 53/UDP on all interfaces (0.0.0.0:53) and handles incoming queries via the following logic flow:
+
+Inbound Query Evaluation: The packet is unpacked and parsed for the target domain string and query type (A, AAAA, CNAME, PTR).
+
+Local Lookup Phase: The engine searches the SQLite database. If a matching hostname and record type exist, it constructs a success answer payload (RcodeSuccess) with the configured translation target and returns it to the client immediately.
+
+Zone Boundary Filtering: If the record is missing from the database but contains a target hostname ending in .vgs or vgs.com, the engine intercepts it as an internal zone boundary failure and drops an authoritative NXDOMAIN (RcodeNameError) response to prevent leakage to public authorities.
+
+Upstream Proxy Phase: If the query is outside the internal laboratory domain boundaries, the request is transparently proxied over UDP to public upstream recursive servers (1.1.1.1:53) with a strict 2-second timeout threshold before returning the answer to the workstation client.
+
+📂 Project Directory Structure
+Plaintext
+C:\Projects\DNSManager\
+├── database/          
+│   └── sqlite.go      <-- Custom Pure-Go Data Logic Layer (SQLite initialization)
+├── dns/               
+│   └── dns.go         <-- Custom DNS Socket Processing Layer (Port 53 Engine)
+├── frontend/          
+│   ├── src/
+│   │   └── App.jsx    <-- Desktop UI Dashboard Component (React/Vite)
+│   └── package.json   
+├── app.go             <-- Wails Application Bindings & Startup Routines
+├── main.go            <-- Main Entrypoint & Window Configuration Setup
+├── go.mod             <-- Go Module Dependencies
+├── wails.json         <-- Wails Framework Environment Declarations
+└── README.md          <-- Systems Architecture & Lifecycle Guide
+🛠️ Environment Path Alignment & Core Workspace Initialization
+Execute these terminal commands sequentially inside an elevated PowerShell window (Run as Administrator). Since you have already manually downloaded and installed Node.js v24.16.0-x64 and Go 1.25.11 from the web, this phase maps your workspace binary paths and pulls down the Wails CLI framework tool.
+
+PowerShell
+# 1. Map your manual Go user binary space to the active and permanent environment variables
 $env:Path += ";$env:USERPROFILE\go\bin"
 [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$env:USERPROFILE\go\bin", "User")
 
-# 2. Create the core project directory matrix
+# 2. Construct the project subdirectory matrix layout
 New-Item -ItemType Directory -Path "C:\Projects\DNSManager"
 New-Item -ItemType Directory -Path "C:\Projects\DNSManager\database"
 New-Item -ItemType Directory -Path "C:\Projects\DNSManager\dns"
 
-# 3. Install Wails global command-line compilation utility
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
+# 3. Pull down, compile, and deploy the global Wails framework command line application binaries
+go install [github.com/wailsapp/wails/v2/cmd/wails@latest](https://github.com/wailsapp/wails/v2/cmd/wails@latest)
 
-================================================================================
-SECTION 2: CONFIGURATION & PROJECT DEPENDENCY MANIFESTS
-================================================================================
+# 4. Verify system installation versions match project constraints
+go version
+node -v
+npm -v
+wails doctor
+💻 Code Catalog Map
+Deploy the files below into your configured workspace folders:
 
-#### FILE: C:\Projects\DNSManager\wails.json
+FILE: C:\Projects\DNSManager\wails.json
+JSON
 {
-  "$schema": "https://wails.io/schemas/config.v2.json",
+  "$schema": "[https://wails.io/schemas/config.v2.json](https://wails.io/schemas/config.v2.json)",
   "name": "DNSManager",
   "outputfilename": "DNSManager",
   "frontend:dir": "frontend",
@@ -37,72 +88,27 @@ SECTION 2: CONFIGURATION & PROJECT DEPENDENCY MANIFESTS
     "email": "sysadmin@vgs.com"
   }
 }
-
-#### FILE: C:\Projects\DNSManager\go.mod
+FILE: C:\Projects\DNSManager\go.mod
+Go
 module DNSManager
 
 go 1.25.11
 
 require (
-	github.com/miekg/dns v1.1.58
-	github.com/wailsapp/wails/v2 v2.9.2
+	[github.com/miekg/dns](https://github.com/miekg/dns) v1.1.58
+	[github.com/wailsapp/wails/v2](https://github.com/wailsapp/wails/v2) v2.9.2
 	modernc.org/sqlite v1.34.5
 )
-
-require (
-	github.com/bep/debounce v1.2.1 // indirect
-	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/go-ole/go-ole v1.3.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
-	github.com/godbus/dbus/v5 v5.1.0 // indirect
-	github.com/jchv/go-winloader v0.0.0-20210711035445-715c2860da7e // indirect
-	github.com/labstack/echo/v4 v4.13.3 // indirect
-	github.com/labstack/cookieauth v0.0.0-20190412102148-ee7da6337894 // indirect
-	github.com/labstack/gommon v0.4.2 // indirect
-	github.com/leaanthony/go-ansi-parser v1.6.1 // indirect
-	github.com/leaanthony/gosod v1.0.4 // indirect
-	github.com/leaanthony/slicer v1.6.0 // indirect
-	github.com/leaanthony/u v1.1.1 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/ncruces/go-strftime v0.1.9 // indirect
-	github.com/pkg/browser v1.1.6 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
-	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/samber/lo v1.49.1 // indirect
-	github.com/tkrajina/go-reflector v0.5.8 // indirect
-	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/valyala/fasttemplate v1.2.2 // indirect
-	github.com/wailsapp/go-webview2 v1.0.19 // indirect
-	github.com/wailsapp/mimetype v1.4.1 // indirect
-	golang.org/x/crypto v0.33.0 // indirect
-	golang.org/x/mod v0.18.0 // indirect
-	golang.org/x/net v0.35.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
-	golang.org/x/text v0.22.0 // indirect
-	golang.org/x/tools v0.22.0 // indirect
-	modernc.org/gc/v3 v3.0.0-20240107135036-0864ea734153 // indirect
-	modernc.org/libc v1.55.3 // indirect
-	modernc.org/mathutil v1.6.0 // indirect
-	modernc.org/memory v1.8.0 // indirect
-	modernc.org/strutil v1.2.0 // indirect
-	modernc.org/token v1.1.0 // indirect
-)
-
-================================================================================
-SECTION 3: BACKEND GO KERNEL SOURCE CODE
-================================================================================
-
-#### FILE: C:\Projects\DNSManager\main.go
+FILE: C:\Projects\DNSManager\main.go
+Go
 package main
 
 import (
 	"embed"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"[github.com/wailsapp/wails/v2](https://github.com/wailsapp/wails/v2)"
+	"[github.com/wailsapp/wails/v2/pkg/options](https://github.com/wailsapp/wails/v2/pkg/options)"
+	"[github.com/wailsapp/wails/v2/pkg/options/assetserver](https://github.com/wailsapp/wails/v2/pkg/options/assetserver)"
 )
 
 //go:embed all:frontend/dist
@@ -129,8 +135,8 @@ func main() {
 		println("Error:", err.Error())
 	}
 }
-
-#### FILE: C:\Projects\DNSManager\app.go
+FILE: C:\Projects\DNSManager\app.go
+Go
 package main
 
 import (
@@ -153,13 +159,13 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
 	if err := database.Init(); err != nil {
-		println("Database Initialization Error:", err.Error())
+		println("Database Error:", err.Error())
 	} else {
-		println("SQLite Runtime Engine cleanly attached.")
+		println("SQLite initialized successfully")
 	}
 
 	if err := dns.Start(); err != nil {
-		println("DNS Server Routing Error:", err.Error())
+		println("DNS Error:", err.Error())
 	}
 }
 
@@ -178,8 +184,8 @@ func (a *App) AddRecord(hostname string, ip string, recordType string) error {
 func (a *App) DeleteRecord(id int) error {
 	return database.DeleteRecord(id)
 }
-
-#### FILE: C:\Projects\DNSManager\database\sqlite.go
+FILE: C:\Projects\DNSManager\database\sqlite.go
+Go
 package database
 
 import (
@@ -255,8 +261,8 @@ func DeleteRecord(id int) error {
 	_, err := DB.Exec("DELETE FROM records WHERE id = ?", id)
 	return err
 }
-
-#### FILE: C:\Projects\DNSManager\dns\dns.go
+FILE: C:\Projects\DNSManager\dns\dns.go
+Go
 package dns
 
 import (
@@ -266,17 +272,17 @@ import (
 	"time"
 
 	"DNSManager/database"
-	"github.com/miekg/dns"
+	"[github.com/miekg/dns](https://github.com/miekg/dns)"
 )
 
 func Start() error {
 	server := &dns.Server{Addr: "0.0.0.0:53", Net: "udp"}
 	dns.HandleFunc(".", handleDNSRequest)
 
-	log.Println("Starting DNS Socket processing loop on port 53...")
+	log.Println("Starting DNS server on port 53...")
 	go func() {
 		if err := server.ListenAndServe(); err != nil {
-			log.Fatalf("Failed to bind UDP socket: %s\n", err.Error())
+			log.Fatalf("Failed to start DNS server: %s\n", err.Error())
 		}
 	}()
 
@@ -384,16 +390,12 @@ func hostnameExistsInDB(hostname string) bool {
 	}
 	return false
 }
-
-================================================================================
-SECTION 4: FRONTEND REACT WORKSPACE DASHBOARD
-================================================================================
-
-#### FILE: C:\Projects\DNSManager\frontend\package.json
+FILE: C:\Projects\DNSManager\frontend\package.json
+JSON
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -411,8 +413,8 @@ SECTION 4: FRONTEND REACT WORKSPACE DASHBOARD
     "vite": "^5.1.4"
   }
 }
-
-#### FILE: C:\Projects\DNSManager\frontend\src\main.jsx
+FILE: C:\Projects\DNSManager\frontend\src\main.jsx
+JavaScript
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
@@ -423,16 +425,16 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <App />
   </React.StrictMode>,
 )
-
-#### FILE: C:\Projects\DNSManager\frontend\src\style.css
+FILE: C:\Projects\DNSManager\frontend\src\style.css
+CSS
 body {
     margin: 0;
     padding: 0;
     background-color: #121824;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
-
-#### FILE: C:\Projects\DNSManager\frontend\src\App.jsx
+FILE: C:\Projects\DNSManager\frontend\src\App.jsx
+JavaScript
 import { useEffect, useState } from 'react';
 import {
     GetRecords,
@@ -459,7 +461,7 @@ function App() {
             const data = await GetRecords();
             setRecords(data || []);
         } catch (err) {
-            console.error("Failed to load records:", err);
+            console.error("Failed to sync records from data layer:", err);
         }
     }
 
@@ -469,13 +471,13 @@ function App() {
 
     async function handleAddRecord() {
         if (!hostname || !ip) {
-            alert("Both Hostname and IP/Target parameters are required!");
+            alert("Mandatory Parameter Missing: Both Hostname identities and IP targets are required.");
             return;
         }
 
         try {
             await AddRecord(hostname, ip, recordType);
-            alert(`Committed ${recordType} mapping context successfully for ${hostname}`);
+            alert(`Rule Context [${recordType}] safely committed for tracking.`);
             setHostname("");
             setIp("");
             loadRecords();
@@ -485,7 +487,7 @@ function App() {
     }
 
     async function handleDeleteRecord(id) {
-        if (!window.confirm("Purge selected record from infrastructure maps?")) {
+        if (!window.confirm("Purge selected resolution track mapping permanently from internal store tables?")) {
             return;
         }
 
@@ -499,7 +501,7 @@ function App() {
 
     function handleLocalLookup() {
         if (!lookupQuery) {
-            alert("Enter validation string query.");
+            alert("Please input your verification string mapping query.");
             return;
         }
 
@@ -684,13 +686,44 @@ function App() {
 }
 
 export default App;
+🚀 Workstation Alignment & Operational Verification
+To routing host operational system requests cleanly through your newly deployed local DNS appliance, apply these system networking adapter policies within an administrator terminal session:
 
-================================================================================
-SECTION 5: SYSTEM PRODUCTION COMPILATION & RUNTIME DISPATCH
-================================================================================
-# Run the following terminal automation calls from the app root directory context
-# to link packages, synchronize variables, and boot the daemon engine.
+1. Apply PowerShell DNS Interface Rules
+PowerShell
+# Map your active network adapter's primary DNS address to your target appliance host IP
+Set-DnsClientServerAddress -InterfaceAlias "Wi-Fi" -ServerAddresses ("192.168.31.87", "1.1.1.1")
 
+# Disable standard IPv6 bindings to guarantee lookups are directed to the IPv4 UDP 53 socket
+Disable-NetAdapterBinding -Name "Wi-Fi" -ComponentID ms_tcpip6
+
+# Flush old system resolution maps out of local memory cache
+Clear-DnsClientCache
+2. Verify Operational Performance
+Execute basic diagnostics against the engine to ensure both split-horizon paths resolve properly:
+
+PowerShell
+# Test Local SQLite Resolution Strategy (Should yield target lab record mapped in UI)
+nslookup dns-server-01.vgs.com
+
+# Test Public Internet Proxy Routing Path (Should yield public upstream Cloudflare maps)
+nslookup google.com
+📦 System Compilation & Repository Lifecycle
+Initialize node assets, synchronize dependencies, and push structural baseline frames straight into remote GitHub code trees:
+
+PowerShell
+# Sync core dependencies, initialize frontend libraries and launch the dev watcher environment
 cd C:\Projects\DNSManager
 go mod tidy
+cd frontend
+npm install
+cd ..
 wails dev
+
+# Code Versioning Execution Commands
+git init
+git add .
+git commit -m "feat: complete split-horizon dns appliance with modernc pure-go sqlite engine and react workspace UI"
+git branch -M main
+git remote add origin [https://github.com/YOUR_USERNAME/DNSManager.git](https://github.com/YOUR_USERNAME/DNSManager.git)
+git push -u origin main
