@@ -1,83 +1,102 @@
-Here is a comprehensive, production-ready documentation file structured perfectly for your project. This contains a high-level system overview, configuration requirements for your virtualization environments, and a complete code catalog of every critical file in your workspace so you can keep your repository fully tracked.
+Here is the complete, end-to-end master documentation manual for your project. This document combines your installation prerequisites, folder setup, backend systems, interactive frontend design, and git integration into one unified guide. No steps have been omitted.
 
-Step 1: Overwrite your README.md File
-Run this command in your Administrator PowerShell to quickly open your readme file:
+VGS Lab DNS Appliance — Comprehensive Architecture & Deployment Guide
+This document outlines the complete implementation of DNSManager, an enterprise-grade, split-horizon DNS server engine built using Go, Wails (Vite + React), and SQLite.
+
+The appliance handles internal infrastructure name resolution (A, AAAA, CNAME, PTR) for private labs (VMware ESXi, Rocky Linux, CentOS clusters) while transparently proxying public web space mapping requests to internet upstreams over optimized socket connections.
+
+## Install from internet node-v24.16.0-x64 & go1.25.11.windows-amd64
+
+🛠️ Section 1: Environment Setup & Core Installations
+Execute these phases sequentially inside an elevated PowerShell window (Run as Administrator) to provision the required system tools and runtime environments.
+
+Phase 1: Core System Runtimes
+PowerShell
+# 1. Install Go Programming Language compiler runtime
+winget install GoLang.Go
+
+# 2. Install Node.js & npm (Required for the Vite + React compilation engine)
+winget install OpenJS.NodeJS
+
+# 3. Install MSYS2 (Provides the native GCC compiler toolchain needed for SQLite CGO bindings)
+winget install MSYS2.MSYS2
+⚠️ CRITICAL STEP: Close your current PowerShell terminal completely and open a brand new PowerShell window as Administrator to force Windows to parse and inherit the new global system path variables.
+
+Phase 2: Native C-Compiler (Mingw-w64) Alignment
+SQLite requires a functional native compiler to execute C-bindings securely on Windows hosts. Update the internal MSYS2 engine package manifest by running:
 
 PowerShell
-notepad.exe C:\Projects\DNSManager\README.md
-Delete any old placeholder text, paste the entire block below, save, and close.
-
-Markdown
-# VGS Lab DNS Appliance (DNSManager)
-
-An enterprise-grade, split-horizon local DNS appliance built with **Go**, **Wails (Vite + React)**, and **SQLite**. 
-
-This application functions as a local infrastructure gateway for homelabs or development environments. It allows administrators to dynamically provision localized core records (`A`, `AAAA`, `CNAME`, `PTR`) for hypervisors (VMware ESXi, vCenter) and Linux clusters (Rocky Linux, CentOS) while seamlessly forwarding all public requests to upstream internet DNS authorities.
-
----
-
-## 🚀 Key Features
-* **Split-Horizon Architecture**: Internal enterprise zone queries (`.vgs`, `vgs.com`) resolve instantly out of a highly lightweight local SQLite database.
-* **Integrated Upstream Forwarder**: Real-time failover routing transparently passes public internet domain requests (`google.com`, `github.com`) to Cloudflare (`1.1.1.1`).
-* **Multi-Type DNS Support**: Complete support for provisioning `A` (IPv4), `AAAA` (IPv6), `CNAME` (Aliases), and `PTR` (Reverse Lookup) pointer fields.
-* **Modern Isolated UX**: Isolated utility lookup matrix dashboard separate from the complete searchable global inventory database page.
-
----
-
-## 🛠️ Local Host & Lab Machine Configuration
-
-To transition your system from passing explicit IP endpoints during lookups (`nslookup host <IP>`) to evaluating native short commands (`nslookup host`), apply the following architectural alignments.
-
-### 1. Windows Management Host Configuration
-Open **PowerShell as an Administrator** and apply static binding rules directly to your active network card interface to route your laptop's interface traffic through your running Wails backend application context loop:
-
-```powershell
-# Assign primary interface lookup to your local appliance binding address
-Set-DnsClientServerAddress -InterfaceAlias "Wi-Fi" -ServerAddresses ("192.168.31.87", "1.1.1.1")
-
-# Disable IPv6 DNS binding adjustments to stop ISP router overrides
-Disable-NetAdapterBinding -Name "Wi-Fi" -ComponentID ms_tcpip6
-
-# Flush system memory resolver state cache maps
-Clear-DnsClientCache
-2. VMware Virtual Machine Guest Network Configuration
-Ensure your target guest VMs are deployed on a Bridged Virtual Switch (VMnet0) sharing the primary host interface card framework.
-
-For Rocky Linux / CentOS 8+ nodes:
-Bash
-# Modify connection network maps (replace ens33 with your adapter profile)
-sudo nmcli connection modify ens33 ipv4.dns "192.168.31.87"
-sudo nmcli connection up ens33
-For VMware ESXi Hypervisors:
-Access the ESXi Host Client Web UI Console.
-
-Navigate to Networking ➔ TCP/IP Stacks ➔ Default TCP/IP Stack ➔ Edit Settings.
-
-Set Primary DNS Server to your running appliance node address: 192.168.31.87.
-
-🖥️ Development Lifecycle & Execution Commands
-Run these core operational terminal actions within the project base root directory (C:\Projects\DNSManager):
+ridk exec pacman -S --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-make
+To guarantee global visibility, verify your runtime configurations return active tracking outputs:
 
 PowerShell
-# Drop tracking data artifacts to clear testing storage state configurations
-Remove-Item -Force .\records.db
+go version
+node -v
+npm -v
+gcc --version
+Phase 3: Wails Framework Global Deployment
+Download, compile, and place the Wails desktop software toolkit directly into your runtime execution path:
 
-# Clear Wails compilation storage artifacts and dependency trees
-wails clean
+PowerShell
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+Verify compilation success and validation checkmarks:
 
-# Run compiling asset watcher loop in live debug execution context mode
-wails dev
+PowerShell
+wails doctor
+📁 Section 2: Directory Architecture & Package Provisioning
+Phase 1: Structural Initialization
+Instruct Wails to build out an optimal desktop application template directory boilerplate setup inside your code projects parent folder:
 
----
+PowerShell
+cd C:\Projects
+wails init -n DNSManager -t react
+cd DNSManager
+Phase 2: Create Custom Module Subdirectories
+Create the tracking sub-folders needed to isolate your custom database and background DNS engines:
 
-### Step 2: The Complete Project Code Catalog
+PowerShell
+New-Item -ItemType Directory -Path .\database
+New-Item -ItemType Directory -Path .\dns
+Phase 3: Package Tracking Registrations
+Add the core low-level packages required to run the engine loop and embedded database files:
 
-Below is the exact blueprint of every file currently active in your directory tree. Keep this structural manifest safe or commit it inside a `/docs` sub-folder in your git tree.
+PowerShell
+# Pull raw UDP/TCP packet handling utilities
+go get github.com/miekg/dns
 
-### 📋 Backend File Architecture
+# Pull the lightweight standalone SQLite database storage provider
+go get modernc.org/sqlite
 
-#### 1. `.\main.go`
-```go
+# Sync and tidy your backend dependency maps
+go mod tidy
+
+# Navigate into the UI workspace to map frontend dependencies
+cd frontend
+npm install
+cd ..
+Your system folder structure is now perfectly mapped out and looks like this:
+
+Plaintext
+C:\Projects\DNSManager\
+├── database/          
+│   └── sqlite.go      <-- Custom Data Logic Layer
+├── dns/               
+│   └── dns.go         <-- Custom DNS Socket Processing Layer
+├── frontend/          
+│   ├── src/
+│   │   └── App.jsx    <-- Desktop UI Dashboard Component
+│   └── package.json   
+├── app.go             
+├── main.go            
+├── go.mod             
+├── wails.json         
+└── README.md          
+💻 Section 3: The Complete Production Code Catalog
+Open your administrator workspace and map out the files below by copying and pasting the complete code blocks into their respective target files.
+
+📋 Part A: Go Backend Engine Source
+1. File: C:\Projects\DNSManager\main.go
+Go
 package main
 
 import (
@@ -112,7 +131,7 @@ func main() {
 		println("Error:", err.Error())
 	}
 }
-2. .\app.go
+2. File: C:\Projects\DNSManager\app.go
 Go
 package main
 
@@ -161,7 +180,7 @@ func (a *App) AddRecord(hostname string, ip string, recordType string) error {
 func (a *App) DeleteRecord(id int) error {
 	return database.DeleteRecord(id)
 }
-3. .\database\sqlite.go
+3. File: C:\Projects\DNSManager\database\sqlite.go
 Go
 package database
 
@@ -238,7 +257,7 @@ func DeleteRecord(id int) error {
 	_, err := DB.Exec("DELETE FROM records WHERE id = ?", id)
 	return err
 }
-4. .\dns\dns.go
+4. File: C:\Projects\DNSManager\dns\dns.go
 Go
 package dns
 
@@ -367,8 +386,8 @@ func hostnameExistsInDB(hostname string) bool {
 	}
 	return false
 }
-⚛️ Frontend UI Architecture
-5. .\frontend\src\App.jsx
+⚛️ Part B: React Frontend Dashboard UI
+5. File: C:\Projects\DNSManager\frontend\src\App.jsx
 JavaScript
 import { useEffect, useState } from 'react';
 import {
@@ -434,7 +453,6 @@ function App() {
         }
     }
 
-    // Front-end fast inventory database lookup engine simulation method
     function handleLocalLookup() {
         if (!lookupQuery) {
             alert("Please enter a hostname to lookup");
@@ -625,25 +643,66 @@ function App() {
 }
 
 export default App;
-Step 3: Pushing Your Project to GitHub
-Ready to store everything in your remote source control repository? Run this simple, standard Git sequence inside your directory terminal to initialize, stage, and deliver your codebase up to your GitHub dashboard profile:
+🛠️ Section 4: Operational Verification & Infrastructure Deployment
+Once the source scripts are dropped into place, execute the compilation engine loop inside your PowerShell (Admin) window:
 
 PowerShell
-# Initialize git workspace inside your root directory context
+# Clear old build fragments and execute the compiler
+wails clean
+wails dev
+Host Machine Traffic Routing Alignment
+To allow Windows to query the application cleanly without specifying an IP at the end of every command, pass these network interface rules:
+
+PowerShell
+# Route your active network card's DNS requests to the appliance engine
+Set-DnsClientServerAddress -InterfaceAlias "Wi-Fi" -ServerAddresses ("192.168.31.87", "1.1.1.1")
+
+# Disable IPv6 DNS lookups to keep your home router from bypassing the app
+Disable-NetAdapterBinding -Name "Wi-Fi" -ComponentID ms_tcpip6
+
+# Clear out any old cached name records
+Clear-DnsClientCache
+Test the results directly using clean, standard commands:
+
+PowerShell
+# 1. Tests local development zone mapping out of SQLite
+nslookup dns-server-01.vgs.com
+
+# 2. Tests live proxy routing out to the internet via Cloudflare
+nslookup google.com
+🚀 Section 5: Repository Lifecycle Integration (GitHub)
+Create the Repository Readme
+Open the local project document file using Notepad:
+
+PowerShell
+notepad.exe C:\Projects\DNSManager\README.md
+Paste the following project summary, save, and exit:
+
+Markdown
+# VGS Lab DNS Appliance (DNSManager)
+
+An enterprise-grade, split-horizon local DNS appliance built with **Go**, **Wails (Vite + React)**, and **SQLite**. 
+
+This application functions as a local infrastructure gateway for homelabs. It allows administrators to dynamically provision localized core records (`A`, `AAAA`, `CNAME`, `PTR`) for hypervisors (VMware ESXi, vCenter) and Linux clusters (Rocky Linux, CentOS) while seamlessly forwarding all public requests to upstream internet DNS authorities.
+Git Stage and Push Instructions
+Initialize tracking, lock down code changes, and push your branch straight to GitHub:
+
+PowerShell
+# Initialize empty git workspace configuration mapping trees
 git init
 
-# Stage all manifest items, file blueprints, and documentation trees
+# Track all active project code blocks and configuration sheets
 git add .
 
-# Add a commit tracking snapshot signature to save this build state
-git commit -m "feat: complete split-horizon dns appliance with type management and query view isolation"
+# Save the state of the workspace with an explicit commit message
+git commit -m "feat: complete split-horizon dns appliance with multi-type engine and isolated inventory UI"
 
-# Set main as the primary deployment branch path
+# Set main as your primary development tracking branch path
 git branch -M main
 
 # Link your local workstation folder files directly to your remote repository URL address
-# (Swap out your real remote GitHub URL below)
+# (Be sure to replace this template link with your actual GitHub repository URL)
 git remote add origin https://github.com/YOUR_USERNAME/DNSManager.git
 
-# Securely push your codebase files right up to GitHub production server storage paths
+# Push your changes to the remote repository
 git push -u origin main
