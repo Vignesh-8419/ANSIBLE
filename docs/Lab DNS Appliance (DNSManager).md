@@ -729,3 +729,11 @@ git remote add origin [https://github.com/YOUR_USERNAME/DNSManager.git](https://
 git push -u origin main
 
 netsh interface ip add dns name="Wi-Fi" 1.1.1.1 index=2
+
+Set-DnsClientServerAddress `
+-InterfaceAlias "Wi-Fi" `
+-ServerAddresses ("127.0.0.1","8.8.8.8")
+
+Set-DnsClientServerAddress `
+-InterfaceAlias "Wi-Fi" `
+-ServerAddresses ("192.168.31.87","8.8.8.8")
