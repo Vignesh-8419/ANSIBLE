@@ -1,94 +1,100 @@
-VGS Lab DNS Appliance — Comprehensive Architecture & Deployment Guide
-This document outlines the complete implementation of DNSManager, an enterprise-grade, split-horizon DNS server engine built using Go, Wails (Vite + React), and a pure-Go SQLite implementation.
+# MASTER ARCHITECTURE & IMPLEMENTATION GUIDE: VGS LAB DNS APPLIANCE
+# Generated: 2026-06-18
+# Frameworks: Go 1.25.11, Wails v2, React (Vite)
+# Database: modernc.org/sqlite (Pure-Go / CGO-Disabled)
 
-The appliance handles internal infrastructure name resolution (A, AAAA, CNAME, PTR) for private labs (VMware ESXi, Rocky Linux, CentOS clusters) while transparently proxying public web space mapping requests to internet upstreams over optimized socket connections.
+================================================================================
+SECTION 1: POWERSHELL ENVIRONMENT SETUP & INITIALIZATION
+================================================================================
+# Run the following commands in an elevated PowerShell Window (Run as Administrator)
+# This aligns local environment paths, updates system variables, and structures the project workspace.
 
-Because we are utilizing modernc.org/sqlite, CGO is entirely disabled. This eliminates any requirement for a local C-compiler (MSYS2/GCC) on Windows, providing a fast, native, and friction-free compilation workflow.
-
-🛠️ Section 1: Environment Setup & Core Installations
-Execute these phases sequentially inside an elevated PowerShell window (Run as Administrator) to provision your development binaries.
-
-Phase 1: Local Path Alignment
-Since you have manually downloaded and installed Node.js v24.16.0-x64 and Go 1.25.11, configure your environment profile variables so your user Go binary directory is globally accessible by Wails:
-
-PowerShell
-# 1. Append the local user Go environment binary path explicitly to the active session
+# 1. Update Path Environment Variables for the active session and user scope
 $env:Path += ";$env:USERPROFILE\go\bin"
-
-# 2. Persist the path permanently to the User environment scope
 [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$env:USERPROFILE\go\bin", "User")
-⚠️ CRITICAL STEP: Close your current PowerShell terminal completely and open a brand new PowerShell window as Administrator to force Windows to parse and inherit the new user path configuration.
 
-Phase 2: Verify Runtimes
-Confirm that your manual installations and path definitions are properly exposed to the system:
+# 2. Create the core project directory matrix
+New-Item -ItemType Directory -Path "C:\Projects\DNSManager"
+New-Item -ItemType Directory -Path "C:\Projects\DNSManager\database"
+New-Item -ItemType Directory -Path "C:\Projects\DNSManager\dns"
 
-PowerShell
-go version
-node -v
-npm -v
-Phase 3: Wails Framework Global Deployment
-Download, compile, and place the Wails desktop software toolkit directly into your system executable path:
-
-PowerShell
+# 3. Install Wails global command-line compilation utility
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
-Verify compilation success and system dependencies using the built-in system check:
 
-PowerShell
-wails doctor
-📁 Section 2: Directory Architecture & Package Provisioning
-Phase 1: Structural Initialization
-Instruct Wails to build out an optimal desktop application template directory boilerplate setup inside your code projects parent folder:
+================================================================================
+SECTION 2: CONFIGURATION & PROJECT DEPENDENCY MANIFESTS
+================================================================================
 
-PowerShell
-cd C:\Projects
-wails init -n DNSManager -t react
-cd DNSManager
-Phase 2: Create Custom Module Subdirectories
-Create the tracking sub-folders needed to isolate your custom database and background DNS engines:
+#### FILE: C:\Projects\DNSManager\wails.json
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "DNSManager",
+  "outputfilename": "DNSManager",
+  "frontend:dir": "frontend",
+  "wailsjs:dir": "frontend/wailsjs",
+  "author": {
+    "name": "VGS Systems Administrator",
+    "email": "sysadmin@vgs.com"
+  }
+}
 
-PowerShell
-New-Item -ItemType Directory -Path .\database
-New-Item -ItemType Directory -Path .\dns
-Phase 3: Package Tracking Registrations
-Add the core low-level packages required to run the engine loop and embedded database files:
+#### FILE: C:\Projects\DNSManager\go.mod
+module DNSManager
 
-PowerShell
-# Pull raw UDP/TCP packet handling utilities
-go get github.com/miekg/dns
+go 1.25.11
 
-# Pull the lightweight standalone pure-Go SQLite database storage provider
-go get modernc.org/sqlite
+require (
+	github.com/miekg/dns v1.1.58
+	github.com/wailsapp/wails/v2 v2.9.2
+	modernc.org/sqlite v1.34.5
+)
 
-# Sync and tidy your backend dependency maps
-go mod tidy
+require (
+	github.com/bep/debounce v1.2.1 // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
+	github.com/godbus/dbus/v5 v5.1.0 // indirect
+	github.com/jchv/go-winloader v0.0.0-20210711035445-715c2860da7e // indirect
+	github.com/labstack/echo/v4 v4.13.3 // indirect
+	github.com/labstack/cookieauth v0.0.0-20190412102148-ee7da6337894 // indirect
+	github.com/labstack/gommon v0.4.2 // indirect
+	github.com/leaanthony/go-ansi-parser v1.6.1 // indirect
+	github.com/leaanthony/gosod v1.0.4 // indirect
+	github.com/leaanthony/slicer v1.6.0 // indirect
+	github.com/leaanthony/u v1.1.1 // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/ncruces/go-strftime v0.1.9 // indirect
+	github.com/pkg/browser v1.1.6 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
+	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/samber/lo v1.49.1 // indirect
+	github.com/tkrajina/go-reflector v0.5.8 // indirect
+	github.com/valyala/bytebufferpool v1.0.0 // indirect
+	github.com/valyala/fasttemplate v1.2.2 // indirect
+	github.com/wailsapp/go-webview2 v1.0.19 // indirect
+	github.com/wailsapp/mimetype v1.4.1 // indirect
+	golang.org/x/crypto v0.33.0 // indirect
+	golang.org/x/mod v0.18.0 // indirect
+	golang.org/x/net v0.35.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
+	golang.org/x/tools v0.22.0 // indirect
+	modernc.org/gc/v3 v3.0.0-20240107135036-0864ea734153 // indirect
+	modernc.org/libc v1.55.3 // indirect
+	modernc.org/mathutil v1.6.0 // indirect
+	modernc.org/memory v1.8.0 // indirect
+	modernc.org/strutil v1.2.0 // indirect
+	modernc.org/token v1.1.0 // indirect
+)
 
-# Navigate into the UI workspace to map frontend dependencies
-cd frontend
-npm install
-cd ..
-Your system folder structure is now perfectly mapped out and looks like this:
+================================================================================
+SECTION 3: BACKEND GO KERNEL SOURCE CODE
+================================================================================
 
-Plaintext
-C:\Projects\DNSManager\
-├── database/          
-│   └── sqlite.go      <-- Custom Pure-Go Data Logic Layer
-├── dns/               
-│   └── dns.go         <-- Custom DNS Socket Processing Layer
-├── frontend/          
-│   ├── src/
-│   │   └── App.jsx    <-- Desktop UI Dashboard Component
-│   └── package.json   
-├── app.go             
-├── main.go            
-├── go.mod             
-├── wails.json         
-└── README.md          
-💻 Section 3: The Complete Production Code Catalog
-Open your administrator workspace and map out the files below by copying and pasting the complete code blocks into their respective target files.
-
-📋 Part A: Go Backend Engine Source
-1. File: C:\Projects\DNSManager\main.go
-Go
+#### FILE: C:\Projects\DNSManager\main.go
 package main
 
 import (
@@ -123,8 +129,8 @@ func main() {
 		println("Error:", err.Error())
 	}
 }
-2. File: C:\Projects\DNSManager\app.go
-Go
+
+#### FILE: C:\Projects\DNSManager\app.go
 package main
 
 import (
@@ -147,13 +153,13 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
 	if err := database.Init(); err != nil {
-		println("Database Error:", err.Error())
+		println("Database Initialization Error:", err.Error())
 	} else {
-		println("SQLite initialized successfully")
+		println("SQLite Runtime Engine cleanly attached.")
 	}
 
 	if err := dns.Start(); err != nil {
-		println("DNS Error:", err.Error())
+		println("DNS Server Routing Error:", err.Error())
 	}
 }
 
@@ -172,8 +178,8 @@ func (a *App) AddRecord(hostname string, ip string, recordType string) error {
 func (a *App) DeleteRecord(id int) error {
 	return database.DeleteRecord(id)
 }
-3. File: C:\Projects\DNSManager\database\sqlite.go
-Go
+
+#### FILE: C:\Projects\DNSManager\database\sqlite.go
 package database
 
 import (
@@ -195,7 +201,6 @@ type Record struct {
 func Init() error {
 	var err error
 
-	// "sqlite" driver maps directly to modernc's embedded pure-go driver
 	DB, err = sql.Open("sqlite", "records.db")
 	if err != nil {
 		return err
@@ -250,8 +255,8 @@ func DeleteRecord(id int) error {
 	_, err := DB.Exec("DELETE FROM records WHERE id = ?", id)
 	return err
 }
-4. File: C:\Projects\DNSManager\dns\dns.go
-Go
+
+#### FILE: C:\Projects\DNSManager\dns\dns.go
 package dns
 
 import (
@@ -268,10 +273,10 @@ func Start() error {
 	server := &dns.Server{Addr: "0.0.0.0:53", Net: "udp"}
 	dns.HandleFunc(".", handleDNSRequest)
 
-	log.Println("Starting DNS server on port 53...")
+	log.Println("Starting DNS Socket processing loop on port 53...")
 	go func() {
 		if err := server.ListenAndServe(); err != nil {
-			log.Fatalf("Failed to start DNS server: %s\n", err.Error())
+			log.Fatalf("Failed to bind UDP socket: %s\n", err.Error())
 		}
 	}()
 
@@ -379,9 +384,55 @@ func hostnameExistsInDB(hostname string) bool {
 	}
 	return false
 }
-⚛️ Part B: React Frontend Dashboard UI
-5. File: C:\Projects\DNSManager\frontend\src\App.jsx
-JavaScript
+
+================================================================================
+SECTION 4: FRONTEND REACT WORKSPACE DASHBOARD
+================================================================================
+
+#### FILE: C:\Projects\DNSManager\frontend\package.json
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.56",
+    "@types/react-dom": "^18.2.19",
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.1.4"
+  }
+}
+
+#### FILE: C:\Projects\DNSManager\frontend\src\main.jsx
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App'
+import './style.css'
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
+
+#### FILE: C:\Projects\DNSManager\frontend\src\style.css
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #121824;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+#### FILE: C:\Projects\DNSManager\frontend\src\App.jsx
 import { useEffect, useState } from 'react';
 import {
     GetRecords,
@@ -418,13 +469,13 @@ function App() {
 
     async function handleAddRecord() {
         if (!hostname || !ip) {
-            alert("Both Hostname and IP/Target are required!");
+            alert("Both Hostname and IP/Target parameters are required!");
             return;
         }
 
         try {
             await AddRecord(hostname, ip, recordType);
-            alert(`Successfully added ${recordType} record for ${hostname}`);
+            alert(`Committed ${recordType} mapping context successfully for ${hostname}`);
             setHostname("");
             setIp("");
             loadRecords();
@@ -434,7 +485,7 @@ function App() {
     }
 
     async function handleDeleteRecord(id) {
-        if (!window.confirm("Are you sure you want to delete this DNS record?")) {
+        if (!window.confirm("Purge selected record from infrastructure maps?")) {
             return;
         }
 
@@ -448,7 +499,7 @@ function App() {
 
     function handleLocalLookup() {
         if (!lookupQuery) {
-            alert("Please enter a hostname to lookup");
+            alert("Enter validation string query.");
             return;
         }
 
@@ -474,15 +525,15 @@ function App() {
     );
 
     return (
-        <div style={{ padding: "30px", fontFamily: "Arial, sans-serif", color: "#E0E0E0", backgroundColor: "#121824", minHeight: "100vh" }}>
+        <div style={{ padding: "30px", color: "#E0E0E0", backgroundColor: "#121824", minHeight: "100vh" }}>
             <div style={{ borderBottom: "2px solid #2A364F", paddingBottom: "15px", marginBottom: "20px" }}>
-                <h1 style={{ margin: "0 0 5px 0", color: "#FFFFFF" }}>DNS Manager</h1>
-                <h3 style={{ margin: "0 0 15px 0", color: "#8A99AD", fontWeight: "normal" }}>VGS Lab DNS Appliance</h3>
+                <h1 style={{ margin: "0 0 5px 0", color: "#FFFFFF" }}>DNS Manager Console</h1>
+                <h3 style={{ margin: "0 0 15px 0", color: "#8A99AD", fontWeight: "normal" }}>VGS Lab DNS Appliance Core</h3>
                 
                 <div style={{ display: "inline-block", backgroundColor: "#1A2333", padding: "10px 15px", borderRadius: "6px", border: "1px solid #2E3C54" }}>
-                    <span style={{ color: "#4FFFB0", fontWeight: "bold" }}>● Active DNS Engine: </span>
+                    <span style={{ color: "#4FFFB0", fontWeight: "bold" }}>● Appliance Active: </span>
                     <code style={{ color: "#FFF", fontSize: "14px" }}>local-dns-server-01.vgs.com</code> 
-                    <span style={{ color: "#8A99AD" }}> ↔ IP: </span>
+                    <span style={{ color: "#8A99AD" }}> ↔ Direct Host IP: </span>
                     <strong style={{ color: "#FFF" }}>192.168.31.87</strong>
                 </div>
             </div>
@@ -506,23 +557,23 @@ function App() {
                         color: "#FFF", border: "none", borderRadius: "4px", fontWeight: "bold", cursor: "pointer"
                     }}
                 >
-                    📋 All DNS Entries ({records.length})
+                    📋 Live Inventory Mappings ({records.length})
                 </button>
             </div>
 
             {activeTab === "main" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "30px" }}>
                     <div style={{ backgroundColor: "#1C2638", padding: "20px", borderRadius: "8px", border: "1px solid #2A364F" }}>
-                        <h3 style={{ marginTop: "0", color: "#FFF" }}>DNS Record Lookup Tool</h3>
+                        <h3 style={{ marginTop: "0", color: "#FFF" }}>Engine Resolution Query Matrix</h3>
                         <div style={{ display: "flex", gap: "10px", marginBottom: "15px" }}>
                             <input
-                                placeholder="Enter hostname to query (e.g. dns-server-01.vgs.com)"
+                                placeholder="Query string (e.g. vc-01.vgs.com)"
                                 value={lookupQuery}
                                 onChange={(e) => setLookupQuery(e.target.value)}
                                 style={{ padding: "10px", flex: 1, borderRadius: "4px", border: "1px solid #2A364F", backgroundColor: "#121824", color: "#FFF" }}
                             />
                             <button onClick={handleLocalLookup} style={{ padding: "10px 20px", backgroundColor: "#4FFFB0", color: "#121824", fontWeight: "bold", border: "none", borderRadius: "4px", cursor: "pointer" }}>
-                                Query Appliance
+                                Run Verification
                             </button>
                         </div>
 
@@ -530,7 +581,7 @@ function App() {
                             <div style={{ marginTop: "15px", padding: "12px", backgroundColor: "#121824", borderRadius: "6px", border: "1px solid #2E3C54" }}>
                                 {lookupResult.length > 0 ? (
                                     <div>
-                                        <h4 style={{ margin: "0 0 10px 0", color: "#4FFFB0" }}>✓ Record Found:</h4>
+                                        <h4 style={{ margin: "0 0 10px 0", color: "#4FFFB0" }}>✓ Matrix Resolution Valid:</h4>
                                         {lookupResult.map((res, index) => (
                                             <div key={index} style={{ fontFamily: "monospace", fontSize: "14px", padding: "4px 0" }}>
                                                 <span style={{ color: "#FF9F43" }}>[{res.type}]</span> {res.hostname} ➜ <span style={{ color: "#4FFFB0" }}>{res.ip}</span> (TTL: {res.ttl}s)
@@ -539,7 +590,7 @@ function App() {
                                     </div>
                                 ) : (
                                     <div style={{ color: "#FF6B6B", fontWeight: "bold", fontFamily: "monospace" }}>
-                                        🗙 NXDOMAIN: Hostname entry not mapped in SQLite repository.
+                                        🗙 STATUS NXDOMAIN: String context unassigned in SQLite repository layer.
                                     </div>
                                 )}
                             </div>
@@ -547,50 +598,47 @@ function App() {
                     </div>
 
                     <div style={{ backgroundColor: "#1C2638", padding: "20px", borderRadius: "8px", border: "1px solid #2A364F" }}>
-                        <h3 style={{ marginTop: "0", color: "#FFF" }}>Provision New DNS Record</h3>
+                        <h3 style={{ marginTop: "0", color: "#FFF" }}>Provision Infrastructure Records</h3>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "center" }}>
                             <select 
                                 value={recordType} 
                                 onChange={(e) => setRecordType(e.target.value)}
                                 style={{ padding: "10px", backgroundColor: "#121824", color: "#FFF", border: "1px solid #2A364F", borderRadius: "4px", fontWeight: "bold" }}
                             >
-                                <option value="A">A (IPv4)</option>
-                                <option value="AAAA">AAAA (IPv6)</option>
-                                <option value="CNAME">CNAME (Alias)</option>
-                                <option value="PTR">PTR (Reverse DNS)</option>
+                                <option value="A">A (IPv4 Routing)</option>
+                                <option value="AAAA">AAAA (IPv6 Routing)</option>
+                                <option value="CNAME">CNAME (Alias Pointer)</option>
+                                <option value="PTR">PTR (Reverse Lookup Map)</option>
                             </select>
 
                             <input
-                                placeholder={recordType === "PTR" ? "IP Target Key" : "Hostname / Zone Context"}
+                                placeholder={recordType === "PTR" ? "IP Context Key" : "FQDN Host / Zone Name"}
                                 value={hostname}
                                 onChange={(e) => setHostname(e.target.value)}
                                 style={{ padding: "10px", width: "250px", borderRadius: "4px", border: "1px solid #2A364F", backgroundColor: "#121824", color: "#FFF" }}
                             />
 
                             <input
-                                placeholder={recordType === "CNAME" || recordType === "PTR" ? "Target Pointer FQDN" : "Destination IP Address"}
+                                placeholder={recordType === "CNAME" || recordType === "PTR" ? "Canonical FQDN Target" : "Target Reference Address"}
                                 value={ip}
                                 onChange={(e) => setIp(e.target.value)}
                                 style={{ padding: "10px", width: "180px", borderRadius: "4px", border: "1px solid #2A364F", backgroundColor: "#121824", color: "#FFF" }}
                             />
 
                             <button onClick={handleAddRecord} style={{ padding: "10px 20px", backgroundColor: "#3462FF", color: "#FFF", fontWeight: "bold", border: "none", borderRadius: "4px", cursor: "pointer" }}>
-                                Commit Record
+                                Commit Record Context
                             </button>
                         </div>
-                        <p style={{ fontSize: "12px", color: "#8A99AD", marginTop: "10px", marginBottom: "0" }}>
-                            *Records committed here are written directly to production SQLite tables without altering active view display metrics.
-                        </p>
                     </div>
                 </div>
             )}
 
             {activeTab === "all" && (
                 <div style={{ backgroundColor: "#1C2638", padding: "20px", borderRadius: "8px", border: "1px solid #2A364F" }}>
-                    <div style={{ display: "flex", justifyContent: "between", alignItems: "center", flexWrap: "wrap", gap: "15px", marginBottom: "20px" }}>
-                        <h3 style={{ margin: "0", color: "#FFF", flex: 1 }}>Global DNS Inventory Mapping</h3>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "15px", marginBottom: "20px" }}>
+                        <h3 style={{ margin: "0", color: "#FFF", flex: 1 }}>Global Zone Database Registry</h3>
                         <input
-                            placeholder="🔍 Dynamic Inventory Search (Filter by Host, IP, or Type)..."
+                            placeholder="🔍 Dynamic Inventory Search (Type, host, or IP maps)..."
                             value={inventorySearch}
                             onChange={(e) => setInventorySearch(e.target.value)}
                             style={{ padding: "10px", width: "350px", borderRadius: "4px", border: "1px solid #2A364F", backgroundColor: "#121824", color: "#FFF" }}
@@ -601,10 +649,10 @@ function App() {
                         <thead>
                             <tr style={{ borderBottom: "2px solid #2A364F", color: "#8A99AD", fontSize: "14px" }}>
                                 <th style={{ padding: "12px" }}>ID</th>
-                                <th style={{ padding: "12px" }}>Type</th>
-                                <th style={{ padding: "12px" }}>Hostname / Lookup Identifier</th>
-                                <th style={{ padding: "12px" }}>Target Translation / Routing IP</th>
-                                <th style={{ padding: "12px" }}>Action</th>
+                                <th style={{ padding: "12px" }}>Record Type</th>
+                                <th style={{ padding: "12px" }}>Lookup Source Key</th>
+                                <th style={{ padding: "12px" }}>Translation Value Matrix</th>
+                                <th style={{ padding: "12px" }}>Operational Rules</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -624,7 +672,7 @@ function App() {
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan="5" style={{ padding: "20px", textAlign: "center", color: "#8A99AD", fontStyle: "italic" }}>No active matching infrastructure mappings found.</td>
+                                    <td colSpan="5" style={{ padding: "20px", textAlign: "center", color: "#8A99AD", fontStyle: "italic" }}>No active matching infrastructure mappings discovered.</td>
                                 </tr>
                             )}
                         </tbody>
@@ -636,68 +684,13 @@ function App() {
 }
 
 export default App;
-🛠️ Section 4: Operational Verification & Infrastructure Deployment
-With your pure-Go database engine setup, execute the dev watcher loop straight from your root directory:
 
-PowerShell
+================================================================================
+SECTION 5: SYSTEM PRODUCTION COMPILATION & RUNTIME DISPATCH
+================================================================================
+# Run the following terminal automation calls from the app root directory context
+# to link packages, synchronize variables, and boot the daemon engine.
+
 cd C:\Projects\DNSManager
-wails clean
+go mod tidy
 wails dev
-(Notice that the compilation starts up without throwing any errors or prompting for external C dependencies.)
-
-Workstation DNS Traffic Alignment
-To allow Windows to query your application without having to explicitly target a name server address on every CLI execution, apply these network interface configuration rules:
-
-PowerShell
-# Route your network interface's primary DNS adapter loop to your local appliance engine instance
-Set-DnsClientServerAddress -InterfaceAlias "Wi-Fi" -ServerAddresses ("192.168.31.87", "1.1.1.1")
-
-# Disable standard IPv6 resolution paths to keep home routers from jumping over the appliance
-Disable-NetAdapterBinding -Name "Wi-Fi" -ComponentID ms_tcpip6
-
-# Flush local lookup maps out of Windows memory
-Clear-DnsClientCache
-Test lookups using your standard command terminals:
-
-PowerShell
-# 1. Tests custom zone mapping pulled out of your local SQLite database
-nslookup dns-server-01.vgs.com
-
-# 2. Tests live proxy resolution forwarded directly out to Cloudflare public internet lanes
-nslookup google.com
-🚀 Section 5: Repository Lifecycle Integration (GitHub)
-Create the Repository Readme
-Generate your tracking root summary file using Notepad:
-
-PowerShell
-notepad.exe C:\Projects\DNSManager\README.md
-Paste the following breakdown block, save, and exit:
-
-Markdown
-# VGS Lab DNS Appliance (DNSManager)
-
-An enterprise-grade, split-horizon local DNS appliance built with **Go**, **Wails (Vite + React)**, and a pure-Go implementation of **SQLite**. 
-
-This application functions as a local infrastructure gateway for homelabs. It allows administrators to dynamically provision localized core records (`A`, `AAAA`, `CNAME`, `PTR`) for hypervisors (VMware ESXi, vCenter) and Linux clusters (Rocky Linux, CentOS) while seamlessly forwarding all public requests to upstream internet DNS authorities.
-Git Lifecycle Tracking Execution
-Initialize your local tree tracking maps, lock down changes, and commit everything straight into your remote GitHub project page:
-
-PowerShell
-# Initialize tracking data directory configuration layouts
-git init
-
-# Snapshot all code blocks and project configurations
-git add .
-
-# Complete an explicit, named save-state on the local branch
-git commit -m "feat: complete split-horizon dns appliance with modernc pure-go sqlite engine and react workspace UI"
-
-# Force tracking updates onto the main operational branch path
-git branch -M main
-
-# Pair your local workspace directory with your remote hub endpoint
-# (Replace the placeholder URL below with your actual project link)
-git remote add origin https://github.com/YOUR_USERNAME/DNSManager.git
-
-# Stream all code sets up to the primary tracking destination
-git push -u origin main
