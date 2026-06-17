@@ -1,0 +1,6 @@
+# Default variables for PXE CentOS provisioning
+
+servers: []  # Overridden by AWX survey or NetBox dynamic inventory
+
+# All other variables come from NetBox Config Context
+# Example: http_server, vm_network, pxe_folder, etc.

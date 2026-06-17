@@ -1,0 +1,40 @@
+- name: Create VM if not exists
+  vmware_guest:
+    hostname: "{{ esxi_host }}"
+    username: "{{ esxi_user }}"
+    password: "{{ esxi_pass }}"
+    validate_certs: false
+    datacenter: "ha-datacenter"
+    name: "{{ server.hostname }}"
+    state: present
+    guest_id: "otherGuest64"
+    hardware:
+      memory_mb: 4096
+      num_cpus: 2
+    networks:
+      - name: "VM Network"
+        mac: "{{ server.mac }}"
+    disk:
+      - size_gb: 100
+        type: thin
+        datastore: "datastore1"
+
+- name: Generate per-host GRUB config
+  template:
+    src: grub-centos7.j2
+    dest: "/var/lib/tftpboot/grub2/grub.cfg-01-{{ server.mac | lower | regex_replace(':','-') }}"
+    mode: '0644'
+  delegate_to: tftp-server-01
+
+- name: Add DHCP reservation
+  blockinfile:
+    path: /etc/dhcp/dhcpd.conf
+    marker: "# {mark} ANSIBLE {{ server.hostname }}"
+    block: |
+      host {{ server.hostname }} {
+        hardware ethernet {{ server.mac }};
+        fixed-address {{ server.ip }};
+        option host-name "{{ server.hostname }}";
+      }
+  delegate_to: tftp-server-01
+  notify: restart dhcpd

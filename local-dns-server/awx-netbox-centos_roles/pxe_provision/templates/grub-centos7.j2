@@ -1,0 +1,20 @@
+set default=0
+set timeout=5
+
+insmod efinet
+insmod net
+insmod http
+dhcp
+
+menuentry "Install CentOS 7" {
+    linuxefi centos/vmlinuz \
+      ip=dhcp \
+      inst.repo=http://{{ nb_ctx.http_server }}/repo/centos/ \
+      inst.stage2=http://{{ nb_ctx.http_server }}/repo/centos/ \
+      inst.ks={{ nb_ctx.centos_kickstart_url }} \
+      inst.text \
+      inst.default_fstype=ext4 \
+      hostname={{ server.hostname }} \
+      console=tty0
+    initrdefi centos/initrd.img
+}

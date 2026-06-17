@@ -1,0 +1,250 @@
+#!/bin/bash
+
+# --- 1. Environment Setup ---
+set -e
+NAMESPACE="awx"
+OPERATOR_VERSION="2.19.1"
+VIP="192.168.253.145"
+DOMAIN="ansible-server-01.vgs.com" # Added domain variable
+ADMIN_PASSWORD="Root@123"
+INTERFACE=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
+
+# --- Pre-Flight Port Check ---
+if netstat -tulpn | grep -q ":6443"; then
+    echo "⚠️ Port 6443 is already in use. Cleaning up..."
+    systemctl stop k3s || true
+    pkill -9 k3s || true
+    sleep 2
+fi
+
+# Refresh Repositories
+echo "📂 Configuring local repositories..."
+rm -rf /etc/yum.repos.d/*
+cat <<EOF > /etc/yum.repos.d/internal_mirror.repo
+[local-extras]
+name=Local Rocky Extras
+baseurl=https://http-server-01/repo/ansible_offline_repo/extras
+enabled=1
+gpgcheck=0
+sslverify=0
+
+[local-rancher]
+name=Local Rancher K3s
+baseurl=https://http-server-01/repo/ansible_offline_repo/rancher-k3s-common-stable
+enabled=1
+gpgcheck=0
+sslverify=0
+
+[local-packages]
+name=Local Core Dependencies
+baseurl=https://http-server-01/repo/ansible_offline_repo/packages
+enabled=1
+gpgcheck=0
+sslverify=0
+
+[netbox-offline]
+name=NetBox Offline Repository
+baseurl=https://http-server-01/repo/netbox_offline_repo/rpms
+enabled=1
+gpgcheck=0
+sslverify=0
+priority=1
+EOF
+
+echo "📦 Installing prerequisites & SELinux support..."
+dnf install -y git make curl gettext net-tools container-selinux selinux-policy-base
+dnf install -y https://rpm.rancher.io/k3s/stable/common/centos/8/noarch/k3s-selinux-1.5-1.el8.noarch.rpm || true
+
+# Set SELinux to Permissive for the installation duration
+setenforce 0
+sed -i 's/^SELINUX=.*/SELINUX=permissive/' /etc/selinux/config
+
+systemctl stop firewalld || true
+systemctl disable firewalld || true
+
+# --- 2. Virtual IP Assignment ---
+echo "🌐 Assigning Virtual IP $VIP to $INTERFACE..."
+ip addr del $VIP/32 dev lo 2>/dev/null || true
+if ! ip addr show $INTERFACE | grep -q "$VIP"; then
+    ip addr add $VIP/24 dev $INTERFACE
+fi
+
+# --- 3. K3s Installation & Path Fixes ---
+echo "☸️ Installing K3s (Kubernetes)..."
+
+if ! command -v k3s &> /dev/null; then
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--write-kubeconfig-mode 644" sh - || true
+fi
+
+if [ ! -f /usr/local/bin/k3s ]; then
+    echo "⚠️ Installer failed to place binary. Downloading manually..."
+    curl -Lo /usr/local/bin/k3s https://github.com/k3s-io/k3s/releases/download/v1.29.1+k3s2/k3s
+    chmod +x /usr/local/bin/k3s
+fi
+
+if [ ! -f /etc/systemd/system/k3s.service ]; then
+    echo "🛠️ Creating k3s.service manually..."
+    cat <<EOF > /etc/systemd/system/k3s.service
+[Unit]
+Description=Lightweight Kubernetes
+After=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/k3s server --write-kubeconfig-mode 644
+KillMode=process
+Delegate=yes
+LimitNOFILE=1048576
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+TimeoutStartSec=0
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+fi
+
+systemctl daemon-reload
+systemctl enable --now k3s
+
+echo "⏳ Waiting for K3s configuration file..."
+until [ -f /etc/rancher/k3s/k3s.yaml ]; do
+    sleep 2
+    printf "."
+done
+
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+export PATH=$PATH:/usr/local/bin
+ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl
+
+echo -e "\n⏳ Waiting for K3s Node to be Ready..."
+until kubectl get nodes | grep -q "Ready"; do sleep 5; done
+
+mkdir -p $HOME/.kube
+cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config
+chmod 600 $HOME/.kube/config
+
+# --- 4. Install Kustomize ---
+if ! command -v kustomize &> /dev/null; then
+    echo "🛠️ Installing Kustomize..."
+    curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+    mv kustomize /usr/local/bin/
+fi
+
+# --- 5. Metrics Server Patch ---
+echo "⏳ Waiting for Metrics Server..."
+until kubectl get deployment metrics-server -n kube-system >/dev/null 2>&1; do sleep 5; done
+kubectl patch deployment metrics-server -n kube-system --type='json' \
+  -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
+
+# --- 6. AWX Operator Deployment ---
+echo "🏗️ Deploying AWX Operator..."
+rm -rf awx-operator
+git clone https://github.com/ansible/awx-operator.git
+cd awx-operator
+git checkout $OPERATOR_VERSION
+
+kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret generic awx-server-admin-password \
+  --from-literal=password=$ADMIN_PASSWORD \
+  -n $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+
+make deploy NAMESPACE=$NAMESPACE
+
+# --- 7. AWX Instance Creation ---
+echo "🚀 Creating AWX Instance..."
+cat <<EOF > awx-instance.yaml
+apiVersion: awx.ansible.com/v1beta1
+kind: AWX
+metadata:
+  name: awx-server
+spec:
+  service_type: ClusterIP
+  admin_password_secret: awx-server-admin-password
+  postgres_storage_class: local-path
+EOF
+kubectl apply -f awx-instance.yaml -n $NAMESPACE
+
+# --- 8. Wait for Traefik Deployment (Modern K3s Check) ---
+echo "⏳ Waiting for Traefik to initialize..."
+until kubectl get deployment traefik -n kube-system >/dev/null 2>&1; do
+    printf "."
+    sleep 5
+done
+
+# --- 9. HTTPS Redirect & Ingress Configuration ---
+echo -e "\n🔒 Configuring HTTPS Redirect Middleware..."
+# Using the modern traefik.io API group
+cat <<EOF | kubectl apply -f -
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: $NAMESPACE
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+EOF
+
+echo "🔗 Creating Ingress with HTTPS Redirect for $DOMAIN..."
+cat <<EOF | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: awx-ingress
+  namespace: $NAMESPACE
+  annotations:
+    # This triggers the redirect middleware created above
+    traefik.ingress.kubernetes.io/router.middlewares: ${NAMESPACE}-redirect-https@kubernetescrd
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    # This allows self-signed/internal traffic between Traefik and AWX
+    traefik.ingress.kubernetes.io/service.serversscheme: http
+spec:
+  rules:
+  - host: $DOMAIN
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: awx-server-service
+            port:
+              number: 80
+  - http: # No host rule to catch IP-based traffic ($VIP)
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: awx-server-service
+            port:
+              number: 80
+EOF
+
+# --- 10. The Wait Loop ---
+echo "⏳ Waiting for AWX UI to be fully operational..."
+echo "Monitoring status at http://$VIP (Redirecting to HTTPS)..."
+
+# Use -k to ignore self-signed certificate warnings during the check
+until [ "$(curl -k -s -L -o /dev/null -w "%{http_code}" http://$VIP --connect-timeout 5)" == "200" ]; do
+    printf "."
+    # Optional: Brief pod status check to show progress in console
+    POD_STATUS=$(kubectl get pods -n $NAMESPACE -l app.kubernetes.io/component=awx-web -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Starting")
+    sleep 10
+done
+
+echo -e "\n-------------------------------------------------------"
+echo "✅ AWX IS READY!"
+echo "🌐 URL (Domain):  https://$DOMAIN"
+echo "🌐 URL (IP):      https://$VIP"
+echo "👤 User:          admin"
+echo "🔑 Password:      $ADMIN_PASSWORD"
+echo "⚠️ Note: Your browser will show a 'Privacy Warning' because"
+echo "   we are using a self-signed certificate. Click 'Advanced'"
+echo "   and 'Proceed' to enter the site."
+echo "-------------------------------------------------------"

@@ -1,0 +1,438 @@
+#!/bin/bash
+set -e
+
+# Detect non-boot pool automatically
+POOL=$(zpool list -H -o name | grep -v boot-pool | head -n1)
+DATASET="awx-postgres"
+FULL_DATASET="${POOL}/${DATASET}"
+MOUNTPOINT="/mnt/${POOL}/${DATASET}"
+
+echo "======================================"
+echo " TrueNAS NFS setup for Kubernetes AWX"
+echo " Pool detected: ${POOL}"
+echo "======================================"
+
+if [ -z "$POOL" ]; then
+  echo "ERROR: No ZFS pool detected!"
+  exit 1
+fi
+
+# 1️⃣ Create dataset if not exists
+if zfs list | grep -q "^${FULL_DATASET}"; then
+  echo "[1/5] Dataset already exists: ${FULL_DATASET}"
+else
+  echo "[1/5] Creating dataset ${FULL_DATASET}"
+  zfs create ${FULL_DATASET}
+fi
+
+# 2️⃣ Set mountpoint
+echo "[2/5] Setting mountpoint..."
+zfs set mountpoint=${MOUNTPOINT} ${FULL_DATASET}
+
+# 3️⃣ Ensure directory exists
+echo "[3/5] Ensuring directory..."
+mkdir -p ${MOUNTPOINT}
+
+# 4️⃣ Permissions (required for Kubernetes)
+echo "[4/5] Setting permissions..."
+chmod 777 ${MOUNTPOINT}
+
+# 5️⃣ Export NFS
+echo "[5/5] Configuring NFS..."
+grep -q "${MOUNTPOINT}" /etc/exports || \
+  echo "${MOUNTPOINT} *(rw,sync,no_subtree_check,no_root_squash)" >> /etc/exports
+
+exportfs -rav
+
+echo "======================================"
+echo " STEP 1 COMPLETE"
+echo " NFS Export: ${MOUNTPOINT}"
+echo "======================================"
+
+
+
+
+root@truenas[~]# vi script_1.sh
+root@truenas[~]# ./script_1.sh
+======================================
+ TrueNAS NFS setup for Kubernetes AWX
+ Pool detected: truenas-nfs-postgres-kube
+======================================
+[1/5] Creating dataset truenas-nfs-postgres-kube/awx-postgres
+[2/5] Setting mountpoint...
+[3/5] Ensuring directory...
+[4/5] Setting permissions...
+[5/5] Configuring NFS...
+exporting *:/mnt/truenas-nfs-postgres-kube/awx-postgres
+======================================
+ STEP 1 COMPLETE
+ NFS Export: /mnt/truenas-nfs-postgres-kube/awx-postgres
+======================================
+root@truenas[~]#
+
+
+
+#!/bin/bash
+set -e
+
+echo "======================================"
+echo "Step 2: Installing NFS CSI Driver via Helm"
+echo "======================================"
+
+# Add CSI NFS Helm repository
+helm repo add csi-driver-nfs https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts
+helm repo update
+
+# Install the CSI NFS Driver into kube-system
+helm upgrade --install csi-driver-nfs csi-driver-nfs/csi-driver-nfs \
+  --namespace kube-system \
+  --create-namespace
+
+echo "Waiting 30s for CSI NFS driver pods to start..."
+sleep 30
+
+echo "Checking pods..."
+kubectl get pods -n kube-system | grep csi-driver-nfs
+
+echo "======================================"
+echo "STEP 2 COMPLETE — NFS CSI Installed"
+echo "======================================"
+
+
+root@truenas[~]# midclt call sharing.nfs.create '{
+  "path": "/mnt/truenas-nfs-postgres-kube/awx-postgres",
+  "enabled": true,
+  "ro": false,
+  "maproot_user": "root",
+  "maproot_group": "wheel",
+  "hosts": []
+}'
+
+{"id": 1, "path": "/mnt/truenas-nfs-postgres-kube/awx-postgres", "aliases": [], "comment": "", "networks": [], "hosts": [], "ro": false, "maproot_user": "root", "maproot_group": "wheel", "mapall_user": null, "mapall_group": null, "security": [], "enabled": true, "locked": false, "expose_snapshots": false}
+root@truenas[~]# midclt call service.restart nfs
+
+True
+root@truenas[~]# showmount -e 127.0.0.1
+
+Export list for 127.0.0.1:
+/mnt/truenas-nfs-postgres-kube/awx-postgres *
+root@truenas[~]# exit
+Connection to 192.168.253.141 closed.
+[root@awx-control-node-01 ~]# showmount -e 192.168.253.141
+Export list for 192.168.253.141:
+/mnt/truenas-nfs-postgres-kube/awx-postgres *
+[root@awx-control-node-01 ~]#
+
+
+
+#!/bin/bash
+set -e
+
+echo "======================================"
+echo "Step 3: Create NFS StorageClass + Test PVC"
+echo "======================================"
+
+NFS_SERVER="192.168.253.141"
+NFS_PATH="/mnt/truenas-nfs-postgres-kube/awx-postgres"
+
+cat <<EOF | kubectl apply -f -
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: truenas-nfs
+provisioner: nfs.csi.k8s.io
+parameters:
+  server: ${NFS_SERVER}
+  share: ${NFS_PATH}
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+EOF
+
+echo "StorageClass created"
+
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-test-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: truenas-nfs
+  resources:
+    requests:
+      storage: 5Gi
+EOF
+
+echo "PVC created"
+
+echo "Waiting for PVC to bind..."
+kubectl get pvc nfs-test-pvc -w
+
+
+#!/bin/bash
+set -euo pipefail
+
+echo "======================================"
+echo " STEP 4: VERIFY NFS + DEPLOY AWX"
+echo "======================================"
+
+AWX_NAMESPACE="awx"
+AWX_NAME="awx-prod"
+STORAGE_CLASS="truenas-nfs"
+PG_SIZE="20Gi"
+# Fixed URL below
+OPERATOR_URL="https://raw.githubusercontent.com/ansible/awx-operator/2.19.0/deploy/awx-operator.yaml"
+
+# 1. RUN NFS DEBUG POD (VFS VERIFICATION)
+echo "[1/8] Deploying nfs-debug pod to verify mount..."
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nfs-debug
+spec:
+  containers:
+  - name: nfs
+    image: busybox
+    command: ["sh", "-c", "echo 'NFS IS WORKING' > /data/test.txt && sleep 3600"]
+    volumeMounts:
+    - mountPath: /data
+      name: nfsvol
+  volumes:
+  - name: nfsvol
+    persistentVolumeClaim:
+      claimName: nfs-test-pvc
+EOF
+
+echo "Waiting for nfs-debug pod to be Running..."
+kubectl wait --for=condition=Ready pod/nfs-debug --timeout=60s
+
+echo "--- Debug Info ---"
+kubectl exec nfs-debug -- df -h /data
+kubectl exec nfs-debug -- ls -l /data/test.txt
+echo "NFS verification successful. Cleaning up debug pod..."
+kubectl delete pod nfs-debug --now
+
+# 2. INSTALL AWX OPERATOR
+echo "[2/8] Installing AWX Operator via Kustomize..."
+kubectl create namespace ${AWX_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+
+# Create a temporary kustomization file
+cat <<EOF > kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - github.com/ansible/awx-operator/config/default?ref=2.19.0
+images:
+  - name: quay.io/ansible/awx-operator
+    newTag: 2.19.0
+namespace: ${AWX_NAMESPACE}
+EOF
+
+# Apply using kustomize (built into kubectl)
+kubectl apply -k .
+rm kustomization.yaml
+
+echo "Waiting for Operator pod..."
+kubectl wait --for=condition=Ready pod -l control-plane=controller-manager -n ${AWX_NAMESPACE} --timeout=300s
+
+# 3. APPLY AWX CUSTOM RESOURCE
+echo "[3/8] Deploying AWX Instance..."
+cat <<EOF | kubectl apply -n ${AWX_NAMESPACE} -f -
+apiVersion: awx.ansible.com/v1beta1
+kind: AWX
+metadata:
+  name: ${AWX_NAME}
+spec:
+  service_type: LoadBalancer
+  postgres_storage_class: ${STORAGE_CLASS}
+  postgres_storage_requirements:
+    requests:
+      storage: ${PG_SIZE}
+EOF
+
+# 4. WAIT FOR POSTGRES PVC
+echo "[4/8] Waiting for Operator to create Postgres PVC..."
+until kubectl get pvc -n ${AWX_NAMESPACE} | grep -q "postgres-15"; do
+  sleep 5
+done
+PVC_NAME=$(kubectl get pvc -n ${AWX_NAMESPACE} -o jsonpath='{.items[?(@.metadata.labels.app\.kubernetes\.io/name=="postgres-15")].metadata.name}')
+
+# 5. PERMISSION FIXER
+echo "[5/8] Running Permission Fixer Job (UID 26)..."
+cat <<EOF | kubectl apply -f -
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nfs-permission-fixer
+  namespace: ${AWX_NAMESPACE}
+spec:
+  template:
+    spec:
+      containers:
+      - name: fixer
+        image: busybox
+        command: ["sh", "-c", "chown -R 26:26 /data && chmod -R 770 /data"]
+        volumeMounts:
+        - name: nfs-vol
+          mountPath: /data
+      restartPolicy: Never
+      volumes:
+      - name: nfs-vol
+        persistentVolumeClaim:
+          claimName: ${PVC_NAME}
+EOF
+
+kubectl wait --for=condition=complete job/nfs-permission-fixer -n ${AWX_NAMESPACE} --timeout=60s
+kubectl delete job nfs-permission-fixer -n ${AWX_NAMESPACE}
+
+# 6. RESTART POSTGRES
+echo "[6/8] Restarting Postgres pod..."
+kubectl delete pod -l "app.kubernetes.io/name=postgres-15" -n ${AWX_NAMESPACE} --ignore-not-found
+
+# 7. FINAL WAIT
+echo "[7/8] Waiting for Postgres to be Ready..."
+kubectl wait --for=condition=Ready pod -l "app.kubernetes.io/name=postgres-15" -n ${AWX_NAMESPACE} --timeout=300s
+
+# 8. MONITOR AWX PROGRESS
+echo "[8/8] Postgres is up! Monitoring AWX task/web deployment..."
+kubectl get pods -n ${AWX_NAMESPACE}
+
+
+
+#!/bin/bash
+set -euo pipefail
+
+echo "======================================"
+echo " STEP 5: CONFIGURE HA VIRTUAL IP (MetalLB)"
+echo "======================================"
+
+VIRTUAL_IP="192.168.253.225"
+AWX_NAMESPACE="awx"
+AWX_SERVICE="awx-prod-service"
+
+# 1. INSTALL METALLB
+echo "[1/5] Installing MetalLB manifests..."
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml
+
+# 2. SCALE CONTROLLER FOR HA
+echo "[2/5] Scaling MetalLB Controller to 3 replicas..."
+kubectl scale deployment controller -n metallb-system --replicas=1
+
+# 3. WAIT FOR METALLB PODS
+echo "[3/5] Waiting for MetalLB speakers & controllers to be ready..."
+kubectl wait --namespace metallb-system \
+                --for=condition=ready pod \
+                --selector=app=metallb \
+                --timeout=120s
+
+# 4. CONFIGURE THE IP POOL AND L2 ADVERTISEMENT
+echo "[4/5] Assigning IP ${VIRTUAL_IP} to MetalLB pool..."
+cat <<EOF | kubectl apply -f -
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: awx-ip-pool
+  namespace: metallb-system
+spec:
+  addresses:
+  - ${VIRTUAL_IP}/32
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: awx-advertisement
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+  - awx-ip-pool
+EOF
+
+# 5. BIND AWX SERVICE TO THE VIRTUAL IP
+echo "[5/5] Patching AWX Service to use External IP..."
+kubectl patch svc ${AWX_SERVICE} -n ${AWX_NAMESPACE} -p "{\"spec\": {\"loadBalancerIP\": \"${VIRTUAL_IP}\", \"type\": \"LoadBalancer\"}}"
+
+echo "======================================"
+echo " HA ARCHITECTURE COMPLETE"
+echo "======================================"
+echo "URL: http://${VIRTUAL_IP}"
+echo -n "ADMIN PASSWORD: "
+kubectl get secret awx-prod-admin-password -n ${AWX_NAMESPACE} -o jsonpath="{.data.password}" | base64 --decode; echo
+echo "======================================"
+
+
+
+kubectl get secret awx-prod-admin-password -n awx -o jsonpath="{.data.password}" | base64 --decode; echo
+
+
+#kubectl patch awx awx-prod -n awx --type='merge' -p '{"spec":{"web_replicas": 3, "task_replicas": 3}}'
+#####Force######kubectl annotate awx awx-prod -n awx force-reconcile="$(date +%s)" --overwrite
+
+#kubectl scale deployment awx-operator-controller-manager -n awx --replicas=3
+
+#kubectl scale deployment controller -n metallb-system --replicas=2
+#kubectl get pods -n metallb-system
+
+####Troubleshooting Steps#######
+
+Top stop Forcefully
+
+#ssh root@awx-work-node-03.vgs.com
+#systemctl stop kubelet
+#systemctl stop containerd
+#rm -rf /var/lib/containerd/io.containerd.content.v1.content/blobs/sha256/*
+#rm -rf /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/*
+#systemctl start containerd
+#systemctl start kubelet
+#ctr image pull quay.io/ansible/awx-ee:24.6.0
+#kubectl delete pod awx-prod-task-57c4b44484-8n6hz -n awx
+
+To start Forcelly
+
+#kubectl exec -it -n awx deploy/awx-prod-task -- bash
+#awx-manage list_instances
+#awx-prod-task-57c4b44484-wwdrh
+#awx-manage deprovision_instance \
+  --hostname awx-prod-task-57c4b44484-wwdrh
+#awx-manage unregister_queue \
+  --queuename awx-prod-task-57c4b44484-wwdrh
+#awx-manage provision_instance \
+  --hostname awx-prod-task-57c4b44484-wwdrh \
+  --node-type execution
+#awx-manage register_queue \
+  --queuename awx-prod-task-57c4b44484-wwdrh
+#awx-manage list_instances
+#exit
+#kubectl rollout restart deployment awx-prod-task -n awx
+#kubectl get pods -n awx -w
+
+
+
+ssh root@$NODE <<'EOF'
+set -e
+
+echo "Stopping services..."
+systemctl stop kubelet
+systemctl stop containerd
+
+echo "Cleaning containerd storage..."
+rm -rf /var/lib/containerd/io.containerd.content.v1.content/*
+rm -rf /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/*
+rm -rf /var/lib/containerd/tmp/*
+
+echo "Starting services..."
+systemctl start containerd
+sleep 5
+systemctl start kubelet
+
+echo "Pre-pulling required images..."
+ctr image pull registry.k8s.io/pause:3.9
+ctr image pull quay.io/ansible/awx:24.6.0
+ctr image pull quay.io/ansible/awx-ee:24.6.0
+
+echo "Node cleanup completed successfully"
+EOF
+

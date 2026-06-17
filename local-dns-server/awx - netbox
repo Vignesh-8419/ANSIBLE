@@ -1,0 +1,111 @@
+python3.9 -m ansible_builder --version
+pip3 uninstall ansible-builder -y
+which ansible-builder
+rm -f /usr/local/bin/ansible-builder
+hash -r
+which ansible-builder
+python3.9 -m pip install --upgrade pip
+python3.9 -m pip install ansible-builder
+ansible-builder --version
+python3 -m ansible_builder --version
+
+# Update podman and its dependencies on the host
+dnf update -y podman
+
+# Clear podman's internal cache entirely
+podman system prune -a --volumes
+
+# Force stop and remove all containers (including hidden ones)
+podman rm -fa
+
+# Remove all images to force a fresh pull of awx-ee
+podman rmi -fa
+
+# Now try the prune again
+podman system prune -a --volumes -f
+
+cat execution-environment.yml
+
+version: 3
+
+images:
+  base_image:
+    name: quay.io/ansible/creator-ee:v0.22.0
+
+dependencies:
+  python: requirements.txt
+  galaxy: requirements.yml
+
+options:
+  # Change this from /usr/bin/dnf to /usr/bin/microdnf
+  package_manager_path: /usr/bin/microdnf
+
+additional_build_steps:
+  prepend_base:
+    - ENV PYCMD=/usr/bin/python3
+  append_final:
+    - RUN rm -rf /root/.cache
+
+
+cat requirements.yml
+collections:
+  - name: community.vmware
+  - name: netbox.netbox
+  - name: ansible.utils
+
+cat requirements.txt
+requests
+pynetbox
+pyvmomi
+
+
+ansible-builder build -t awx-ee-netbox:latest
+
+
+podman run -d \
+  --name local-registry \
+  -p 5000:5000 \
+  --restart=always \
+  registry:2
+
+
+
+podman tag localhost/awx-ee-netbox:latest \
+  192.168.253.145:5000/awx-ee-netbox:latest
+
+
+mkdir -p /etc/containers/registries.conf.d
+vi /etc/containers/registries.conf.d/local-registry.conf
+[[registry]]
+location = "192.168.253.145:5000"
+insecure = true
+
+podman push 192.168.253.145:5000/awx-ee-netbox:latest
+
+mkdir -p /etc/rancher/k3s
+vi /etc/rancher/k3s/registries.yaml
+mirrors:
+  "192.168.253.145:5000":
+    endpoint:
+      - "http://192.168.253.145:5000"
+
+
+🔵 FINAL STEP: Add Execution Environment in AWX (UI)
+
+Open your AWX Web UI in the browser.
+
+Go to:
+Administration → Execution Environments → Add
+
+Fill in exactly:
+
+Name: awx-ee-netbox
+
+Image:
+
+192.168.253.145:5000/awx-ee-netbox:latest
+
+
+Pull Policy: Always (for the first run)
+
+Click Save.

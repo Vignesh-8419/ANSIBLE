@@ -1,0 +1,143 @@
+---
+# ============================================================================
+# Play 1: Bootstrap Python 3.9
+# ============================================================================
+
+- name: Bootstrap Python 3.9 on Rocky 8
+  hosts: all
+  become: yes
+  gather_facts: no
+  vars:
+     default_gw: "192.168.253.2"
+
+  tasks:
+# --- PRE-TASKS / INFRASTRUCTURE VERIFICATION ---
+    - name: "[PRE-TASK] Ensure Default Gateway is present"
+      ansible.builtin.shell: |
+        if ! ip route show | grep -q '^default'; then
+            echo "Default gateway missing! Adding {{ default_gw }}..."
+            ip route add default via {{ default_gw }}
+            exit 2
+        else
+            echo "Default gateway already configured."
+            exit 0
+        fi
+      register: gw_check
+      failed_when: false
+      changed_when: gw_check.rc == 2
+
+    - name: Install Python 3.9 if not present
+      raw: |
+        if ! command -v python3.9 >/dev/null 2>&1; then
+          dnf install -y python39
+        fi
+
+    - name: Reset SSH connection
+      meta: reset_connection
+
+
+# ============================================================================
+# Play 2: Configure HTTP Repository Server
+# ============================================================================
+
+- name: Configure Rocky 8 HTTP Repo Server
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  vars:
+    ansible_python_interpreter: /usr/bin/python3.9
+
+  tasks:
+
+    - name: Install required packages
+      raw: |
+        dnf install -y \
+          httpd \
+          createrepo \
+          firewalld \
+          openssl \
+          cifs-utils
+      changed_when: false
+
+    - name: Create repository directory
+      file:
+        path: /var/www/html/repo
+        state: directory
+        mode: '0777'
+
+    - name: Mount CIFS share
+      mount:
+        path: /var/www/html/repo
+        src: //192.168.31.87/ISO
+        fstype: cifs
+        opts: "username=vigne,password=Vigneshv12$,rw,dir_mode=0777,file_mode=0777,vers=3.0"
+        state: mounted
+
+    - name: Configure firewalld
+      raw: |
+        systemctl enable --now firewalld
+
+        firewall-cmd --permanent --query-service=http \
+          || firewall-cmd --permanent --add-service=http
+
+        firewall-cmd --reload
+      changed_when: false
+    # Remove old HTTPS redirect configuration
+    - name: Remove old HTTPS redirect configuration
+      file:
+        path: /etc/httpd/conf.d/ssl-redirect.conf
+        state: absent
+      notify: restart httpd
+
+    # Remove SSL configuration
+    - name: Remove SSL configuration
+      file:
+        path: /etc/httpd/conf.d/ssl.conf
+        state: absent
+      notify: restart httpd
+
+    - name: Allow access to /var/www/html
+      blockinfile:
+        path: /etc/httpd/conf/httpd.conf
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - /var/www/html access"
+        block: |
+          <Directory "/var/www/html">
+              Options Indexes FollowSymLinks
+              AllowOverride None
+              Require all granted
+          </Directory>
+      notify: restart httpd
+
+    - name: Start and enable Apache
+      service:
+        name: httpd
+        state: started
+        enabled: yes
+
+    - name: Apply Apache changes
+      meta: flush_handlers
+
+    - name: Verify Apache configuration
+      command: apachectl configtest
+      register: apache_test
+      changed_when: false
+
+    - name: Verify HTTP access to repository locally
+      command: curl -I http://127.0.0.1/repo/
+      register: http_test
+      changed_when: false
+
+    - name: Confirm HTTP repository access works
+      assert:
+        that:
+          - http_test.rc == 0
+          - "'HTTP/1.1 200' in http_test.stdout"
+        success_msg: "SUCCESS → HTTP repository is accessible."
+        fail_msg: "FAILED → HTTP repository is not accessible. Output: {{ http_test.stdout }}"
+
+  handlers:
+    - name: restart httpd
+      service:
+        name: httpd
+        state: restarted
