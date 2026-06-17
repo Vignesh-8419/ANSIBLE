@@ -727,3 +727,5 @@ git commit -m "feat: complete split-horizon dns appliance with modernc pure-go s
 git branch -M main
 git remote add origin [https://github.com/YOUR_USERNAME/DNSManager.git](https://github.com/YOUR_USERNAME/DNSManager.git)
 git push -u origin main
+
+netsh interface ip add dns name="Wi-Fi" 1.1.1.1 index=2
