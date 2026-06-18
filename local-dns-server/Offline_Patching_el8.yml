@@ -1,0 +1,164 @@
+---
+- name: Offline Infrastructure Patching Orchestrator
+  hosts: all
+  gather_facts: no
+  any_errors_fatal: false # One node failure doesn't halt others
+  
+  vars:
+    repo_mount: "//192.168.31.87/ISO"
+    mount_point: "/var/www/html/repo"
+    cifs_user: "vigne"
+    cifs_pass: "Vigneshv12$"
+    backup_dir_name: "backup_repos_original"
+    default_gw: "192.168.253.2"
+
+  tasks:
+# --- PRE-TASKS / INFRASTRUCTURE VERIFICATION ---
+    - name: "[PRE-TASK] Ensure Default Gateway is present"
+      ansible.builtin.shell: |
+        if ! ip route show | grep -q '^default'; then
+            echo "Default gateway missing! Adding {{ default_gw }}..."
+            ip route add default via {{ default_gw }}
+            exit 2
+        else
+            echo "Default gateway already configured."
+            exit 0
+        fi
+      register: gw_check
+      failed_when: false
+      changed_when: gw_check.rc == 2
+
+    - name: Display Target Environment Info
+      ansible.builtin.debug:
+        msg: "Processing Agent Node Workflow for {{ inventory_hostname }}"
+
+    - name: Create backup repository directory
+      ansible.builtin.file:
+        path: "/etc/yum.repos.d/{{ backup_dir_name }}"
+        state: directory
+        mode: '0755'
+
+    - name: Back up existing repo configurations
+      block:
+        - name: Find original repository files
+          ansible.builtin.find:
+            paths: /etc/yum.repos.d
+            patterns: "*.repo"
+            file_type: file
+            depth: 1
+          register: found_repos
+
+        - name: Move production repo configs to backup directory
+          ansible.builtin.command:
+            cmd: "mv {{ item.path }} /etc/yum.repos.d/{{ backup_dir_name }}/"
+          loop: "{{ found_repos.files }}"
+          when: found_repos.matched > 0
+          changed_when: true 
+
+    # --- MAIN ENGINE BLOCK ---
+    - name: Main Patching Engine Lifecycle
+      block:
+        - name: Ensure target mount point directory exists
+          ansible.builtin.file:
+            path: "{{ mount_point }}"
+            state: directory
+            mode: '0777'
+
+        - name: Mount network ISO share via CIFS
+          ansible.posix.mount:
+            path: "{{ mount_point }}"
+            src: "{{ repo_mount }}"
+            fstype: cifs
+            opts: "username={{ cifs_user }},password={{ cifs_pass }},rw,dir_mode=0777,file_mode=0777,vers=3.0"
+            state: mounted
+
+        - name: Generate localized offline repository profiles
+          ansible.builtin.copy:
+            dest: "/etc/yum.repos.d/{{ item.filename }}"
+            content: "{{ item.content }}"
+            mode: '0644'
+          loop:
+            - filename: "rocky8-baseos.repo"
+              content: |
+                [rocky8-baseos]
+                name=Rocky Linux 8 BaseOS
+                baseurl=file://{{ mount_point }}/rocky8/BaseOS
+                enabled=1
+                gpgcheck=0
+                sslverify=0
+                module_hotfixes=true
+            - filename: "rocky8-appstream.repo"
+              content: |
+                [rocky8-appstream]
+                name=Rocky Linux 8 AppStream
+                baseurl=file://{{ mount_point }}/rocky8/AppStream
+                enabled=1
+                gpgcheck=0
+                sslverify=0
+                module_hotfixes=true
+            - filename: "rocky8-rhel-installed.repo"
+              content: |
+                [rocky8-rhel-installed]
+                name=Rocky Linux 8 Installed RHEL
+                baseurl=file://{{ mount_point }}/installed_rhel8
+                enabled=1
+                gpgcheck=0
+                sslverify=0
+                module_hotfixes=true
+
+        - name: Flush package manager cache and build metadata tracking logs
+          ansible.builtin.shell: dnf clean all
+          changed_when: true
+
+        # REPLACED: Swapped Python module execution for an untracked shell task to sidestep Python version limits
+        - name: Start structural system patching
+          ansible.builtin.shell: |
+            dnf update -y --disablerepo=* --enablerepo=rocky8-baseos,rocky8-appstream,rocky8-rhel-installed --allowerasing --nobest -x glibc*,libstdc++*,perl*,gcc*
+          register: dnf_shell_output
+          changed_when: "'Upgraded:' in dnf_shell_output.stdout or 'Installed:' in dnf_shell_output.stdout or 'Updated:' in dnf_shell_output.stdout"
+
+        - name: Conditional Lifecycle Reboot Trigger
+          block:
+            - name: Schedule system reboot if updates occurred
+              ansible.builtin.reboot:
+                reboot_timeout: 600
+                msg: "Automated offline patching cycle completed by Ansible AWX. System rebooting."
+              when: dnf_shell_output.changed
+              
+            - name: Notify no updates needed
+              ansible.builtin.debug:
+                msg: "No updates required. Node packages match repository snapshot exactly. No reboot required."
+              when: not dnf_shell_output.changed
+
+      rescue:
+        - name: "[ROLLBACK] Restore original repos due to run failure"
+          ansible.builtin.shell: |
+            if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
+                mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
+                rmdir /etc/yum.repos.d/{{ backup_dir_name }}
+            fi
+          failed_when: true
+
+      always:
+        - name: Purge temporary local repository profiles
+          ansible.builtin.file:
+            path: "/etc/yum.repos.d/{{ item }}"
+            state: absent
+          loop:
+            - rocky8-baseos.repo
+            - rocky8-appstream.repo
+            - rocky8-rhel-installed.repo
+
+        - name: Restore production repository profiles from backup
+          ansible.builtin.shell: |
+            if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
+                mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
+                rmdir /etc/yum.repos.d/{{ backup_dir_name }}
+            fi
+          changed_when: true
+
+  # FIXED: Changed state to 'absent' to unmount and remove the /etc/fstab line permanently
+        - name: Detach shared ISO repository volume cleanly
+          ansible.posix.mount:
+            path: "{{ mount_point }}"
+            state: absent

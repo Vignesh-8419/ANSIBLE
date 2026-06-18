@@ -1,0 +1,16 @@
+Input configuration
+fields:
+  - id: netbox_url
+    type: string
+    label: NetBox URL
+  - id: netbox_token
+    type: string
+    label: NetBox API Token
+    secret: true
+required:
+  - netbox_url
+  - netbox_token
+Injector configuration
+env:
+  NETBOX_API: '{{ netbox_url }}'
+  NETBOX_TOKEN: '{{ netbox_token }}'

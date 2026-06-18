@@ -1,0 +1,210 @@
+---
+- name: 🚀 Migrate CentOS 7 to Rocky Linux 8 using ELevate
+  hosts: all
+  become: yes
+  vars:
+    centos_vault_repo_file: /etc/yum.repos.d/vault.repo
+    elevate_repo_file: /etc/yum.repos.d/elevate.repo
+    rocky_repo_file: /etc/leapp/files/leapp_upgrade_repositories.repo
+    centos_patch_repo_file: /etc/yum.repos.d/centos-patch.repo
+    ansible_python_interpreter: /usr/bin/python2.7
+
+  pre_tasks:
+    - name: Load Config Context from NetBox/AWX
+      set_fact:
+        nb_ctx: "{{ config_context[0] }}"
+      when: config_context is defined and config_context | length > 0
+
+    - name: Check current kernel version
+      shell: uname -r
+      register: kernel_version
+      changed_when: false
+
+    - name: Stop play if already Rocky Linux 8
+      meta: end_play
+      when: kernel_version.stdout is search("4.18.")
+
+  tasks:
+    # --- PHASE 1: CONNECTIVITY & CLEANUP ---
+    - name: Check DNS resolution
+      command: nslookup "{{ nb_ctx.ansible_hostname }}"
+      register: nslookup_result
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Configure DNS resolver
+      copy:
+        content: "nameserver {{ nb_ctx.dns_primary }}"
+        dest: /etc/resolv.conf
+      when: nslookup_result.rc != 0
+
+    - name: Remove original CentOS YUM repo files
+      shell: "rm -f /etc/yum.repos.d/CentOS-*"
+      # Removed 'warn: false' which caused the conflict
+
+    # --- PHASE 2: REPOS & INITIAL PATCHING ---
+    - name: Create CentOS 7 patch repo
+      copy:
+        dest: "{{ centos_patch_repo_file }}"
+        content: |
+          [patch]
+          name=patch-repo
+          baseurl={{ nb_ctx.httpd_server_url }}installed_rhel7
+          enabled=1
+          gpgcheck=0
+          sslverify=0
+
+    - name: Create vault.repo using context loop
+      copy:
+        dest: "{{ centos_vault_repo_file }}"
+        content: |
+          {% for repo in nb_ctx.vault_repositories %}
+          [{{ repo.id }}]
+          name={{ repo.name }}
+          baseurl={{ repo.url }}
+          enabled=1
+          gpgcheck=1
+          sslverify=0
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+
+          {% endfor %}
+
+    - name: Remove libsolv and libcomps to prevent conflicts
+      yum:
+        name: ['libsolv-0.6.34-4.el7.x86_64', 'libcomps.x86_64']
+        state: absent
+
+    - name: Make resolv.conf mutable
+      command: chattr -i /etc/resolv.conf
+
+    - name: Set patch_needed fact
+      set_fact:
+        patch_needed: "{{ kernel_version.stdout.strip() != '3.10.0-1160.119.1.el7.x86_64' }}"
+
+    - name: Update CentOS 7 packages
+      yum:
+        name: "*"
+        state: latest
+      when: patch_needed
+
+    - name: Reboot to apply patches
+      reboot:
+        reboot_timeout: 600
+      when: patch_needed
+
+    # --- PHASE 3: ELEVATE PREP ---
+    - name: Backup existing repo files
+      shell: mkdir -p /etc/yum.repos.d/backup && mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/
+      ignore_errors: yes
+
+# --- PHASE 3: ELEVATE PREP ---
+    - name: Backup existing repo files
+      shell: mkdir -p /etc/yum.repos.d/backup && mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/
+      ignore_errors: yes
+
+    - name: Create elevate, base, and patch repos for Leapp installation
+      copy:
+        dest: "{{ elevate_repo_file }}"
+        content: |
+          [elevate]
+          name=ELevate-repo
+          baseurl={{ nb_ctx.httpd_server_url }}elevate/
+          enabled=1
+          gpgcheck=0
+          sslverify=0
+
+          [baseos]
+          name=base-repo
+          baseurl={{ nb_ctx.httpd_server_url }}centos/
+          enabled=1
+          gpgcheck=0
+          sslverify=0
+
+          [patch-temp]
+          name=patch-repo-temp
+          baseurl={{ nb_ctx.httpd_server_url }}installed_rhel7
+          enabled=1
+          gpgcheck=0
+          sslverify=0
+
+    - name: Fix pending yum transactions
+      shell: yum-complete-transaction --cleanup-only --quiet --skip-broken; echo $?
+      register: yum_pending
+      changed_when: false
+
+    - name: Run yum-complete-transaction if needed
+      command: yum-complete-transaction -y
+      when: yum_pending.stdout != "0"
+
+    - name: Install deltarpm manually
+      shell: |
+        curl -o /tmp/deltarpm.rpm http://vault.centos.org/7.9.2009/os/x86_64/Packages/deltarpm-3.6-3.el7.x86_64.rpm
+        rpm -ivh /tmp/deltarpm.rpm || true
+
+    - name: Install Leapp and Rocky data
+      yum:
+        name: ['leapp-upgrade', 'leapp-data-rocky']
+        state: present
+
+    # --- PHASE 4: REPO LOCKING ---
+    - name: Create Rocky Linux 8 repo for Leapp from loop
+      copy:
+        dest: "{{ rocky_repo_file }}"
+        content: |
+          {% for repo in nb_ctx.rocky8_repos %}
+          [{{ repo.id }}]
+          name={{ repo.name }}
+          baseurl={{ nb_ctx.httpd_server_url }}{{ repo.folder }}
+          gpgcheck=0
+          enabled=1
+          sslverify=0
+
+          {% endfor %}
+
+    - name: Lock Leapp repository file
+      command: chattr +i {{ rocky_repo_file }}
+
+    # --- PHASE 5: UPGRADE ---
+    - name: Run Leapp Preupgrade
+      command: leapp preupgrade
+      register: preupgrade_result
+      ignore_errors: true
+
+    - name: Set SELinux to permissive
+      command: setenforce 0
+      ignore_errors: yes
+
+    - name: Remove incompatible modules
+      shell: "modprobe -r floppy || true; modprobe -r pata_acpi || true"
+
+    - name: Answer Leapp confirmation questions
+      shell: |
+        leapp answer --section authselect_check.confirm=True
+        leapp answer --section remove_pam_pkcs11_module_check.confirm=True
+
+    - name: Unlock repo and run Leapp Upgrade
+      shell: |
+        chattr -i {{ rocky_repo_file }}
+        leapp upgrade
+      register: upgrade_result
+      ignore_errors: true
+
+    # --- PHASE 6: POST-MIGRATION ---
+    - name: Final Reboot into Rocky 8
+      reboot:
+        reboot_timeout: 180000
+      when: upgrade_result.rc == 0
+
+    - name: Verify Python 3 presence
+      raw: |
+        if [ ! -x /usr/bin/python3 ]; then dnf install -y python3; fi
+      changed_when: false
+
+    - name: Final OS Verification
+      shell: cat /etc/os-release
+      register: os_release
+      vars:
+        ansible_python_interpreter: /usr/bin/python3
+
+    - debug:
+        var: os_release.stdout_lines

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"DNSManager/database"
+	"local-dns-server/database"
 	"github.com/miekg/dns"
 )
 

@@ -1,0 +1,11 @@
+---
+- name: Check OS Version
+  hosts: all
+  tasks:
+    - name: Get OS Version
+      command: cat /etc/os-release
+      register: os_version
+
+    - name: Display OS Version
+      debug:
+        msg: "{{ os_version.stdout }}"

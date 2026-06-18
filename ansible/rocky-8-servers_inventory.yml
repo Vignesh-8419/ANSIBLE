@@ -1,0 +1,30 @@
+---
+plugin: netbox.netbox.nb_inventory
+api_endpoint: https://192.168.253.143
+token: 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd
+validate_certs: false
+timeout: 180
+
+# 1. STOP THE SCHEMA FETCH
+# This is the most important setting for low-memory servers
+validate_query_filters: false
+fetch_all: true
+
+# 2. Limit the data being pulled to the bare minimum
+config_context: true
+interfaces: true
+primary_ip: true
+services: false
+
+group_by:
+  - status
+  - tags
+
+# 3. Use your verified filter
+query_filters:
+  - status: "active"
+  - cluster_id: 1
+
+compose:
+  ansible_host: primary_ip4.address.split('/')[0]
+  primary_ip4: primary_ip4.address.split('/')[0]

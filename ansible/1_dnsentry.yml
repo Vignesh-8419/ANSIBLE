@@ -1,0 +1,142 @@
+---
+- name: Add multiple DNS entries to Pi-hole via API
+  hosts: dns-server-01
+  become: true
+
+  vars:
+    pihole_api_dir: /root/pihole_customdns_api
+    pihole_api_script_path: /root/pihole_customdns_api/pihole-customdns.sh
+    script_url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/pihole-customdns.sh"
+
+    netbox_url: "https://192.168.253.134"
+    netbox_token: "668d10258cfa6ad36826afdf4c3141be6f960369"
+
+    # From AWX Survey
+    cluster_name: "{{ cluster_name }}"
+    cluster_type: "{{ cluster_type | default('os-cluster') }}"
+    dns_hosts: "{{ dns_hosts }}"   # comma-separated list from survey
+
+  tasks:
+
+    # ----------------------------------------------------
+    # 1. Prepare Pi-hole script
+    # ----------------------------------------------------
+    - name: Create Pi-hole custom DNS API directory
+      file:
+        path: "{{ pihole_api_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Download Pi-hole custom DNS API script
+      get_url:
+        url: "{{ script_url }}"
+        dest: "{{ pihole_api_script_path }}"
+        mode: '0755'
+
+    # ----------------------------------------------------
+    # 2. Get Cluster ID
+    # ----------------------------------------------------
+    - name: Get cluster ID from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ cluster_name }}"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+        validate_certs: no
+      register: cluster_lookup
+
+    - name: Fail if cluster not found
+      fail:
+        msg: "Cluster '{{ cluster_name }}' not found in NetBox!"
+      when: cluster_lookup.json.results | length == 0
+
+    - name: Set cluster_id
+      set_fact:
+        cluster_id: "{{ (cluster_lookup.json.results | first).id }}"
+
+    # ----------------------------------------------------
+    # 3. Get devices in this cluster
+    # ----------------------------------------------------
+    - name: Get devices from NetBox cluster
+      uri:
+        url: "{{ netbox_url }}/api/dcim/devices/?cluster_id={{ cluster_id }}"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+        validate_certs: no
+      register: netbox_devices
+
+    # ----------------------------------------------------
+    # 4. Filter devices based on dns_hosts list
+    # ----------------------------------------------------
+    - name: Convert dns_hosts string to list
+      set_fact:
+        dns_hosts_list: "{{ dns_hosts.split(',') | map('trim') | list }}"
+
+    - name: Filter cluster devices to only selected hosts
+      set_fact:
+        filtered_devices: >-
+          {{ netbox_devices.json.results
+             | selectattr('name', 'in', dns_hosts_list)
+             | list }}
+
+    - name: Debug filtered devices
+      debug:
+        var: filtered_devices
+
+    # ----------------------------------------------------
+    # 5. Get all IP addresses
+    # ----------------------------------------------------
+    - name: Get IP addresses from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+        validate_certs: no
+      register: netbox_ips
+
+    # ----------------------------------------------------
+    # 6. Build DNS entries
+    # ----------------------------------------------------
+    - name: Initialize dns_entries list
+      set_fact:
+        dns_entries: []
+
+    - name: Build dns_entries from filtered devices
+      set_fact:
+        dns_entries: "{{ dns_entries + [ {
+          'dns_hostname': item.name,
+          'dns_ip': (
+            netbox_ips.json.results
+            | selectattr('assigned_object.device.name', 'equalto', item.name)
+            | map(attribute='address')
+            | map('regex_replace', '/.*$', '')
+            | list
+            | first
+            | default('')
+          )
+        } ] }}"
+      loop: "{{ filtered_devices }}"
+
+    - name: Debug DNS entries
+      debug:
+        var: dns_entries
+
+    # ----------------------------------------------------
+    # 7. Push DNS entries to Pi-hole
+    # ----------------------------------------------------
+    - name: Add DNS entry using Pi-hole API script
+      shell: >
+        {{ pihole_api_script_path }} --add {{ item.dns_hostname }} {{ item.dns_ip }}
+      args:
+        chdir: "{{ pihole_api_dir }}"
+      loop: "{{ dns_entries }}"
+      register: result
+
+    - name: Show result
+      debug:
+        var: result.results
