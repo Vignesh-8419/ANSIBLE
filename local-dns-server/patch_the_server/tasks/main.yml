@@ -1,5 +1,0 @@
-- name: patch the server
-  yum:
-   name: "*"
-   update_cache: true
-   state: latest
