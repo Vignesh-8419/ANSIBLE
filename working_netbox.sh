@@ -119,7 +119,7 @@ log_info "Cleaning up old repository configurations..."
 rm -f /etc/yum.repos.d/remi*.repo
 
 log_info "Resetting DNF repository targets to upstream mirrors..."
-dnf download rocky-repos --disablerepo=* --repofrompath=temp,https://dl.rockylinux.org/pub/rocky/8/BaseOS/x86_64/os/ --quiet || true
+#dnf download rocky-repos --disablerepo=* --repofrompath=temp,https://dl.rockylinux.org/pub/rocky/8/BaseOS/x86_64/os/ --quiet || true
 rpm -ivh --force rocky-repos-*.rpm 2>/dev/null || rpm -Uvh --force rocky-repos-*.rpm 2>/dev/null || true
 rm -f rocky-repos-*.rpm
 
