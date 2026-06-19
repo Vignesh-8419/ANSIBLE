@@ -1,5 +1,0 @@
----
-collections:
-  - name: community.vmware
-  - name: netbox.netbox
-    version: "3.23.0"
