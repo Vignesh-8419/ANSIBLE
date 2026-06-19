@@ -31,7 +31,7 @@ CONFIG_FILE="/etc/sysconfig/network-scripts/ifcfg-$INTERFACE"
 # USER PROMPTS
 # ------------------------------------------
 read -p "$(echo -e ${YELLOW}"Please provide the hostname: "${NC})" NEW_HOSTNAME
-read -p "$(echo -e ${YELLOW}"Please provide IP address with netmask (e.g., 192.168.253.1/24): "${NC})" FULL_IP_CIDR
+read -p "$(echo -e ${YELLOW}"Please provide IP address with netmask (e.g., 192.168.253.151/24): "${NC})" FULL_IP_CIDR
 read -p "$(echo -e ${YELLOW}"Please provide gateway: "${NC})" GATEWAY
 read -p "$(echo -e ${YELLOW}"Please provide dns server: "${NC})" DNS_SERVER
 
