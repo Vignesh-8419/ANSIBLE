@@ -13,20 +13,20 @@
         nb_ctx: "{{ config_context[0] }}"
       when: config_context is defined and config_context | length > 0
 
-#    - name: Map Target IP
-#      set_fact:
-#        target_ip: "{{ ansible_host }}"
+    - name: Map Target IP
+      set_fact:
+        target_ip: "{{ ansible_host }}"
 
     # --- PHASE 1: DNS REGISTRATION ---
 #    - name: Execute Pi-hole script on DNS Server
 #      ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ inventory_hostname }} {{ target_ip }}"
 #      delegate_to: 192.168.253.151 
 #      become: yes
-      vars:
+#      vars:
         # Explicitly pull nb_ctx from the current host's facts
-        ansible_user: "{{ hostvars[inventory_hostname]['nb_ctx']['infra_dns_user'] }}"
-        ansible_ssh_pass: "{{ hostvars[inventory_hostname]['nb_ctx']['infra_dns_pass'] }}"
-      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+#        ansible_user: "{{ hostvars[inventory_hostname]['nb_ctx']['infra_dns_user'] }}"
+#        ansible_ssh_pass: "{{ hostvars[inventory_hostname]['nb_ctx']['infra_dns_pass'] }}"
+#      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
     # --- PHASE 2: VCENTER PROVISIONING ---
     - name: Create VM in vCenter
