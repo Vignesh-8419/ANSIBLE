@@ -354,6 +354,38 @@ print(f"Job Template 'GOLDENTEMPLATE_ROCKYOS-08' {'created' if created else 'upd
 EOF
 ```
 
+## Inventory prompt
+
+``` text
+awx-manage shell <<EOF
+from awx.main.models import Project, JobTemplate
+
+try:
+    project = Project.objects.get(name="Inventory-Git-Repo")
+except Project.DoesNotExist:
+    print("Error: Project 'Inventory-Git-Repo' not found.")
+    exit(1)
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="Local_DNS",
+    defaults={
+        "project": project,
+        "playbook": "Local_DNS.yml",
+        "ask_inventory_on_launch": True
+    }
+)
+
+if not created:
+    jt.project = project
+    jt.playbook = "Local_DNS.yml"
+    jt.ask_inventory_on_launch = True
+    jt.inventory = None
+    jt.save()
+
+print(f"Job Template 'Local_DNS' {'created' if created else 'updated'} successfully.")
+EOF
+```
+
 ## Command
 
 Paste the AWX shell block from your SOP that creates:
