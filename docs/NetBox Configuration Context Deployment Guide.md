@@ -393,6 +393,157 @@ curl -k \
 https://192.168.253.143/api/extras/config-contexts/?name=vmware-awx-context
 ```
 
+# NetBox Custom Fields for Inventory Sync
+
+## Overview
+
+Create the following custom fields in NetBox to store hardware and operating system information collected by the inventory sync script.
+
+---
+
+## 1. CPU Count
+
+```bash
+curl -sk -X POST \
+https://192.168.253.143/api/extras/custom-fields/ \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+-H "Content-Type: application/json" \
+-d '{
+  "name":"cpu_count",
+  "label":"CPU Count",
+  "type":"integer",
+  "object_types":["dcim.device"]
+}'
+```
+
+---
+
+## 2. RAM (GB)
+
+```bash
+curl -sk -X POST \
+https://192.168.253.143/api/extras/custom-fields/ \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+-H "Content-Type: application/json" \
+-d '{
+  "name":"ram_gb",
+  "label":"RAM (GB)",
+  "type":"integer",
+  "object_types":["dcim.device"]
+}'
+```
+
+---
+
+## 3. Disk Size
+
+```bash
+curl -sk -X POST \
+https://192.168.253.143/api/extras/custom-fields/ \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+-H "Content-Type: application/json" \
+-d '{
+  "name":"disk_gb",
+  "label":"Disk Size",
+  "type":"text",
+  "object_types":["dcim.device"]
+}'
+```
+
+---
+
+## 4. VM Type
+
+```bash
+curl -sk -X POST \
+https://192.168.253.143/api/extras/custom-fields/ \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+-H "Content-Type: application/json" \
+-d '{
+  "name":"vm_type",
+  "label":"VM Type",
+  "type":"text",
+  "object_types":["dcim.device"]
+}'
+```
+
+---
+
+## 5. Kernel
+
+```bash
+curl -sk -X POST \
+https://192.168.253.143/api/extras/custom-fields/ \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+-H "Content-Type: application/json" \
+-d '{
+  "name":"kernel",
+  "label":"Kernel",
+  "type":"text",
+  "object_types":["dcim.device"]
+}'
+```
+
+---
+
+# Script Modification
+
+After device creation/update and after obtaining `DEVICE_ID`, add the following block to update NetBox custom fields automatically:
+
+```bash
+curl -sk -X PATCH \
+"$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
+-H "$HDR" \
+-H "Authorization: Token $NETBOX_TOKEN" \
+-d "{
+  \"custom_fields\": {
+    \"cpu_count\": $CPU_COUNT,
+    \"ram_gb\": $RAM_GB,
+    \"disk_gb\": \"$DISK_SIZE\",
+    \"vm_type\": \"$VMTYPE\",
+    \"kernel\": \"$KERNEL\"
+  }
+}" >/dev/null
+```
+
+---
+
+## Data Stored in NetBox
+
+| Field     | Example Value                  |
+| --------- | ------------------------------ |
+| CPU Count | 4                              |
+| RAM (GB)  | 3                              |
+| Disk Size | 100 GB                         |
+| VM Type   | vmware                         |
+| Kernel    | 4.18.0-553.134.1.el8_10.x86_64 |
+
+---
+
+## Verification
+
+Verify custom field values for a device:
+
+```bash
+curl -sk \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+"https://192.168.253.143/api/dcim/devices/?name=ansible-server-01.vgs.com" \
+| jq '.results[0].custom_fields'
+```
+
+Example output:
+
+```json
+{
+  "cpu_count": 4,
+  "disk_gb": "100 GB",
+  "kernel": "4.18.0-553.134.1.el8_10.x86_64",
+  "ram_gb": 3,
+  "vm_type": "vmware"
+}
+```
+
+
 ---
 
 # Summary
