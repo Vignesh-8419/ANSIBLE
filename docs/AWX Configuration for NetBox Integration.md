@@ -147,6 +147,38 @@ Verify:
 * Netbox API Token
 * Netbox Production Credential
 
+## Machine Credential
+
+```bash
+awx-manage shell <<'EOF'
+from awx.main.models import Credential, CredentialType, Organization
+
+org = Organization.objects.get(name="Default")
+ctype = CredentialType.objects.get(kind="ssh")
+
+cred, created = Credential.objects.get_or_create(
+    name="Linux Root Credential",
+    organization=org,
+    credential_type=ctype,
+    defaults={
+        "inputs": {
+            "username": "root",
+            "password": "Root@123"
+        }
+    }
+)
+
+print(f"Credential {'created' if created else 'already exists'}: {cred.name}")
+EOF
+```
+
+## Verification
+
+Navigate to:
+
+```text
+Resources → Credentials
+```
 ---
 
 # Step 3 - Create AWX Inventories
