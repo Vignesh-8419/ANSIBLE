@@ -99,8 +99,8 @@ https://192.168.253.143/api/extras/config-contexts/ \
         "centos_template_name": "GOLDENTEMPLATE_CENTOS_07",
         "datacenter_name": "Datacenter",
         "datastore": "datastore1",
-        "dns_primary": "192.168.253.151",
-        "dns_servers": ["192.168.253.151","8.8.8.8"],
+        "dns_primary": "192.168.253.1",
+        "dns_servers": ["192.168.253.1","8.8.8.8"],
         "folder": "vm",
         "gateway": "192.168.253.2",
         "guest_domain": "vgs.com",
@@ -210,7 +210,7 @@ https://192.168.253.143/api/extras/config-contexts/ \
     "weight": 1000,
     "tags": ["patch-context"],
     "data": {
-        "dns_primary": "192.168.253.151",
+        "dns_primary": "192.168.253.1",
         "guest_domain": "vgs.com",
         "httpd_server_url": "http://192.168.253.136/repo/",
         "iso_share_pass": "Vigneshv12$",
@@ -287,7 +287,7 @@ https://192.168.253.143/api/extras/config-contexts/ \
     "tags": ["centostorocky-context"],
     "data": {
         "ansible_hostname": "ansible-server-01.vgs.com",
-        "dns_primary": "192.168.253.151",
+        "dns_primary": "192.168.253.1",
         "guest_domain": "vgs.com",
         "httpd_server_url": "http://192.168.253.136/repo/",
         "vault_repositories": [
