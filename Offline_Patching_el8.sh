@@ -3,10 +3,7 @@
 # -----------------------------------------------------------------------------
 # CONFIGURATION
 # -----------------------------------------------------------------------------
-REPO_MOUNT="//192.168.31.87/ISO"
-MOUNT_POINT="/var/www/html/repo"
-CIFS_USER="vigne"
-CIFS_PASS='Vigneshv12$'
+REPO_URL="http://http-server-01.vgs.com/repo"
 
 SSH_USER="root"
 SSH_PASS='Root@123'
@@ -254,23 +251,18 @@ restore_remote_environment() {
         rm -f /etc/yum.repos.d/rocky8-baseos.repo
         rm -f /etc/yum.repos.d/rocky8-appstream.repo
         rm -f /etc/yum.repos.d/rocky8-rhel-installed.repo
-
+    
         if [ -d /etc/yum.repos.d/${BACKUP_DIR} ]
         then
             find /etc/yum.repos.d/${BACKUP_DIR} \
                 -type f \
                 -name '*.repo' \
                 -exec mv {} /etc/yum.repos.d/ \;
-
+    
             rm -rf /etc/yum.repos.d/${BACKUP_DIR}
         fi
-
-        if mountpoint -q ${MOUNT_POINT}
-        then
-            umount ${MOUNT_POINT}
-        fi
     "
-
+    
     return $?
 }
 
@@ -288,7 +280,7 @@ patch_remote_node() {
     progress_stage "$NODE" "Network Validation" "5"
 
     remote_exec "$NODE" "
-        ping -c 2 -W 2 192.168.31.87 >/dev/null 2>&1
+        curl -sf ${REPO_URL}/rocky8/BaseOS/repodata/repomd.xml >/dev/null
     "
 
     if [ $? -ne 0 ]
@@ -297,7 +289,19 @@ patch_remote_node() {
         return 1
     fi
 
-    progress_stage "$NODE" "Repository Backup" "10"
+    progress_stage "$NODE" "Repo Server Check" "10"
+
+    remote_exec "$NODE" "
+    curl -sf ${REPO_URL}/rocky8/BaseOS/repodata/repomd.xml >/dev/null
+    "
+    
+    if [ $? -ne 0 ]
+    then
+        update_progress "$NODE" "Repo Server Unreachable" "100" "FAILED"
+        return 1
+    fi
+
+    progress_stage "$NODE" "Repository Backup" "15"
 
     remote_exec "$NODE" "
         mkdir -p /etc/yum.repos.d/${LOCAL_BACKUP_DIR}
@@ -316,29 +320,12 @@ patch_remote_node() {
         return 1
     fi
 
-    progress_stage "$NODE" "Mount Repository" "20"
-
-    remote_exec "$NODE" "
-        mkdir -p ${MOUNT_POINT}
+    progress_stage "$NODE" "Repository Validation" "20"
     
-        mountpoint -q ${MOUNT_POINT} || \
-        mount -t cifs ${REPO_MOUNT} ${MOUNT_POINT} \
-            -o username=${CIFS_USER},password='${CIFS_PASS}',vers=3.0
-    
-        mountpoint -q ${MOUNT_POINT}
-    "
-
-    if [ $? -ne 0 ]
-    then
-        restore_remote_environment "$NODE" "$LOCAL_BACKUP_DIR"
-        update_progress "$NODE" "Mount Failed" "100" "FAILED"
-        return 1
-    fi
-
     remote_exec "$NODE" "
-    test -f ${MOUNT_POINT}/rocky8/BaseOS/repodata/repomd.xml &&
-    test -f ${MOUNT_POINT}/rocky8/AppStream/repodata/repomd.xml &&
-    test -f ${MOUNT_POINT}/installed_rhel8/repodata/repomd.xml
+    curl -sf ${REPO_URL}/rocky8/BaseOS/repodata/repomd.xml >/dev/null &&
+    curl -sf ${REPO_URL}/rocky8/AppStream/repodata/repomd.xml >/dev/null &&
+    curl -sf ${REPO_URL}/installed_rhel8/repodata/repomd.xml >/dev/null
     "
     
     if [ $? -ne 0 ]
@@ -355,7 +342,7 @@ remote_exec "$NODE" "
 cat > /etc/yum.repos.d/rocky8-baseos.repo << EOF
 [rocky8-baseos]
 name=Rocky Linux 8 BaseOS
-baseurl=file://${MOUNT_POINT}/rocky8/BaseOS
+baseurl=${REPO_URL}/rocky8/BaseOS
 enabled=1
 gpgcheck=0
 sslverify=0
@@ -365,7 +352,7 @@ EOF
 cat > /etc/yum.repos.d/rocky8-appstream.repo << EOF
 [rocky8-appstream]
 name=Rocky Linux 8 AppStream
-baseurl=file://${MOUNT_POINT}/rocky8/AppStream
+baseurl=${REPO_URL}/rocky8/AppStream
 enabled=1
 gpgcheck=0
 sslverify=0
@@ -375,7 +362,7 @@ EOF
 cat > /etc/yum.repos.d/rocky8-rhel-installed.repo << EOF
 [rocky8-rhel-installed]
 name=Rocky Linux 8 Installed RHEL
-baseurl=file://${MOUNT_POINT}/installed_rhel8
+baseurl=${REPO_URL}/installed_rhel8
 enabled=1
 gpgcheck=0
 sslverify=0
@@ -419,10 +406,12 @@ remote_exec "$NODE" "
     progress_stage "$NODE" "Building Repository Cache" "35"
 
     remote_exec "$NODE" "
-        dnf makecache \
+    dnf makecache \
+        --setopt=timeout=30 \
+        --setopt=retries=3 \
         --disablerepo='*' \
         --enablerepo=rocky8-baseos,rocky8-appstream,rocky8-rhel-installed
-    "
+	"
 
     if [ $? -ne 0 ]
     then
@@ -433,7 +422,9 @@ remote_exec "$NODE" "
     progress_stage "$NODE" "Downloading Packages" "60"
 
     remote_exec "$NODE" "
-        dnf update -y \
+    dnf update -y \
+        --setopt=timeout=30 \
+        --setopt=retries=3 \
         --downloadonly \
         --disablerepo='*' \
         --enablerepo=rocky8-baseos,rocky8-appstream,rocky8-rhel-installed \
@@ -451,7 +442,9 @@ remote_exec "$NODE" "
     progress_stage "$NODE" "Installing Updates" "85"
 
     remote_exec "$NODE" "
-        dnf update -y \
+    dnf update -y \
+        --setopt=timeout=30 \
+        --setopt=retries=3 \
         --disablerepo='*' \
         --enablerepo=rocky8-baseos,rocky8-appstream,rocky8-rhel-installed \
         --allowerasing \
