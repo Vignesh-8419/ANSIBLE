@@ -66,8 +66,9 @@ kubectl exec -it awx-server-task-76cf8b6c9f-8vgfj \
 -c awx-server-task \
 -- bash
 ```
-(or)
-```
+## (OR)
+
+```bash
 kubectl exec -it $(kubectl get pods -n awx --no-headers | awk '/awx-server-task/ {print $1; exit}') \
 -n awx -c awx-server-task -- bash
 ```
