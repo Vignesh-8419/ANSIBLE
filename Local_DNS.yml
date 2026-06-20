@@ -45,7 +45,17 @@
     - name: Create A Record
       delegate_to: localhost
       uri:
-        url: "http://{{ dns_server }}/api/zones/records/add?token={{ dns_token }}&domain={{ dns_zone }}&type=A&name={{ short_hostname }}&ipAddress={{ target_ip }}"
+        url: >-
+          http://{{ dns_server }}/api/zones/records/add
+          ?token={{ dns_token }}
+          &zone={{ dns_zone }}
+          &domain={{ inventory_hostname }}
+          &type=A
+          &ttl=3600
+          &ipAddress={{ target_ip }}
+          &ptr=false
+          &createPtrZone=false
+          &updateSvcbHints=false
         method: GET
         return_content: true
         status_code: 200
@@ -58,7 +68,14 @@
     - name: Create PTR Record
       delegate_to: localhost
       uri:
-        url: "http://{{ dns_server }}/api/zones/records/add?token={{ dns_token }}&domain={{ reverse_zone }}&type=PTR&name={{ last_octet }}&ptrName={{ inventory_hostname }}"
+        url: >-
+          http://{{ dns_server }}/api/zones/records/add
+          ?token={{ dns_token }}
+          &zone={{ reverse_zone }}
+          &domain={{ last_octet }}.{{ reverse_zone }}
+          &type=PTR
+          &ttl=3600
+          &ptrName={{ inventory_hostname }}
         method: GET
         return_content: true
         status_code: 200
