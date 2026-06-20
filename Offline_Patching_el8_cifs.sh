@@ -474,17 +474,84 @@ remote_exec "$NODE" "
         update_progress "$NODE" "Repository Restore Failed" "100" "FAILED"
         return 1
     fi	
-    progress_stage "$NODE" "Rebooting Server" "95"
-    
-    remote_exec "$NODE" "
-        nohup systemctl reboot >/dev/null 2>&1 &
-    " >/dev/null 2>&1 || true
-    
+progress_stage "$NODE" "Rebooting Server" "95"
+
+remote_exec "$NODE" "
+    nohup systemctl reboot >/dev/null 2>&1 &
+" >/dev/null 2>&1 || true
+
+sleep 15
+
+progress_stage "$NODE" "Waiting For Shutdown" "96"
+
+for i in {1..30}
+do
+    if ! sshpass -p "${SSH_PASS}" ssh \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o ConnectTimeout=3 \
+        "${SSH_USER}@${NODE}" \
+        "echo online" >/dev/null 2>&1
+    then
+        break
+    fi
+
+    sleep 2
+done
+
+progress_stage "$NODE" "Waiting For Startup" "97"
+
+local SERVER_UP=0
+
+for i in {1..90}
+do
+    if sshpass -p "${SSH_PASS}" ssh \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o ConnectTimeout=5 \
+        "${SSH_USER}@${NODE}" \
+        "echo online" >/dev/null 2>&1
+    then
+        SERVER_UP=1
+        break
+    fi
+
+    sleep 10
+done
+
+if [ "$SERVER_UP" -eq 1 ]
+then
+
+    progress_stage "$NODE" "Post-Reboot Validation" "99"
+	
+	if remote_exec "$NODE" "
+    	uptime >/dev/null 2>&1
+	"
+    then
+        update_progress \
+            "$NODE" \
+            "Completed Successfully" \
+            "100" \
+            "COMPLETED"
+    else
+        update_progress \
+            "$NODE" \
+            "Post-Reboot Validation Failed" \
+            "100" \
+            "FAILED"
+        return 1
+    fi
+
+else
+
     update_progress \
         "$NODE" \
-        "Completed (Reboot Initiated)" \
+        "Reboot Validation Failed" \
         "100" \
-        "COMPLETED"
+        "FAILED"
+    return 1
+
+fi
 
 return 0
 }
