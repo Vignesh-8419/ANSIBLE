@@ -543,6 +543,169 @@ Example output:
 }
 ```
 
+# NetBox Cluster ID Reset Procedure
+
+## Objective
+
+Recreate NetBox clusters so that:
+
+| Cluster Name      | Desired ID |
+| ----------------- | ---------- |
+| rocky-8-servers   | 1          |
+| centos-07-servers | 2          |
+
+> **Note:** This procedure is intended for lab environments only.
+
+---
+
+## Step 1: Check Devices Attached to Cluster
+
+```bash
+curl -sk \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+"https://192.168.253.143/api/dcim/devices/?cluster_id=3" \
+| jq '.count'
+```
+
+If devices exist, either:
+
+* Move them to another cluster
+* Or note the device names before deleting clusters
+
+---
+
+## Step 2: Delete Existing Clusters
+
+```bash
+curl -sk -X DELETE \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+https://192.168.253.143/api/virtualization/clusters/3/
+```
+
+```bash
+curl -sk -X DELETE \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+https://192.168.253.143/api/virtualization/clusters/4/
+```
+
+---
+
+## Step 3: Connect to PostgreSQL
+
+```bash
+sudo -u postgres psql
+```
+
+Connect to the NetBox database:
+
+```sql
+\c netbox
+```
+
+---
+
+## Step 4: Reset Cluster ID Sequence
+
+```sql
+ALTER SEQUENCE virtualization_cluster_id_seq RESTART WITH 1;
+```
+
+Exit PostgreSQL:
+
+```sql
+\q
+```
+
+---
+
+## Step 5: Verify Sequence Name (Recommended)
+
+Before resetting the sequence, verify the exact sequence name:
+
+```bash
+sudo -u postgres psql -d netbox -c "\ds *cluster*"
+```
+
+Example output:
+
+```text
+public | virtualization_cluster_id_seq | sequence | netbox
+```
+
+If the sequence name differs, use the actual sequence name returned by PostgreSQL.
+
+---
+
+## Step 6: Recreate rocky-8-servers First
+
+```bash
+curl -sk -X POST \
+https://192.168.253.143/api/virtualization/clusters/ \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+-H "Content-Type: application/json" \
+-d '{
+  "name":"rocky-8-servers",
+  "type":1,
+  "group":2,
+  "site":1
+}'
+```
+
+Expected Result:
+
+```text
+rocky-8-servers -> ID 1
+```
+
+---
+
+## Step 7: Recreate centos-07-servers
+
+```bash
+curl -sk -X POST \
+https://192.168.253.143/api/virtualization/clusters/ \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+-H "Content-Type: application/json" \
+-d '{
+  "name":"centos-07-servers",
+  "type":1,
+  "group":1,
+  "site":1
+}'
+```
+
+Expected Result:
+
+```text
+centos-07-servers -> ID 2
+```
+
+---
+
+## Verification
+
+List all clusters:
+
+```bash
+curl -sk \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+https://192.168.253.143/api/virtualization/clusters/ \
+| jq '.results[] | {id,name}'
+```
+
+Expected Output:
+
+```json
+{
+  "id": 1,
+  "name": "rocky-8-servers"
+}
+{
+  "id": 2,
+  "name": "centos-07-servers"
+}
+```
+
 
 ---
 
