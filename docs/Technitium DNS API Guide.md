@@ -83,7 +83,7 @@ $r.response.zones | Format-Table name,type
 ```powershell
 $r = Invoke-RestMethod "http://$($env:DNS_SERVER)/api/zones/records/get?token=$($env:TOKEN)&domain=vgs.com"
 
-$r.response.records | Format-Table name,type,@{N='Value';E={$_.rData.ipAddress}}```
+$r.response.records | Format-List *
 ```
 
 # Get Reverse Zone Records
@@ -91,5 +91,5 @@ $r.response.records | Format-Table name,type,@{N='Value';E={$_.rData.ipAddress}}
 ```powershell
 $r = Invoke-RestMethod "http://$($env:DNS_SERVER)/api/zones/records/get?token=$($env:TOKEN)&domain=253.168.192.in-addr.arpa"
 
-$r.response.records | Format-Table name,type,@{N='PTR';E={$_.rData.ptrName}}
+$r.response.records | Format-List *
 ```
