@@ -18,15 +18,15 @@
         target_ip: "{{ ansible_host }}"
 
     # --- PHASE 1: DNS REGISTRATION ---
-    - name: Execute Pi-hole script on DNS Server
-      ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ inventory_hostname }} {{ target_ip }}"
-      delegate_to: 192.168.253.151 
-      become: yes
-      vars:
+#    - name: Execute Pi-hole script on DNS Server
+#      ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ inventory_hostname }} {{ target_ip }}"
+#      delegate_to: 192.168.253.151 
+#      become: yes
+#      vars:
         # Explicitly pull nb_ctx from the current host's facts
-        ansible_user: "{{ hostvars[inventory_hostname]['nb_ctx']['infra_dns_user'] }}"
-        ansible_ssh_pass: "{{ hostvars[inventory_hostname]['nb_ctx']['infra_dns_pass'] }}"
-      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+#        ansible_user: "{{ hostvars[inventory_hostname]['nb_ctx']['infra_dns_user'] }}"
+#        ansible_ssh_pass: "{{ hostvars[inventory_hostname]['nb_ctx']['infra_dns_pass'] }}"
+#      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
     # --- PHASE 2: VCENTER PROVISIONING ---
     - name: Create VM in vCenter
