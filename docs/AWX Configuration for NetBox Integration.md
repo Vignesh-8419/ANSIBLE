@@ -354,7 +354,7 @@ print(f"Job Template 'GOLDENTEMPLATE_ROCKYOS-08' {'created' if created else 'upd
 EOF
 ```
 
-## Inventory prompt
+## Inventory Prompt
 
 ``` text
 awx-manage shell <<EOF
