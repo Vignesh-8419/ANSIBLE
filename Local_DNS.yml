@@ -42,20 +42,14 @@
           - "Reverse Zone  : {{ reverse_zone }}"
           - "PTR Record    : {{ last_octet }}"
 
+    - name: Show A Record URL
+      debug:
+        msg: "http://{{ dns_server }}/api/zones/records/add?token={{ dns_token }}&zone={{ dns_zone }}&domain={{ inventory_hostname }}&type=A&ttl=3600&ipAddress={{ target_ip }}&ptr=false&createPtrZone=false&updateSvcbHints=false"
+
     - name: Create A Record
       delegate_to: localhost
       uri:
-        url: >-
-          http://{{ dns_server }}/api/zones/records/add
-          ?token={{ dns_token }}
-          &zone={{ dns_zone }}
-          &domain={{ inventory_hostname }}
-          &type=A
-          &ttl=3600
-          &ipAddress={{ target_ip }}
-          &ptr=false
-          &createPtrZone=false
-          &updateSvcbHints=false
+        url: "http://{{ dns_server }}/api/zones/records/add?token={{ dns_token }}&zone={{ dns_zone }}&domain={{ inventory_hostname }}&type=A&ttl=3600&ipAddress={{ target_ip }}&ptr=false&createPtrZone=false&updateSvcbHints=false"
         method: GET
         return_content: true
         status_code: 200
@@ -65,17 +59,14 @@
       debug:
         var: a_record_result.json
 
+    - name: Show PTR Record URL
+      debug:
+        msg: "http://{{ dns_server }}/api/zones/records/add?token={{ dns_token }}&zone={{ reverse_zone }}&domain={{ last_octet }}.{{ reverse_zone }}&type=PTR&ttl=3600&ptrName={{ inventory_hostname }}"
+
     - name: Create PTR Record
       delegate_to: localhost
       uri:
-        url: >-
-          http://{{ dns_server }}/api/zones/records/add
-          ?token={{ dns_token }}
-          &zone={{ reverse_zone }}
-          &domain={{ last_octet }}.{{ reverse_zone }}
-          &type=PTR
-          &ttl=3600
-          &ptrName={{ inventory_hostname }}
+        url: "http://{{ dns_server }}/api/zones/records/add?token={{ dns_token }}&zone={{ reverse_zone }}&domain={{ last_octet }}.{{ reverse_zone }}&type=PTR&ttl=3600&ptrName={{ inventory_hostname }}"
         method: GET
         return_content: true
         status_code: 200
@@ -84,3 +75,25 @@
     - name: Show PTR Record response
       debug:
         var: ptr_record_result.json
+
+    - name: Verify Forward DNS
+      delegate_to: localhost
+      command: "nslookup {{ inventory_hostname }} {{ dns_server }}"
+      register: forward_lookup
+      changed_when: false
+      failed_when: false
+
+    - name: Show Forward DNS Result
+      debug:
+        var: forward_lookup.stdout_lines
+
+    - name: Verify Reverse DNS
+      delegate_to: localhost
+      command: "nslookup {{ target_ip }} {{ dns_server }}"
+      register: reverse_lookup
+      changed_when: false
+      failed_when: false
+
+    - name: Show Reverse DNS Result
+      debug:
+        var: reverse_lookup.stdout_lines
