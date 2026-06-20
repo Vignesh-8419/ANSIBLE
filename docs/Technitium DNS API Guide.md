@@ -78,12 +78,18 @@ $r.response.zones | Format-Table name,type
 
 ---
 
-# Get Zone Records
+# Get Foword Zone Records
 
 ```powershell
-Invoke-RestMethod "http://$($env:DNS_SERVER)/api/zones/records/get?token=$($env:TOKEN)&domain=vgs.com"
+$r = Invoke-RestMethod "http://$($env:DNS_SERVER)/api/zones/records/get?token=$($env:TOKEN)&domain=vgs.com"
+
+$r.response.records | Format-Table name,type,@{N='Value';E={$_.rData.ipAddress}}```
 ```
 
+# Get Reverse Zone Records
+
 ```powershell
-Invoke-RestMethod "http://$($env:DNS_SERVER)/api/zones/records/get?token=$($env:TOKEN)&domain=253.168.192.in-addr.arpa"
+$r = Invoke-RestMethod "http://$($env:DNS_SERVER)/api/zones/records/get?token=$($env:TOKEN)&domain=253.168.192.in-addr.arpa"
+
+$r.response.records | Format-Table name,type,@{N='PTR';E={$_.rData.ptrName}}
 ```
