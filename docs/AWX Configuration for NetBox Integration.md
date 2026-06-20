@@ -339,6 +339,7 @@ jt, created = JobTemplate.objects.get_or_create(
         "inventory": inventory,
         "playbook": "Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_08.yml",
         "ask_inventory_on_launch": False  # As per Step 6 (Hardcoded option)
+        "ask_limit_on_launch": True
     }
 )
 
