@@ -71,7 +71,9 @@ Invoke-RestMethod "http://$($env:DNS_SERVER)/api/zones/records/add?token=$($env:
 # List Zones
 
 ```powershell
-Invoke-RestMethod "http://$($env:DNS_SERVER)/api/zones/list?token=$($env:TOKEN)"
+$r = Invoke-RestMethod "http://$($env:DNS_SERVER)/api/zones/list?token=$($env:TOKEN)"
+
+$r.response.zones | Format-Table name,type
 ```
 
 ---
