@@ -1,0 +1,69 @@
+---
+- name: Create DNS records in Technitium DNS
+  hosts: all
+  gather_facts: false
+
+  vars:
+    dns_server: "192.168.253.1"
+    dns_token: "14759e1e000567381175d02ef3e137d2847e6dd637e5a74bcdb726e24dabaac7"
+
+  tasks:
+
+    - name: Determine target IP
+      set_fact:
+        target_ip: >-
+          {{
+            primary_ip4.address.split('/')[0]
+            if (primary_ip4 is mapping and primary_ip4.address is defined)
+            else primary_ip4
+          }}
+
+    - name: Validate required variables
+      assert:
+        that:
+          - inventory_hostname is defined
+          - target_ip is defined
+        fail_msg: "inventory_hostname and target_ip must be available"
+
+    - name: Extract hostname and DNS details
+      set_fact:
+        short_hostname: "{{ inventory_hostname.split('.')[0] }}"
+        dns_zone: "{{ inventory_hostname.split('.', 1)[1] }}"
+        reverse_zone: "{{ target_ip.split('.')[2] }}.{{ target_ip.split('.')[1] }}.{{ target_ip.split('.')[0] }}.in-addr.arpa"
+        last_octet: "{{ target_ip.split('.')[-1] }}"
+
+    - name: Display calculated values
+      debug:
+        msg:
+          - "FQDN          : {{ inventory_hostname }}"
+          - "Hostname      : {{ short_hostname }}"
+          - "DNS Zone      : {{ dns_zone }}"
+          - "IP Address    : {{ target_ip }}"
+          - "Reverse Zone  : {{ reverse_zone }}"
+          - "PTR Record    : {{ last_octet }}"
+
+    - name: Create A Record
+      delegate_to: localhost
+      uri:
+        url: "http://{{ dns_server }}/api/zones/records/add?token={{ dns_token }}&domain={{ dns_zone }}&type=A&name={{ short_hostname }}&ipAddress={{ target_ip }}"
+        method: GET
+        return_content: true
+        status_code: 200
+      register: a_record_result
+
+    - name: Show A Record response
+      debug:
+        var: a_record_result.json
+
+    - name: Create PTR Record
+      delegate_to: localhost
+      uri:
+        url: "http://{{ dns_server }}/api/zones/records/add?token={{ dns_token }}&domain={{ reverse_zone }}&type=PTR&name={{ last_octet }}&ptrName={{ inventory_hostname }}"
+        method: GET
+        return_content: true
+        status_code: 200
+      register: ptr_record_result
+
+    - name: Show PTR Record response
+      debug:
+        var: ptr_record_result.json
