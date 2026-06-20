@@ -97,7 +97,7 @@ fi
 
 print_header "PRE-CHECK: VERIFYING SYSTEM PATCH LEVEL"
 
-TARGET_KERNEL="4.18.0-553.132.1.el8_10.x86_64"
+TARGET_KERNEL="4.18.0-553.134.1.el8_10.x86_64"
 CURRENT_KERNEL="$(uname -r)"
 
 print_step "Current running kernel: ${CURRENT_KERNEL}"
