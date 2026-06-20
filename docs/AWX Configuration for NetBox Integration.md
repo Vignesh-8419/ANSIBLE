@@ -348,6 +348,7 @@ if not created:
     jt.inventory = inventory
     jt.playbook = "Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_08.yml"
     jt.ask_inventory_on_launch = False
+    jt.ask_limit_on_launch = True
     jt.save()
 
 print(f"Job Template 'GOLDENTEMPLATE_ROCKYOS-08' {'created' if created else 'updated'} successfully.")
@@ -379,6 +380,7 @@ if not created:
     jt.project = project
     jt.playbook = "Local_DNS.yml"
     jt.ask_inventory_on_launch = True
+    jt.ask_limit_on_launch = True
     jt.inventory = None
     jt.save()
 
