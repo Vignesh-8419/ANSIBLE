@@ -450,13 +450,13 @@ read -p "Choice [1-2]: " CLUSTER_MODE
 
 if [ "$CLUSTER_MODE" == "2" ]; then
 
-    read -p "Enter Cluster Type name: " TYPE_NAME
+    read -p "Enter Cluster Type name: (eg: Physical)" TYPE_NAME
     TYPE_ID=$(get_or_create "virtualization/cluster-types" "$TYPE_NAME")
 
-    read -p "Enter Cluster Group name: " GROUP_NAME
+    read -p "Enter Cluster Group name: (eg: rocky-8server / centos-07-servers)" GROUP_NAME
     GROUP_ID=$(get_or_create "virtualization/cluster-groups" "$GROUP_NAME")
 
-    read -p "Enter Cluster name: " CLUSTER_NAME
+    read -p "Enter Cluster name: (eg: rocky-8server / centos-07-servers)" CLUSTER_NAME
 
     CLUSTER_ID=$(get_or_create \
         "virtualization/clusters" \
