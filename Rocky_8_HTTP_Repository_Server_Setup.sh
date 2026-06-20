@@ -1,3 +1,4 @@
+```bash
 #!/bin/bash
 
 # =============================================================================
@@ -6,85 +7,111 @@
 
 set -e
 
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
 DEFAULT_GW="192.168.253.2"
 REPO_DIR="/var/www/html/repo"
 CIFS_SHARE="//192.168.31.87/ISO"
 CIFS_OPTS="username=vigne,password=Vigneshv12$,rw,dir_mode=0777,file_mode=0777,vers=3.0"
 
+info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
+warn()    { echo -e "${YELLOW}[WARN]${NC} $1"; }
+success() { echo -e "${GREEN}[ OK ]${NC} $1"; }
+error()   { echo -e "${RED}[FAIL]${NC} $1"; }
+
+echo -e "${CYAN}"
 echo "====================================================="
 echo " Rocky 8 HTTP Repository Server Setup"
 echo "====================================================="
+echo -e "${NC}"
 
 # -----------------------------------------------------------------------------
 # Ensure Default Gateway Exists
 # -----------------------------------------------------------------------------
 
-echo "[PRE-TASK] Checking default gateway..."
+info "Checking default gateway..."
 
 if ! ip route show | grep -q '^default'; then
-    echo "Default gateway missing. Adding ${DEFAULT_GW}..."
+    warn "Default gateway missing. Adding ${DEFAULT_GW}..."
     ip route add default via "${DEFAULT_GW}"
+    success "Default gateway added."
 else
-    echo "Default gateway already configured."
+    success "Default gateway already configured."
 fi
 
 # -----------------------------------------------------------------------------
 # Install Python 3.9
 # -----------------------------------------------------------------------------
 
-echo "[TASK] Checking Python 3.9..."
+info "Checking Python 3.9..."
 
 if ! command -v python3.9 >/dev/null 2>&1; then
-    echo "Installing Python 3.9..."
+    warn "Installing Python 3.9..."
     dnf install -y python39
+    success "Python 3.9 installed."
 else
-    echo "Python 3.9 already installed."
+    success "Python 3.9 already installed."
 fi
 
 # -----------------------------------------------------------------------------
 # Install Required Packages
 # -----------------------------------------------------------------------------
 
-echo "[TASK] Installing required packages..."
+info "Installing required packages..."
 
 dnf install -y \
     httpd \
     createrepo \
     firewalld \
     openssl \
-    cifs-utils
+    cifs-utils \
+    sshpass
+
+success "Required packages installed."
 
 # -----------------------------------------------------------------------------
 # Create Repository Directory
 # -----------------------------------------------------------------------------
 
-echo "[TASK] Creating repository directory..."
+info "Creating repository directory..."
 
 mkdir -p "${REPO_DIR}"
 chmod 0777 "${REPO_DIR}"
+
+success "Repository directory ready."
 
 # -----------------------------------------------------------------------------
 # Mount CIFS Share
 # -----------------------------------------------------------------------------
 
-echo "[TASK] Mounting CIFS share..."
+info "Checking CIFS mount..."
 
 if ! mountpoint -q "${REPO_DIR}"; then
+    warn "Mounting CIFS share..."
     mount -t cifs "${CIFS_SHARE}" "${REPO_DIR}" -o "${CIFS_OPTS}"
+    success "CIFS share mounted."
 else
-    echo "CIFS share already mounted."
+    success "CIFS share already mounted."
 fi
 
-# Persist mount in /etc/fstab
 if ! grep -q "${CIFS_SHARE}" /etc/fstab; then
     echo "${CIFS_SHARE} ${REPO_DIR} cifs ${CIFS_OPTS} 0 0" >> /etc/fstab
+    success "Added CIFS mount to /etc/fstab."
+else
+    success "CIFS entry already exists in /etc/fstab."
 fi
 
 # -----------------------------------------------------------------------------
 # Configure Firewalld
 # -----------------------------------------------------------------------------
 
-echo "[TASK] Configuring firewalld..."
+info "Configuring firewalld..."
 
 systemctl enable --now firewalld
 
@@ -93,20 +120,24 @@ firewall-cmd --permanent --add-service=http
 
 firewall-cmd --reload
 
+success "Firewall configured."
+
 # -----------------------------------------------------------------------------
-# Remove HTTPS Redirect Configuration
+# Remove SSL Redirect Configuration
 # -----------------------------------------------------------------------------
 
-echo "[TASK] Removing SSL redirect configuration..."
+info "Removing SSL configurations..."
 
 rm -f /etc/httpd/conf.d/ssl-redirect.conf
 rm -f /etc/httpd/conf.d/ssl.conf
+
+success "SSL configuration removed."
 
 # -----------------------------------------------------------------------------
 # Configure Apache Access
 # -----------------------------------------------------------------------------
 
-echo "[TASK] Configuring Apache..."
+info "Configuring Apache..."
 
 if ! grep -q "ANSIBLE MANAGED BLOCK - /var/www/html access" /etc/httpd/conf/httpd.conf; then
 
@@ -122,45 +153,55 @@ cat <<'EOF' >> /etc/httpd/conf/httpd.conf
 
 EOF
 
+    success "Apache directory permissions configured."
+else
+    success "Apache directory permissions already configured."
 fi
 
 # -----------------------------------------------------------------------------
 # Start Apache
 # -----------------------------------------------------------------------------
 
-echo "[TASK] Starting Apache..."
+info "Starting Apache..."
 
 systemctl enable httpd
 systemctl restart httpd
+
+success "Apache started."
 
 # -----------------------------------------------------------------------------
 # Verify Apache Configuration
 # -----------------------------------------------------------------------------
 
-echo "[VERIFY] Apache configuration..."
+info "Running Apache configuration test..."
 
-apachectl configtest
+if apachectl configtest; then
+    success "Apache configuration is valid."
+else
+    error "Apache configuration validation failed."
+    exit 1
+fi
 
 # -----------------------------------------------------------------------------
 # Verify Repository Access
 # -----------------------------------------------------------------------------
 
-echo "[VERIFY] Testing local repository access..."
+info "Testing local repository access..."
 
 HTTP_RESPONSE=$(curl -sI http://127.0.0.1/repo/)
 
-echo "${HTTP_RESPONSE}"
-
 if echo "${HTTP_RESPONSE}" | grep -q "200"; then
-    echo
-    echo "SUCCESS -> HTTP repository is accessible."
+    success "HTTP repository is accessible."
 else
-    echo
-    echo "FAILED -> HTTP repository is not accessible."
+    error "HTTP repository is NOT accessible."
+    echo "${HTTP_RESPONSE}"
     exit 1
 fi
 
 echo
+echo -e "${GREEN}"
 echo "====================================================="
 echo " Repository Server Configuration Completed"
 echo "====================================================="
+echo -e "${NC}"
+```
