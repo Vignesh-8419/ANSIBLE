@@ -361,30 +361,27 @@ EOF
 awx-manage shell <<EOF
 from awx.main.models import Project, JobTemplate
 
-try:
-    project = Project.objects.get(name="Inventory-Git-Repo")
-except Project.DoesNotExist:
-    print("Error: Project 'Inventory-Git-Repo' not found.")
-    exit(1)
+project = Project.objects.get(name="Inventory-Git-Repo")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Local_DNS",
     defaults={
         "project": project,
         "playbook": "Local_DNS.yml",
-        "ask_inventory_on_launch": True
+        "ask_inventory_on_launch": True,
+        "ask_limit_on_launch": True
     }
 )
 
 if not created:
     jt.project = project
     jt.playbook = "Local_DNS.yml"
+    jt.inventory = None
     jt.ask_inventory_on_launch = True
     jt.ask_limit_on_launch = True
-    jt.inventory = None
     jt.save()
 
-print(f"Job Template 'Local_DNS' {'created' if created else 'updated'} successfully.")
+print("Done")
 EOF
 ```
 
