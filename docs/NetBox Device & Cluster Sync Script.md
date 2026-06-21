@@ -588,10 +588,10 @@ if [ "$SOURCE_CHOICE" = "1" ]; then
         -o StrictHostKeyChecking=no \
         ${SSH_USER}@${REMOTE_HOST} "nproc")
 
-    RAM_GB=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
-        ${SSH_USER}@${REMOTE_HOST} \
-        "free -g | awk '/Mem:/ {print \$2}'")
+	RAM_GB=$(sshpass -p "$SSH_PASS" ssh \
+    	-o StrictHostKeyChecking=no \
+    	${SSH_USER}@${REMOTE_HOST} \
+    "	awk '/MemTotal/ {printf \"%d\", (\$2/1024/1024)+0.5}' /proc/meminfo")
 
     DISK_SIZE=$(sshpass -p "$SSH_PASS" ssh \
         -o StrictHostKeyChecking=no \
@@ -834,4 +834,5 @@ echo "Failed Count  : $FAILED_COUNT"
 echo -e "${CYAN}Execution Time : ${RUNTIME} seconds${NC}"
 
 echo "===================================================="
+
 ```
