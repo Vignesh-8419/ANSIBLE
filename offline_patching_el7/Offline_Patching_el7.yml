@@ -31,12 +31,12 @@
           - "Patch Repo     : {{ patch_repo }}"
 
     - name: Verify DNS Resolution
-      shell: |
+      raw: |
         getent hosts {{ repo_url | regex_replace('^https?://','') | regex_replace('/.*$','') }}
       register: dns_check
       changed_when: false
       failed_when: dns_check.rc != 0
-
+  
     - name: Verify Base Repository Metadata
       uri:
         url: "{{ repo_url }}/{{ base_repo }}/repodata/repomd.xml"
