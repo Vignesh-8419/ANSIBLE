@@ -1,42 +1,66 @@
 ```text
-nmcli con up ens192 && wget https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Server_Setup.sh && chmod +x Server_Setup.sh && nmcli con down ens192
+nmcli con up ens192 && \
+curl -L -o Server_Setup.sh "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Server_Setup.sh?$(date +%s)" && \
+chmod +x Server_Setup.sh && \
+nmcli con down ens192
 ```
 
 ```text
-wget https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Rocky_8_HTTP_Repository_Server_Setup.sh && chmod +x Rocky_8_HTTP_Repository_Server_Setup.sh
+curl -L -o Rocky_8_HTTP_Repository_Server_Setup.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Rocky_8_HTTP_Repository_Server_Setup.sh?$(date +%s)" && \
+chmod +x Rocky_8_HTTP_Repository_Server_Setup.sh
 ```
 
 ```text
-wget https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/install_awx_k3s_new.sh && chmod +x install_awx_k3s_new.sh
+curl -L -o install_awx_k3s_new.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/install_awx_k3s_new.sh?$(date +%s)" && \
+chmod +x install_awx_k3s_new.sh
 ```
 
 ```text
-wget https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/working_netbox.sh && chmod +x working_netbox.sh
+curl -L -o working_netbox.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/working_netbox.sh?$(date +%s)" && \
+chmod +x working_netbox.sh
 ```
 
 ```text
-wget https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Offline_Patching_el8_cifs.sh && chmod +x Offline_Patching_el8_cifs.sh
+curl -L -o Offline_Patching_el8_cifs.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Offline_Patching_el8_cifs.sh?$(date +%s)" && \
+chmod +x Offline_Patching_el8_cifs.sh
 ```
 
 ```text
-wget https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Offline_Patching_el8.sh && chmod +x Offline_Patching_el8.sh
+curl -L -o Offline_Patching_el8.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Offline_Patching_el8.sh?$(date +%s)" && \
+chmod +x Offline_Patching_el8.sh
 ```
 
 ```text
-wget https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Offline_Patching_el7_cifs.sh && chmod +x Offline_Patching_el7_cifs.sh
+curl -L -o Offline_Patching_el7_cifs.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Offline_Patching_el7_cifs.sh?$(date +%s)" && \
+chmod +x Offline_Patching_el7_cifs.sh
 ```
 
 ```text
-wget https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Foreman_Rocky.sh && chmod +x Foreman_Rocky.sh
+curl -L -o Foreman_Rocky.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Foreman_Rocky.sh?$(date +%s)" && \
+chmod +x Foreman_Rocky.sh
 ```
 
 ```text
-wget https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Foreman_Proxy_Rocky.sh && chmod +x Foreman_Proxy_Rocky.sh
-```
-```text
-wget https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/frontbackend_Rocky.sh && chmod +x frontbackend_Rocky.sh
+curl -L -o Foreman_Proxy_Rocky.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Foreman_Proxy_Rocky.sh?$(date +%s)" && \
+chmod +x Foreman_Proxy_Rocky.sh
 ```
 
 ```text
-wget https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Device_Creation_Netbox.sh && chmod +x Device_Creation_Netbox.sh
+curl -L -o frontbackend_Rocky.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/frontbackend_Rocky.sh?$(date +%s)" && \
+chmod +x frontbackend_Rocky.sh
+```
+
+```text
+curl -L -o Device_Creation_Netbox.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Device_Creation_Netbox.sh?$(date +%s)" && \
+chmod +x Device_Creation_Netbox.sh
 ```
