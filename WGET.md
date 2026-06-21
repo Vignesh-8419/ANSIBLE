@@ -3,6 +3,10 @@ nmcli con up ens192 && wget https://raw.githubusercontent.com/Vignesh-8419/ANSIB
 ```
 
 ```text
+wget https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Rocky_8_HTTP_Repository_Server_Setup.sh && chmod +x Rocky_8_HTTP_Repository_Server_Setup.sh
+```
+
+```text
 wget https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/install_awx_k3s_new.sh && chmod +x install_awx_k3s_new.sh
 ```
 
