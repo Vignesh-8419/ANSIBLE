@@ -5,10 +5,6 @@
   gather_facts: no
   any_errors_fatal: false
 
-  vars:
-    backup_dir_name: "backup_repos_original"
-    ansible_python_interpreter: /usr/bin/python3
-
   pre_tasks:
 
     - name: Load NetBox Context
@@ -21,8 +17,6 @@
         base_repo: "{{ (nb_ctx.repositories | selectattr('id','equalto','base') | first).folder }}"
         patch_repo: "{{ (nb_ctx.repositories | selectattr('id','equalto','patch') | first).folder }}"
 
-  tasks:
-
     - name: Display NetBox Context
       debug:
         msg:
@@ -30,132 +24,130 @@
           - "Base Repo      : {{ base_repo }}"
           - "Patch Repo     : {{ patch_repo }}"
 
+  tasks:
+
     - name: Verify DNS Resolution
       raw: |
         getent hosts {{ repo_url | regex_replace('^https?://','') | regex_replace('/.*$','') }}
       register: dns_check
       changed_when: false
       failed_when: dns_check.rc != 0
-  
+
     - name: Verify Base Repository Metadata
-      uri:
-        url: "{{ repo_url }}/{{ base_repo }}/repodata/repomd.xml"
-        method: GET
-        status_code: 200
-        timeout: 30
+      raw: |
+        curl -sf {{ repo_url }}/{{ base_repo }}/repodata/repomd.xml >/dev/null
+      register: base_repo_check
+      changed_when: false
+      failed_when: base_repo_check.rc != 0
 
     - name: Verify Patch Repository Metadata
-      uri:
-        url: "{{ repo_url }}/{{ patch_repo }}/repodata/repomd.xml"
-        method: GET
-        status_code: 200
-        timeout: 30
+      raw: |
+        curl -sf {{ repo_url }}/{{ patch_repo }}/repodata/repomd.xml >/dev/null
+      register: patch_repo_check
+      changed_when: false
+      failed_when: patch_repo_check.rc != 0
 
-    - name: Create Repository Backup Directory
-      file:
-        path: "/etc/yum.repos.d/{{ backup_dir_name }}"
-        state: directory
-        mode: "0755"
+    - name: Capture Current Kernel Version
+      raw: uname -r
+      register: kernel_before
+      changed_when: false
 
-    - name: Find Existing Repository Files
-      find:
-        paths: /etc/yum.repos.d
-        patterns: "*.repo"
-        file_type: file
-        depth: 1
-      register: found_repos
+    - name: Execute Offline Patching
+      raw: |
+        BACKUP_DIR=/etc/yum.repos.d/backup_repos_original
 
-    - name: Backup Existing Repository Files
-      command:
-        cmd: "mv {{ item.path }} /etc/yum.repos.d/{{ backup_dir_name }}/"
-      loop: "{{ found_repos.files }}"
-      when: found_repos.matched > 0
+        mkdir -p ${BACKUP_DIR}
 
-    - block:
+        mv /etc/yum.repos.d/*.repo ${BACKUP_DIR}/ 2>/dev/null || true
 
-        - name: Create Base Repository
-          copy:
-            dest: /etc/yum.repos.d/base.repo
-            mode: "0644"
-            content: |
-              [base]
-              name=CentOS/RHEL7 Base Repository
-              baseurl={{ repo_url }}/{{ base_repo }}
-              enabled=1
-              gpgcheck=0
+        cat > /etc/yum.repos.d/base.repo <<EOF
+        [base]
+        name=CentOS/RHEL7 Base Repository
+        baseurl={{ repo_url }}/{{ base_repo }}
+        enabled=1
+        gpgcheck=0
+        EOF
 
-        - name: Create Patch Repository
-          copy:
-            dest: /etc/yum.repos.d/patch.repo
-            mode: "0644"
-            content: |
-              [patch]
-              name=CentOS/RHEL7 Patch Repository
-              baseurl={{ repo_url }}/{{ patch_repo }}
-              enabled=1
-              gpgcheck=0
+        cat > /etc/yum.repos.d/patch.repo <<EOF
+        [patch]
+        name=CentOS/RHEL7 Patch Repository
+        baseurl={{ repo_url }}/{{ patch_repo }}
+        enabled=1
+        gpgcheck=0
+        EOF
 
-        - name: Clean Yum Cache
-          command: yum clean all
+        yum clean all
 
-        - name: Build Yum Cache
-          shell: |
-            yum makecache \
-              --disablerepo='*' \
-              --enablerepo=base,patch
+        yum makecache \
+          --disablerepo='*' \
+          --enablerepo=base,patch
 
-        - name: Execute Operating System Patching
-          shell: |
-            yum update -y \
-              --disablerepo='*' \
-              --enablerepo=base,patch
-          register: yum_shell_output
+        yum update -y \
+          --disablerepo='*' \
+          --enablerepo=base,patch
 
-        - name: Display Patch Output
-          debug:
-            var: yum_shell_output.stdout_lines
+        PATCH_RC=$?
 
-        - name: Determine Whether Updates Were Installed
-          set_fact:
-            updates_installed: "{{ 'No packages marked for update' not in yum_shell_output.stdout }}"
+        rm -f /etc/yum.repos.d/base.repo
+        rm -f /etc/yum.repos.d/patch.repo
 
-        - name: Reboot If Updates Were Installed
-          reboot:
-            reboot_timeout: 900
-            msg: "Offline patching completed. Rebooting host."
-          when: updates_installed
+        if [ -d "${BACKUP_DIR}" ]; then
+          mv ${BACKUP_DIR}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
+          rmdir ${BACKUP_DIR} 2>/dev/null || true
+        fi
 
-      rescue:
+        yum clean all
 
-        - name: Restore Original Repositories After Failure
-          shell: |
-            if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
-              mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
-              rmdir /etc/yum.repos.d/{{ backup_dir_name }} 2>/dev/null || true
-            fi
+        exit ${PATCH_RC}
+      register: patch_output
 
-        - name: Fail Playbook
-          fail:
-            msg: "Offline patching failed. Original repositories restored."
+    - name: Display Patch Output
+      debug:
+        var: patch_output.stdout_lines
 
-      always:
+    - name: Reboot Host
+      raw: |
+        nohup bash -c "sleep 5; reboot" >/dev/null 2>&1 &
+      ignore_errors: true
 
-        - name: Remove Temporary Repository Files
-          file:
-            path: "{{ item }}"
-            state: absent
-          loop:
-            - /etc/yum.repos.d/base.repo
-            - /etc/yum.repos.d/patch.repo
+    - name: Wait For Host To Go Down
+      wait_for:
+        host: "{{ ansible_host | default(inventory_hostname) }}"
+        port: 22
+        state: drained
+        timeout: 300
+      delegate_to: localhost
 
-        - name: Restore Original Repository Files
-          shell: |
-            if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
-              mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
-              rmdir /etc/yum.repos.d/{{ backup_dir_name }} 2>/dev/null || true
-            fi
-          changed_when: true
+    - name: Wait For Host To Come Back
+      wait_for:
+        host: "{{ ansible_host | default(inventory_hostname) }}"
+        port: 22
+        state: started
+        delay: 20
+        timeout: 900
+      delegate_to: localhost
 
-        - name: Final Yum Cleanup
-          command: yum clean all
-          ignore_errors: true
+    - name: Wait For SSH Connectivity
+      wait_for_connection:
+        delay: 20
+        timeout: 900
+
+    - name: Capture New Kernel Version
+      raw: uname -r
+      register: kernel_after
+      changed_when: false
+
+    - name: Display Kernel Comparison
+      debug:
+        msg:
+          - "Kernel Before : {{ kernel_before.stdout }}"
+          - "Kernel After  : {{ kernel_after.stdout }}"
+
+    - name: Verify Host Uptime After Reboot
+      raw: uptime
+      register: uptime_output
+      changed_when: false
+
+    - name: Display Uptime
+      debug:
+        var: uptime_output.stdout
