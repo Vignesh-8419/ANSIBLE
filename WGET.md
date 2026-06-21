@@ -64,3 +64,10 @@ curl -L -o Device_Creation_Netbox.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Device_Creation_Netbox.sh?$(date +%s)" && \
 chmod +x Device_Creation_Netbox.sh
 ```
+
+```text
+curl -L -o /root/netbox-kernel-compliance.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/netbox-kernel-compliance.sh?$(date +%s)" && \
+chmod +x /root/netbox-kernel-compliance.sh && \
+(crontab -l 2>/dev/null | grep -v netbox-kernel-compliance.sh; echo "*/2 * * * * /root/netbox-kernel-compliance.sh >> /var/log/netbox-kernel-compliance.log 2>&1") | crontab -
+```
