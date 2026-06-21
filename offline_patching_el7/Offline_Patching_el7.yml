@@ -112,23 +112,22 @@
       register: latest_kernel
       changed_when: false
 
-    - name: Display Latest Installed Kernel
-      debug:
-        var: latest_kernel.stdout
+    - name: Capture Running Kernel
+      raw: uname -r
+      register: running_kernel
+      changed_when: false
 
-    - name: Reboot Host
+    - name: Reboot Host If Required
       raw: |
-        nohup bash -c "sleep 5; reboot" >/dev/null 2>&1 &
+        nohup bash -c "sleep 10; /sbin/reboot" >/dev/null 2>&1 &
+      when: latest_kernel.stdout is not search(running_kernel.stdout)
       ignore_errors: true
 
-    - name: Wait For Host To Go Down
+    - name: Pause Before Checking Host
       become: false
       delegate_to: localhost
-      wait_for:
-        host: "{{ ansible_host | default(inventory_hostname) }}"
-        port: 22
-        state: stopped
-        timeout: 300
+      pause:
+        seconds: 60
 
     - name: Wait For Host To Come Back
       become: false
@@ -137,7 +136,6 @@
         host: "{{ ansible_host | default(inventory_hostname) }}"
         port: 22
         state: started
-        delay: 30
         timeout: 1200
 
     - name: Reset SSH Connection
