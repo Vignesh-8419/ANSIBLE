@@ -7,6 +7,7 @@
 
   vars:
     backup_dir_name: "backup_repos_original"
+    ansible_python_interpreter: /usr/bin/python
 
   pre_tasks:
 
