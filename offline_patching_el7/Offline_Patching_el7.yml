@@ -108,7 +108,7 @@
         var: patch_output.stdout_lines
 
     - name: Check Installed Kernel Package
-      raw: rpm -q kernel | sort | tail -1
+      raw: rpm -q kernel --last | head -1 | awk '{print $1}'
       register: latest_kernel
       changed_when: false
 
@@ -117,10 +117,16 @@
       register: running_kernel
       changed_when: false
 
+    - name: Show Kernel Status
+      debug:
+        msg:
+          - "Running Kernel : {{ running_kernel.stdout }}"
+          - "Latest Kernel  : {{ latest_kernel.stdout }}"
+
     - name: Reboot Host If Required
       raw: |
         nohup bash -c "sleep 10; /sbin/reboot" >/dev/null 2>&1 &
-      when: latest_kernel.stdout is not search(running_kernel.stdout)
+      when: running_kernel.stdout not in latest_kernel.stdout
       ignore_errors: true
 
     - name: Pause Before Checking Host
