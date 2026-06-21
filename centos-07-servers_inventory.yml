@@ -21,8 +21,9 @@ group_by:
 
 # 3. Use your verified filter
 query_filters:
-  - status: "active"
   - cluster_id: 2
+  - status: active
+  - status: staged
 
 compose:
   ansible_host: primary_ip4.address.split('/')[0]
