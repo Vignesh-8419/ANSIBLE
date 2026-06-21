@@ -397,6 +397,14 @@ echo "2) Type manually"
 
 read -p "Choice [1-2]: " SOURCE_CHOICE
 
+# ---------------- DEVICE STATUS ----------------
+
+if [ "$SOURCE_CHOICE" = "1" ]; then
+    DEVICE_STATUS="active"
+else
+    DEVICE_STATUS="staged"
+fi
+
 if [ "$SOURCE_CHOICE" == "1" ]; then
 
     # ==========================================
@@ -418,20 +426,46 @@ elif [ "$SOURCE_CHOICE" == "2" ]; then
     # MANUAL ENTRY
     # ==========================================
 
-    read -p "Hostname       : " HOSTNAME
-    read -p "IP Address/CIDR: " IPADDR
-    read -p "MAC Address    : " MAC
-    read -p "Interface Name : " IFACE
+    read -p "Hostname(s)       : " HOSTNAMES
+    read -p "IP Address(es)    : " IPADDRS
+    read -p "MAC Address(es)   : " MACS
+    read -p "Interface Name(s) : " IFACES
+    
+    IFS=',' read -ra HOSTNAME_LIST <<< "$HOSTNAMES"
+    IFS=',' read -ra IPADDR_LIST <<< "$IPADDRS"
+    IFS=',' read -ra MAC_LIST <<< "${MACS:-}"
+    IFS=',' read -ra IFACE_LIST <<< "${IFACES:-}"
+    
+    TOTAL=${#HOSTNAME_LIST[@]}
+    COUNT=1
+	
+if [ ${#IPADDR_LIST[@]} -ne $TOTAL ]; then
+    echo "ERROR: Hostname count and IP count do not match"
+    exit 1
+fi
 
+# Fill missing interfaces with ens192
+if [ ${#IFACE_LIST[@]} -eq 0 ]; then
+    for ((i=0;i<TOTAL;i++))
+    do
+        IFACE_LIST[$i]="ens192"
+    done
+fi
+
+# Fill missing MAC entries
+if [ ${#MAC_LIST[@]} -eq 0 ]; then
+    for ((i=0;i<TOTAL;i++))
+    do
+        MAC_LIST[$i]=""
+    done
+fi
+    
     CPU_COUNT="N/A"
     RAM_GB="N/A"
     DISK_SIZE="N/A"
     VMTYPE="Manual"
     KERNEL="N/A"
     UPTIME="N/A"
-
-    TOTAL=1
-    COUNT=1
 
 else
 
@@ -483,7 +517,7 @@ else
     read -p "Choose cluster: " c_choice
 
     CLUSTER_ID=${cluster_map[$c_choice]}
-	if [ -z "$CLUSTER_ID" ] || [ "$CLUSTER_ID" = "null" ]; then
+        if [ -z "$CLUSTER_ID" ] || [ "$CLUSTER_ID" = "null" ]; then
     echo -e "${RED}Invalid Cluster Selection${NC}"
     exit 1
     fi
@@ -496,10 +530,9 @@ fi
 if [ "$SOURCE_CHOICE" = "2" ]; then
 
     echo ""
-    echo "Processing Manual Device..."
+    echo "Processing Manual Devices..."
 
-    # Skip SSH discovery
-    HOST_LIST=("MANUAL")
+    HOST_LIST=("${HOSTNAME_LIST[@]}")
 
 fi
 
@@ -508,11 +541,39 @@ fi
 for REMOTE_HOST in "${HOST_LIST[@]}"
 do
 
+if [ "$SOURCE_CHOICE" = "2" ]; then
+
+    IDX=$((COUNT-1))
+	
+	if [ "$IDX" -ge "${#HOSTNAME_LIST[@]}" ]; then
+    break
+	fi
+
+    HOSTNAME=$(echo "${HOSTNAME_LIST[$IDX]}" | xargs)
+    IPADDR=$(echo "${IPADDR_LIST[$IDX]}" | xargs)
+    MAC=$(echo "${MAC_LIST[$IDX]:-}" | xargs)
+    IFACE=$(echo "${IFACE_LIST[$IDX]:-ens192}" | xargs)
+
+fi
+
+if [ "$SOURCE_CHOICE" = "2" ]; then
+
+    if [ -z "$HOSTNAME" ] || [ -z "$IPADDR" ]; then
+        log "${RED}Missing hostname or IP for entry $COUNT${NC}"
+        FAILED_LIST+="Manual-Entry-$COUNT"$'\n'
+        ((COUNT++))
+        continue
+    fi
+
+    [ -z "$IFACE" ] && IFACE="ens192"
+
+fi
+
     REMOTE_HOST=$(echo "$REMOTE_HOST" | xargs)
 
     log ""
     PERCENT=$(( COUNT * 100 / TOTAL ))
-	if [ "$SOURCE_CHOICE" = "2" ]; then
+        if [ "$SOURCE_CHOICE" = "2" ]; then
     log "${BLUE}[${COUNT}/${TOTAL}] (${PERCENT}%) Processing ${HOSTNAME}${NC}"
     else
         log "${BLUE}[${COUNT}/${TOTAL}] (${PERCENT}%) Processing ${REMOTE_HOST}${NC}"
@@ -588,10 +649,10 @@ if [ "$SOURCE_CHOICE" = "1" ]; then
         -o StrictHostKeyChecking=no \
         ${SSH_USER}@${REMOTE_HOST} "nproc")
 
-	RAM_GB=$(sshpass -p "$SSH_PASS" ssh \
-    	-o StrictHostKeyChecking=no \
-    	${SSH_USER}@${REMOTE_HOST} \
-    	"awk '/MemTotal/ {printf \"%d\", (\$2/1024/1024)+0.5}' /proc/meminfo")
+        RAM_GB=$(sshpass -p "$SSH_PASS" ssh \
+        -o StrictHostKeyChecking=no \
+        ${SSH_USER}@${REMOTE_HOST} \
+    "   awk '/MemTotal/ {printf \"%d\", (\$2/1024/1024)+0.5}' /proc/meminfo")
 
     DISK_SIZE=$(sshpass -p "$SSH_PASS" ssh \
         -o StrictHostKeyChecking=no \
@@ -632,9 +693,9 @@ if [ -z "$EXISTING_DEV_ID" ] || [ "$EXISTING_DEV_ID" == "null" ]; then
     DEVICE_ID=$(curl -sk -X POST "$NETBOX_URL/dcim/devices/" \
         -H "$HDR" \
         -H "Authorization: Token $NETBOX_TOKEN" \
-        -d "{\"name\":\"$HOSTNAME\",\"device_type\":$DEVICETYPE_ID,\"role\":$DEVICEROLE_ID,\"site\":$SITE_ID,\"cluster\":$CLUSTER_ID}" \
+        -d "{\"name\":\"$HOSTNAME\",\"device_type\":$DEVICETYPE_ID,\"role\":$DEVICEROLE_ID,\"site\":$SITE_ID,\"cluster\":$CLUSTER_ID,\"status\":\"$DEVICE_STATUS\"}" \
         | jq -r '.id // empty')
-    
+
     if [ -z "$DEVICE_ID" ]; then
         log "${RED}Failed creating device ${HOSTNAME}${NC}"
         FAILED_LIST+="$HOSTNAME"$'\n'
@@ -646,10 +707,10 @@ else
 
     DEVICE_ID=$EXISTING_DEV_ID
 
-    curl -sk -X PATCH "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
-        -H "$HDR" \
-        -H "Authorization: Token $NETBOX_TOKEN" \
-        -d "{\"cluster\":$CLUSTER_ID}" > /dev/null
+curl -sk -X PATCH "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
+    -H "$HDR" \
+    -H "Authorization: Token $NETBOX_TOKEN" \
+    -d "{\"cluster\":$CLUSTER_ID,\"status\":\"$DEVICE_STATUS\"}" > /dev/null
 fi
 
 # 2. Interface Sync & Cleanup
@@ -698,13 +759,13 @@ if [ -z "$INTERFACE_ID" ] || [ "$INTERFACE_ID" == "null" ]; then
         -H "Authorization: Token $NETBOX_TOKEN" \
         -d "{\"device\":$DEVICE_ID,\"name\":\"$IFACE\",\"type\":\"1000base-t\"}" \
         | jq -r '.id')
-		
-	if [ -z "$INTERFACE_ID" ] || [ "$INTERFACE_ID" = "null" ]; then
+
+        if [ -z "$INTERFACE_ID" ] || [ "$INTERFACE_ID" = "null" ]; then
     log "${RED}Failed creating interface ${IFACE} on ${HOSTNAME}${NC}"
     FAILED_LIST+="$HOSTNAME"$'\n'
     ((COUNT++))
     continue
-    fi	
+    fi
 fi
 
 # 3. MAC Object
@@ -758,10 +819,13 @@ else
         -d "{\"assigned_object_id\":$INTERFACE_ID}" > /dev/null
 fi
 
+echo "Assigning Primary IP..."
+echo "IP_ID=$IP_ID"
+
 curl -sk -X PATCH "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
     -H "$HDR" \
     -H "Authorization: Token $NETBOX_TOKEN" \
-    -d "{\"primary_ip4\":$IP_ID}" > /dev/null
+    -d "{\"cluster\":$CLUSTER_ID,\"status\":\"$DEVICE_STATUS\",\"primary_ip4\":$IP_ID}" > /dev/null
 
 if [ "$CPU_COUNT" = "N/A" ]; then
     CPU_COUNT=null
