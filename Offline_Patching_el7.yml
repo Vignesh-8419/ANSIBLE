@@ -7,7 +7,7 @@
 
   vars:
     backup_dir_name: "backup_repos_original"
- #   ansible_python_interpreter: /usr/bin/python
+    ansible_python_interpreter: /usr/bin/python
 
   pre_tasks:
 
@@ -30,12 +30,12 @@
           - "Base Repo      : {{ base_repo }}"
           - "Patch Repo     : {{ patch_repo }}"
 
-#    - name: Verify DNS Resolution
-#      shell: |
-#        getent hosts {{ repo_url | regex_replace('^https?://','') | regex_replace('/.*$','') }}
-#      register: dns_check
-#      changed_when: false
-#      failed_when: dns_check.rc != 0
+    - name: Verify DNS Resolution
+      shell: |
+        getent hosts {{ repo_url | regex_replace('^https?://','') | regex_replace('/.*$','') }}
+      register: dns_check
+      changed_when: false
+      failed_when: dns_check.rc != 0
 
     - name: Verify Base Repository Metadata
       uri:
