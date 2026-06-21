@@ -124,21 +124,21 @@
           - "Latest Kernel  : {{ latest_kernel.stdout }}"
 
 	- name: Reboot Host If Required
-	raw: |
+	  raw: |
 		nohup bash -c "sleep 5; shutdown -r now" >/dev/null 2>&1 &
-	when: running_kernel.stdout not in latest_kernel.stdout
-	ignore_errors: true
+	  when: running_kernel.stdout not in latest_kernel.stdout
+	  ignore_errors: true
 	
 	- name: Wait 30 Seconds For Reboot To Start
-	delegate_to: localhost
-	become: false
-	pause:
+	  delegate_to: localhost
+	  become: false
+	  pause:
 		seconds: 30
 	
 	- name: Wait For SSH To Return
-	delegate_to: localhost
-	become: false
-	wait_for:
+	  delegate_to: localhost
+	  become: false
+	  wait_for:
 		host: "{{ ansible_host | default(inventory_hostname) }}"
 		port: 22
 		state: started
@@ -147,7 +147,7 @@
 	- meta: reset_connection
 	
 	- name: Wait For SSH Connectivity
-	wait_for_connection:
+	  wait_for_connection:
 		timeout: 600
 
     - name: Pause For Services To Settle
