@@ -6,20 +6,47 @@
   any_errors_fatal: false
 
   vars:
-    repo_url: "http://http-server-01.vgs.com/repo"
+
+    ctx: "{{ config_context[0] }}"
+
     backup_dir_name: "backup_repos_original"
-    default_gw: "192.168.253.2"
+
+    repo_url: "{{ ctx.httpd_server_url | regex_replace('/$','') }}"
+
+    default_gw: "{{ ctx.gateway }}"
+
+    rocky8_baseos: >-
+      {{
+        (ctx.repositories
+        | selectattr('id','equalto','rocky8-baseos')
+        | first).folder
+      }}
+
+    rocky8_appstream: >-
+      {{
+        (ctx.repositories
+        | selectattr('id','equalto','rocky8-appstream')
+        | first).folder
+      }}
 
   tasks:
 
+    - name: Display NetBox Context
+      debug:
+        msg:
+          - "Repository URL : {{ repo_url }}"
+          - "Gateway        : {{ default_gw }}"
+          - "BaseOS Repo    : {{ rocky8_baseos }}"
+          - "AppStream Repo : {{ rocky8_appstream }}"
+
     - name: Ensure Default Gateway is present
-      ansible.builtin.shell: |
+      shell: |
         if ! ip route show | grep -q '^default'; then
-            echo "Default gateway missing! Adding {{ default_gw }}..."
+            echo "Default gateway missing"
             ip route add default via {{ default_gw }}
             exit 2
         else
-            echo "Default gateway already configured."
+            echo "Default gateway already configured"
             exit 0
         fi
       register: gw_check
@@ -27,91 +54,91 @@
       changed_when: gw_check.rc == 2
 
     - name: Display Target Environment Info
-      ansible.builtin.debug:
+      debug:
         msg: "Processing Agent Node Workflow for {{ inventory_hostname }}"
 
     - name: Verify DNS resolution for repo server
-      ansible.builtin.shell: getent hosts http-server-01.vgs.com
+      shell: |
+        getent hosts {{ repo_url | regex_replace('^https?://','') | regex_replace('/.*$','') }}
       register: dns_check
       changed_when: false
       failed_when: dns_check.rc != 0
 
     - name: Verify BaseOS repository metadata
-      ansible.builtin.uri:
-        url: "{{ repo_url }}/rocky8/BaseOS/repodata/repomd.xml"
+      uri:
+        url: "{{ repo_url }}/{{ rocky8_baseos }}/repodata/repomd.xml"
         method: GET
         status_code: 200
         timeout: 30
 
     - name: Verify AppStream repository metadata
-      ansible.builtin.uri:
-        url: "{{ repo_url }}/rocky8/AppStream/repodata/repomd.xml"
+      uri:
+        url: "{{ repo_url }}/{{ rocky8_appstream }}/repodata/repomd.xml"
         method: GET
         status_code: 200
         timeout: 30
 
     - name: Create backup repository directory
-      ansible.builtin.file:
+      file:
         path: "/etc/yum.repos.d/{{ backup_dir_name }}"
         state: directory
         mode: "0755"
 
-    - name: Back up existing repository configurations
+    - name: Backup existing repositories
       block:
 
         - name: Find existing repository files
-          ansible.builtin.find:
+          find:
             paths: /etc/yum.repos.d
             patterns: "*.repo"
             file_type: file
             depth: 1
           register: found_repos
 
-        - name: Move repository files to backup location
-          ansible.builtin.command:
+        - name: Move repository files
+          command:
             cmd: "mv {{ item.path }} /etc/yum.repos.d/{{ backup_dir_name }}/"
           loop: "{{ found_repos.files }}"
           when: found_repos.matched > 0
-          changed_when: true
 
-    - name: Main Patching Engine Lifecycle
+    - name: Main Patching Lifecycle
       block:
 
-        - name: Create temporary BaseOS repository
-          ansible.builtin.copy:
+        - name: Create BaseOS repository
+          copy:
             dest: /etc/yum.repos.d/rocky8-baseos.repo
             mode: "0644"
             content: |
               [rocky8-baseos]
               name=Rocky Linux 8 BaseOS
-              baseurl={{ repo_url }}/rocky8/BaseOS
+              baseurl={{ repo_url }}/{{ rocky8_baseos }}
               enabled=1
               gpgcheck=0
               sslverify=0
 
-        - name: Create temporary AppStream repository
-          ansible.builtin.copy:
+        - name: Create AppStream repository
+          copy:
             dest: /etc/yum.repos.d/rocky8-appstream.repo
             mode: "0644"
             content: |
               [rocky8-appstream]
               name=Rocky Linux 8 AppStream
-              baseurl={{ repo_url }}/rocky8/AppStream
+              baseurl={{ repo_url }}/{{ rocky8_appstream }}
               enabled=1
               gpgcheck=0
               sslverify=0
 
         - name: Clean DNF cache
-          ansible.builtin.shell: dnf clean all
-          changed_when: true
+          shell: dnf clean all
 
-        - name: Build repository cache
-          ansible.builtin.shell: |
-            dnf makecache --disablerepo='*' --enablerepo=rocky8-baseos,rocky8-appstream
-          changed_when: true
+        - name: Build DNF cache
+          shell: |
+            dnf makecache \
+            --disablerepo='*' \
+            --enablerepo=rocky8-baseos,rocky8-appstream
 
-        - name: Execute operating system patching
-          ansible.builtin.shell: |
+        - name: Execute OS patching
+          shell: |
             dnf update -y \
               --disablerepo='*' \
               --enablerepo=rocky8-baseos,rocky8-appstream \
@@ -119,26 +146,32 @@
               --nobest
           register: dnf_shell_output
 
-        - name: Reboot if updates were installed
-          ansible.builtin.reboot:
+        - name: Display patch output
+          debug:
+            var: dnf_shell_output.stdout_lines
+
+        - name: Reboot if updates installed
+          reboot:
             reboot_timeout: 900
-            msg: "Automated offline patching completed. Rebooting host."
+            msg: "Offline patching completed. Rebooting."
           when: "'Complete!' in dnf_shell_output.stdout"
 
       rescue:
 
-        - name: Restore original repositories after failure
-          ansible.builtin.shell: |
+        - name: Restore repositories after failure
+          shell: |
             if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
-              mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
-              rmdir /etc/yum.repos.d/{{ backup_dir_name }} 2>/dev/null || true
+              mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo \
+                 /etc/yum.repos.d/ 2>/dev/null || true
+              rmdir /etc/yum.repos.d/{{ backup_dir_name }} \
+                 2>/dev/null || true
             fi
           failed_when: true
 
       always:
 
-        - name: Remove temporary repository files
-          ansible.builtin.file:
+        - name: Remove temporary repositories
+          file:
             path: "{{ item }}"
             state: absent
           loop:
@@ -146,9 +179,15 @@
             - /etc/yum.repos.d/rocky8-appstream.repo
 
         - name: Restore original repositories
-          ansible.builtin.shell: |
+          shell: |
             if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
-              mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
-              rmdir /etc/yum.repos.d/{{ backup_dir_name }} 2>/dev/null || true
+              mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo \
+                 /etc/yum.repos.d/ 2>/dev/null || true
+              rmdir /etc/yum.repos.d/{{ backup_dir_name }} \
+                 2>/dev/null || true
             fi
           changed_when: true
+
+        - name: Final repository cleanup
+          shell: dnf clean all
+          ignore_errors: true
