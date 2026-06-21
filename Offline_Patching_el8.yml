@@ -150,11 +150,15 @@
           debug:
             var: dnf_shell_output.stdout_lines
 
-        - name: Reboot if updates installed
-          reboot:
-            reboot_timeout: 900
-            msg: "Offline patching completed. Rebooting."
-          when: "'Complete!' in dnf_shell_output.stdout"
+				- name: Check if updates were installed
+				set_fact:
+					updates_installed: "{{ 'Nothing to do.' not in dnf_shell_output.stdout }}"
+				
+				- name: Reboot if updates were installed
+				reboot:
+					reboot_timeout: 900
+					msg: "Offline patching completed. Rebooting."
+				when: updates_installed
 
       rescue:
 
