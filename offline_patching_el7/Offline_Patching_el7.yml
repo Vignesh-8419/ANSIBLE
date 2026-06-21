@@ -122,26 +122,30 @@
       ignore_errors: true
 
     - name: Wait For Host To Go Down
+      become: false
+      delegate_to: localhost
       wait_for:
         host: "{{ ansible_host | default(inventory_hostname) }}"
         port: 22
         state: stopped
         timeout: 300
-      delegate_to: localhost
 
     - name: Wait For Host To Come Back
+      become: false
+      delegate_to: localhost
       wait_for:
         host: "{{ ansible_host | default(inventory_hostname) }}"
         port: 22
         state: started
         delay: 30
         timeout: 1200
-      delegate_to: localhost
 
     - name: Reset SSH Connection
       meta: reset_connection
 
-    - name: Wait 30 Seconds For Services
+    - name: Pause For Services To Settle
+      become: false
+      delegate_to: localhost
       pause:
         seconds: 30
 
