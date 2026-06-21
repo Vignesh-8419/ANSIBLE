@@ -484,6 +484,53 @@ https://192.168.253.143/api/extras/custom-fields/ \
 }'
 ```
 
+## 6. Expected Kernel
+
+```bash
+curl -sk -X POST \
+https://192.168.253.143/api/extras/custom-fields/ \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+-H "Content-Type: application/json" \
+-d '{
+  "name":"expected_kernel",
+  "label":"Expected Kernel",
+  "type":"text",
+  "object_types":["dcim.device"]
+}'
+```
+
+## 7. Last Patch Check
+
+```bash
+curl -sk -X POST \
+https://192.168.253.143/api/extras/custom-fields/ \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+-H "Content-Type: application/json" \
+-d '{
+  "name":"last_patch_check",
+  "label":"Last Patch Check",
+  "type":"date",
+  "object_types":["dcim.device"]
+}'
+```
+
+## 8. Patch Status
+
+```bash
+curl -sk -X POST \
+https://192.168.253.143/api/extras/custom-field-choice-sets/ \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+-H "Content-Type: application/json" \
+-d '{
+  "name":"Patch Status",
+  "extra_choices":[
+    ["Compliant","Compliant"],
+    ["Non-Compliant","Non-Compliant"],
+    ["Unknown","Unknown"]
+  ]
+}'
+```
+
 ---
 
 # Script Modification
