@@ -105,6 +105,15 @@
       debug:
         var: patch_output.stdout_lines
 
+    - name: Check Installed Kernel Package
+      raw: rpm -q kernel | sort | tail -1
+      register: latest_kernel
+      changed_when: false
+
+    - name: Display Latest Installed Kernel
+      debug:
+        var: latest_kernel.stdout
+
     - name: Reboot Host
       raw: |
         nohup bash -c "sleep 5; reboot" >/dev/null 2>&1 &
@@ -114,7 +123,7 @@
       wait_for:
         host: "{{ ansible_host | default(inventory_hostname) }}"
         port: 22
-        state: drained
+        state: stopped
         timeout: 300
       delegate_to: localhost
 
@@ -123,14 +132,16 @@
         host: "{{ ansible_host | default(inventory_hostname) }}"
         port: 22
         state: started
-        delay: 20
-        timeout: 900
+        delay: 30
+        timeout: 1200
       delegate_to: localhost
 
-    - name: Wait For SSH Connectivity
-      wait_for_connection:
-        delay: 20
-        timeout: 900
+    - name: Reset SSH Connection
+      meta: reset_connection
+
+    - name: Wait 30 Seconds For Services
+      pause:
+        seconds: 30
 
     - name: Capture New Kernel Version
       raw: uname -r
@@ -143,7 +154,7 @@
           - "Kernel Before : {{ kernel_before.stdout }}"
           - "Kernel After  : {{ kernel_after.stdout }}"
 
-    - name: Verify Host Uptime After Reboot
+    - name: Verify Host Uptime
       raw: uptime
       register: uptime_output
       changed_when: false
@@ -151,3 +162,14 @@
     - name: Display Uptime
       debug:
         var: uptime_output.stdout
+
+    - name: Verify Current Running Kernel
+      raw: |
+        echo "Running Kernel : $(uname -r)"
+        echo "Latest Kernel  : $(rpm -q kernel | sort | tail -1)"
+      register: kernel_validation
+      changed_when: false
+
+    - name: Display Kernel Validation
+      debug:
+        var: kernel_validation.stdout_lines
