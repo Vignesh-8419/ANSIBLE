@@ -531,6 +531,19 @@ https://192.168.253.143/api/extras/custom-field-choice-sets/ \
 }'
 ```
 
+```bash
+curl -sk -X POST \
+https://192.168.253.143/api/extras/custom-fields/ \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+-H "Content-Type: application/json" \
+-d '{
+  "name":"os_version",
+  "label":"OS Version",
+  "type":"text",
+  "object_types":["dcim.device"]
+}'
+```
+
 ---
 
 # Script Modification
