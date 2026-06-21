@@ -15,10 +15,6 @@ wget https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/working_netbox.
 ```
 
 ```text
-wget https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Rocky_8_HTTP_Repository_Server_Setup.sh && chmod +x Rocky_8_HTTP_Repository_Server_Setup.sh
-```
-
-```text
 wget https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Offline_Patching_el8_cifs.sh && chmod +x Offline_Patching_el8_cifs.sh
 ```
 
