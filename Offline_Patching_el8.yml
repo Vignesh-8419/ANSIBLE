@@ -6,28 +6,30 @@
   any_errors_fatal: false
 
   vars:
-
-    ctx: "{{ config_context[0] }}"
-
     backup_dir_name: "backup_repos_original"
 
-    repo_url: "{{ ctx.httpd_server_url | regex_replace('/$','') }}"
+  pre_tasks:
 
-    default_gw: "{{ ctx.gateway }}"
+    - name: Load NetBox Context
+      set_fact:
+        nb_ctx: "{{ config_context[0] }}"
 
-    rocky8_baseos: >-
-      {{
-        (ctx.repositories
-        | selectattr('id','equalto','rocky8-baseos')
-        | first).folder
-      }}
-
-    rocky8_appstream: >-
-      {{
-        (ctx.repositories
-        | selectattr('id','equalto','rocky8-appstream')
-        | first).folder
-      }}
+    - name: Build repository variables
+      set_fact:
+        repo_url: "{{ nb_ctx.httpd_server_url | regex_replace('/$','') }}"
+        default_gw: "{{ nb_ctx.gateway }}"
+        rocky8_baseos: >-
+          {{
+            (nb_ctx.repositories
+            | selectattr('id','equalto','rocky8-baseos')
+            | first).folder
+          }}
+        rocky8_appstream: >-
+          {{
+            (nb_ctx.repositories
+            | selectattr('id','equalto','rocky8-appstream')
+            | first).folder
+          }}
 
   tasks:
 
@@ -42,13 +44,10 @@
     - name: Ensure Default Gateway is present
       shell: |
         if ! ip route show | grep -q '^default'; then
-            echo "Default gateway missing"
-            ip route add default via {{ default_gw }}
-            exit 2
-        else
-            echo "Default gateway already configured"
-            exit 0
+          ip route add default via {{ default_gw }}
+          exit 2
         fi
+        exit 0
       register: gw_check
       failed_when: false
       changed_when: gw_check.rc == 2
@@ -84,25 +83,21 @@
         state: directory
         mode: "0755"
 
-    - name: Backup existing repositories
-      block:
+    - name: Find existing repository files
+      find:
+        paths: /etc/yum.repos.d
+        patterns: "*.repo"
+        file_type: file
+        depth: 1
+      register: found_repos
 
-        - name: Find existing repository files
-          find:
-            paths: /etc/yum.repos.d
-            patterns: "*.repo"
-            file_type: file
-            depth: 1
-          register: found_repos
+    - name: Move repository files to backup
+      command:
+        cmd: "mv {{ item.path }} /etc/yum.repos.d/{{ backup_dir_name }}/"
+      loop: "{{ found_repos.files }}"
+      when: found_repos.matched > 0
 
-        - name: Move repository files
-          command:
-            cmd: "mv {{ item.path }} /etc/yum.repos.d/{{ backup_dir_name }}/"
-          loop: "{{ found_repos.files }}"
-          when: found_repos.matched > 0
-
-    - name: Main Patching Lifecycle
-      block:
+    - block:
 
         - name: Create BaseOS repository
           copy:
@@ -129,15 +124,15 @@
               sslverify=0
 
         - name: Clean DNF cache
-          shell: dnf clean all
+          command: dnf clean all
 
-        - name: Build DNF cache
+        - name: Build repository cache
           shell: |
             dnf makecache \
-            --disablerepo='*' \
-            --enablerepo=rocky8-baseos,rocky8-appstream
+              --disablerepo='*' \
+              --enablerepo=rocky8-baseos,rocky8-appstream
 
-        - name: Execute OS patching
+        - name: Execute operating system patching
           shell: |
             dnf update -y \
               --disablerepo='*' \
@@ -150,27 +145,28 @@
           debug:
             var: dnf_shell_output.stdout_lines
 
-				- name: Check if updates were installed
-				set_fact:
-					updates_installed: "{{ 'Nothing to do.' not in dnf_shell_output.stdout }}"
-				
-				- name: Reboot if updates were installed
-				reboot:
-					reboot_timeout: 900
-					msg: "Offline patching completed. Rebooting."
-				when: updates_installed
+        - name: Determine if updates were installed
+          set_fact:
+            updates_installed: "{{ 'Nothing to do.' not in dnf_shell_output.stdout }}"
+
+        - name: Reboot only when updates were installed
+          reboot:
+            reboot_timeout: 900
+            msg: "Offline patching completed. Rebooting."
+          when: updates_installed
 
       rescue:
 
         - name: Restore repositories after failure
           shell: |
             if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
-              mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo \
-                 /etc/yum.repos.d/ 2>/dev/null || true
-              rmdir /etc/yum.repos.d/{{ backup_dir_name }} \
-                 2>/dev/null || true
+              mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
+              rmdir /etc/yum.repos.d/{{ backup_dir_name }} 2>/dev/null || true
             fi
-          failed_when: true
+
+        - name: Fail play
+          fail:
+            msg: "Offline patching failed. Original repositories restored."
 
       always:
 
@@ -185,13 +181,11 @@
         - name: Restore original repositories
           shell: |
             if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
-              mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo \
-                 /etc/yum.repos.d/ 2>/dev/null || true
-              rmdir /etc/yum.repos.d/{{ backup_dir_name }} \
-                 2>/dev/null || true
+              mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
+              rmdir /etc/yum.repos.d/{{ backup_dir_name }} 2>/dev/null || true
             fi
           changed_when: true
 
         - name: Final repository cleanup
-          shell: dnf clean all
+          command: dnf clean all
           ignore_errors: true
