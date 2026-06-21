@@ -348,7 +348,7 @@ if [ "$SOURCE_CHOICE" = "1" ]; then
 	RAM_GB=$(sshpass -p "$SSH_PASS" ssh \
     	-o StrictHostKeyChecking=no \
     	${SSH_USER}@${REMOTE_HOST} \
-    	"awk '/MemTotal/ {printf \"%.1f\", \$2/1024/1024}' /proc/meminfo")
+    "	awk '/MemTotal/ {printf \"%d\", (\$2/1024/1024)+0.5}' /proc/meminfo")
 
     DISK_SIZE=$(sshpass -p "$SSH_PASS" ssh \
         -o StrictHostKeyChecking=no \
