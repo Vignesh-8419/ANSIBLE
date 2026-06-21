@@ -58,7 +58,7 @@
 
         mkdir -p ${BACKUP_DIR}
 
-        mv /etc/yum.repos.d/*.repo ${BACKUP_DIR}/ 2>/dev/null || true
+        find /etc/yum.repos.d -maxdepth 1 -name "*.repo" -type f -exec mv {} ${BACKUP_DIR}/ \; 2>/dev/null || true
 
         cat > /etc/yum.repos.d/base.repo <<EOF
         [base]
@@ -123,47 +123,25 @@
           - "Running Kernel : {{ running_kernel.stdout }}"
           - "Latest Kernel  : {{ latest_kernel.stdout }}"
 
-    - name: Reboot the server only if it is patched
-      reboot:
-        reboot_timeout: 900
-        connect_timeout: 30
-        post_reboot_delay: 30
-        msg: "Offline patching completed"
+    - name: Reboot Host If Kernel Changed
+      raw: |
+        nohup bash -c "sleep 10; /usr/sbin/reboot" >/dev/null 2>&1 &
       when: running_kernel.stdout not in latest_kernel.stdout
+      ignore_errors: true
 
-    - name: Pause For Services To Settle
+    - name: Wait For Reboot Command To Start
       delegate_to: localhost
       become: false
       pause:
-        seconds: 30
+        seconds: 20
 
-    - name: Capture New Kernel Version
-      raw: uname -r
-      register: kernel_after
-      changed_when: false
+    - name: End Play After Reboot
+      meta: end_play
+      when: running_kernel.stdout not in latest_kernel.stdout
 
-    - name: Display Kernel Comparison
+    - name: No Reboot Required
       debug:
         msg:
-          - "Kernel Before : {{ kernel_before.stdout }}"
-          - "Kernel After  : {{ kernel_after.stdout }}"
-
-    - name: Verify Host Uptime
-      raw: uptime
-      register: uptime_output
-      changed_when: false
-
-    - name: Display Uptime
-      debug:
-        var: uptime_output.stdout
-
-    - name: Verify Current Running Kernel
-      raw: |
-        echo "Running Kernel : $(uname -r)"
-        echo "Latest Kernel  : $(rpm -q kernel | sort | tail -1)"
-      register: kernel_validation
-      changed_when: false
-
-    - name: Display Kernel Validation
-      debug:
-        var: kernel_validation.stdout_lines
+          - "Running Kernel : {{ running_kernel.stdout }}"
+          - "Latest Kernel  : {{ latest_kernel.stdout }}"
+      when: running_kernel.stdout in latest_kernel.stdout
