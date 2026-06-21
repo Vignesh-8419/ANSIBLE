@@ -32,8 +32,8 @@ CONFIG_FILE="/etc/sysconfig/network-scripts/ifcfg-$INTERFACE"
 # ------------------------------------------
 read -p "$(echo -e ${YELLOW}"Please provide the hostname: "${NC})" NEW_HOSTNAME
 read -p "$(echo -e ${YELLOW}"Please provide IP address with netmask (e.g., 192.168.253.151/24): "${NC})" FULL_IP_CIDR
-read -p "$(echo -e ${YELLOW}"Please provide gateway: "${NC}) eg:(192.168.253.2)" GATEWAY
-read -p "$(echo -e ${YELLOW}"Please provide dns server: "${NC}) eg:(192.168.253.1)" DNS_SERVER
+read -p "$(echo -e ${YELLOW}"Please provide gateway (e.g., 192.168.253.2): "${NC})" GATEWAY
+read -p "$(echo -e ${YELLOW}"Please provide dns server (e.g., 192.168.253.2): "${NC})" DNS_SERVER
 
 # Extract pure IP address and Subnet Prefix (e.g., 24) from CIDR
 JUST_IP=$(echo "$FULL_IP_CIDR" | cut -d'/' -f1)
