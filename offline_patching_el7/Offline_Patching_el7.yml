@@ -123,24 +123,10 @@
           - "Running Kernel : {{ running_kernel.stdout }}"
           - "Latest Kernel  : {{ latest_kernel.stdout }}"
 
-    - name: Reboot Host If Kernel Changed
-      raw: |
-        nohup bash -c "sleep 10; /usr/sbin/reboot" >/dev/null 2>&1 &
+    - name: Immediate Reboot
+      raw: shutdown -r now
       when: running_kernel.stdout not in latest_kernel.stdout
       ignore_errors: true
 
-    - name: Wait For Reboot Command To Start
-      delegate_to: localhost
-      become: false
-      pause:
-        seconds: 20
+    - meta: end_play
       when: running_kernel.stdout not in latest_kernel.stdout
-
-    - name: End Play After Reboot Trigger
-      meta: end_play
-      when: running_kernel.stdout not in latest_kernel.stdout
-
-    - name: No Reboot Required
-      debug:
-        msg: "System already running latest kernel. Reboot skipped."
-      when: running_kernel.stdout in latest_kernel.stdout
