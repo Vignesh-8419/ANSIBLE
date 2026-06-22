@@ -129,11 +129,11 @@ mkdir -p /etc/foreman-proxy
 tar -xf /root/${FOREMAN_PROXY}-certs.tar -C /etc/foreman-proxy
 
 echo "🌐 Detecting active network interface..."
-INTERFACE=\$(ip route get 8.8.8.8 | awk '{print \$5; exit}')
-if [[ -z "\$INTERFACE" ]]; then
-  INTERFACE=\$(ip -o -4 addr show | awk '{print \$2}' | head -1)
+INTERFACE=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
+if [[ -z "$INTERFACE" ]]; then
+  INTERFACE=$(ip -o -4 addr show | awk '{print $2}' | head -1)
 fi
-echo "🌐 Using network interface: \$INTERFACE"
+echo "🌐 Using network interface: $INTERFACE"
 
 # Firewall setup
 firewall-cmd --add-service=dhcp --permanent
