@@ -128,20 +128,13 @@
         nohup bash -c "sleep 10; /usr/sbin/reboot" >/dev/null 2>&1 &
       when: running_kernel.stdout not in latest_kernel.stdout
       ignore_errors: true
-
+    
     - name: Wait For Reboot Command To Start
       delegate_to: localhost
       become: false
       pause:
         seconds: 20
-
+    
     - name: End Play After Reboot
       meta: end_play
       when: running_kernel.stdout not in latest_kernel.stdout
-
-    - name: No Reboot Required
-      debug:
-        msg:
-          - "Running Kernel : {{ running_kernel.stdout }}"
-          - "Latest Kernel  : {{ latest_kernel.stdout }}"
-      when: running_kernel.stdout in latest_kernel.stdout
