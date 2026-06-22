@@ -6,9 +6,11 @@
 
   tasks:
 
-    - name: Wait for SSH
-      wait_for_connection:
-        timeout: 900
+    - name: Wait for host to boot
+      delegate_to: localhost
+      become: false
+      pause:
+        seconds: 120
 
     - name: Display Hostname
       raw: hostname
@@ -33,7 +35,7 @@
     - name: Show Validation Results
       debug:
         msg:
-          - "Hostname       : {{ hostname_out.stdout }}"
-          - "Running Kernel : {{ kernel_out.stdout }}"
+          - "Hostname        : {{ hostname_out.stdout }}"
+          - "Running Kernel  : {{ kernel_out.stdout }}"
           - "Installed Kernel: {{ latest_kernel.stdout }}"
-          - "Uptime         : {{ uptime_out.stdout }}"
+          - "Uptime          : {{ uptime_out.stdout }}"
