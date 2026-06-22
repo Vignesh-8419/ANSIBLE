@@ -395,16 +395,18 @@ from awx.main.models import (
     WorkflowJobTemplateNode,
     JobTemplate,
     Credential,
+    Inventory,
     Organization
 )
 
 ORG_NAME = "Default"
-WORKFLOW_NAME = "Netbox-AWX-WORKFLOW_CENTOS_07"
+WORKFLOW_NAME = "CENTOS-VM-TEMPLATE"
 
 JT1_NAME = "Netbox-AWX-GOLDENTEMPLATE_CENTOS_07"
-JT2_NAME = "Netbox-AWX-PATCH_CENTOS_07"
+JT2_NAME = "Offline_Patching_el7"
 
-CREDENTIAL_NAME = "Linux Root"
+CREDENTIAL_NAME = "Linux Root Credential"
+INVENTORY_NAME = "centos-07-servers"
 
 org = Organization.objects.get(name=ORG_NAME)
 
@@ -412,6 +414,7 @@ jt1 = JobTemplate.objects.get(name=JT1_NAME)
 jt2 = JobTemplate.objects.get(name=JT2_NAME)
 
 cred = Credential.objects.get(name=CREDENTIAL_NAME)
+inv = Inventory.objects.get(name=INVENTORY_NAME)
 
 wf, created = WorkflowJobTemplate.objects.get_or_create(
     name=WORKFLOW_NAME,
@@ -421,9 +424,14 @@ wf, created = WorkflowJobTemplate.objects.get_or_create(
 # Clean existing nodes if re-running
 wf.workflow_job_template_nodes.all().delete()
 
-# Enable prompts
+# Default inventory
+wf.inventory = inv
+
+# Enable launch prompts
 wf.ask_limit_on_launch = True
 wf.ask_credential_on_launch = True
+wf.ask_inventory_on_launch = True
+
 wf.save()
 
 # Attach default credential
@@ -445,9 +453,11 @@ n2 = WorkflowJobTemplateNode.objects.create(
 n1.success_nodes.add(n2)
 
 print(f"Workflow '{wf.name}' created/updated successfully.")
+print(f"Inventory: {inv.name}")
 print(f"Credential: {cred.name}")
 print(f"J1 -> {jt1.name}")
 print(f"J2 -> {jt2.name}")
+print("Prompt on Launch: Inventory = True")
 print("Prompt on Launch: Limit = True")
 print("Prompt on Launch: Credential = True")
 
