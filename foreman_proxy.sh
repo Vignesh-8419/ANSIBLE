@@ -68,12 +68,24 @@ baseurl=file:///var/www/html/repo/installed_rhel7
 enabled=1
 gpgcheck=0
 
-[puppet]
-name=Puppet 7 Repository
-baseurl=file:///var/www/html/repo/puppet7
+#echo "📝 Creating puppet.repo..."
+#cat <<EOF > /etc/yum.repos.d/puppet.repo
+#[puppet]
+#name=Puppet 7 Repository
+#baseurl=file://$MOUNT_POINT/puppet7
+#enabled=1
+#gpgcheck=0
+#EOF
+
+echo "📝 Creating puppet.repo..."
+cat > /etc/yum.repos.d/puppet7.repo << 'EOF'
+[puppet7]
+name=Puppet 7 Repository EL7
+baseurl=https://yum.puppet.com/puppet7/el/7/x86_64/
 enabled=1
-gpgcheck=0
-REPO
+gpgcheck=1
+gpgkey=https://yum.puppet.com/RPM-GPG-KEY-puppet7-release
+EOF
 
 cat <<REPO > /etc/yum.repos.d/foreman-online.repo
 [foreman-new-repo]
