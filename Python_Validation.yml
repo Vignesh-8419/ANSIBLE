@@ -1,0 +1,14 @@
+---
+- hosts: all
+  gather_facts: no
+
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+
+  tasks:
+    - name: Test Python
+      command: python3 --version
+      register: py
+
+    - debug:
+        var: py.stdout
