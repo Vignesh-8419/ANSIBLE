@@ -70,14 +70,14 @@ enabled=1
 gpgcheck=0
 EOF
 
-echo "📝 Creating puppet.repo..."
-cat <<EOF > /etc/yum.repos.d/puppet.repo
-[puppet]
-name=Puppet 7 Repository
-baseurl=file://$MOUNT_POINT/puppet7
-enabled=1
-gpgcheck=0
-EOF
+#echo "📝 Creating puppet.repo..."
+#cat <<EOF > /etc/yum.repos.d/puppet.repo
+#[puppet]
+#name=Puppet 7 Repository
+#baseurl=file://$MOUNT_POINT/puppet7
+#enabled=1
+#gpgcheck=0
+#EOF
 
 echo "📝 Creating vault.repo..."
 cat <<EOF > /etc/yum.repos.d/vault.repo
