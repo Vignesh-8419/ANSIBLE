@@ -67,6 +67,7 @@ name=Local CentOS Patch Repo
 baseurl=file:///var/www/html/repo/installed_rhel7
 enabled=1
 gpgcheck=0
+REPO
 
 #echo "📝 Creating puppet.repo..."
 #cat <<EOF > /etc/yum.repos.d/puppet.repo
@@ -78,14 +79,14 @@ gpgcheck=0
 #EOF
 
 echo "📝 Creating puppet.repo..."
-cat <<REPO > /etc/yum.repos.d/puppet.repo
+cat <<PUPPET > /etc/yum.repos.d/puppet.repo
 [puppet7]
 name=Puppet 7 Repository EL7
 baseurl=https://yum.puppet.com/puppet7/el/7/x86_64/
 enabled=1
 gpgcheck=1
 gpgkey=https://yum.puppet.com/RPM-GPG-KEY-puppet7-release
-REPO
+PUPPET
 
 cat <<REPO > /etc/yum.repos.d/foreman-online.repo
 [foreman-new-repo]
