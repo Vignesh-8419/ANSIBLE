@@ -124,8 +124,7 @@
           - "Latest Kernel  : {{ latest_kernel.stdout }}"
 
     - name: Schedule Immediate Reboot
- ##     raw: shutdown -r +1
-      raw: shutdown -r now
+      raw: shutdown -r +1
       when: running_kernel.stdout not in latest_kernel.stdout
     
     - meta: end_play
