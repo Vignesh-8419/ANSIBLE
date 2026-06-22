@@ -80,7 +80,7 @@ EOF
 #EOF
 
 echo "📝 Creating puppet.repo..."
-cat > /etc/yum.repos.d/puppet7.repo << 'EOF'
+cat <<EOF > /etc/yum.repos.d/puppet.repo
 [puppet7]
 name=Puppet 7 Repository EL7
 baseurl=https://yum.puppet.com/puppet7/el/7/x86_64/
