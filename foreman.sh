@@ -79,6 +79,16 @@ EOF
 #gpgcheck=0
 #EOF
 
+echo "📝 Creating puppet.repo..."
+cat > /etc/yum.repos.d/puppet7.repo << 'EOF'
+[puppet7]
+name=Puppet 7 Repository EL7
+baseurl=https://yum.puppet.com/puppet7/el/7/x86_64/
+enabled=1
+gpgcheck=1
+gpgkey=https://yum.puppet.com/RPM-GPG-KEY-puppet7-release
+EOF
+
 echo "📝 Creating vault.repo..."
 cat <<EOF > /etc/yum.repos.d/vault.repo
 [base]
