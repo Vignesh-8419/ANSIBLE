@@ -9,11 +9,11 @@
 
   tasks:
 
-#    - name: Give server time to boot
-#      delegate_to: localhost
-#      become: false
-#      pause:
-#        seconds: 180
+    - name: Give server time to boot
+      delegate_to: localhost
+      become: false
+      pause:
+        seconds: 120
 
     - name: Wait For SSH Port
       delegate_to: localhost
