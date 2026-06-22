@@ -13,7 +13,7 @@
       delegate_to: localhost
       become: false
       pause:
-        seconds: 60
+        seconds: 120
 
     - name: Wait For SSH Port
       delegate_to: localhost
