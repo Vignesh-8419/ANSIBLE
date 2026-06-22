@@ -148,16 +148,16 @@ echo "🚀 Running Foreman Proxy installer..."
 foreman-installer \
   --scenario foreman-proxy-content \
   --certs-tar-file "/root/${FOREMAN_PROXY}-certs.tar" \
-  --foreman-proxy-register-in-foreman "true" \
+  --foreman-proxy-register-in-foreman true \
   --foreman-proxy-foreman-base-url "https://cent-07-01.vgs.com" \
   --foreman-proxy-trusted-hosts "cent-07-01.vgs.com" \
   --foreman-proxy-trusted-hosts "${FOREMAN_PROXY}" \
   --foreman-proxy-oauth-consumer-key "${OAUTH_KEY}" \
   --foreman-proxy-oauth-consumer-secret "${OAUTH_SECRET}" \
   --foreman-proxy-dhcp true \
-  --foreman-proxy-dhcp-interface "\$INTERFACE" \
+  --foreman-proxy-dhcp-interface "ens32" \
   --foreman-proxy-dns true \
-  --foreman-proxy-dns-interface "\$INTERFACE" \
+  --foreman-proxy-dns-interface "ens32" \
   --foreman-proxy-tftp true \
   --foreman-proxy-tftp-servername "${FOREMAN_PROXY}"
 
