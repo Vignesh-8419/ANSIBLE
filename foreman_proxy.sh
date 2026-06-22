@@ -84,8 +84,7 @@ cat <<PUPPET > /etc/yum.repos.d/puppet.repo
 name=Puppet 7 Repository EL7
 baseurl=https://yum.puppet.com/puppet7/el/7/x86_64/
 enabled=1
-gpgcheck=1
-gpgkey=https://yum.puppet.com/RPM-GPG-KEY-puppet7-release
+gpgcheck=0
 PUPPET
 
 cat <<REPO > /etc/yum.repos.d/foreman-online.repo
