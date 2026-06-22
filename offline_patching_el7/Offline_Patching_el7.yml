@@ -124,35 +124,18 @@
           - "Latest Kernel  : {{ latest_kernel.stdout }}"
 
     - name: Reboot Host If Kernel Changed
-      shell: |
-        nohup bash -c "sleep 5; reboot" >/dev/null 2>&1 &
-      async: 1
-      poll: 0
+      raw: |
+        nohup bash -c "sleep 10; /usr/sbin/reboot" >/dev/null 2>&1 &
       when: running_kernel.stdout not in latest_kernel.stdout
       ignore_errors: true
-    
-    - name: Wait For Host To Go Down
+        
+    - name: Wait For Reboot Command To Start
       delegate_to: localhost
       become: false
-      wait_for:
-        host: "{{ ansible_host | default(inventory_hostname) }}"
-        port: 22
-        state: stopped
-        timeout: 300
+      pause:
+        seconds: 30
       when: running_kernel.stdout not in latest_kernel.stdout
     
-    - name: Wait For Host To Come Back
-      delegate_to: localhost
-      become: false
-      wait_for:
-        host: "{{ ansible_host | default(inventory_hostname) }}"
-        port: 22
-        state: started
-        timeout: 1200
-        delay: 30
-      when: running_kernel.stdout not in latest_kernel.stdout
-    
-    - name: Wait For SSH Connectivity
-      wait_for_connection:
-        timeout: 600
+    - name: End Play After Reboot Trigger
+      meta: end_play
       when: running_kernel.stdout not in latest_kernel.stdout
