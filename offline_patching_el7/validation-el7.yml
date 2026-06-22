@@ -6,36 +6,35 @@
 
   tasks:
 
-    - name: Wait for host to boot
+    - name: Give server time to begin reboot
       delegate_to: localhost
       become: false
       pause:
-        seconds: 120
+        seconds: 60
 
-    - name: Display Hostname
-      raw: hostname
-      register: hostname_out
-      changed_when: false
+    - name: Wait For SSH
+      wait_for_connection:
+        timeout: 900
+        sleep: 10
 
-    - name: Display Running Kernel
+    - name: Running Kernel
       raw: uname -r
       register: kernel_out
       changed_when: false
 
-    - name: Display Uptime
-      raw: uptime
-      register: uptime_out
-      changed_when: false
-
-    - name: Display Latest Installed Kernel
+    - name: Latest Installed Kernel
       raw: rpm -q kernel --last | head -1
       register: latest_kernel
+      changed_when: false
+
+    - name: Uptime
+      raw: uptime
+      register: uptime_out
       changed_when: false
 
     - name: Show Validation Results
       debug:
         msg:
-          - "Hostname        : {{ hostname_out.stdout }}"
           - "Running Kernel  : {{ kernel_out.stdout }}"
           - "Installed Kernel: {{ latest_kernel.stdout }}"
           - "Uptime          : {{ uptime_out.stdout }}"
