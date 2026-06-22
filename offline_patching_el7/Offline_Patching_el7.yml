@@ -125,9 +125,7 @@
 
     - name: Reboot Host If Kernel Changed
       raw: |
-        nohup bash -c "sleep 10; /usr/sbin/reboot" >/dev/null 2>&1 &
-      when: running_kernel.stdout not in latest_kernel.stdout
-      ignore_errors: true
+        shutdown -r +1
     
     - name: Wait For Reboot Command To Start
       delegate_to: localhost
