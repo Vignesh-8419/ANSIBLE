@@ -2,3 +2,5 @@
 - import_playbook: bootstrap-centos-07-python.yml
 
 - import_playbook: Offline_Patching_el7.yml
+
+- import_playbook: validation-el7.yml
