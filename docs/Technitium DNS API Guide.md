@@ -95,19 +95,161 @@ $r.response.records | Format-List *
 ```
 
 
-# Technitium DNS Forwarding Configuration
+# Steps to Configure Technitium DNS for Internal and Internet Resolution
 
-1. Verified that the Windows client was using the Jio router (192.168.31.1) as its primary DNS server.
-2. Confirmed that Technitium DNS Server (192.168.253.1) could resolve internal zone records such as ansible-server-01.vgs.com.
-3. Identified that external DNS queries (e.g., google.com) were failing with "Server failed" errors.
-4. Configured upstream DNS forwarders in Technitium DNS Server:
+### 1. Verify Internal DNS Resolution
 
-   * 192.168.31.1
-   * 8.8.8.8
-   * 1.1.1.1
-5. Verified that recursion was enabled using "Allow Recursion Only For Private Networks".
-6. Tested external DNS resolution and found that DNS-over-UDP forwarding was not working correctly.
-7. Changed the Forwarder Protocol from DNS-over-UDP to DNS-over-TCP.
-8. Successfully resolved external domains (google.com, github.com, etc.) through Technitium DNS Server.
-9. Confirmed that both internal (vgs.com) and external Internet DNS queries were resolving correctly.
-10. Final DNS architecture uses Technitium DNS Server (192.168.253.1) as the primary DNS resolver for both lab and Internet name resolution.
+Open Command Prompt and test:
+
+```cmd
+nslookup ansible-server-01.vgs.com 192.168.253.1
+```
+
+Confirm that internal DNS records resolve correctly.
+
+---
+
+### 2. Verify External DNS Resolution
+
+Test Internet DNS resolution:
+
+```cmd
+nslookup google.com 192.168.253.1
+```
+
+Issue observed:
+
+```text
+*** Server failed
+```
+
+---
+
+### 3. Open Technitium DNS Web Console
+
+Access:
+
+```text
+http://192.168.253.1
+```
+
+Navigate to:
+
+```text
+Settings → Proxy & Forwarders
+```
+
+---
+
+### 4. Configure Forwarders
+
+Add the following DNS servers under **Forwarders**:
+
+```text
+192.168.31.1
+8.8.8.8
+1.1.1.1
+```
+
+---
+
+### 5. Verify Recursion Settings
+
+Navigate to:
+
+```text
+Settings → Recursion
+```
+
+Ensure the following option is selected:
+
+```text
+Allow Recursion Only For Private Networks
+```
+
+---
+
+### 6. Change Forwarder Protocol
+
+Navigate to:
+
+```text
+Settings → Proxy & Forwarders
+```
+
+Change:
+
+```text
+DNS-over-UDP (default)
+```
+
+to:
+
+```text
+DNS-over-TCP
+```
+
+Click **Save Settings**.
+
+---
+
+### 7. Test DNS Resolution from Technitium
+
+Go to:
+
+```text
+DNS Client
+```
+
+Query:
+
+```text
+google.com
+```
+
+Confirm that valid IP addresses are returned.
+
+---
+
+### 8. Test from Windows Client
+
+Run:
+
+```cmd
+nslookup google.com 192.168.253.1
+nslookup github.com 192.168.253.1
+nslookup ansible-server-01.vgs.com 192.168.253.1
+```
+
+Verify that both Internet and internal domains resolve successfully.
+
+---
+
+### 9. Configure Windows to Use Technitium DNS
+
+Open PowerShell as Administrator:
+
+```powershell
+Set-DnsClientServerAddress -InterfaceAlias "Wi-Fi" -ServerAddresses 192.168.253.1
+```
+
+Flush DNS cache:
+
+```cmd
+ipconfig /flushdns
+```
+
+---
+
+### 10. Final Verification
+
+```cmd
+nslookup google.com
+nslookup ansible-server-01.vgs.com
+```
+
+Expected Result:
+
+* Internal domains (*.vgs.com) resolve correctly.
+* Internet domains (google.com, github.com, redhat.com, etc.) resolve correctly.
+* Technitium DNS Server (192.168.253.1) acts as the primary DNS server for the lab environment.
