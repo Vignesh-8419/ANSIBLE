@@ -377,6 +377,8 @@ yum install -y --disablerepo="*" --enablerepo=local subscription-manager
 ## RHEL 8
 
 ```text
+mkdir /etc/yum.repos.d/backup
+mv /etc/yum.repos.d/* /etc/yum.repos.d/backup/
 cat >/etc/yum.repos.d/local.repo <<EOF
 [local]
 name=Local Repo
