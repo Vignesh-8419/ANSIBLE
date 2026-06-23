@@ -308,13 +308,13 @@ EOF
 ## Project
 
 ```text
-GOLDENTEMPLATE_ROCKYOS-08
+ROCKYOS-VM-TEMPLATE
 ```
 
 ## Playbook
 
 ```text
-Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_08.yml
+ROCKYOS-VM-TEMPLATE/ROCKYOS-VM-TEMPLATE.yml
 ```
 
 ## Command
@@ -437,6 +437,8 @@ EOF
 
 ## Workflow
 
+## CENTOS-VM-TEMPLATE-WF
+
 ```text
 awx-manage shell <<'EOF'
 from awx.main.models import (
@@ -512,6 +514,8 @@ print("Prompt on Launch: Credential = True")
 
 EOF
 ```
+
+## ROCKYOS-VM-TEMPLATE-WF
 
 ```text
 awx-manage shell <<'EOF'
