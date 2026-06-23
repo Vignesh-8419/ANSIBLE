@@ -93,3 +93,21 @@ $r = Invoke-RestMethod "http://$($env:DNS_SERVER)/api/zones/records/get?token=$(
 
 $r.response.records | Format-List *
 ```
+
+
+# Technitium DNS Forwarding Configuration
+
+1. Verified that the Windows client was using the Jio router (192.168.31.1) as its primary DNS server.
+2. Confirmed that Technitium DNS Server (192.168.253.1) could resolve internal zone records such as ansible-server-01.vgs.com.
+3. Identified that external DNS queries (e.g., google.com) were failing with "Server failed" errors.
+4. Configured upstream DNS forwarders in Technitium DNS Server:
+
+   * 192.168.31.1
+   * 8.8.8.8
+   * 1.1.1.1
+5. Verified that recursion was enabled using "Allow Recursion Only For Private Networks".
+6. Tested external DNS resolution and found that DNS-over-UDP forwarding was not working correctly.
+7. Changed the Forwarder Protocol from DNS-over-UDP to DNS-over-TCP.
+8. Successfully resolved external domains (google.com, github.com, etc.) through Technitium DNS Server.
+9. Confirmed that both internal (vgs.com) and external Internet DNS queries were resolving correctly.
+10. Final DNS architecture uses Technitium DNS Server (192.168.253.1) as the primary DNS resolver for both lab and Internet name resolution.
