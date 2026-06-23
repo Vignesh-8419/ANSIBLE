@@ -662,7 +662,7 @@ jt, created = JobTemplate.objects.get_or_create(
     defaults={
         "project": project,
         "inventory": inventory,
-        "playbook": "offline-patch-el8.yml",
+        "playbook": "offline_patching_el8.yml",
         "ask_inventory_on_launch": False,  # As per Step 6 (Hardcoded option)
         "ask_limit_on_launch": True
     }
@@ -672,7 +672,7 @@ jt, created = JobTemplate.objects.get_or_create(
 if not created:
     jt.project = project
     jt.inventory = inventory
-    jt.playbook = "offline-patch-el8.yml"
+    jt.playbook = "offline_patching_el8.yml"
     jt.ask_inventory_on_launch = False
     jt.ask_limit_on_launch = True
     jt.save()
