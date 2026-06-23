@@ -211,7 +211,7 @@ foreman-installer --scenario katello \
   --foreman-proxy-dns true \
   --foreman-proxy-dns-managed false \
   --foreman-proxy-dns-provider nsupdate \
-  --foreman-proxy-dns-server "192.168.253.151" \
+  --foreman-proxy-dns-server "192.168.253.1" \
   --foreman-proxy-dns-forwarders="8.8.8.8,8.8.4.4" \
   --foreman-proxy-keyfile /etc/foreman-proxy/dns.key
 
