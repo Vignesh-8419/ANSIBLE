@@ -651,7 +651,7 @@ from awx.main.models import Inventory, Project, JobTemplate
 # 1. Fetch existing dependencies
 try:
     project = Project.objects.get(name="Inventory-Git-Repo")
-    inventory = Inventory.objects.get(name="centos-07-servers")
+    inventory = Inventory.objects.get(name="rocky-8-servers")
 except (Project.DoesNotExist, Inventory.DoesNotExist) as e:
     print(f"Error: Missing required dependency. {e}")
     exit(1)
@@ -662,7 +662,7 @@ jt, created = JobTemplate.objects.get_or_create(
     defaults={
         "project": project,
         "inventory": inventory,
-        "playbook": "offline_patching_el8/offline-patch-el7.yml",
+        "playbook": "offline-patch-el8.yml",
         "ask_inventory_on_launch": False,  # As per Step 6 (Hardcoded option)
         "ask_limit_on_launch": True
     }
@@ -672,7 +672,7 @@ jt, created = JobTemplate.objects.get_or_create(
 if not created:
     jt.project = project
     jt.inventory = inventory
-    jt.playbook = "offline_patching_el8/offline-patch-el7.yml"
+    jt.playbook = "offline-patch-el8.yml"
     jt.ask_inventory_on_launch = False
     jt.ask_limit_on_launch = True
     jt.save()
