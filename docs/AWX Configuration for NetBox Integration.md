@@ -449,13 +449,89 @@ from awx.main.models import (
 )
 
 ORG_NAME = "Default"
-WORKFLOW_NAME = "CENTOS-VM-TEMPLATE"
+WORKFLOW_NAME = "CENTOS-VM-TEMPLATE-WF"
 
-JT1_NAME = "Netbox-AWX-GOLDENTEMPLATE_CENTOS_07"
+JT1_NAME = "CENTOS-VM-TEMPLATE"
 JT2_NAME = "Offline_Patching_el7"
 
 CREDENTIAL_NAME = "Linux Root Credential"
 INVENTORY_NAME = "centos-07-servers"
+
+org = Organization.objects.get(name=ORG_NAME)
+
+jt1 = JobTemplate.objects.get(name=JT1_NAME)
+jt2 = JobTemplate.objects.get(name=JT2_NAME)
+
+cred = Credential.objects.get(name=CREDENTIAL_NAME)
+inv = Inventory.objects.get(name=INVENTORY_NAME)
+
+wf, created = WorkflowJobTemplate.objects.get_or_create(
+    name=WORKFLOW_NAME,
+    organization=org
+)
+
+# Clean existing nodes if re-running
+wf.workflow_job_template_nodes.all().delete()
+
+# Default inventory
+wf.inventory = inv
+
+# Enable launch prompts
+wf.ask_limit_on_launch = True
+wf.ask_credential_on_launch = True
+wf.ask_inventory_on_launch = True
+
+wf.save()
+
+# Attach default credential
+wf.credentials.clear()
+wf.credentials.add(cred)
+
+# Create workflow nodes
+n1 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt1
+)
+
+n2 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt2
+)
+
+# Success path
+n1.success_nodes.add(n2)
+
+print(f"Workflow '{wf.name}' created/updated successfully.")
+print(f"Inventory: {inv.name}")
+print(f"Credential: {cred.name}")
+print(f"J1 -> {jt1.name}")
+print(f"J2 -> {jt2.name}")
+print("Prompt on Launch: Inventory = True")
+print("Prompt on Launch: Limit = True")
+print("Prompt on Launch: Credential = True")
+
+EOF
+```
+
+```text
+awx-manage shell <<'EOF'
+from awx.main.models import (
+    WorkflowJobTemplate,
+    WorkflowJobTemplateNode,
+    JobTemplate,
+    Credential,
+    Inventory,
+    Organization
+)
+
+ORG_NAME = "Default"
+WORKFLOW_NAME = "ROCKYOS-VM-TEMPLATE-WF"
+
+JT1_NAME = "ROCKYOS-VM-TEMPLATE"
+JT2_NAME = "Offline_Patching_el8"
+
+CREDENTIAL_NAME = "Linux Root Credential"
+INVENTORY_NAME = "rocky-08-servers"
 
 org = Organization.objects.get(name=ORG_NAME)
 
