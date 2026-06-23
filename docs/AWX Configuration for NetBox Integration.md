@@ -333,11 +333,11 @@ except (Project.DoesNotExist, Inventory.DoesNotExist) as e:
 
 # 2. Create or Update the Job Template
 jt, created = JobTemplate.objects.get_or_create(
-    name="GOLDENTEMPLATE_ROCKYOS-08",
+    name="ROCKYOS-VM-TEMPLATE",
     defaults={
         "project": project,
         "inventory": inventory,
-        "playbook": "Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_08.yml",
+        "playbook": "ROCKYOS-VM-TEMPLATE/ROCKYOS-VM-TEMPLATE.yml",
         "ask_inventory_on_launch": False,  # As per Step 6 (Hardcoded option)
         "ask_limit_on_launch": True
     }
@@ -347,12 +347,61 @@ jt, created = JobTemplate.objects.get_or_create(
 if not created:
     jt.project = project
     jt.inventory = inventory
-    jt.playbook = "Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_08.yml"
+    jt.playbook = "ROCKYOS-VM-TEMPLATE/ROCKYOS-VM-TEMPLATE.yml"
     jt.ask_inventory_on_launch = False
     jt.ask_limit_on_launch = True
     jt.save()
 
-print(f"Job Template 'GOLDENTEMPLATE_ROCKYOS-08' {'created' if created else 'updated'} successfully.")
+print(f"Job Template 'ROCKYOS-VM-TEMPLATE' {'created' if created else 'updated'} successfully.")
+EOF
+```
+
+## Project
+
+```text
+CENTOS-VM-TEMPLATE
+```
+
+## Playbook
+
+```text
+CENTOS-VM-TEMPLATE/CENTOS-VM-TEMPLATE.yml
+```
+
+```text
+awx-manage shell <<EOF
+from awx.main.models import Inventory, Project, JobTemplate
+
+# 1. Fetch existing dependencies
+try:
+    project = Project.objects.get(name="Inventory-Git-Repo")
+    inventory = Inventory.objects.get(name="centos-07-servers")
+except (Project.DoesNotExist, Inventory.DoesNotExist) as e:
+    print(f"Error: Missing required dependency. {e}")
+    exit(1)
+
+# 2. Create or Update the Job Template
+jt, created = JobTemplate.objects.get_or_create(
+    name="CENTOS-VM-TEMPLATE",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "CENTOS-VM-TEMPLATE/CENTOS-VM-TEMPLATE.yml",
+        "ask_inventory_on_launch": False,  # As per Step 6 (Hardcoded option)
+        "ask_limit_on_launch": True
+    }
+)
+
+# 3. Update attributes if it already existed
+if not created:
+    jt.project = project
+    jt.inventory = inventory
+    jt.playbook = "CENTOS-VM-TEMPLATE/CENTOS-VM-TEMPLATE.yml"
+    jt.ask_inventory_on_launch = False
+    jt.ask_limit_on_launch = True
+    jt.save()
+
+print(f"Job Template 'CENTOS-VM-TEMPLATE' {'created' if created else 'updated'} successfully.")
 EOF
 ```
 
