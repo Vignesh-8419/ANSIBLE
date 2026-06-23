@@ -357,6 +357,19 @@ Registered Host
 dnf update
 ```
 
+```text
+cat >/etc/yum.repos.d/local.repo <<EOF
+[local]
+name=Local Repo
+baseurl=http://http-server-01.vgs.com/repo/installed_rhel7/
+enabled=1
+gpgcheck=0
+EOF
+
+yum clean all
+yum makecache --disablerepo="*" --enablerepo=local
+yum install -y --disablerepo="*" --enablerepo=local subscription-manager
+```
 ---
 
 # Benefits
