@@ -372,6 +372,7 @@ EOF
 yum clean all
 yum makecache --disablerepo="*" --enablerepo=local
 yum install -y --disablerepo="*" --enablerepo=local subscription-manager
+rm -rf /etc/yum.repos.d/local.repo
 ```
 
 ## RHEL 8
@@ -390,6 +391,7 @@ EOF
 yum clean all
 yum makecache --disablerepo="*" --enablerepo=local
 yum install -y --disablerepo="*" --enablerepo=local subscription-manager
+rm -rf /etc/yum.repos.d/local.repo
 ```
 
 ---
