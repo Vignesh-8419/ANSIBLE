@@ -356,6 +356,7 @@ Registered Host
         ↓
 dnf update
 ```
+## RHEL 7
 
 ```text
 cat >/etc/yum.repos.d/local.repo <<EOF
@@ -370,6 +371,23 @@ yum clean all
 yum makecache --disablerepo="*" --enablerepo=local
 yum install -y --disablerepo="*" --enablerepo=local subscription-manager
 ```
+
+## RHEL 8
+
+```text
+cat >/etc/yum.repos.d/local.repo <<EOF
+[local]
+name=Local Repo
+baseurl=http://http-server-01.vgs.com/repo/installed_rhel8/
+enabled=1
+gpgcheck=0
+EOF
+
+yum clean all
+yum makecache --disablerepo="*" --enablerepo=local
+yum install -y --disablerepo="*" --enablerepo=local subscription-manager
+```
+
 ---
 
 # Benefits
