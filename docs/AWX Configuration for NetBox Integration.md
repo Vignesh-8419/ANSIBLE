@@ -593,13 +593,6 @@ print("Prompt on Launch: Credential = True")
 EOF
 ```
 
-## Command
-
-Paste the AWX shell block from your SOP that creates:
-
-* CENTOS-VM-TEMPLATE
-* ROCKYOS-VM-TEMPLATE
-
 ## el7 Patching
 
 ```text
