@@ -597,8 +597,96 @@ EOF
 
 Paste the AWX shell block from your SOP that creates:
 
-* GOLDENTEMPLATE_ROCKYOS-08
-* Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_08
+* CENTOS-VM-TEMPLATE
+* ROCKYOS-VM-TEMPLATE
+
+## el7 Patching
+
+```text
+awx-manage shell <<'EOF'
+from awx.main.models import Inventory, Project, JobTemplate, Credential
+
+# Dependencies
+try:
+    project = Project.objects.get(name="Inventory-Git-Repo")
+    inventory = Inventory.objects.get(name="centos-07-servers")
+    credential = Credential.objects.get(name="Linux Root Credential")
+except (Project.DoesNotExist,
+        Inventory.DoesNotExist,
+        Credential.DoesNotExist) as e:
+    print(f"Error: Missing required dependency. {e}")
+    exit(1)
+
+# Create or Update Job Template
+jt, created = JobTemplate.objects.get_or_create(
+    name="offline_patching_el7",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "offline_patching_el7/offline-patch-el7.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": True
+    }
+)
+
+if not created:
+    jt.project = project
+    jt.inventory = inventory
+    jt.playbook = "offline_patching_el7/offline-patch-el7.yml"
+    jt.ask_inventory_on_launch = False
+    jt.ask_limit_on_launch = True
+    jt.save()
+
+# Assign Credential
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+print(
+    f"Job Template 'offline_patching_el7' "
+    f"{'created' if created else 'updated'} successfully."
+)
+print(f"Credential assigned: {credential.name}")
+EOF
+```
+
+## el8 Patching
+
+```text
+awx-manage shell <<EOF
+from awx.main.models import Inventory, Project, JobTemplate
+
+# 1. Fetch existing dependencies
+try:
+    project = Project.objects.get(name="Inventory-Git-Repo")
+    inventory = Inventory.objects.get(name="centos-07-servers")
+except (Project.DoesNotExist, Inventory.DoesNotExist) as e:
+    print(f"Error: Missing required dependency. {e}")
+    exit(1)
+
+# 2. Create or Update the Job Template
+jt, created = JobTemplate.objects.get_or_create(
+    name="offline_patching_el8",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "offline_patching_el8/offline-patch-el7.yml",
+        "ask_inventory_on_launch": False,  # As per Step 6 (Hardcoded option)
+        "ask_limit_on_launch": True
+    }
+)
+
+# 3. Update attributes if it already existed
+if not created:
+    jt.project = project
+    jt.inventory = inventory
+    jt.playbook = "offline_patching_el8/offline-patch-el7.yml"
+    jt.ask_inventory_on_launch = False
+    jt.ask_limit_on_launch = True
+    jt.save()
+
+print(f"Job Template 'offline_patching_el8' {'created' if created else 'updated'} successfully.")
+EOF
+```
 
 ---
 
