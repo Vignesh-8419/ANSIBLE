@@ -612,7 +612,7 @@ except (Project.DoesNotExist,
 
 # Create or Update Job Template
 jt, created = JobTemplate.objects.get_or_create(
-    name="offline_patching_el7",
+    name="Offline_Patching_el7",
     defaults={
         "project": project,
         "inventory": inventory,
@@ -635,7 +635,7 @@ jt.credentials.clear()
 jt.credentials.add(credential)
 
 print(
-    f"Job Template 'offline_patching_el7' "
+    f"Job Template 'Offline_Patching_el7' "
     f"{'created' if created else 'updated'} successfully."
 )
 print(f"Credential assigned: {credential.name}")
@@ -658,11 +658,11 @@ except (Project.DoesNotExist, Inventory.DoesNotExist) as e:
 
 # 2. Create or Update the Job Template
 jt, created = JobTemplate.objects.get_or_create(
-    name="offline_patching_el8",
+    name="Offline_Patching_el8",
     defaults={
         "project": project,
         "inventory": inventory,
-        "playbook": "offline_patching_el8.yml",
+        "playbook": "Offline_Patching_el8.yml",
         "ask_inventory_on_launch": False,  # As per Step 6 (Hardcoded option)
         "ask_limit_on_launch": True
     }
@@ -672,12 +672,12 @@ jt, created = JobTemplate.objects.get_or_create(
 if not created:
     jt.project = project
     jt.inventory = inventory
-    jt.playbook = "offline_patching_el8.yml"
+    jt.playbook = "Offline_Patching_el8.yml"
     jt.ask_inventory_on_launch = False
     jt.ask_limit_on_launch = True
     jt.save()
 
-print(f"Job Template 'offline_patching_el8' {'created' if created else 'updated'} successfully.")
+print(f"Job Template 'Offline_Patching_el8' {'created' if created else 'updated'} successfully.")
 EOF
 ```
 
