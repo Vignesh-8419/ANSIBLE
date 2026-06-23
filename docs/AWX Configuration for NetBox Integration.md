@@ -535,7 +535,7 @@ JT1_NAME = "ROCKYOS-VM-TEMPLATE"
 JT2_NAME = "Offline_Patching_el8"
 
 CREDENTIAL_NAME = "Linux Root Credential"
-INVENTORY_NAME = "rocky-08-servers"
+INVENTORY_NAME = "rocky-8-servers"
 
 org = Organization.objects.get(name=ORG_NAME)
 
