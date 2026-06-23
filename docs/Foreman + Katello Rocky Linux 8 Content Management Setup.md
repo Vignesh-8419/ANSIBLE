@@ -359,6 +359,8 @@ dnf update
 ## RHEL 7
 
 ```text
+mkdir /etc/yum.repos.d/backup
+mv /etc/yum.repos.d/* /etc/yum.repos.d/backup/
 cat >/etc/yum.repos.d/local.repo <<EOF
 [local]
 name=Local Repo
