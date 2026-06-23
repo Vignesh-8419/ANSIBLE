@@ -94,6 +94,178 @@ $r = Invoke-RestMethod "http://$($env:DNS_SERVER)/api/zones/records/get?token=$(
 $r.response.records | Format-List *
 ```
 
+# DNS Manager API Commands (Git Bash)
+
+## Set Environment Variables
+
+```bash
+export DNS_SERVER="192.168.253.1"
+export TOKEN="14759e1e000567381175d02ef3e137d2847e6dd637e5a74bcdb726e24dabaac7"
+```
+
+---
+
+## Verify Variables
+
+```bash
+echo $DNS_SERVER
+echo $TOKEN
+```
+
+### Expected Output
+
+```text
+192.168.253.1
+14759e1e000567381175d02ef3e137d2847e6dd637e5a74bcdb726e24dabaac7
+```
+
+---
+
+## Create Forward Zone
+
+```bash
+curl "http://${DNS_SERVER}/api/zones/create?token=${TOKEN}&zone=vgs.com&type=Primary"
+```
+
+---
+
+## Create Reverse Zone
+
+```bash
+curl "http://${DNS_SERVER}/api/zones/create?token=${TOKEN}&zone=253.168.192.in-addr.arpa&type=Primary"
+```
+
+---
+
+## Create A Record
+
+```bash
+curl "http://${DNS_SERVER}/api/zones/records/add?token=${TOKEN}&zone=vgs.com&domain=cent-07-01.vgs.com&type=A&ttl=3600&ipAddress=192.168.253.131&ptr=false"
+```
+
+---
+
+## Create PTR Record
+
+```bash
+curl "http://${DNS_SERVER}/api/zones/records/add?token=${TOKEN}&zone=253.168.192.in-addr.arpa&domain=131.253.168.192.in-addr.arpa&type=PTR&ttl=3600&ptrName=cent-07-01.vgs.com"
+```
+
+---
+
+## Create A + PTR Automatically
+
+```bash
+curl "http://${DNS_SERVER}/api/zones/records/add?token=${TOKEN}&zone=vgs.com&domain=cent-07-01.vgs.com&type=A&ttl=3600&ipAddress=192.168.253.131&ptr=true&createPtrZone=true"
+```
+
+---
+
+## List Zones
+
+### Raw Output
+
+```bash
+curl -s "http://${DNS_SERVER}/api/zones/list?token=${TOKEN}"
+```
+
+### Pretty JSON Output (jq Required)
+
+```bash
+curl -s "http://${DNS_SERVER}/api/zones/list?token=${TOKEN}" | jq
+```
+
+### Show Zone Names Only
+
+```bash
+curl -s "http://${DNS_SERVER}/api/zones/list?token=${TOKEN}" | jq -r '.response.zones[] | "\(.name) \(.type)"'
+```
+
+---
+
+## Get Forward Zone Records
+
+### Raw Output
+
+```bash
+curl -s "http://${DNS_SERVER}/api/zones/records/get?token=${TOKEN}&domain=vgs.com"
+```
+
+### Pretty JSON Output
+
+```bash
+curl -s "http://${DNS_SERVER}/api/zones/records/get?token=${TOKEN}&domain=vgs.com" | jq
+```
+
+---
+
+## Get Reverse Zone Records
+
+### Raw Output
+
+```bash
+curl -s "http://${DNS_SERVER}/api/zones/records/get?token=${TOKEN}&domain=253.168.192.in-addr.arpa"
+```
+
+### Pretty JSON Output
+
+```bash
+curl -s "http://${DNS_SERVER}/api/zones/records/get?token=${TOKEN}&domain=253.168.192.in-addr.arpa" | jq
+```
+
+---
+
+## DNS Verification
+
+### Forward Lookup
+
+```bash
+nslookup cent-07-01.vgs.com 192.168.253.1
+```
+
+### Reverse Lookup
+
+```bash
+nslookup 192.168.253.131 192.168.253.1
+```
+
+---
+
+## Connectivity Verification
+
+### HTTP Check
+
+```bash
+curl "http://${DNS_SERVER}"
+```
+
+### Ping Check
+
+```bash
+ping -n 4 ${DNS_SERVER}
+```
+
+---
+
+## Example: Create New Host Record
+
+```bash
+curl "http://${DNS_SERVER}/api/zones/records/add?token=${TOKEN}&zone=vgs.com&domain=test-server-01.vgs.com&type=A&ttl=3600&ipAddress=192.168.253.39&ptr=true&createPtrZone=true"
+```
+
+### Verify
+
+```bash
+nslookup test-server-01.vgs.com 192.168.253.1
+```
+
+Expected Result:
+
+```text
+Name:    test-server-01.vgs.com
+Address: 192.168.253.39
+```
+
 
 # Steps to Configure Technitium DNS for Internal and Internet Resolution
 
