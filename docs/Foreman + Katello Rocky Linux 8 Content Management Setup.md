@@ -356,34 +356,67 @@ Registered Host
         ↓
 dnf update
 ```
-## RHEL 7
-
-```text
-mkdir /etc/yum.repos.d/backup
-mv /etc/yum.repos.d/* /etc/yum.repos.d/backup/
-cat >/etc/yum.repos.d/local.repo <<EOF
-[local]
-name=Local Repo
-baseurl=http://http-server-01.vgs.com/repo/installed_rhel7/
-enabled=1
-gpgcheck=0
-EOF
-
-yum clean all
-yum makecache --disablerepo="*" --enablerepo=local
-yum install -y --disablerepo="*" --enablerepo=local subscription-manager
-rm -rf /etc/yum.repos.d/local.repo
-```
-
 ## RHEL 8
 
 ```text
 mkdir /etc/yum.repos.d/backup
 mv /etc/yum.repos.d/* /etc/yum.repos.d/backup/
-cat >/etc/yum.repos.d/local.repo <<EOF
-[local]
-name=Local Repo
-baseurl=http://http-server-01.vgs.com/repo/installed_rhel8/
+
+cat <<EOF > /etc/yum.repos.d/rocky8-baseos.repo
+rocky8-baseos
+name=Rocky Linux 8 BaseOS
+baseurl=https://192.168.253.136/repo/rocky8/BaseOS
+enabled=1
+gpgcheck=0
+sslverify=0
+module_hotfixes=true
+EOF
+
+cat <<EOF > /etc/yum.repos.d/rocky8-appstream.repo
+rocky8-appstream
+name=Rocky Linux 8 AppStream
+baseurl=https://192.168.253.136/repo/rocky8/Appstream
+enabled=1
+gpgcheck=0
+sslverify=0
+module_hotfixes=true
+EOF
+
+cat <<EOF > /etc/yum.repos.d/rocky8-rhel-installed.repo
+rocky8-rhel-installed
+name=Rocky Linux 8 Installed RHEL
+baseurl=https://192.168.253.136/repo/installed_rhel8
+enabled=1
+gpgcheck=0
+sslverify=0
+module_hotfixes=true
+EOF
+
+yum clean all
+yum makecache --disablerepo="*" --enablerepo=local
+yum install -y --disablerepo="*" --enablerepo=local subscription-manager
+rm -rf /etc/yum.repos.d/rocky8-appstream.repo
+rm -rf /etc/yum.repos.d/rocky8-baseos.repo
+rm -rf /etc/yum.repos.d/rocky8-rhel-installed.repo
+```
+
+## RHEL 7
+
+```text
+mkdir /etc/yum.repos.d/backup
+mv /etc/yum.repos.d/* /etc/yum.repos.d/backup/
+cat >/etc/yum.repos.d/patch.repo <<EOF
+[patch]
+name=patch-repo
+baseurl=http://http-server-01/repo/installed_rhel7
+enabled=1
+gpgcheck=0
+EOF
+
+cat >/etc/yum.repos.d/base.repo <<EOF
+[patch]
+name=patch-repo
+baseurl=http://http-server-01/repo/centos/
 enabled=1
 gpgcheck=0
 EOF
@@ -391,7 +424,8 @@ EOF
 yum clean all
 yum makecache --disablerepo="*" --enablerepo=local
 yum install -y --disablerepo="*" --enablerepo=local subscription-manager
-rm -rf /etc/yum.repos.d/local.repo
+rm -rf /etc/yum.repos.d/base.repo
+rm -rf /etc/yum.repos.d/patch.repo
 ```
 
 ---
