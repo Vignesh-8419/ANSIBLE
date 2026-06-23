@@ -252,17 +252,22 @@ org = Organization.objects.get(name="Default")
 
 repo_url = "https://github.com/Vignesh-8419/ANSIBLE"
 
-project, _ = Project.objects.get_or_create(
+project, created = Project.objects.get_or_create(
     name="Inventory-Git-Repo",
     defaults={
         "organization": org,
         "scm_type": "git",
         "scm_url": repo_url,
-        "scm_update_on_launch": True
+        "scm_update_on_launch": False
     }
 )
 
+# Disable Update Revision on Launch
+project.scm_update_on_launch = False
+project.save()
+
 print("Project 'Inventory-Git-Repo' configured.")
+print(f"Update Revision on Launch = {project.scm_update_on_launch}")
 
 configs = [
     {
@@ -289,15 +294,23 @@ for cfg in configs:
             "source_project": project,
             "source_path": cfg["file"],
             "overwrite": True,
-            "update_on_launch": True
+            "update_on_launch": False
         }
     )
 
+    # Disable Update on Launch
+    source.source = "scm"
+    source.source_project = project
+    source.source_path = cfg["file"]
+    source.overwrite = True
+    source.update_on_launch = False
+    source.save()
+
     print(
-        f"Source for {cfg['inv_name']} "
-        f"using {cfg['file']} "
-        f"{'created' if created else 'already exists/updated'}."
+        f"Source for {cfg['inv_name']} configured. "
+        f"Update on Launch = {source.update_on_launch}"
     )
+
 EOF
 ```
 
