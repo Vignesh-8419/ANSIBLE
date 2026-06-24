@@ -197,8 +197,6 @@ hammer --username admin --password 'zqs977dXzqfEvTML' hostgroup create \
 
 ## 6. Set Default PXEGrub2 Templates
 
-### CentOS Linux 7
-
 ## Operating System IDs
 
 ```text
@@ -221,6 +219,8 @@ hammer --username admin --password 'zqs977dXzqfEvTML' os list
 ```text
 hammer --username admin --password 'zqs977dXzqfEvTML' template list | grep -i UEFI
 ```
+
+### CentOS Linux 7
 
 ```bash
 hammer --username admin --password 'zqs977dXzqfEvTML' os set-default-template \
