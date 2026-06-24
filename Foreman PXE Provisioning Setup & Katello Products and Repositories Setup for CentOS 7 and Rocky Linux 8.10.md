@@ -282,7 +282,7 @@ hammer --username admin --password 'zqs977dXzqfEvTML' repository create \
 --product "CentOS 7" \
 --name "CentOS-07-Updates" \
 --content-type yum \
---url "http://http-server-01/repo/rocky8/installed_rhel7/"
+--url "http://http-server-01/repo/installed_rhel7/"
 ```
 
 ## Synchronize CentOS Repositories
