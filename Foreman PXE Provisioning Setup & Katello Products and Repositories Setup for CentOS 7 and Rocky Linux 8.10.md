@@ -228,3 +228,163 @@ hammer --username admin --password 'zqs977dXzqfEvTML' os set-default-template \
 174 = PXEGrub2 RockyOS UEFI Static Kickstart
 175 = PXEGrub2 CentOS UEFI Static Kickstart
 ```
+
+# Katello Products and Repositories Setup
+
+## Create Products
+
+### Rocky Linux 8 Product
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' product create \
+--organization "Default Organization" \
+--name "Rocky Linux 8"
+```
+
+### CentOS 7 Product
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' product create \
+--organization "Default Organization" \
+--name "CentOS 7"
+```
+
+---
+
+# CentOS 7 Repositories
+
+## Create CentOS-07-BaseOS Repository
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' repository create \
+--organization "Default Organization" \
+--product "CentOS 7" \
+--name "CentOS-07-BaseOS" \
+--content-type yum \
+--url "http://http-server-01/repo/rocky8/BaseOS/"
+```
+
+## Create CentOS-07-Updates Repository
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' repository create \
+--organization "Default Organization" \
+--product "CentOS 7" \
+--name "CentOS-07-Updates" \
+--content-type yum \
+--url "http://http-server-01/repo/rocky8/installed_rhel7/"
+```
+
+## Synchronize CentOS Repositories
+
+### Synchronize CentOS-07-BaseOS
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' repository synchronize \
+--organization "Default Organization" \
+--product "CentOS 7" \
+--name "CentOS-07-BaseOS"
+```
+
+### Synchronize CentOS-07-Updates
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' repository synchronize \
+--organization "Default Organization" \
+--product "CentOS 7" \
+--name "CentOS-07-Updates"
+```
+
+---
+
+# Rocky Linux 8 Repositories
+
+## Create Rocky-08-BaseOS Repository
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' repository create \
+--organization "Default Organization" \
+--product "Rocky Linux 8" \
+--name "Rocky-08-BaseOS" \
+--content-type yum \
+--url "https://192.168.253.136/repo/rocky8/BaseOS"
+```
+
+## Create Rocky-08-AppStream Repository
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' repository create \
+--organization "Default Organization" \
+--product "Rocky Linux 8" \
+--name "Rocky-08-AppStream" \
+--content-type yum \
+--url "https://192.168.253.136/repo/rocky8/Appstream"
+```
+
+## Create Rocky-08-RHEL-Installed Repository
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' repository create \
+--organization "Default Organization" \
+--product "Rocky Linux 8" \
+--name "Rocky-08-RHEL-Installed" \
+--content-type yum \
+--url "https://192.168.253.136/repo/installed_rhel8"
+```
+
+## Synchronize Rocky Repositories
+
+### Synchronize Rocky-08-AppStream
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' repository synchronize \
+--organization "Default Organization" \
+--product "Rocky Linux 8" \
+--name "Rocky-08-AppStream"
+```
+
+### Synchronize Rocky-08-BaseOS
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' repository synchronize \
+--organization "Default Organization" \
+--product "Rocky Linux 8" \
+--name "Rocky-08-BaseOS"
+```
+
+### Synchronize Rocky-08-RHEL-Installed
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' repository synchronize \
+--organization "Default Organization" \
+--product "Rocky Linux 8" \
+--name "Rocky-08-RHEL-Installed"
+```
+
+---
+
+# Verify Products
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' product list \
+--organization "Default Organization"
+```
+
+# Verify Repositories
+
+### CentOS 7
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' repository list \
+--organization "Default Organization" \
+--product "CentOS 7"
+```
+
+### Rocky Linux 8
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' repository list \
+--organization "Default Organization" \
+--product "Rocky Linux 8"
+```
+
