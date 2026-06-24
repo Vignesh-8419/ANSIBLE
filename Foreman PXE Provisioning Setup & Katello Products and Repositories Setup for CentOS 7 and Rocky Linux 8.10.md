@@ -199,15 +199,6 @@ hammer --username admin --password 'zqs977dXzqfEvTML' hostgroup create \
 
 ### CentOS Linux 7
 
-
-```text
-hammer --username admin --password 'zqs977dXzqfEvTML' os list
-```
-
-```text
-hammer --username admin --password 'zqs977dXzqfEvTML' template list | grep -i UEFI
-```
-
 ## Operating System IDs
 
 ```text
@@ -215,11 +206,20 @@ hammer --username admin --password 'zqs977dXzqfEvTML' template list | grep -i UE
 3 = RockyLinux 8.10
 ```
 
+
+```text
+hammer --username admin --password 'zqs977dXzqfEvTML' os list
+```
+
 ## PXEGrub2 Template IDs
 
 ```text
 174 = PXEGrub2 RockyOS UEFI Static Kickstart
 175 = PXEGrub2 CentOS UEFI Static Kickstart
+```
+
+```text
+hammer --username admin --password 'zqs977dXzqfEvTML' template list | grep -i UEFI
 ```
 
 ```bash
