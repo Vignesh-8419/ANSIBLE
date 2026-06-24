@@ -393,8 +393,7 @@ module_hotfixes=true
 EOF
 
 yum clean all
-yum makecache --disablerepo="*" --enablerepo=local
-yum install -y --disablerepo="*" --enablerepo=local subscription-manager
+yum install -y subscription-manager
 rm -rf /etc/yum.repos.d/rocky8-appstream.repo
 rm -rf /etc/yum.repos.d/rocky8-baseos.repo
 rm -rf /etc/yum.repos.d/rocky8-rhel-installed.repo
@@ -414,16 +413,15 @@ gpgcheck=0
 EOF
 
 cat >/etc/yum.repos.d/base.repo <<EOF
-[patch]
-name=patch-repo
+[base]
+name=base-repo
 baseurl=http://http-server-01/repo/centos/
 enabled=1
 gpgcheck=0
 EOF
 
 yum clean all
-yum makecache --disablerepo="*" --enablerepo=local
-yum install -y --disablerepo="*" --enablerepo=local subscription-manager
+yum install -y subscription-manager
 rm -rf /etc/yum.repos.d/base.repo
 rm -rf /etc/yum.repos.d/patch.repo
 ```
