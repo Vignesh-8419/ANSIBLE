@@ -398,3 +398,169 @@ hammer --username admin --password 'zqs977dXzqfEvTML' repository list \
 --product "Rocky Linux 8"
 ```
 
+# Katello Content Views and Activation Keys
+
+## CentOS 7
+
+### Create Content View
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' content-view create \
+--organization "Default Organization" \
+--name "CentOS7-CV"
+```
+
+### Add Repositories
+
+#### CentOS-07-BaseOS
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' content-view add-repository \
+--organization "Default Organization" \
+--name "CentOS7-CV" \
+--product "CentOS 7" \
+--repository "CentOS-07-BaseOS"
+```
+
+#### CentOS-07-Updates
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' content-view add-repository \
+--organization "Default Organization" \
+--name "CentOS7-CV" \
+--product "CentOS 7" \
+--repository "CentOS-07-Updates"
+```
+
+### Publish Content View
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' content-view publish \
+--organization "Default Organization" \
+--name "CentOS7-CV" \
+--description "Initial Publish"
+```
+
+### Create Activation Key
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' activation-key create \
+--organization "Default Organization" \
+--name "centos7-prod-key" \
+--lifecycle-environment "Library" \
+--content-view "CentOS7-CV"
+```
+
+---
+
+# Rocky Linux 8
+
+### Create Content View
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' content-view create \
+--organization "Default Organization" \
+--name "Rocky8-CV"
+```
+
+### Add Repositories
+
+#### Rocky-08-BaseOS
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' content-view add-repository \
+--organization "Default Organization" \
+--name "Rocky8-CV" \
+--product "Rocky Linux 8" \
+--repository "Rocky-08-BaseOS"
+```
+
+#### Rocky-08-AppStream
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' content-view add-repository \
+--organization "Default Organization" \
+--name "Rocky8-CV" \
+--product "Rocky Linux 8" \
+--repository "Rocky-08-AppStream"
+```
+
+#### Rocky-08-RHEL-Installed
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' content-view add-repository \
+--organization "Default Organization" \
+--name "Rocky8-CV" \
+--product "Rocky Linux 8" \
+--repository "Rocky-08-RHEL-Installed"
+```
+
+### Publish Content View
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' content-view publish \
+--organization "Default Organization" \
+--name "Rocky8-CV" \
+--description "Initial Publish"
+```
+
+### Create Activation Key
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' activation-key create \
+--organization "Default Organization" \
+--name "rocky8-prod-key" \
+--lifecycle-environment "Library" \
+--content-view "Rocky8-CV"
+```
+
+---
+
+# Verification
+
+## List Content Views
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' content-view list
+```
+
+## List Activation Keys
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' activation-key list
+```
+
+## Verify CentOS 7 Content View
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' content-view info \
+--organization "Default Organization" \
+--name "CentOS7-CV"
+```
+
+## Verify Rocky Linux 8 Content View
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' content-view info \
+--organization "Default Organization" \
+--name "Rocky8-CV"
+```
+
+## Verify Repositories
+
+### CentOS 7
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' repository list \
+--organization "Default Organization" \
+--product "CentOS 7"
+```
+
+### Rocky Linux 8
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' repository list \
+--organization "Default Organization" \
+--product "Rocky Linux 8"
+```
+
