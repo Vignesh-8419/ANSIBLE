@@ -135,6 +135,18 @@ firewall-cmd --add-port=9090/tcp --permanent
 firewall-cmd --add-port=443/tcp --permanent
 firewall-cmd --reload
 
+echo "🔧 Updating /etc/hosts entries ..."
+
+NEW_HOSTNAME=$(hostname -s)
+JUST_IP=$(hostname -I | awk '{print $1}')
+
+echo "Updating /etc/hosts file..."
+
+sed -i "/${NEW_HOSTNAME}/d" /etc/hosts
+echo "${JUST_IP} ${NEW_HOSTNAME}.vgs.com ${NEW_HOSTNAME}" >> /etc/hosts
+
+grep "${NEW_HOSTNAME}.vgs.com" /etc/hosts
+
 echo "🚀 Running Foreman Proxy installer..."
 foreman-installer \
   --scenario foreman-proxy-content \
