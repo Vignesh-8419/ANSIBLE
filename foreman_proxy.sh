@@ -4,10 +4,10 @@ set -e
 # -------------------------------
 # CONFIGURATION
 # -------------------------------
-REPO_MOUNT="//192.168.31.87/ISO"
-MOUNT_POINT="/var/www/html/repo"
-USERNAME="vigne"
-PASSWORD="Vigneshv12\$"
+#REPO_MOUNT="//192.168.31.87/ISO"
+#MOUNT_POINT="http-server-01.vgs.com/repo"
+#USERNAME="vigne"
+#PASSWORD="Vigneshv12\$"
 FOREMAN_PROXY="cent-07-02.vgs.com"
 CERT_PATH="/root/${FOREMAN_PROXY}-certs.tar"
 INSTALLER_OUTPUT="/tmp/proxy_installer_output.txt"
@@ -44,39 +44,30 @@ set -e
 
 rm -f /etc/yum.repos.d/*.repo
 
-echo "🔍 Checking if ISO share is mounted..."
-mkdir -p /var/www/html/repo
-if ! findmnt -rn /var/www/html/repo > /dev/null; then
-  echo "🔗 ISO share not mounted. Attempting to mount..."
-  mount -t cifs $REPO_MOUNT /var/www/html/repo \\
-    -o username=$USERNAME,password=$PASSWORD,rw,dir_mode=0777,file_mode=0777,vers=3.0 || {
-      echo "❌ Mount failed. Check credentials, network, or CIFS support."
-      exit 1
-  }
-  echo "✅ Mount successful:"
-  findmnt /var/www/html/repo
-else
-  echo "✅ ISO share is already mounted:"
-  findmnt /var/www/html/repo
-fi
+#echo "🔍 Checking if ISO share is mounted..."
+#mkdir -p http-server-01.vgs.com/repo
+#if ! findmnt -rn http-server-01.vgs.com/repo > /dev/null; then
+#  echo "🔗 ISO share not mounted. Attempting to mount..."
+#  mount -t cifs $REPO_MOUNT http-server-01.vgs.com/repo \\
+#    -o username=$USERNAME,password=$PASSWORD,rw,dir_mode=0777,file_mode=0777,vers=3.0 || {
+#      echo "❌ Mount failed. Check credentials, network, or CIFS support."
+#      exit 1
+#  }
+#  echo "✅ Mount successful:"
+#  findmnt http-server-01.vgs.com/repo
+#else
+#  echo "✅ ISO share is already mounted:"
+#  findmnt http-server-01.vgs.com/repo
+#fi
 
 # YUM repo setup
-cat <<REPO > /etc/yum.repos.d/local.repo
+cat <<REPO > /etc/yum.repos.d/patch.repo
 [local-patch]
 name=Local CentOS Patch Repo
-baseurl=file:///var/www/html/repo/installed_rhel7
+baseurl=http://http-server-01.vgs.com/repo/installed_rhel7
 enabled=1
 gpgcheck=0
 REPO
-
-#echo "📝 Creating puppet.repo..."
-#cat <<EOF > /etc/yum.repos.d/puppet.repo
-#[puppet]
-#name=Puppet 7 Repository
-#baseurl=file://$MOUNT_POINT/puppet7
-#enabled=1
-#gpgcheck=0
-#EOF
 
 echo "📝 Creating puppet.repo..."
 cat <<PUPPET > /etc/yum.repos.d/puppet.repo
@@ -167,8 +158,8 @@ sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev
 
 
  mkdir -p /var/lib/tftpboot/rockyos
- cp -rp /var/www/html/repo/rocky8/isolinux/vmlinuz /var/lib/tftpboot/rockyos/
- cp -rp /var/www/html/repo/rocky8/isolinux/initrd.img /var/lib/tftpboot/rockyos/
+ cp -rp http-server-01.vgs.com/repo/rocky8/isolinux/vmlinuz /var/lib/tftpboot/rockyos/
+ cp -rp http-server-01.vgs.com/repo/rocky8/isolinux/initrd.img /var/lib/tftpboot/rockyos/
  chown -R foreman-proxy:root /var/lib/tftpboot/rockyos
 
 echo "✅ Smart Proxy installation completed."
