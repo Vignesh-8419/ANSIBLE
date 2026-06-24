@@ -161,6 +161,23 @@ else
   yum clean all
   rpm --rebuilddb
 fi
+
+# -------------------------------
+# STEP 5.2: Pre-task for foreman installer
+# -------------------------------
+
+echo "🔧 Updating /etc/hosts entries ..."
+
+NEW_HOSTNAME=$(hostname -s)
+JUST_IP=$(hostname -I | awk '{print $1}')
+
+echo "Updating /etc/hosts file..."
+
+sed -i "/${NEW_HOSTNAME}/d" /etc/hosts
+echo "${JUST_IP} ${NEW_HOSTNAME}.vgs.com ${NEW_HOSTNAME}" >> /etc/hosts
+
+grep "${NEW_HOSTNAME}.vgs.com" /etc/hosts
+
 # -------------------------------
 # STEP 6: Run Foreman Installer
 # -------------------------------
