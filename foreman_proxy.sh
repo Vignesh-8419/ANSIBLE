@@ -154,8 +154,6 @@ sleep 3
 echo "===== HOSTNAME CHECK ====="
 hostname
 hostname -f
-facter hostname
-facter fqdn
 getent hosts cent-07-02.vgs.com
 getent hosts 192.168.253.132
 echo "=========================="
