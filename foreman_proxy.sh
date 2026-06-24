@@ -39,7 +39,7 @@ echo "🔐 Extracted OAuth Secret: $OAUTH_SECRET"
 # -------------------------------
 # STEP 2: Generate Remote Installer Script
 # -------------------------------
-cat <<EOF > /tmp/remote_installer.sh
+cat <<REMOTE_SCRIPT > /tmp/remote_installer.sh
 #!/bin/bash
 set -e
 
@@ -140,31 +140,29 @@ firewall-cmd --reload
 
 echo "🔧 Updating hostname and /etc/hosts ..."
 
-FQDN="$FOREMAN_PROXY"
-SHORTNAME="${FQDN%%.*}"
-JUST_IP=$(hostname -I | awk '{print $1}')
+hostnamectl set-hostname cent-07-02.vgs.com
 
-hostnamectl set-hostname "$FQDN"
-
-cat > /etc/hosts <<HOSTS
+cat >/etc/hosts <<HOSTS
 127.0.0.1 localhost localhost.localdomain localhost4 localhost4.localdomain4
 ::1 localhost localhost.localdomain localhost6 localhost6.localdomain6
 
-${JUST_IP} ${FQDN} ${SHORTNAME}
+192.168.253.132 cent-07-02.vgs.com cent-07-02
 HOSTS
 
-echo "Current hostname:"
+sleep 3
+
+echo "===== HOSTNAME CHECK ====="
 hostname
 hostname -f
-
-echo "Current hosts file:"
-cat /etc/hosts
-
-echo "Current hosts entry:"
-getent hosts ${JUST_IP}
+facter hostname
+facter fqdn
+getent hosts cent-07-02.vgs.com
+getent hosts 192.168.253.132
+echo "=========================="
 
 echo "🚀 Running Foreman Proxy installer..."
 foreman-installer \
+  --force \
   --scenario foreman-proxy-content \
   --certs-tar-file "/root/${FOREMAN_PROXY}-certs.tar" \
   --foreman-proxy-register-in-foreman true \
@@ -191,7 +189,7 @@ sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev
  chown -R foreman-proxy:root /var/lib/tftpboot/rockyos
 
 echo "✅ Smart Proxy installation completed."
-EOF
+REMOTE_SCRIPT
 
 
 # -------------------------------
