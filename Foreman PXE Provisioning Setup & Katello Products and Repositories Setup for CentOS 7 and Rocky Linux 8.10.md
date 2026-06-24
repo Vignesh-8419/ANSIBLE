@@ -317,7 +317,7 @@ hammer --username admin --password 'zqs977dXzqfEvTML' repository create \
 --product "Rocky Linux 8" \
 --name "Rocky-08-BaseOS" \
 --content-type yum \
---url "https://192.168.253.136/repo/rocky8/BaseOS"
+--url "http://192.168.253.136/repo/rocky8/BaseOS"
 ```
 
 ## Create Rocky-08-AppStream Repository
@@ -328,7 +328,7 @@ hammer --username admin --password 'zqs977dXzqfEvTML' repository create \
 --product "Rocky Linux 8" \
 --name "Rocky-08-AppStream" \
 --content-type yum \
---url "https://192.168.253.136/repo/rocky8/Appstream"
+--url "http://192.168.253.136/repo/rocky8/Appstream"
 ```
 
 ## Create Rocky-08-RHEL-Installed Repository
@@ -339,7 +339,7 @@ hammer --username admin --password 'zqs977dXzqfEvTML' repository create \
 --product "Rocky Linux 8" \
 --name "Rocky-08-RHEL-Installed" \
 --content-type yum \
---url "https://192.168.253.136/repo/installed_rhel8"
+--url "http://192.168.253.136/repo/installed_rhel8"
 ```
 
 ## Synchronize Rocky Repositories
