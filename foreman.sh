@@ -5,31 +5,28 @@ set -e
 # CONFIGURATION
 # -------------------------------
 REPO_MOUNT="//192.168.31.87/ISO"
-MOUNT_POINT="/var/www/html/repo"
-USERNAME="vigne"
-PASSWORD="Vigneshv12$"
+MOUNT_POINT="http-server-01.vgs.com/repo"
+#USERNAME="vigne"
+#PASSWORD="Vigneshv12$"
 SKIP_PATCH=false
 RUN_ONLY=""
 
 DOMAIN="vgs.com"
-REVERSE_ZONE="253.168.192.in-addr.arpa"
-NAMED_CONF="/etc/named.conf"
-ZONE_DIR="/var/named"
 JAVA_PATH="/usr/lib/jvm/java-1.8.0-openjdk-1.8.0.412.b08-1.el7_9.x86_64/bin"
 MODULE_PATH="/etc/puppetlabs/code/environments/production/modules/java_ks"
 
 # -------------------------------
 # STEP 1: Mount ISO Share (Always Required)
 # -------------------------------
-echo "📦 Mounting ISO share..."
-mkdir -p "$MOUNT_POINT"
-if ! findmnt -rno TARGET "$MOUNT_POINT" | grep -q "$MOUNT_POINT"; then
-  mount -t cifs "$REPO_MOUNT" "$MOUNT_POINT" \
-    -o username="$USERNAME",password="$PASSWORD",rw,dir_mode=0777,file_mode=0777,vers=3.0
-  findmnt "$MOUNT_POINT" || { echo "❌ Mount failed."; exit 1; }
-else
-  echo "⏭️ ISO share already mounted. Skipping."
-fi
+#echo "📦 Mounting ISO share..."
+#mkdir -p "$MOUNT_POINT"
+#if ! findmnt -rno TARGET "$MOUNT_POINT" | grep -q "$MOUNT_POINT"; then
+#  mount -t cifs "$REPO_MOUNT" "$MOUNT_POINT" \
+#    -o username="$USERNAME",password="$PASSWORD",rw,dir_mode=0777,file_mode=0777,vers=3.0
+#  findmnt "$MOUNT_POINT" || { echo "❌ Mount failed."; exit 1; }
+#else
+#  echo "⏭️ ISO share already mounted. Skipping."
+#fi
 
 # -------------------------------
 # STEP 2: Clean and Configure YUM Repositories (Always)
@@ -47,7 +44,7 @@ echo "📝 Creating base.repo..."
 cat <<EOF > /etc/yum.repos.d/base.repo
 [baseos]
 name=CentOS Base Repo
-baseurl=file://$MOUNT_POINT/centos
+baseurl=http://$MOUNT_POINT/centos
 enabled=1
 gpgcheck=0
 EOF
@@ -56,7 +53,7 @@ echo "📝 Creating patch.repo..."
 cat <<EOF > /etc/yum.repos.d/patch.repo
 [patch]
 name=CentOS Patch Repo
-baseurl=file://$MOUNT_POINT/installed_rhel7
+baseurl=http://$MOUNT_POINT/installed_rhel7
 enabled=1
 gpgcheck=0
 EOF
@@ -65,19 +62,10 @@ echo "📝 Creating foreman.repo..."
 cat <<EOF > /etc/yum.repos.d/foreman.repo
 [foreman]
 name=CentOS Foreman Repo
-baseurl=file://$MOUNT_POINT/installed_rhel7
+baseurl=http://$MOUNT_POINT/installed_rhel7
 enabled=1
 gpgcheck=0
 EOF
-
-#echo "📝 Creating puppet.repo..."
-#cat <<EOF > /etc/yum.repos.d/puppet.repo
-#[puppet]
-#name=Puppet 7 Repository
-#baseurl=file://$MOUNT_POINT/puppet7
-#enabled=1
-#gpgcheck=0
-#EOF
 
 echo "📝 Creating puppet.repo..."
 cat <<EOF > /etc/yum.repos.d/puppet.repo
