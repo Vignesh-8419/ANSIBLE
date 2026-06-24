@@ -564,3 +564,162 @@ hammer --username admin --password 'zqs977dXzqfEvTML' repository list \
 --product "Rocky Linux 8"
 ```
 
+# Katello Activation Keys - Subscription and Repository Configuration
+
+## Step 1 - Get Activation Key IDs
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' activation-key list \
+--organization "Default Organization"
+```
+
+Example:
+
+```text
+ID  NAME
+1   centos7-prod-key
+2   rocky8-prod-key
+```
+
+---
+
+## Step 2 - Get Subscription IDs
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' subscription list \
+--organization "Default Organization"
+```
+
+Current Environment:
+
+| Subscription ID | Product       |
+| --------------: | ------------- |
+|           **1** | Rocky Linux 8 |
+|           **2** | CentOS 7      |
+
+---
+
+# CentOS 7 Activation Key
+
+## Activation Key ID
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' activation-key info \
+--organization "Default Organization" \
+--name "centos7-prod-key"
+```
+
+## Attach CentOS 7 Subscription
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' activation-key add-subscription \
+--organization "Default Organization" \
+--name "centos7-prod-key" \
+--subscription-id 2
+```
+
+## Enable CentOS-07-BaseOS
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' activation-key content-override \
+--organization "Default Organization" \
+--name "centos7-prod-key" \
+--content-label "CentOS-07-BaseOS" \
+--value 1
+```
+
+## Enable CentOS-07-Updates
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' activation-key content-override \
+--organization "Default Organization" \
+--name "centos7-prod-key" \
+--content-label "CentOS-07-Updates" \
+--value 1
+```
+
+---
+
+# Rocky Linux 8 Activation Key
+
+## Activation Key ID
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' activation-key info \
+--organization "Default Organization" \
+--name "rocky8-prod-key"
+```
+
+## Attach Rocky Linux 8 Subscription
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' activation-key add-subscription \
+--organization "Default Organization" \
+--name "rocky8-prod-key" \
+--subscription-id 1
+```
+
+## Enable Rocky-08-BaseOS
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' activation-key content-override \
+--organization "Default Organization" \
+--name "rocky8-prod-key" \
+--content-label "Rocky-08-BaseOS" \
+--value 1
+```
+
+## Enable Rocky-08-AppStream
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' activation-key content-override \
+--organization "Default Organization" \
+--name "rocky8-prod-key" \
+--content-label "Rocky-08-AppStream" \
+--value 1
+```
+
+## Enable Rocky-08-RHEL-Installed
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' activation-key content-override \
+--organization "Default Organization" \
+--name "rocky8-prod-key" \
+--content-label "Rocky-08-RHEL-Installed" \
+--value 1
+```
+
+---
+
+# Verification
+
+## List Activation Keys
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' activation-key list \
+--organization "Default Organization"
+```
+
+## View CentOS 7 Activation Key
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' activation-key info \
+--organization "Default Organization" \
+--name "centos7-prod-key"
+```
+
+## View Rocky Linux 8 Activation Key
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' activation-key info \
+--organization "Default Organization" \
+--name "rocky8-prod-key"
+```
+
+## List Subscriptions
+
+```bash
+hammer --username admin --password 'zqs977dXzqfEvTML' subscription list \
+--organization "Default Organization"
+```
+
