@@ -163,7 +163,7 @@ else
 fi
 
 # -------------------------------
-# STEP 5.2: Pre-task for foreman installer
+# STEP 5.1: Pre-task for foreman installer
 # -------------------------------
 
 echo "🔧 Updating /etc/hosts entries ..."
