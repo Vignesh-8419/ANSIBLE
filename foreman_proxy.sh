@@ -137,18 +137,27 @@ firewall-cmd --reload
 
 echo "🔧 Updating /etc/hosts entries ..."
 
-NEW_HOSTNAME=$(hostname -s | tr -d '[:space:]')
+echo "🔧 Updating hostname and /etc/hosts ..."
+
+FQDN="${FOREMAN_PROXY}"
+SHORTNAME=$(echo "${FOREMAN_PROXY}" | cut -d'.' -f1)
 JUST_IP=$(hostname -I | awk '{print $1}')
 
-echo "Updating /etc/hosts file..."
+hostnamectl set-hostname "${FQDN}"
 
-if [[ -n "$NEW_HOSTNAME" ]]; then
-    sed -i "\|${NEW_HOSTNAME}|d" /etc/hosts
-fi
+cat > /etc/hosts <<EOF
+127.0.0.1 localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1 localhost localhost.localdomain localhost6 localhost6.localdomain6
 
-echo "${JUST_IP} ${NEW_HOSTNAME}.vgs.com ${NEW_HOSTNAME}" >> /etc/hosts
+${JUST_IP} ${FQDN} ${SHORTNAME}
+EOF
 
-grep "${NEW_HOSTNAME}.vgs.com" /etc/hosts
+echo "Current hostname:"
+hostname
+hostname -f
+
+echo "Current hosts entry:"
+getent hosts ${JUST_IP}
 
 echo "🚀 Running Foreman Proxy installer..."
 foreman-installer \
