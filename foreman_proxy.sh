@@ -11,6 +11,7 @@ set -e
 FOREMAN_PROXY="cent-07-02.vgs.com"
 CERT_PATH="/root/${FOREMAN_PROXY}-certs.tar"
 INSTALLER_OUTPUT="/tmp/proxy_installer_output.txt"
+FOREMAN_PROXY="cent-07-02.vgs.com"
 
 
 # -------------------------------
@@ -41,6 +42,8 @@ echo "🔐 Extracted OAuth Secret: $OAUTH_SECRET"
 cat <<EOF > /tmp/remote_installer.sh
 #!/bin/bash
 set -e
+
+FOREMAN_PROXY="cent-07-02.vgs.com"
 
 rm -f /etc/yum.repos.d/*.repo
 
@@ -135,26 +138,27 @@ firewall-cmd --add-port=9090/tcp --permanent
 firewall-cmd --add-port=443/tcp --permanent
 firewall-cmd --reload
 
-echo "🔧 Updating /etc/hosts entries ..."
-
 echo "🔧 Updating hostname and /etc/hosts ..."
 
-FQDN="${FOREMAN_PROXY}"
-SHORTNAME=$(echo "${FOREMAN_PROXY}" | cut -d'.' -f1)
+FQDN="$FOREMAN_PROXY"
+SHORTNAME="${FQDN%%.*}"
 JUST_IP=$(hostname -I | awk '{print $1}')
 
-hostnamectl set-hostname "${FQDN}"
+hostnamectl set-hostname "$FQDN"
 
-cat > /etc/hosts <<EOF
+cat > /etc/hosts <<HOSTS
 127.0.0.1 localhost localhost.localdomain localhost4 localhost4.localdomain4
 ::1 localhost localhost.localdomain localhost6 localhost6.localdomain6
 
 ${JUST_IP} ${FQDN} ${SHORTNAME}
-EOF
+HOSTS
 
 echo "Current hostname:"
 hostname
 hostname -f
+
+echo "Current hosts file:"
+cat /etc/hosts
 
 echo "Current hosts entry:"
 getent hosts ${JUST_IP}
