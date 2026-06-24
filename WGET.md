@@ -60,6 +60,24 @@ chmod +x frontbackend_Rocky.sh
 ```
 
 ```text
+curl -L -o foreman.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman.sh?$(date +%s)" && \
+chmod +x foreman.sh
+```
+
+```text
+curl -L -o foreman_proxy.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman_proxy.sh?$(date +%s)" && \
+chmod +x foreman_proxy.sh
+```
+
+```text
+curl -L -o frontbackend.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/frontbackend.sh?$(date +%s)" && \
+chmod +x frontbackend.sh
+```
+
+```text
 curl -L -o Device_Creation_Netbox.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Device_Creation_Netbox.sh?$(date +%s)" && \
 chmod +x Device_Creation_Netbox.sh
