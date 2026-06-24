@@ -365,14 +365,14 @@ mv /etc/yum.repos.d/* /etc/yum.repos.d/backup/
 cat <<EOF > /etc/yum.repos.d/rocky8-baseos.repo
 [rocky8-baseos]
 name=Rocky Linux 8 BaseOS
-baseurl=https://192.168.253.136/repo/rocky8/BaseOS
+baseurl=http://192.168.253.136/repo/rocky8/BaseOS
 enabled=1
 EOF
 
 cat <<EOF > /etc/yum.repos.d/rocky8-appstream.repo
 [rocky8-appstream]
 name=Rocky Linux 8 AppStream
-baseurl=https://192.168.253.136/repo/rocky8/Appstream
+baseurl=http://192.168.253.136/repo/rocky8/Appstream
 enabled=1
 gpgcheck=0
 EOF
@@ -380,7 +380,7 @@ EOF
 cat <<EOF > /etc/yum.repos.d/rocky8-rhel-installed.repo
 [rocky8-rhel-installed]
 name=Rocky Linux 8 Installed RHEL
-baseurl=https://192.168.253.136/repo/installed_rhel8
+baseurl=http://192.168.253.136/repo/installed_rhel8
 enabled=1
 gpgcheck=0
 EOF
