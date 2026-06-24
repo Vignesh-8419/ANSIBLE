@@ -168,18 +168,16 @@ fi
 
 echo "🔧 Updating /etc/hosts entries ..."
 
-NEW_HOSTNAME=$(hostname -s | tr -d '[:space:]')
+NEW_HOSTNAME=$(hostname -s)
 JUST_IP=$(hostname -I | awk '{print $1}')
 
 echo "Updating /etc/hosts file..."
 
-if [[ -n "$NEW_HOSTNAME" ]]; then
-    sed -i "\|${NEW_HOSTNAME}|d" /etc/hosts
-fi
-
+sed -i "/${NEW_HOSTNAME}/d" /etc/hosts
 echo "${JUST_IP} ${NEW_HOSTNAME}.vgs.com ${NEW_HOSTNAME}" >> /etc/hosts
 
 grep "${NEW_HOSTNAME}.vgs.com" /etc/hosts
+
 
 # -------------------------------
 # STEP 6: Run Foreman Installer
