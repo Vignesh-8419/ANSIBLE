@@ -168,12 +168,15 @@ fi
 
 echo "🔧 Updating /etc/hosts entries ..."
 
-NEW_HOSTNAME=$(hostname -s)
+NEW_HOSTNAME=$(hostname -s | tr -d '[:space:]')
 JUST_IP=$(hostname -I | awk '{print $1}')
 
 echo "Updating /etc/hosts file..."
 
-sed -i "/${NEW_HOSTNAME}/d" /etc/hosts
+if [[ -n "$NEW_HOSTNAME" ]]; then
+    sed -i "\|${NEW_HOSTNAME}|d" /etc/hosts
+fi
+
 echo "${JUST_IP} ${NEW_HOSTNAME}.vgs.com ${NEW_HOSTNAME}" >> /etc/hosts
 
 grep "${NEW_HOSTNAME}.vgs.com" /etc/hosts
