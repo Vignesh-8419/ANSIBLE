@@ -514,6 +514,244 @@ curl http://192.168.253.136/
 nslookup repo.vgs.com
 ```
 
+# Step 17 - Install Nginx as a Windows Service (NSSM)
+
+NSSM (Non-Sucking Service Manager) allows Nginx to run as a native Windows service so that it starts automatically after every system reboot without requiring a user to log in.
+
+---
+
+## Verify NSSM
+
+Extract NSSM to:
+
+```text
+C:\nssm
+```
+
+Verify the executable exists:
+
+```powershell
+Get-ChildItem C:\nssm\win32
+```
+
+Expected:
+
+```text
+nssm.exe
+```
+
+> **Note:** The downloaded `win64\nssm.exe` was corrupted (0 bytes), so the working `win32\nssm.exe` was used. The 32-bit version of NSSM works correctly on 64-bit Windows.
+
+---
+
+## Install Nginx Service
+
+Run Command Prompt or PowerShell as **Administrator**.
+
+Execute:
+
+```cmd
+C:\nssm\win32\nssm.exe install Nginx
+```
+
+Configure the following values:
+
+| Field                 | Value                |
+| --------------------- | -------------------- |
+| **Application Path**  | `C:\nginx\nginx.exe` |
+| **Startup Directory** | `C:\nginx`           |
+| **Arguments**         | *(Leave Blank)*      |
+
+Click **Install Service**.
+
+Expected:
+
+```text
+Service "Nginx" installed successfully!
+```
+
+---
+
+# Step 18 - Start the Service
+
+Start the Nginx service:
+
+```cmd
+net start Nginx
+```
+
+Expected:
+
+```text
+The Nginx service was started successfully.
+```
+
+---
+
+# Step 19 - Configure Automatic Startup
+
+Configure the service to start automatically whenever Windows boots.
+
+```cmd
+sc config Nginx start= auto
+```
+
+Expected:
+
+```text
+[SC] ChangeServiceConfig SUCCESS
+```
+
+---
+
+# Step 20 - Verify Service Status
+
+Check the status of the Nginx service:
+
+```cmd
+sc query Nginx
+```
+
+Expected:
+
+```text
+SERVICE_NAME: Nginx
+STATE              : 4  RUNNING
+```
+
+---
+
+# Step 21 - Verify Listening Port
+
+Confirm that Nginx is listening on the repository IP address.
+
+```cmd
+netstat -ano | findstr 192.168.253.136:80
+```
+
+Expected:
+
+```text
+TCP    192.168.253.136:80    LISTENING
+```
+
+---
+
+# Step 22 - Verify Repository Access
+
+Open the repository in a web browser:
+
+```text
+http://192.168.253.136/
+```
+
+or
+
+```text
+http://repo.vgs.com/
+```
+
+The repository should display the contents of the `E:\repo` directory.
+
+---
+
+# Step 23 - Verify After Reboot
+
+Restart the Windows machine.
+
+After the system boots, verify that the Nginx service is running automatically:
+
+```cmd
+sc query Nginx
+```
+
+Expected:
+
+```text
+STATE : 4 RUNNING
+```
+
+Verify the listening port:
+
+```cmd
+netstat -ano | findstr 192.168.253.136:80
+```
+
+Open the repository:
+
+```text
+http://repo.vgs.com/
+```
+
+No manual intervention should be required after a reboot.
+
+---
+
+# Useful Service Commands
+
+### Start Nginx
+
+```cmd
+net start Nginx
+```
+
+### Stop Nginx
+
+```cmd
+net stop Nginx
+```
+
+### Restart Nginx
+
+```cmd
+net stop Nginx
+net start Nginx
+```
+
+### Check Service Status
+
+```cmd
+sc query Nginx
+```
+
+### Configure Automatic Startup
+
+```cmd
+sc config Nginx start= auto
+```
+
+### Verify Listening Port
+
+```cmd
+netstat -ano | findstr 192.168.253.136:80
+```
+
+### Verify Repository
+
+```cmd
+curl http://192.168.253.136/
+```
+
+or
+
+```cmd
+curl http://repo.vgs.com/
+```
+
+---
+
+# Final Result
+
+* **Technitium DNS Server:** `192.168.253.1`
+* **Nginx Repository Server:** `192.168.253.136`
+* **Repository Root:** `E:\repo`
+* **Service Name:** `Nginx`
+* **Startup Type:** Automatic
+* **Repository URL:** `http://repo.vgs.com/`
+
+The Nginx repository server now runs as a native Windows service and starts automatically after every Windows boot without requiring a user to log in or manually launch Nginx.
+
+
 ---
 
 # Final Architecture
