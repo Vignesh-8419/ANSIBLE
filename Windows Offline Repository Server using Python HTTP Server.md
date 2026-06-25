@@ -1,607 +1,561 @@
-# Windows Offline Repository Server Setup using Python HTTP Server
+# Windows Repository Server using Nginx (Technitium DNS + Offline Repository)
 
 ## Overview
 
-This guide explains how to configure a Windows laptop as an offline HTTP repository server while continuing to run Technitium DNS Server on the same system.
+This guide explains how to configure a Windows laptop to host:
 
-```text
-E:\start_repo.bat
-```
-
-```text
-@echo off
-cd /d E:\
-
-"C:\Users\vigne\AppData\Local\Programs\Python\Python313\python.exe" -m http.server 80 --bind 192.168.253.136 >> E:\repo_http.log 2>&1
-```
-
-The repository will be accessible using:
-
-```text
-http://192.168.253.136/repo/
-```
-
-or
-
-```text
-http://repo.vgs.com/repo/
-```
+* **Technitium DNS Server**
+* **Offline Repository Server using Nginx**
+* **Separate IP addresses on the same machine**
+* **Permanent HTTP repository for AWX, Foreman, Katello and PXE**
 
 ---
 
 # Lab Architecture
 
-| Service                | IP Address      | Port |
-| ---------------------- | --------------- | ---- |
-| Technitium DNS Server  | 192.168.253.1   | 80   |
-| Python HTTP Repository | 192.168.253.136 | 80   |
-
-Repository Root:
-
-```text
-E:\
 ```
+                   Windows Laptop
+        ┌─────────────────────────────────────┐
+        │                                     │
+        │ 192.168.253.1                       │
+        │ Technitium DNS                      │
+        │ HTTP Port 80                        │
+        │                                     │
+        ├─────────────────────────────────────┤
+        │                                     │
+        │ 192.168.253.136                     │
+        │ Nginx Repository Server             │
+        │ HTTP Port 80                        │
+        │ Repository Root                     │
+        │ E:\repo                             │
+        │                                     │
+        └─────────────────────────────────────┘
 
-Repository URL:
+                 Linux / AWX / Foreman
+                         │
+                         ▼
 
-```text
-http://192.168.253.136/repo/
-```
-
----
-
-# Step 1 - Install Python
-
-Download Python from:
-
-```text
-https://www.python.org/downloads/windows/
-```
-
-During installation enable:
-
-* ✔ Add Python to PATH
-* ✔ Install launcher for all users
-
-Verify installation:
-
-```cmd
-py --version
-```
-
-Expected:
-
-```text
-Python 3.13.x
+          http://repo.vgs.com/
 ```
 
 ---
 
-# Step 2 - Configure VMware VMnet0 Secondary IP Address
+# Step 1 - Add Secondary IP Address
 
-Open Run:
+Open
 
-```text
-Win + R
 ```
-
-Run:
-
-```text
 ncpa.cpl
 ```
 
-Navigate to:
+Right-click
 
-```text
+```
 VMware Network Adapter VMnet0
-→ Properties
-→ Internet Protocol Version 4 (TCP/IPv4)
-→ Properties
-→ Advanced
 ```
 
-Click:
+Select
 
-```text
+```
+Properties
+```
+
+Choose
+
+```
+Internet Protocol Version 4 (TCP/IPv4)
+```
+
+Click
+
+```
+Properties
+```
+
+Click
+
+```
+Advanced
+```
+
+Under **IP Addresses**
+
+Click
+
+```
 Add
 ```
 
-Primary IP:
+Add
 
-```text
+```
+IP Address : 192.168.253.136
+Subnet Mask: 255.255.255.0
+```
+
+Click OK.
+
+Verify
+
+```
+ipconfig
+```
+
+Expected
+
+```
 192.168.253.1
-255.255.255.0
-```
-
-Secondary IP:
-
-```text
 192.168.253.136
-255.255.255.0
 ```
 
-Click **OK** on every dialog.
+---
 
-Verify:
+# Step 2 - Verify Connectivity
 
-```cmd
+```
 ping 192.168.253.136
 ```
 
-Expected:
+Expected
 
-```text
+```
 Reply from 192.168.253.136
 ```
 
 ---
 
-# Step 3 - Configure Technitium DNS Web Service
+# Step 3 - Repository Structure
 
-Open:
-
-```text
-http://192.168.253.1
 ```
-
-Navigate to:
-
-```text
-Settings
-→ Web Service
-```
-
-Current:
-
-```text
-[::]
-```
-
-Replace with:
-
-```text
-192.168.253.1
-```
-
-Click:
-
-```text
-Save Settings
-```
-
-Restart Technitium DNS Server.
-
-Verify:
-
-```cmd
-netstat -ano | findstr :80
-```
-
-Expected:
-
-```text
-TCP    192.168.253.1:80    LISTENING
-```
-
-Technitium now listens only on:
-
-```text
-192.168.253.1:80
-```
-
----
-
-# Step 4 - Repository Directory Structure
-
-Create the repository layout:
-
-```text
 E:\
 └── repo
     ├── rocky8
     ├── centos
-    ├── elevate
     ├── installed_rhel7
     ├── installed_rhel8
-    └── ansible
+    ├── elevate
+    ├── ansible
+    └── netbox_offline_repo
 ```
 
 ---
 
-# Step 5 - Start Python HTTP Repository
+# Step 4 - Download Nginx
 
-Open Git Bash.
+Download the Windows ZIP package from:
 
-Change directory:
+https://nginx.org/en/download.html
 
-```bash
-cd /e
+Download
+
+```
+nginx-x.x.x.zip
 ```
 
-Start Repository:
+**Do NOT download**
 
-```bash
-py -m http.server 80 --bind 192.168.253.136
+* Source Code
+* tar.gz
+* tar.xz
+
+---
+
+# Step 5 - Extract Nginx
+
+Extract to
+
+```
+C:\nginx
 ```
 
-Expected:
+Verify
 
-```text
-Serving HTTP on 192.168.253.136 port 80
+```
+C:\nginx
+├── conf
+├── html
+├── logs
+├── nginx.exe
 ```
 
 ---
 
-# Step 6 - Verify Repository
+# Step 6 - Configure Nginx
 
-Open browser:
+Edit
 
-```text
-http://192.168.253.136/repo/
+```
+C:\nginx\conf\nginx.conf
 ```
 
-Example:
+Replace the entire file with:
 
-```text
-http://192.168.253.136/repo/rocky8/
-```
+```nginx
+worker_processes 1;
 
-Verify from Linux:
+events {
+    worker_connections 1024;
+}
 
-```bash
-curl http://192.168.253.136/repo/rocky8/
-```
+http {
 
-Verify Repository Metadata:
+    include       mime.types;
+    default_type  application/octet-stream;
 
-```bash
-curl http://192.168.253.136/repo/rocky8/repodata/repomd.xml
+    sendfile on;
+    keepalive_timeout 65;
+
+    access_log logs/access.log;
+    error_log logs/error.log;
+
+    server {
+
+        listen 192.168.253.136:80;
+
+        server_name _;
+
+        root E:/repo;
+
+        index index.html;
+
+        autoindex on;
+        autoindex_exact_size off;
+        autoindex_localtime on;
+
+        client_max_body_size 20G;
+
+        location / {
+            autoindex on;
+            try_files $uri $uri/ =404;
+        }
+
+        error_page 500 502 503 504 /50x.html;
+
+        location = /50x.html {
+            root html;
+        }
+    }
+}
 ```
 
 ---
 
-# Step 7 - Configure DNS Record
+# Step 7 - Test Configuration
 
-Create an A Record in Technitium.
+```
+cd C:\nginx
 
-| Name         | Type | IP Address      |
-| ------------ | ---- | --------------- |
-| repo.vgs.com | A    | 192.168.253.136 |
+.\nginx.exe -t
+```
 
-Verify:
+Expected
 
-```cmd
+```
+syntax is ok
+
+test is successful
+```
+
+---
+
+# Step 8 - Start Nginx
+
+```
+cd C:\nginx
+
+.\nginx.exe
+```
+
+---
+
+# Step 9 - Verify Listening Port
+
+```
+netstat -ano | findstr :80
+```
+
+Expected
+
+```
+192.168.253.136:80 LISTENING
+```
+
+---
+
+# Step 10 - Test Repository
+
+Open
+
+```
+http://192.168.253.136/
+```
+
+Expected
+
+```
+ansible/
+centos/
+rocky8/
+installed_rhel7/
+installed_rhel8/
+elevate/
+```
+
+---
+
+# Step 11 - Configure Technitium DNS
+
+Create an **A Record**
+
+```
+repo.vgs.com
+```
+
+↓
+
+```
+192.168.253.136
+```
+
+Verify
+
+```
 nslookup repo.vgs.com 192.168.253.1
 ```
 
-Expected:
+Expected
 
-```text
-Name: repo.vgs.com
-Address: 192.168.253.136
 ```
-
-Repository URL:
-
-```text
-http://repo.vgs.com/repo/
+repo.vgs.com
+192.168.253.136
 ```
 
 ---
 
-# Step 8 - Make Repository Start Automatically
+# Step 12 - Verify Repository
 
-Open:
-
-```text
-Win + R
 ```
-
-Run:
-
-```text
-taskschd.msc
-```
-
-Click:
-
-```text
-Create Task
-```
-
-> Do NOT use **Create Basic Task**.
-
----
-
-## General Tab
-
-Name:
-
-```text
-RepoHTTP
-```
-
-Enable:
-
-* ☑ Run whether user is logged on or not
-* ☑ Run with highest privileges
-
-Configure for:
-
-```text
-Windows 10
+curl http://repo.vgs.com/
 ```
 
 or
 
-```text
-Windows 11
+```
+curl http://192.168.253.136/
 ```
 
 ---
 
-## Triggers
+# Step 13 - Stop Nginx
 
-Click:
-
-```text
-New
+```
+taskkill /IM nginx.exe /F
 ```
 
-Configure:
+or
 
-```text
-Begin the task:
-At startup
 ```
+cd C:\nginx
 
-Click **OK**.
-
-(Optional)
-
-Create another trigger:
-
-```text
-Begin the task:
-At log on
+.\nginx.exe -s stop
 ```
 
 ---
 
-## Actions
+# Step 14 - Reload Configuration
 
-Click:
-
-```text
-New
 ```
+cd C:\nginx
 
-Action:
-
-```text
-Start a program
-```
-
-Program:
-
-```text
-C:\Users\vigne\AppData\Local\Programs\Python\Launcher\py.exe
-```
-
-Arguments:
-
-```text
--m http.server 80 --bind 192.168.253.136
-```
-
-Start In:
-
-```text
-E:\
-```
-
-Click **OK**.
-
----
-
-## Conditions
-
-Disable:
-
-```text
-Start the task only if the computer is on AC power
+.\nginx.exe -s reload
 ```
 
 ---
 
-## Settings
+# Step 15 - Restart Nginx
 
-Enable:
+```
+cd C:\nginx
 
-* ☑ Allow task to be run on demand
-* ☑ Run task as soon as possible after a scheduled start is missed
-* ☑ If the task fails, restart every 1 minute
-* Restart attempts: 3
+.\nginx.exe -s stop
 
-Click **OK**.
-
-Windows will prompt for your login password.
+.\nginx.exe
+```
 
 ---
 
-# Step 9 - Test Scheduled Task
+# Step 16 - Install Nginx as Windows Service
 
-Open:
+Download NSSM
 
-```text
-Task Scheduler
+https://nssm.cc/download
+
+Extract
+
+```
+C:\Tools\nssm
 ```
 
-Locate:
-
-```text
-Task Scheduler Library
-└── RepoHTTP
-```
-
-Right-click:
-
-```text
 Run
+
+```
+C:\Tools\nssm\win64\nssm.exe install Nginx
 ```
 
-Verify:
+Application
 
-```cmd
-netstat -ano | findstr :80
+```
+Path
+
+C:\nginx\nginx.exe
 ```
 
-Expected:
+Startup Directory
 
-```text
-TCP    192.168.253.1:80      LISTENING
-TCP    192.168.253.136:80    LISTENING
+```
+C:\nginx
 ```
 
----
+Arguments
 
-# Step 10 - Verify After Reboot
-
-Restart Windows.
-
-Verify Repository:
-
-```text
-http://192.168.253.136/repo/
+```
+Leave Blank
 ```
 
-or
+Click
 
-```text
-http://repo.vgs.com/repo/
 ```
-
-Verify Technitium:
-
-```text
-http://192.168.253.1
-```
-
-Both services should start automatically after Windows boots.
-
----
-
-# Final Lab Architecture
-
-```text
-                   Windows Laptop
-         ┌────────────────────────────────────┐
-         │                                    │
-         │ 192.168.253.1                      │
-         │ Technitium DNS Server              │
-         │ Web Console (Port 80)              │
-         │                                    │
-         ├────────────────────────────────────┤
-         │                                    │
-         │ 192.168.253.136                    │
-         │ Python HTTP Repository             │
-         │ Repository Root : E:\              │
-         │ HTTP Port 80                       │
-         │                                    │
-         └────────────────────────────────────┘
-                      ▲
-                      │
-        Linux / Foreman / Katello / AWX
-                      │
-                      ▼
-
-      http://repo.vgs.com/repo/rocky8/
+Install Service
 ```
 
 ---
 
-# Repository Structure
+# Step 17 - Start Service
 
-```text
-E:\
-└── repo
-    ├── rocky8
-    ├── centos
-    ├── elevate
-    ├── installed_rhel7
-    ├── installed_rhel8
-    └── ansible
 ```
+net start Nginx
+```
+
+Configure automatic startup
+
+```
+sc config Nginx start= auto
+```
+
+Verify
+
+```
+sc query Nginx
+```
+
+---
+
+# Step 18 - Verify After Reboot
+
+Open
+
+```
+http://192.168.253.136/
+```
+
+Verify
+
+```
+http://repo.vgs.com/
+```
+
+Both should work automatically.
 
 ---
 
 # Useful Commands
 
-## Start Repository Manually
+### Test Configuration
 
-```bash
-cd /e
-py -m http.server 80 --bind 192.168.253.136
+```
+cd C:\nginx
+
+.\nginx.exe -t
 ```
 
----
+### Start
 
-## Verify Listening Ports
+```
+.\nginx.exe
+```
 
-```cmd
+### Stop
+
+```
+.\nginx.exe -s stop
+```
+
+### Reload
+
+```
+.\nginx.exe -s reload
+```
+
+### Verify Port
+
+```
 netstat -ano | findstr :80
 ```
 
----
+### Verify Repository
 
-## Verify Repository
+```
+curl http://192.168.253.136/
+```
 
-```bash
-curl http://192.168.253.136/repo/rocky8/
+### Verify DNS
+
+```
+nslookup repo.vgs.com
 ```
 
 ---
 
-## Verify Repository Metadata
+# Final Architecture
 
-```bash
-curl http://192.168.253.136/repo/rocky8/repodata/repomd.xml
+```
+                    Windows Laptop
+         ┌──────────────────────────────────┐
+         │                                  │
+         │ 192.168.253.1                    │
+         │ Technitium DNS                   │
+         │ Port 80                          │
+         │                                  │
+         ├──────────────────────────────────┤
+         │                                  │
+         │ 192.168.253.136                  │
+         │ Nginx Repository                 │
+         │ E:\repo                          │
+         │ Port 80                          │
+         │                                  │
+         └──────────────────────────────────┘
+
+                AWX / Foreman / PXE
+                        │
+                        ▼
+
+              http://repo.vgs.com/
 ```
 
----
+## Notes
 
-## Verify DNS
+* Technitium DNS remains bound to **192.168.253.1:80**.
+* Nginx serves the repository from **192.168.253.136:80**.
+* The repository root is **E:\repo**, so the repository is accessed as:
 
-```cmd
-nslookup repo.vgs.com 192.168.253.1
 ```
-
----
-
-## Verify from Linux
-
-```bash
-curl http://repo.vgs.com/repo/rocky8/
-```
-
----
-
-# Result
-
-After completing this guide:
-
-* ✔ Technitium DNS runs on **192.168.253.1:80**
-* ✔ Python Repository runs on **192.168.253.136:80**
-* ✔ Repository starts automatically at Windows startup using Task Scheduler.
-* ✔ Linux servers, Foreman, AWX, and Katello can access the repository using:
-
-```text
-http://repo.vgs.com/repo/
+http://192.168.253.136/
 ```
 
 or
 
-```text
-http://192.168.253.136/repo/
 ```
+http://repo.vgs.com/
+```
+
+without needing `/repo` in the URL.
