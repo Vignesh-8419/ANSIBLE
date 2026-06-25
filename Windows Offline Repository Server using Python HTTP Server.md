@@ -1,15 +1,29 @@
-# Windows Offline Repository Server using Python HTTP Server
+# Windows Offline Repository Server Setup using Python HTTP Server
 
 ## Overview
 
-This guide configures a Windows laptop to act as an offline HTTP repository server while continuing to run Technitium DNS Server on the same machine.
+This guide explains how to configure a Windows laptop as an offline HTTP repository server while continuing to run Technitium DNS Server on the same system.
 
-### Final Architecture
+The repository will be accessible using:
 
-| Service                    | IP Address      | Port |
-| -------------------------- | --------------- | ---- |
-| Technitium DNS Web Console | 192.168.253.1   | 80   |
-| Python HTTP Repository     | 192.168.253.136 | 80   |
+```text
+http://192.168.253.136/repo/
+```
+
+or
+
+```text
+http://repo.vgs.com/repo/
+```
+
+---
+
+# Lab Architecture
+
+| Service                | IP Address      | Port |
+| ---------------------- | --------------- | ---- |
+| Technitium DNS Server  | 192.168.253.1   | 80   |
+| Python HTTP Repository | 192.168.253.136 | 80   |
 
 Repository Root:
 
@@ -23,17 +37,38 @@ Repository URL:
 http://192.168.253.136/repo/
 ```
 
-Example:
+---
+
+# Step 1 - Install Python
+
+Download Python from:
 
 ```text
-http://192.168.253.136/repo/rocky8/
+https://www.python.org/downloads/windows/
+```
+
+During installation enable:
+
+* ✔ Add Python to PATH
+* ✔ Install launcher for all users
+
+Verify installation:
+
+```cmd
+py --version
+```
+
+Expected:
+
+```text
+Python 3.13.x
 ```
 
 ---
 
-# Step 1 - Configure Secondary IP Address
+# Step 2 - Configure VMware VMnet0 Secondary IP Address
 
-Open:
+Open Run:
 
 ```text
 Win + R
@@ -55,23 +90,43 @@ VMware Network Adapter VMnet0
 → Advanced
 ```
 
-Add a secondary IP:
+Click:
 
 ```text
-IP Address : 192.168.253.136
-Subnet Mask: 255.255.255.0
+Add
 ```
 
-The adapter should now contain:
+Primary IP:
 
 ```text
 192.168.253.1
+255.255.255.0
+```
+
+Secondary IP:
+
+```text
 192.168.253.136
+255.255.255.0
+```
+
+Click **OK** on every dialog.
+
+Verify:
+
+```cmd
+ping 192.168.253.136
+```
+
+Expected:
+
+```text
+Reply from 192.168.253.136
 ```
 
 ---
 
-# Step 2 - Configure Technitium DNS
+# Step 3 - Configure Technitium DNS Web Service
 
 Open:
 
@@ -86,15 +141,13 @@ Settings
 → Web Service
 ```
 
-Change:
+Current:
 
 ```text
-Web Service Local Addresses
-
 [::]
 ```
 
-to:
+Replace with:
 
 ```text
 192.168.253.1
@@ -106,7 +159,7 @@ Click:
 Save Settings
 ```
 
-Restart the DNS Server.
+Restart Technitium DNS Server.
 
 Verify:
 
@@ -128,7 +181,24 @@ Technitium now listens only on:
 
 ---
 
-# Step 3 - Start Python HTTP Server
+# Step 4 - Repository Directory Structure
+
+Create the repository layout:
+
+```text
+E:\
+└── repo
+    ├── rocky8
+    ├── centos
+    ├── elevate
+    ├── installed_rhel7
+    ├── installed_rhel8
+    └── ansible
+```
+
+---
+
+# Step 5 - Start Python HTTP Repository
 
 Open Git Bash.
 
@@ -138,7 +208,7 @@ Change directory:
 cd /e
 ```
 
-Start the repository server:
+Start Repository:
 
 ```bash
 py -m http.server 80 --bind 192.168.253.136
@@ -152,7 +222,7 @@ Serving HTTP on 192.168.253.136 port 80
 
 ---
 
-# Step 4 - Verify Repository
+# Step 6 - Verify Repository
 
 Open browser:
 
@@ -160,7 +230,7 @@ Open browser:
 http://192.168.253.136/repo/
 ```
 
-Example repository:
+Example:
 
 ```text
 http://192.168.253.136/repo/rocky8/
@@ -172,35 +242,68 @@ Verify from Linux:
 curl http://192.168.253.136/repo/rocky8/
 ```
 
----
+Verify Repository Metadata:
 
-# Step 5 - Configure DNS
-
-Create an A Record:
-
-| Record       | Value           |
-| ------------ | --------------- |
-| repo.vgs.com | 192.168.253.136 |
-
-Repository becomes:
-
-```text
-http://repo.vgs.com/repo/rocky8/
+```bash
+curl http://192.168.253.136/repo/rocky8/repodata/repomd.xml
 ```
 
 ---
 
-# Step 6 - Make Repository Start Automatically
+# Step 7 - Configure DNS Record
+
+Create an A Record in Technitium.
+
+| Name         | Type | IP Address      |
+| ------------ | ---- | --------------- |
+| repo.vgs.com | A    | 192.168.253.136 |
+
+Verify:
+
+```cmd
+nslookup repo.vgs.com 192.168.253.1
+```
+
+Expected:
+
+```text
+Name: repo.vgs.com
+Address: 192.168.253.136
+```
+
+Repository URL:
+
+```text
+http://repo.vgs.com/repo/
+```
+
+---
+
+# Step 8 - Make Repository Start Automatically
 
 Open:
+
+```text
+Win + R
+```
+
+Run:
 
 ```text
 taskschd.msc
 ```
 
-Create Task:
+Click:
 
-## General
+```text
+Create Task
+```
+
+> Do NOT use **Create Basic Task**.
+
+---
+
+## General Tab
 
 Name:
 
@@ -210,31 +313,64 @@ RepoHTTP
 
 Enable:
 
-```text
-Run whether user is logged on or not
+* ☑ Run whether user is logged on or not
+* ☑ Run with highest privileges
 
-Run with highest privileges
+Configure for:
+
+```text
+Windows 10
+```
+
+or
+
+```text
+Windows 11
 ```
 
 ---
 
-## Trigger
+## Triggers
 
-Create trigger:
+Click:
 
 ```text
-At Startup
+New
 ```
+
+Configure:
+
+```text
+Begin the task:
+At startup
+```
+
+Click **OK**.
 
 (Optional)
 
+Create another trigger:
+
 ```text
-At Log On
+Begin the task:
+At log on
 ```
 
 ---
 
-## Action
+## Actions
+
+Click:
+
+```text
+New
+```
+
+Action:
+
+```text
+Start a program
+```
 
 Program:
 
@@ -254,6 +390,8 @@ Start In:
 E:\
 ```
 
+Click **OK**.
+
 ---
 
 ## Conditions
@@ -270,27 +408,70 @@ Start the task only if the computer is on AC power
 
 Enable:
 
-```text
-Allow task to be run on demand
+* ☑ Allow task to be run on demand
+* ☑ Run task as soon as possible after a scheduled start is missed
+* ☑ If the task fails, restart every 1 minute
+* Restart attempts: 3
 
-Run task as soon as possible after a scheduled start is missed
+Click **OK**.
 
-Restart task if it fails
-```
-
-Save the task.
+Windows will prompt for your login password.
 
 ---
 
-# Verify After Reboot
+# Step 9 - Test Scheduled Task
 
-Repository:
+Open:
+
+```text
+Task Scheduler
+```
+
+Locate:
+
+```text
+Task Scheduler Library
+└── RepoHTTP
+```
+
+Right-click:
+
+```text
+Run
+```
+
+Verify:
+
+```cmd
+netstat -ano | findstr :80
+```
+
+Expected:
+
+```text
+TCP    192.168.253.1:80      LISTENING
+TCP    192.168.253.136:80    LISTENING
+```
+
+---
+
+# Step 10 - Verify After Reboot
+
+Restart Windows.
+
+Verify Repository:
 
 ```text
 http://192.168.253.136/repo/
 ```
 
-Technitium:
+or
+
+```text
+http://repo.vgs.com/repo/
+```
+
+Verify Technitium:
 
 ```text
 http://192.168.253.1
@@ -304,24 +485,25 @@ Both services should start automatically after Windows boots.
 
 ```text
                    Windows Laptop
-             ┌───────────────────────────┐
-             │                           │
-             │ 192.168.253.1             │
-             │ Technitium DNS            │
-             │ HTTP Port 80              │
-             │                           │
-             ├───────────────────────────┤
-             │                           │
-             │ 192.168.253.136           │
-             │ Python HTTP Repository    │
-             │ E:\repo                   │
-             │ HTTP Port 80              │
-             │                           │
-             └───────────────────────────┘
-
-                 Linux / AWX / Foreman
-                          │
-                          ▼
+         ┌────────────────────────────────────┐
+         │                                    │
+         │ 192.168.253.1                      │
+         │ Technitium DNS Server              │
+         │ Web Console (Port 80)              │
+         │                                    │
+         ├────────────────────────────────────┤
+         │                                    │
+         │ 192.168.253.136                    │
+         │ Python HTTP Repository             │
+         │ Repository Root : E:\              │
+         │ HTTP Port 80                       │
+         │                                    │
+         └────────────────────────────────────┘
+                      ▲
+                      │
+        Linux / Foreman / Katello / AWX
+                      │
+                      ▼
 
       http://repo.vgs.com/repo/rocky8/
 ```
@@ -335,9 +517,9 @@ E:\
 └── repo
     ├── rocky8
     ├── centos
+    ├── elevate
     ├── installed_rhel7
     ├── installed_rhel8
-    ├── elevate
     └── ansible
 ```
 
@@ -345,27 +527,70 @@ E:\
 
 # Useful Commands
 
-Start Repository:
+## Start Repository Manually
 
 ```bash
 cd /e
 py -m http.server 80 --bind 192.168.253.136
 ```
 
-Verify Listening Port:
+---
+
+## Verify Listening Ports
 
 ```cmd
 netstat -ano | findstr :80
 ```
 
-Verify Repository:
+---
+
+## Verify Repository
 
 ```bash
 curl http://192.168.253.136/repo/rocky8/
 ```
 
-Verify DNS:
+---
+
+## Verify Repository Metadata
+
+```bash
+curl http://192.168.253.136/repo/rocky8/repodata/repomd.xml
+```
+
+---
+
+## Verify DNS
 
 ```cmd
 nslookup repo.vgs.com 192.168.253.1
+```
+
+---
+
+## Verify from Linux
+
+```bash
+curl http://repo.vgs.com/repo/rocky8/
+```
+
+---
+
+# Result
+
+After completing this guide:
+
+* ✔ Technitium DNS runs on **192.168.253.1:80**
+* ✔ Python Repository runs on **192.168.253.136:80**
+* ✔ Repository starts automatically at Windows startup using Task Scheduler.
+* ✔ Linux servers, Foreman, AWX, and Katello can access the repository using:
+
+```text
+http://repo.vgs.com/repo/
+```
+
+or
+
+```text
+http://192.168.253.136/repo/
 ```
