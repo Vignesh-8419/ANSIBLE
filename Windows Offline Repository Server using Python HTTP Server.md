@@ -4,6 +4,10 @@
 
 This guide explains how to configure a Windows laptop as an offline HTTP repository server while continuing to run Technitium DNS Server on the same system.
 
+```text
+E:\start_repo.bat
+```
+
 The repository will be accessible using:
 
 ```text
