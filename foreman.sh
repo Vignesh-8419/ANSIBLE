@@ -241,10 +241,14 @@ firewall-cmd --reload
 
 
 mkdir -p /var/lib/tftpboot/centos
-sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
-root@http-server-01.vgs.com:/var/www/html/repo/centos/isolinux/initrd.img /var/lib/tftpboot/centos/
-sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no \
-root@http-server-01.vgs.com:/var/www/html/repo/centos/isolinux/vmlinuz /var/lib/tftpboot/centos/
+
+curl -L -o /var/lib/tftpboot/centos/initrd.img \
+http://http-server-01/repo/centos/isolinux/initrd.img
+
+curl -L -o /var/lib/tftpboot/centos/vmlinuz \
+http://http-server-01/repo/centos/isolinux/vmlinuz
+
 chown -R foreman-proxy:root /var/lib/tftpboot/centos
+chmod 644 /var/lib/tftpboot/centos/*
 
 echo "✅ Foreman proxy services configured successfully."
