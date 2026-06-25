@@ -1,9 +1,19 @@
+# Technitium DNS API Commands (Updated for Web Console Port 5380)
+
+> **Note**
+>
+> * **Technitium DNS Service (DNS):** `192.168.253.1:53`
+> * **Technitium Web Console & REST API:** `http://192.168.253.1:5380`
+> * **Nginx Repository:** `http://192.168.253.136`
+
+---
+
 # PowerShell Environment Variables
 
 ## Set DNS Server
 
 ```powershell
-$env:DNS_SERVER="192.168.253.1"
+$env:DNS_SERVER="192.168.253.1:5380"
 ```
 
 ## Set API Token
@@ -19,10 +29,10 @@ $env:DNS_SERVER
 $env:TOKEN
 ```
 
-Expected Output:
+Expected Output
 
 ```text
-192.168.253.1
+192.168.253.1:5380
 14759e1e000567381175d02ef3e137d2847e6dd637e5a74bcdb726e24dabaac7
 ```
 
@@ -78,13 +88,15 @@ $r.response.zones | Format-Table name,type
 
 ---
 
-# Get Foword Zone Records
+# Get Forward Zone Records
 
 ```powershell
 $r = Invoke-RestMethod "http://$($env:DNS_SERVER)/api/zones/records/get?token=$($env:TOKEN)&domain=vgs.com"
 
 $r.response.records | Format-List *
 ```
+
+---
 
 # Get Reverse Zone Records
 
@@ -94,12 +106,14 @@ $r = Invoke-RestMethod "http://$($env:DNS_SERVER)/api/zones/records/get?token=$(
 $r.response.records | Format-List *
 ```
 
-# DNS Manager API Commands (Git Bash)
+---
+
+# Git Bash Environment Variables
 
 ## Set Environment Variables
 
 ```bash
-export DNS_SERVER="192.168.253.1"
+export DNS_SERVER="192.168.253.1:5380"
 export TOKEN="14759e1e000567381175d02ef3e137d2847e6dd637e5a74bcdb726e24dabaac7"
 ```
 
@@ -112,16 +126,16 @@ echo $DNS_SERVER
 echo $TOKEN
 ```
 
-### Expected Output
+Expected Output
 
 ```text
-192.168.253.1
+192.168.253.1:5380
 14759e1e000567381175d02ef3e137d2847e6dd637e5a74bcdb726e24dabaac7
 ```
 
 ---
 
-## Create Forward Zone
+# Create Forward Zone
 
 ```bash
 curl "http://${DNS_SERVER}/api/zones/create?token=${TOKEN}&zone=vgs.com&type=Primary"
@@ -129,7 +143,7 @@ curl "http://${DNS_SERVER}/api/zones/create?token=${TOKEN}&zone=vgs.com&type=Pri
 
 ---
 
-## Create Reverse Zone
+# Create Reverse Zone
 
 ```bash
 curl "http://${DNS_SERVER}/api/zones/create?token=${TOKEN}&zone=253.168.192.in-addr.arpa&type=Primary"
@@ -137,7 +151,7 @@ curl "http://${DNS_SERVER}/api/zones/create?token=${TOKEN}&zone=253.168.192.in-a
 
 ---
 
-## Create A Record
+# Create A Record
 
 ```bash
 curl "http://${DNS_SERVER}/api/zones/records/add?token=${TOKEN}&zone=vgs.com&domain=cent-07-01.vgs.com&type=A&ttl=3600&ipAddress=192.168.253.131&ptr=false"
@@ -145,7 +159,7 @@ curl "http://${DNS_SERVER}/api/zones/records/add?token=${TOKEN}&zone=vgs.com&dom
 
 ---
 
-## Create PTR Record
+# Create PTR Record
 
 ```bash
 curl "http://${DNS_SERVER}/api/zones/records/add?token=${TOKEN}&zone=253.168.192.in-addr.arpa&domain=131.253.168.192.in-addr.arpa&type=PTR&ttl=3600&ptrName=cent-07-01.vgs.com"
@@ -153,7 +167,7 @@ curl "http://${DNS_SERVER}/api/zones/records/add?token=${TOKEN}&zone=253.168.192
 
 ---
 
-## Create A + PTR Automatically
+# Create A + PTR Automatically
 
 ```bash
 curl "http://${DNS_SERVER}/api/zones/records/add?token=${TOKEN}&zone=vgs.com&domain=cent-07-01.vgs.com&type=A&ttl=3600&ipAddress=192.168.253.131&ptr=true&createPtrZone=true"
@@ -161,37 +175,15 @@ curl "http://${DNS_SERVER}/api/zones/records/add?token=${TOKEN}&zone=vgs.com&dom
 
 ---
 
-## List Zones
-
-### Raw Output
-
-```bash
-curl -s "http://${DNS_SERVER}/api/zones/list?token=${TOKEN}"
-```
-
-### Pretty JSON Output (jq Required)
+# List Zones
 
 ```bash
 curl -s "http://${DNS_SERVER}/api/zones/list?token=${TOKEN}" | jq
 ```
 
-### Show Zone Names Only
-
-```bash
-curl -s "http://${DNS_SERVER}/api/zones/list?token=${TOKEN}" | jq -r '.response.zones[] | "\(.name) \(.type)"'
-```
-
 ---
 
-## Get Forward Zone Records
-
-### Raw Output
-
-```bash
-curl -s "http://${DNS_SERVER}/api/zones/records/get?token=${TOKEN}&domain=vgs.com"
-```
-
-### Pretty JSON Output
+# Get Forward Zone Records
 
 ```bash
 curl -s "http://${DNS_SERVER}/api/zones/records/get?token=${TOKEN}&domain=vgs.com" | jq
@@ -199,15 +191,7 @@ curl -s "http://${DNS_SERVER}/api/zones/records/get?token=${TOKEN}&domain=vgs.co
 
 ---
 
-## Get Reverse Zone Records
-
-### Raw Output
-
-```bash
-curl -s "http://${DNS_SERVER}/api/zones/records/get?token=${TOKEN}&domain=253.168.192.in-addr.arpa"
-```
-
-### Pretty JSON Output
+# Get Reverse Zone Records
 
 ```bash
 curl -s "http://${DNS_SERVER}/api/zones/records/get?token=${TOKEN}&domain=253.168.192.in-addr.arpa" | jq
@@ -215,94 +199,52 @@ curl -s "http://${DNS_SERVER}/api/zones/records/get?token=${TOKEN}&domain=253.16
 
 ---
 
-## DNS Verification
+# Connectivity Verification
 
-### Forward Lookup
-
-```bash
-nslookup cent-07-01.vgs.com 192.168.253.1
-```
-
-### Reverse Lookup
-
-```bash
-nslookup 192.168.253.131 192.168.253.1
-```
-
----
-
-## Connectivity Verification
-
-### HTTP Check
+## Verify Web Console / REST API
 
 ```bash
 curl "http://${DNS_SERVER}"
 ```
 
-### Ping Check
-
-```bash
-ping -n 4 ${DNS_SERVER}
-```
-
----
-
-## Example: Create New Host Record
-
-```bash
-curl "http://${DNS_SERVER}/api/zones/records/add?token=${TOKEN}&zone=vgs.com&domain=test-server-01.vgs.com&type=A&ttl=3600&ipAddress=192.168.253.39&ptr=true&createPtrZone=true"
-```
-
-### Verify
-
-```bash
-nslookup test-server-01.vgs.com 192.168.253.1
-```
-
-Expected Result:
+Expected URL:
 
 ```text
-Name:    test-server-01.vgs.com
-Address: 192.168.253.39
+http://192.168.253.1:5380
 ```
-
-
-# Steps to Configure Technitium DNS for Internal and Internet Resolution
-
-### 1. Verify Internal DNS Resolution
-
-Open Command Prompt and test:
-
-```cmd
-nslookup ansible-server-01.vgs.com 192.168.253.1
-```
-
-Confirm that internal DNS records resolve correctly.
 
 ---
 
-### 2. Verify External DNS Resolution
+# DNS Verification (No Changes)
 
-Test Internet DNS resolution:
+> DNS queries continue to use **port 53**.
 
-```cmd
+## Forward Lookup
+
+```bash
+nslookup cent-07-01.vgs.com 192.168.253.1
+```
+
+## Reverse Lookup
+
+```bash
+nslookup 192.168.253.131 192.168.253.1
+```
+
+## Internet Lookup
+
+```bash
 nslookup google.com 192.168.253.1
 ```
 
-Issue observed:
-
-```text
-*** Server failed
-```
-
 ---
 
-### 3. Open Technitium DNS Web Console
+# Configure Technitium DNS for Internet Resolution
 
-Access:
+## Open Web Console
 
 ```text
-http://192.168.253.1
+http://192.168.253.1:5380
 ```
 
 Navigate to:
@@ -311,11 +253,7 @@ Navigate to:
 Settings → Proxy & Forwarders
 ```
 
----
-
-### 4. Configure Forwarders
-
-Add the following DNS servers under **Forwarders**:
+Configure Forwarders:
 
 ```text
 192.168.31.1
@@ -323,25 +261,17 @@ Add the following DNS servers under **Forwarders**:
 1.1.1.1
 ```
 
----
-
-### 5. Verify Recursion Settings
-
 Navigate to:
 
 ```text
 Settings → Recursion
 ```
 
-Ensure the following option is selected:
+Select:
 
 ```text
 Allow Recursion Only For Private Networks
 ```
-
----
-
-### 6. Change Forwarder Protocol
 
 Navigate to:
 
@@ -349,13 +279,13 @@ Navigate to:
 Settings → Proxy & Forwarders
 ```
 
-Change:
+Change protocol:
 
 ```text
-DNS-over-UDP (default)
+DNS-over-UDP
 ```
 
-to:
+to
 
 ```text
 DNS-over-TCP
@@ -365,41 +295,7 @@ Click **Save Settings**.
 
 ---
 
-### 7. Test DNS Resolution from Technitium
-
-Go to:
-
-```text
-DNS Client
-```
-
-Query:
-
-```text
-google.com
-```
-
-Confirm that valid IP addresses are returned.
-
----
-
-### 8. Test from Windows Client
-
-Run:
-
-```cmd
-nslookup google.com 192.168.253.1
-nslookup github.com 192.168.253.1
-nslookup ansible-server-01.vgs.com 192.168.253.1
-```
-
-Verify that both Internet and internal domains resolve successfully.
-
----
-
-### 9. Configure Windows to Use Technitium DNS
-
-Open PowerShell as Administrator:
+# Configure Windows DNS Client
 
 ```powershell
 Set-DnsClientServerAddress -InterfaceAlias "Wi-Fi" -ServerAddresses 192.168.253.1
@@ -413,15 +309,17 @@ ipconfig /flushdns
 
 ---
 
-### 10. Final Verification
+# Final Verification
 
 ```cmd
 nslookup google.com
+nslookup github.com
 nslookup ansible-server-01.vgs.com
 ```
 
 Expected Result:
 
-* Internal domains (*.vgs.com) resolve correctly.
-* Internet domains (google.com, github.com, redhat.com, etc.) resolve correctly.
-* Technitium DNS Server (192.168.253.1) acts as the primary DNS server for the lab environment.
+* Internal `*.vgs.com` records resolve correctly.
+* Internet domains resolve successfully.
+* DNS queries use `192.168.253.1:53`.
+* Technitium Web Console and REST API are available at `http://192.168.253.1:5380`.
