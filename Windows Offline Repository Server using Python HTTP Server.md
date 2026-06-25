@@ -797,3 +797,178 @@ http://repo.vgs.com/
 ```
 
 without needing `/repo` in the URL.
+
+# Post-Reboot Fix Steps
+
+## Step 1 - Identify Port 80 Owner
+
+Checked which process was listening on port 80.
+
+```cmd
+netstat -ano | findstr :80
+```
+
+Found:
+
+```text
+0.0.0.0:80 LISTENING PID 4
+```
+
+---
+
+## Step 2 - Verify HTTP.sys Registration
+
+Checked the HTTP service state.
+
+```powershell
+netsh http show servicestate
+```
+
+Found that IIS had registered:
+
+```text
+DefaultAppPool
+HTTP://192.168.253.136:80/
+```
+
+---
+
+## Step 3 - Stop IIS
+
+Stopped IIS services.
+
+```powershell
+Stop-Service W3SVC -Force
+Stop-Service WAS -Force
+```
+
+---
+
+## Step 4 - Disable IIS
+
+Prevented IIS from starting after reboot.
+
+```powershell
+Set-Service W3SVC -StartupType Disabled
+Set-Service WAS -StartupType Disabled
+```
+
+Verified:
+
+```powershell
+Get-Service W3SVC,WAS
+```
+
+---
+
+## Step 5 - Verify HTTP.sys Released Port 80
+
+```powershell
+netsh http show servicestate
+```
+
+Confirmed that no HTTP URLs were registered.
+
+---
+
+## Step 6 - Verify Nginx Service Configuration
+
+Checked the service configuration.
+
+```cmd
+sc.exe qc Nginx
+```
+
+Found:
+
+```text
+BINARY_PATH_NAME : C:\nssm\win64\nssm.exe
+```
+
+The `win64\nssm.exe` executable was corrupted (0 bytes).
+
+---
+
+## Step 7 - Remove Existing Nginx Service
+
+```cmd
+C:\nssm\win32\nssm.exe remove Nginx confirm
+```
+
+---
+
+## Step 8 - Reinstall Nginx Service
+
+```cmd
+C:\nssm\win32\nssm.exe install Nginx
+```
+
+Configured:
+
+| Field             | Value                |
+| ----------------- | -------------------- |
+| Application       | `C:\nginx\nginx.exe` |
+| Startup Directory | `C:\nginx`           |
+| Arguments         | *(Blank)*            |
+
+---
+
+## Step 9 - Start Nginx Service
+
+```cmd
+net start Nginx
+```
+
+---
+
+## Step 10 - Verify Service Configuration
+
+```cmd
+sc.exe qc Nginx
+```
+
+Confirmed:
+
+```text
+BINARY_PATH_NAME : C:\nssm\win32\nssm.exe
+```
+
+---
+
+## Step 11 - Verify Nginx Process
+
+```cmd
+tasklist | findstr nginx
+```
+
+Expected:
+
+```text
+nginx.exe
+nginx.exe
+```
+
+---
+
+## Step 12 - Verify Listening Port
+
+```cmd
+netstat -ano | findstr :80
+```
+
+Confirmed:
+
+```text
+TCP 192.168.253.136:80 LISTENING
+```
+
+---
+
+## Result
+
+* IIS no longer reserves port 80.
+* HTTP.sys no longer blocks Nginx.
+* Nginx runs as a Windows service.
+* Repository is available after every reboot.
+* No manual startup is required.
+
