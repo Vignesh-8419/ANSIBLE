@@ -8,6 +8,13 @@ This guide explains how to configure a Windows laptop as an offline HTTP reposit
 E:\start_repo.bat
 ```
 
+```text
+@echo off
+cd /d E:\
+
+"C:\Users\vigne\AppData\Local\Programs\Python\Python313\python.exe" -m http.server 80 --bind 192.168.253.136 >> E:\repo_http.log 2>&1
+```
+
 The repository will be accessible using:
 
 ```text
