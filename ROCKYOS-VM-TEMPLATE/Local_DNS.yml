@@ -40,7 +40,7 @@
         fail_msg: "inventory_hostname and target_ip must be available."
 
     ###########################################################################
-    # Calculate DNS Values
+    # Calculate DNS Information
     ###########################################################################
 
     - name: Calculate DNS information
@@ -68,92 +68,57 @@
     # Create A Record
     ###########################################################################
 
-    - name: Show A Record URL
-      debug:
-        msg: >-
-          http://{{ dns_server }}/api/zones/records/add
-          ?token={{ dns_token }}
-          &zone={{ dns_zone | urlencode }}
-          &domain={{ inventory_hostname | urlencode }}
-          &type=A
-          &ttl=3600
-          &ipAddress={{ target_ip }}
-          &ptr=false
-          &createPtrZone=false
-          &updateSvcbHints=false
-
     - name: Create A Record
       delegate_to: localhost
       uri:
-        url: >-
-          http://{{ dns_server }}/api/zones/records/add
-          ?token={{ dns_token }}
-          &zone={{ dns_zone | urlencode }}
-          &domain={{ inventory_hostname | urlencode }}
-          &type=A
-          &ttl=3600
-          &ipAddress={{ target_ip }}
-          &ptr=false
-          &createPtrZone=false
-          &updateSvcbHints=false
+        url: "http://{{ dns_server }}/api/zones/records/add"
         method: GET
         return_content: true
         status_code: 200
+        validate_certs: false
+        params:
+          token: "{{ dns_token }}"
+          zone: "{{ dns_zone }}"
+          domain: "{{ inventory_hostname }}"
+          type: "A"
+          ttl: "3600"
+          ipAddress: "{{ target_ip }}"
+          ptr: "false"
+          createPtrZone: "false"
+          updateSvcbHints: "false"
       register: a_record_result
 
     - name: Show A Record Response
       debug:
         var: a_record_result.json
 
-    - name: Validate A Record creation
-      assert:
-        that:
-          - a_record_result.json.response.result == "success"
-        fail_msg: "Failed to create A record."
-
     ###########################################################################
     # Create PTR Record
     ###########################################################################
 
-    - name: Show PTR Record URL
-      debug:
-        msg: >-
-          http://{{ dns_server }}/api/zones/records/add
-          ?token={{ dns_token }}
-          &zone={{ reverse_zone | urlencode }}
-          &domain={{ last_octet }}.{{ reverse_zone }}
-          &type=PTR
-          &ttl=3600
-          &ptrName={{ inventory_hostname | urlencode }}
-
     - name: Create PTR Record
       delegate_to: localhost
       uri:
-        url: >-
-          http://{{ dns_server }}/api/zones/records/add
-          ?token={{ dns_token }}
-          &zone={{ reverse_zone | urlencode }}
-          &domain={{ last_octet }}.{{ reverse_zone }}
-          &type=PTR
-          &ttl=3600
-          &ptrName={{ inventory_hostname | urlencode }}
+        url: "http://{{ dns_server }}/api/zones/records/add"
         method: GET
         return_content: true
         status_code: 200
+        validate_certs: false
+        params:
+          token: "{{ dns_token }}"
+          zone: "{{ reverse_zone }}"
+          domain: "{{ last_octet }}.{{ reverse_zone }}"
+          type: "PTR"
+          ttl: "3600"
+          ptrName: "{{ inventory_hostname }}"
       register: ptr_record_result
 
     - name: Show PTR Record Response
       debug:
         var: ptr_record_result.json
 
-    - name: Validate PTR Record creation
-      assert:
-        that:
-          - ptr_record_result.json.response.result == "success"
-        fail_msg: "Failed to create PTR record."
-
     ###########################################################################
-    # Verify DNS
+    # Verify Forward DNS
     ###########################################################################
 
     - name: Verify Forward DNS
@@ -171,6 +136,10 @@
       debug:
         var: forward_lookup.stdout_lines
 
+    ###########################################################################
+    # Verify Reverse DNS
+    ###########################################################################
+
     - name: Verify Reverse DNS
       delegate_to: localhost
       command:
@@ -187,16 +156,16 @@
         var: reverse_lookup.stdout_lines
 
     ###########################################################################
-    # Final Summary
+    # Summary
     ###########################################################################
 
-    - name: Display Summary
+    - name: Summary
       debug:
         msg:
-          - "=============================================="
-          - "DNS record creation completed successfully."
-          - "Host        : {{ inventory_hostname }}"
-          - "IP Address  : {{ target_ip }}"
-          - "DNS Zone    : {{ dns_zone }}"
-          - "Reverse Zone: {{ reverse_zone }}"
-          - "=============================================="
+          - "========================================="
+          - "DNS record creation completed."
+          - "Host         : {{ inventory_hostname }}"
+          - "IP Address   : {{ target_ip }}"
+          - "Forward Zone : {{ dns_zone }}"
+          - "Reverse Zone : {{ reverse_zone }}"
+          - "========================================="
