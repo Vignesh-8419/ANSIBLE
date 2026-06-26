@@ -1,0 +1,16 @@
+- name: Disable SELinux and reboot
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Disable SELinux immediately
+      raw: setenforce 0 || true
+
+    - name: Disable SELinux permanently
+      raw: sed -i 's/^SELINUX=.*/SELINUX=disabled/' /etc/selinux/config
+
+    - name: Reboot
+      reboot:
+        reboot_timeout: 600
