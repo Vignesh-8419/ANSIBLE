@@ -67,25 +67,15 @@
     ###########################################################################
     # Create A Record
     ###########################################################################
-
+	
     - name: Create A Record
       delegate_to: localhost
       uri:
-        url: "http://{{ dns_server }}/api/zones/records/add"
+        url: "http://{{ dns_server }}/api/zones/records/add?token={{ dns_token }}&zone={{ dns_zone | urlencode }}&domain={{ inventory_hostname | urlencode }}&type=A&ttl=3600&ipAddress={{ target_ip }}&ptr=false&createPtrZone=false&updateSvcbHints=false"
         method: GET
         return_content: true
-        status_code: 200
         validate_certs: false
-        params:
-          token: "{{ dns_token }}"
-          zone: "{{ dns_zone }}"
-          domain: "{{ inventory_hostname }}"
-          type: "A"
-          ttl: "3600"
-          ipAddress: "{{ target_ip }}"
-          ptr: "false"
-          createPtrZone: "false"
-          updateSvcbHints: "false"
+        status_code: 200
       register: a_record_result
 
     - name: Show A Record Response
@@ -99,18 +89,11 @@
     - name: Create PTR Record
       delegate_to: localhost
       uri:
-        url: "http://{{ dns_server }}/api/zones/records/add"
+        url: "http://{{ dns_server }}/api/zones/records/add?token={{ dns_token }}&zone={{ reverse_zone | urlencode }}&domain={{ last_octet }}.{{ reverse_zone }}&type=PTR&ttl=3600&ptrName={{ inventory_hostname | urlencode }}"
         method: GET
         return_content: true
-        status_code: 200
         validate_certs: false
-        params:
-          token: "{{ dns_token }}"
-          zone: "{{ reverse_zone }}"
-          domain: "{{ last_octet }}.{{ reverse_zone }}"
-          type: "PTR"
-          ttl: "3600"
-          ptrName: "{{ inventory_hostname }}"
+        status_code: 200
       register: ptr_record_result
 
     - name: Show PTR Record Response
