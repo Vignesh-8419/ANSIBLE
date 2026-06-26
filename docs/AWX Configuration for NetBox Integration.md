@@ -502,39 +502,49 @@ EOF
 ## el8 Patching
 
 ```text
-awx-manage shell <<EOF
-from awx.main.models import Inventory, Project, JobTemplate
+awx-manage shell <<'EOF'
+from awx.main.models import Inventory, Project, JobTemplate, Credential
 
-# 1. Fetch existing dependencies
+# Dependencies
 try:
     project = Project.objects.get(name="Inventory-Git-Repo")
     inventory = Inventory.objects.get(name="rocky-8-servers")
-except (Project.DoesNotExist, Inventory.DoesNotExist) as e:
+    credential = Credential.objects.get(name="Linux Root Credential")
+except (Project.DoesNotExist,
+        Inventory.DoesNotExist,
+        Credential.DoesNotExist) as e:
     print(f"Error: Missing required dependency. {e}")
     exit(1)
 
-# 2. Create or Update the Job Template
+# Create or Update Job Template
 jt, created = JobTemplate.objects.get_or_create(
     name="Offline_Patching_el8",
     defaults={
         "project": project,
         "inventory": inventory,
-        "playbook": "Offline_Patching_el8.yml",
-        "ask_inventory_on_launch": False,  # As per Step 6 (Hardcoded option)
+        "playbook": "offline_patching_el8.yml",
+        "ask_inventory_on_launch": False,
         "ask_limit_on_launch": True
     }
 )
 
-# 3. Update attributes if it already existed
 if not created:
     jt.project = project
     jt.inventory = inventory
-    jt.playbook = "Offline_Patching_el8.yml"
+    jt.playbook = "offline_patching_el8.yml"
     jt.ask_inventory_on_launch = False
     jt.ask_limit_on_launch = True
     jt.save()
 
-print(f"Job Template 'Offline_Patching_el8' {'created' if created else 'updated'} successfully.")
+# Assign Credential
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+print(
+    f"Job Template 'Offline_Patching_el8' "
+    f"{'created' if created else 'updated'} successfully."
+)
+print(f"Credential assigned: {credential.name}")
 EOF
 ```
 
