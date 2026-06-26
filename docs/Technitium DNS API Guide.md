@@ -323,3 +323,148 @@ Expected Result:
 * Internet domains resolve successfully.
 * DNS queries use `192.168.253.1:53`.
 * Technitium Web Console and REST API are available at `http://192.168.253.1:5380`.
+
+# Windows Firewall Configuration for Technitium DNS (Port 5380)
+
+## Purpose
+
+Allow remote systems such as AWX, Ansible, Foreman, and Linux servers to access the Technitium DNS Web API running on TCP port **5380**.
+
+---
+
+# 1. Verify Technitium is Listening
+
+Open **PowerShell** as **Administrator** and run:
+
+```powershell
+netstat -ano | findstr :5380
+```
+
+Expected output:
+
+```text
+TCP    0.0.0.0:5380     0.0.0.0:0      LISTENING
+TCP    [::]:5380        [::]:0         LISTENING
+```
+
+This confirms that Technitium DNS is listening on all network interfaces.
+
+---
+
+# 2. Check Existing Firewall Rule
+
+Run:
+
+```powershell
+Get-NetFirewallRule -Enabled True |
+Get-NetFirewallPortFilter |
+Where-Object {$_.LocalPort -eq "5380"}
+```
+
+If no rule is returned, create one.
+
+---
+
+# 3. Create Windows Firewall Rule
+
+Open **PowerShell** as **Administrator** and execute:
+
+```powershell
+New-NetFirewallRule `
+    -DisplayName "Technitium DNS Web API" `
+    -Direction Inbound `
+    -Protocol TCP `
+    -LocalPort 5380 `
+    -Action Allow
+```
+
+Expected output:
+
+```text
+Name                          : {GUID}
+DisplayName                   : Technitium DNS Web API
+Enabled                       : True
+Direction                     : Inbound
+Action                        : Allow
+```
+
+---
+
+# 4. Verify Firewall Rule
+
+```powershell
+Get-NetFirewallRule -DisplayName "Technitium DNS Web API"
+```
+
+or
+
+```powershell
+Get-NetFirewallRule |
+Where-Object DisplayName -like "*Technitium*"
+```
+
+---
+
+# 5. Test Port from Windows
+
+```powershell
+Test-NetConnection 127.0.0.1 -Port 5380
+```
+
+Expected:
+
+```text
+TcpTestSucceeded : True
+```
+
+Also test the configured IP:
+
+```powershell
+Test-NetConnection 192.168.253.1 -Port 5380
+```
+
+Expected:
+
+```text
+TcpTestSucceeded : True
+```
+
+---
+
+# 6. Test from Linux / AWX
+
+From the Ansible or AWX server:
+
+```bash
+curl -v http://192.168.253.1:5380
+```
+
+or
+
+```bash
+nc -vz 192.168.253.1 5380
+```
+
+Successful output indicates that the Windows firewall is allowing inbound connections.
+
+---
+
+# 7. Verify API Access
+
+```bash
+curl "http://192.168.253.1:5380/api/zones/list?token=<API_TOKEN>"
+```
+
+A JSON response confirms that the Technitium DNS Web API is reachable.
+
+---
+
+# Summary
+
+* Verified Technitium DNS listens on TCP port **5380**.
+* Created an inbound Windows Firewall rule allowing TCP **5380**.
+* Confirmed firewall rule is enabled.
+* Tested local connectivity using `Test-NetConnection`.
+* Verified remote access from Linux/AWX using `curl` or `nc`.
+* Confirmed the Technitium DNS Web API is accessible over the network.
+
