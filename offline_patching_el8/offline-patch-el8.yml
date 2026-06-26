@@ -1,0 +1,4 @@
+---
+- import_playbook: bootstrap-rocky-8-python.yml
+
+- import_playbook: Offline_Patching_el8.yml
