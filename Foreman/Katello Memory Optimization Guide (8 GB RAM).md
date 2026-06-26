@@ -389,7 +389,7 @@ systemctl cat foreman
 
 ---
 
-# Step 7 - Optimize Linux Kernel Memory Management
+# Step 8 - Optimize Linux Kernel Memory Management
 
 To improve memory utilization and reduce unnecessary swapping, create a custom sysctl configuration.
 
