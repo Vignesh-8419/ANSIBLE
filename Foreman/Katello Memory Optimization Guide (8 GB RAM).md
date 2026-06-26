@@ -387,6 +387,65 @@ systemctl cat foreman
 
 ---
 
+---
+
+# Step 7 - Optimize Linux Kernel Memory Management
+
+To improve memory utilization and reduce unnecessary swapping, create a custom sysctl configuration.
+
+Create the configuration file:
+
+```bash
+cat > /etc/sysctl.d/99-memory.conf <<EOF
+vm.swappiness = 10
+vm.vfs_cache_pressure = 50
+EOF
+```
+
+Apply the settings:
+
+```bash
+sysctl --system
+```
+
+Expected Output:
+
+```text
+* Applying /etc/sysctl.d/99-memory.conf ...
+vm.swappiness = 10
+vm.vfs_cache_pressure = 50
+```
+
+Verify the settings:
+
+```bash
+cat /proc/sys/vm/swappiness
+cat /proc/sys/vm/vfs_cache_pressure
+```
+
+Expected Output:
+
+```text
+10
+50
+```
+
+### Parameter Description
+
+| Parameter | Value | Description |
+|-----------|------:|-------------|
+| `vm.swappiness` | **10** | Reduces the kernel's tendency to swap application memory to disk. |
+| `vm.vfs_cache_pressure` | **50** | Retains inode and directory cache longer, improving filesystem performance. |
+
+**Benefits**
+
+- Reduces unnecessary swap usage
+- Keeps active application pages in RAM
+- Improves filesystem cache efficiency
+- Provides better overall performance for Foreman/Katello servers with limited memory
+
+---
+
 # Final Result
 
 The Foreman/Katello server has been successfully optimized for an **8 GB RAM** environment.
