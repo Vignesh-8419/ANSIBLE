@@ -4,7 +4,7 @@
   gather_facts: false
 
   vars:
-    dns_server: "192.168.253.1"
+    dns_server: "192.168.253.1:5380"
     dns_token: "14759e1e000567381175d02ef3e137d2847e6dd637e5a74bcdb726e24dabaac7"
 
   tasks:
