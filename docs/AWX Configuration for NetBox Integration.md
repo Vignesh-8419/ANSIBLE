@@ -518,7 +518,7 @@ except (Project.DoesNotExist,
 
 # Create or Update Job Template
 jt, created = JobTemplate.objects.get_or_create(
-    name="Offline_Patching_el7",
+    name="Offline_Patching_el8",
     defaults={
         "project": project,
         "inventory": inventory,
