@@ -89,3 +89,9 @@ curl -L -o /root/netbox-kernel-compliance.sh \
 chmod +x /root/netbox-kernel-compliance.sh && \
 (crontab -l 2>/dev/null | grep -v netbox-kernel-compliance.sh; echo "*/2 * * * * /root/netbox-kernel-compliance.sh >> /var/log/netbox-kernel-compliance.log 2>&1") | crontab -
 ```
+
+```text
+curl -L -o kernel_tuning_awx.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/kernel_tuning_awx.sh?$(date +%s)" && \
+chmod +x kernel_tuning_awx.sh
+```
