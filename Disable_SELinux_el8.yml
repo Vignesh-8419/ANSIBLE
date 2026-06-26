@@ -1,25 +1,24 @@
 - name: Disable SELinux and reboot
   hosts: all
-  become: true
+  gather_facts: false
+  become: yes
 
   tasks:
     - name: Disable SELinux immediately
-      command: setenforce 0
-      ignore_errors: yes
-      when: ansible_selinux.status == "enabled"
+      raw: setenforce 0 || true
 
-    - name: Ensure SELINUX=disabled in /etc/selinux/config
-      lineinfile:
-        path: /etc/selinux/config
-        regexp: '^SELINUX='
-        line: 'SELINUX=disabled'
-      register: selinuxreport
+    - name: Disable SELinux permanently
+      raw: sed -i 's/^SELINUX=.*/SELINUX=disabled/' /etc/selinux/config
 
-    - name: Reboot to apply SELinux changes
-      reboot:
-        msg: "Rebooting to apply SELinux disabled"
-        connect_timeout: 5
-        reboot_timeout: 600
-        pre_reboot_delay: 5
-        post_reboot_delay: 30
-      when: selinuxreport.changed
+    - name: Schedule reboot in 1 minute
+      raw: shutdown -r +1 "Reboot initiated by Ansible"
+
+    - name: Wait for reboot to complete
+      delegate_to: localhost
+      become: false
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: 22
+        delay: 90
+        timeout: 300
+        state: started
