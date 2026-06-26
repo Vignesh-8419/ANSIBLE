@@ -212,8 +212,8 @@ hammer --username admin --password 'zqs977dXzqfEvTML' os list
 ## PXEGrub2 Template IDs
 
 ```text
-174 = PXEGrub2 RockyOS UEFI Static Kickstart
-175 = PXEGrub2 CentOS UEFI Static Kickstart
+173 = PXEGrub2 RockyOS UEFI Static Kickstart
+172 = PXEGrub2 CentOS UEFI Static Kickstart
 ```
 
 ```text
@@ -225,7 +225,7 @@ hammer --username admin --password 'zqs977dXzqfEvTML' template list | grep -i UE
 ```bash
 hammer --username admin --password 'zqs977dXzqfEvTML' os set-default-template \
 --id 2 \
---provisioning-template-id 175
+--provisioning-template-id 173
 ```
 
 ### Rocky Linux 8.10
@@ -233,7 +233,7 @@ hammer --username admin --password 'zqs977dXzqfEvTML' os set-default-template \
 ```bash
 hammer --username admin --password 'zqs977dXzqfEvTML' os set-default-template \
 --id 3 \
---provisioning-template-id 174
+--provisioning-template-id 172
 ```
 
 ---
