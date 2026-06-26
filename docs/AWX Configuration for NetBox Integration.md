@@ -670,7 +670,8 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "CENTOS-VM-TEMPLATE-WF"
 
 JT1_NAME = "CENTOS-VM-TEMPLATE"
-JT2_NAME = "Offline_Patching_el7"
+JT2_NAME = "Disable_SELinux_el7"
+JT3_NAME = "Offline_Patching_el7"
 
 CREDENTIAL_NAME = "Linux Root Credential"
 INVENTORY_NAME = "centos-07-servers"
@@ -679,6 +680,7 @@ org = Organization.objects.get(name=ORG_NAME)
 
 jt1 = JobTemplate.objects.get(name=JT1_NAME)
 jt2 = JobTemplate.objects.get(name=JT2_NAME)
+jt3 = JobTemplate.objects.get(name=JT3_NAME)
 
 cred = Credential.objects.get(name=CREDENTIAL_NAME)
 inv = Inventory.objects.get(name=INVENTORY_NAME)
@@ -688,13 +690,13 @@ wf, created = WorkflowJobTemplate.objects.get_or_create(
     organization=org
 )
 
-# Clean existing nodes if re-running
+# Remove existing nodes if re-running
 wf.workflow_job_template_nodes.all().delete()
 
 # Default inventory
 wf.inventory = inv
 
-# Enable launch prompts
+# Prompt on launch
 wf.ask_limit_on_launch = True
 wf.ask_credential_on_launch = True
 wf.ask_inventory_on_launch = True
@@ -716,17 +718,35 @@ n2 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt2
 )
 
+n3 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt3
+)
+
 # Success path
 n1.success_nodes.add(n2)
+n2.success_nodes.add(n3)
 
 print(f"Workflow '{wf.name}' created/updated successfully.")
 print(f"Inventory: {inv.name}")
 print(f"Credential: {cred.name}")
 print(f"J1 -> {jt1.name}")
 print(f"J2 -> {jt2.name}")
-print("Prompt on Launch: Inventory = True")
-print("Prompt on Launch: Limit = True")
-print("Prompt on Launch: Credential = True")
+print(f"J3 -> {jt3.name}")
+print()
+print("Execution Order:")
+print(f"  {jt1.name}")
+print("        │")
+print("        ▼")
+print(f"  {jt2.name}")
+print("        │")
+print("        ▼")
+print(f"  {jt3.name}")
+print()
+print("Prompt on Launch:")
+print("  Inventory  = True")
+print("  Limit      = True")
+print("  Credential = True")
 
 EOF
 ```
