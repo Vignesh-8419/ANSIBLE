@@ -147,6 +147,30 @@ get_or_create() {
     fi
 }
 
+# --------------------------------------------------
+# Get Config Context ID
+# --------------------------------------------------
+
+get_context_id() {
+
+    local NAME="$1"
+
+    curl -sk \
+        -H "Authorization: Token $NETBOX_TOKEN" \
+        "$NETBOX_URL/extras/config-contexts/?name=$(urlencode "$NAME")" \
+        | jq -r '.results[0].id // empty'
+}
+
+get_tag_id() {
+
+    local NAME="$1"
+
+    curl -sk \
+        -H "Authorization: Token $NETBOX_TOKEN" \
+        "$NETBOX_URL/extras/tags/" \
+    | jq -r --arg NAME "$NAME" '.results[] | select(.name==$NAME) | .id'
+}
+
 # ---------------- DATA SOURCE ----------------
 echo "How would you like to get server details?"
 echo "1) Fetch automatically via SSH"
@@ -279,6 +303,10 @@ else
     exit 1
     fi
 fi
+
+echo
+read -p "Do you want to assign Tags? (yes/no): " ADD_TAGS
+ADD_TAGS=$(echo "$ADD_TAGS" | tr '[:upper:]' '[:lower:]')
 
 # --------------------------------------------------
 # Manual Mode
@@ -614,6 +642,71 @@ curl -sk -X PATCH \
     \"kernel\": \"$KERNEL\"
   }
 }" | jq .
+
+# --------------------------------------------------
+# Assign Tags
+# --------------------------------------------------
+
+if [[ "$ADD_TAGS" == "yes" || "$ADD_TAGS" == "y" ]]; then
+
+    CLUSTER_NAME=$(curl -sk \
+        -H "Authorization: Token $NETBOX_TOKEN" \
+        "$NETBOX_URL/virtualization/clusters/$CLUSTER_ID/" \
+        | jq -r '.name')
+
+    TAG_IDS=()
+
+    if [[ "$CLUSTER_NAME" == "centos-07-servers" ]]; then
+
+        TAGS=(
+            "centostorocky-context"
+            "patch-context"
+            "pxe-centos-context"
+            "repo-config-context"
+            "vmware-awx-context"
+        )
+
+    elif [[ "$CLUSTER_NAME" == "rocky-8-servers" ]]; then
+
+        TAGS=(
+            "patch-el8-context"
+            "pxe-rockyos-context"
+            "repo-config-context"
+            "vmware-awx-context"
+        )
+
+    else
+
+        TAGS=()
+
+    fi
+
+    for TAG in "${TAGS[@]}"
+    do
+        ID=$(get_tag_id "$TAG")
+
+        if [ -n "$ID" ]; then
+            TAG_IDS+=("$ID")
+            echo "Adding Tag: $TAG"
+        fi
+    done
+
+    if [ ${#TAG_IDS[@]} -gt 0 ]; then
+
+        JSON_TAGS=$(printf '%s\n' "${TAG_IDS[@]}" | jq -R . | jq -s .)
+
+        curl -sk -X PATCH \
+            "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
+            -H "$HDR" \
+            -H "Authorization: Token $NETBOX_TOKEN" \
+            -d "{\"tags\":$JSON_TAGS}" \
+            >/dev/null
+
+        echo "Tags assigned successfully."
+
+    fi
+
+fi
 
 echo "------------------------------------------------"
 echo "✅ Finished! $HOSTNAME is updated."
