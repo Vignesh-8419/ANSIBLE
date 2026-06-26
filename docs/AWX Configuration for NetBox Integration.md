@@ -518,11 +518,11 @@ except (Project.DoesNotExist,
 
 # Create or Update Job Template
 jt, created = JobTemplate.objects.get_or_create(
-    name="Offline_Patching_el8",
+    name="Offline_Patching_el7",
     defaults={
         "project": project,
         "inventory": inventory,
-        "playbook": "Offline_Patching_el8.yml",
+        "playbook": "offline_patching_el8/offline-patch-el8.yml",
         "ask_inventory_on_launch": False,
         "ask_limit_on_launch": True
     }
@@ -531,7 +531,7 @@ jt, created = JobTemplate.objects.get_or_create(
 if not created:
     jt.project = project
     jt.inventory = inventory
-    jt.playbook = "Offline_Patching_el8.yml"
+    jt.playbook = "offline_patching_el8/offline-patch-el8.yml"
     jt.ask_inventory_on_launch = False
     jt.ask_limit_on_launch = True
     jt.save()
