@@ -1,0 +1,190 @@
+---
+- name: Offline Infrastructure Patching Orchestrator
+  hosts: all
+  become: yes
+  gather_facts: no
+  any_errors_fatal: false
+
+  vars:
+    backup_dir_name: "backup_repos_original"
+
+  pre_tasks:
+
+    - name: Load NetBox Context
+      set_fact:
+        nb_ctx: "{{ config_context[0] }}"
+
+    - name: Build Repository Variables
+      set_fact:
+        repo_url: "{{ nb_ctx.httpd_server_url | regex_replace('/$','') }}"
+        rocky8_baseos: "{{ (nb_ctx.repositories | selectattr('id','equalto','rocky8-baseos') | first).folder }}"
+        rocky8_appstream: "{{ (nb_ctx.repositories | selectattr('id','equalto','rocky8-appstream') | first).folder }}"
+        rocky8_installed_rhel: "{{ (nb_ctx.repositories | selectattr('id','equalto','rocky8-rhel-installed') | first).folder }}"
+
+  tasks:
+
+    - name: Display NetBox Context
+      debug:
+        msg:
+          - "Repository URL : {{ repo_url }}"
+          - "BaseOS Repo    : {{ rocky8_baseos }}"
+          - "AppStream Repo : {{ rocky8_appstream }}"
+          - "Installed Repo : {{ rocky8_installed_rhel }}"
+
+    - name: Display Target Environment Info
+      debug:
+        msg: "Processing Agent Node Workflow for {{ inventory_hostname }}"
+
+    - name: Verify DNS Resolution
+      shell: |
+        getent hosts {{ repo_url | regex_replace('^https?://','') | regex_replace('/.*$','') }}
+      register: dns_check
+      changed_when: false
+      failed_when: dns_check.rc != 0
+
+    - name: Verify BaseOS Repository Metadata
+      uri:
+        url: "{{ repo_url }}/{{ rocky8_baseos }}/repodata/repomd.xml"
+        method: GET
+        status_code: 200
+        timeout: 30
+
+    - name: Verify AppStream Repository Metadata
+      uri:
+        url: "{{ repo_url }}/{{ rocky8_appstream }}/repodata/repomd.xml"
+        method: GET
+        status_code: 200
+        timeout: 30
+
+    - name: Verify Installed RHEL Repository Metadata
+      uri:
+        url: "{{ repo_url }}/{{ rocky8_installed_rhel }}/repodata/repomd.xml"
+        method: GET
+        status_code: 200
+        timeout: 30
+
+    - name: Create Repository Backup Directory
+      file:
+        path: "/etc/yum.repos.d/{{ backup_dir_name }}"
+        state: directory
+        mode: "0755"
+
+    - name: Find Existing Repository Files
+      find:
+        paths: /etc/yum.repos.d
+        patterns: "*.repo"
+        file_type: file
+        depth: 1
+      register: found_repos
+
+    - name: Backup Existing Repository Files
+      command:
+        cmd: "mv {{ item.path }} /etc/yum.repos.d/{{ backup_dir_name }}/"
+      loop: "{{ found_repos.files }}"
+      when: found_repos.matched > 0
+
+    - block:
+
+        - name: Create Temporary BaseOS Repository
+          copy:
+            dest: /etc/yum.repos.d/rocky8-baseos.repo
+            mode: "0644"
+            content: |
+              [rocky8-baseos]
+              name=Rocky Linux 8 BaseOS
+              baseurl={{ repo_url }}/{{ rocky8_baseos }}
+              enabled=1
+              gpgcheck=0
+              sslverify=0
+
+        - name: Create Temporary AppStream Repository
+          copy:
+            dest: /etc/yum.repos.d/rocky8-appstream.repo
+            mode: "0644"
+            content: |
+              [rocky8-appstream]
+              name=Rocky Linux 8 AppStream
+              baseurl={{ repo_url }}/{{ rocky8_appstream }}
+              enabled=1
+              gpgcheck=0
+              sslverify=0
+
+        - name: Create Temporary Installed RHEL Repository
+          copy:
+            dest: /etc/yum.repos.d/rocky8-installed-rhel.repo
+            mode: "0644"
+            content: |
+              [rocky8-installed-rhel]
+              name=Rocky Linux 8 Installed RHEL Packages
+              baseurl={{ repo_url }}/{{ rocky8_installed_rhel }}
+              enabled=1
+              gpgcheck=0
+              sslverify=0
+
+        - name: Clean DNF Cache
+          command: dnf clean all
+
+        - name: Build DNF Cache
+          shell: |
+            dnf makecache \
+              --disablerepo='*' \
+              --enablerepo=rocky8-baseos,rocky8-appstream,rocky8-installed-rhel
+
+        - name: Execute Operating System Patching
+          shell: |
+            dnf update -y \
+              --disablerepo='*' \
+              --enablerepo=rocky8-baseos,rocky8-appstream,rocky8-installed-rhel \
+              --allowerasing \
+              --nobest
+          register: dnf_shell_output
+
+        - name: Display Patch Output
+          debug:
+            var: dnf_shell_output.stdout_lines
+
+        - name: Determine Whether Updates Were Installed
+          set_fact:
+            updates_installed: "{{ 'Nothing to do.' not in dnf_shell_output.stdout }}"
+
+        - name: Reboot If Updates Were Installed
+          reboot:
+            reboot_timeout: 900
+            msg: "Offline patching completed. Rebooting host."
+          when: updates_installed
+
+      rescue:
+
+        - name: Restore Original Repositories After Failure
+          shell: |
+            if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
+              mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
+              rmdir /etc/yum.repos.d/{{ backup_dir_name }} 2>/dev/null || true
+            fi
+
+        - name: Fail Playbook
+          fail:
+            msg: "Offline patching failed. Original repositories restored."
+
+      always:
+
+        - name: Remove Temporary Repository Files
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /etc/yum.repos.d/rocky8-baseos.repo
+            - /etc/yum.repos.d/rocky8-appstream.repo
+            - /etc/yum.repos.d/rocky8-installed-rhel.repo
+
+        - name: Restore Original Repository Files
+          shell: |
+            if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
+              mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
+              rmdir /etc/yum.repos.d/{{ backup_dir_name }} 2>/dev/null || true
+            fi
+          changed_when: true
+
+        - name: Final DNF Cleanup
+          command: dnf clean all
+          ignore_errors: true
