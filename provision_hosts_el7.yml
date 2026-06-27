@@ -15,19 +15,21 @@
     host_root_pass: "Root@123"
 
     cluster_name: "centos-07-servers"
+
+    # Hosts to create
     target_servers:
       - cent-07-03
       - cent-07-04
 
-    # ✅ Foreman IDs
+    # Foreman IDs
     org_id: 1
     loc_id: 2
-    hostgroup_id: 1        # ✅ VGS HOSTS CENTOS 7 (UEFI-ready)
+    hostgroup_id: 1
 
   tasks:
 
     ###########################################################################
-    # 1. FETCH NETBOX DATA
+    # Get devices from NetBox
     ###########################################################################
 
     - name: Get devices from NetBox cluster
@@ -39,18 +41,37 @@
         validate_certs: no
       register: netbox_devices
 
-    - name: Filter only selected servers
+    - name: Show devices returned by NetBox
+      debug:
+        msg: "{{ netbox_devices.json.results | map(attribute='name') | list }}"
+
+    ###########################################################################
+    # Filter selected hosts
+    ###########################################################################
+
+    - name: Initialize filtered device list
       set_fact:
-        filtered_devices: >-
-          {{
-            netbox_devices.json.results
-            | selectattr(
-                'name',
-                'match',
-                '^(' ~ (target_servers | join('|')) ~ ')(\\.|$)'
-              )
-            | list
-          }}
+        filtered_devices: []
+
+    - name: Filter devices by hostname
+      set_fact:
+        filtered_devices: "{{ filtered_devices + [item] }}"
+      loop: "{{ netbox_devices.json.results }}"
+      when:
+        - item.name.split('.')[0] in target_servers
+
+    - name: Show filtered devices
+      debug:
+        var: filtered_devices
+
+    - name: Fail if no hosts matched
+      fail:
+        msg: "No matching hosts found in NetBox."
+      when: filtered_devices | length == 0
+
+    ###########################################################################
+    # Get interfaces
+    ###########################################################################
 
     - name: Get interfaces from NetBox
       uri:
@@ -60,6 +81,10 @@
           Authorization: "Token {{ netbox_token }}"
         validate_certs: no
       register: netbox_interfaces
+
+    ###########################################################################
+    # Get IP addresses
+    ###########################################################################
 
     - name: Get IP addresses from NetBox
       uri:
@@ -71,31 +96,40 @@
       register: netbox_ips
 
     ###########################################################################
-    # 2. BUILD HOST INFO
+    # Build host list
     ###########################################################################
+
+    - name: Initialize host info
+      set_fact:
+        host_info: []
 
     - name: Build host info list
       set_fact:
-        host_info: "{{ host_info | default([]) + [ {
+        host_info: "{{ host_info + [ {
           'name': item.name,
           'ip': (
-              netbox_ips.json.results
-              | selectattr('assigned_object.device.name','equalto',item.name)
-              | map(attribute='address')
-              | map('regex_replace','/.*$','')
-              | first | default('')
+            netbox_ips.json.results
+            | selectattr('assigned_object.device.name','equalto',item.name)
+            | map(attribute='address')
+            | map('regex_replace','/.*$','')
+            | first
+            | default('')
           ),
           'mac': (
-              netbox_interfaces.json.results
-              | selectattr('device.name','equalto',item.name)
-              | map(attribute='mac_address')
-              | first | default('')
+            netbox_interfaces.json.results
+            | selectattr('device.name','equalto',item.name)
+            | map(attribute='mac_address')
+            | first
+            | default('')
           )
         } ] }}"
       loop: "{{ filtered_devices }}"
 
+    - debug:
+        var: host_info
+
     ###########################################################################
-    # 3. CREATE HOST IN FOREMAN (UEFI + Hostgroup)
+    # Create hosts in Foreman
     ###########################################################################
 
     - name: Create host in Foreman
@@ -106,19 +140,21 @@
         password: "{{ foreman_password }}"
         force_basic_auth: yes
         validate_certs: no
-        status_code: [200, 201]
+        status_code:
+          - 200
+          - 201
         headers:
-          Content-Type: "application/json"
+          Content-Type: application/json
         body_format: json
         body:
           host:
             name: "{{ item.name }}"
-            hostgroup_id: "{{ hostgroup_id }}"   # ✅ UEFI + OS + Medium + Ptable inherited
+            hostgroup_id: "{{ hostgroup_id }}"
             organization_id: "{{ org_id }}"
             location_id: "{{ loc_id }}"
             managed: true
             build: true
-            pxe_loader: "Grub2 UEFI"             # ✅ Ensures UEFI boot
+            pxe_loader: "Grub2 UEFI"
             root_pass: "{{ host_root_pass }}"
             interfaces_attributes:
               - type: interface
