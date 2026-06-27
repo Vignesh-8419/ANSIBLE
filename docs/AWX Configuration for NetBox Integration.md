@@ -874,6 +874,131 @@ print("  Credential = True")
 EOF
 ```
 
+# EL7 Job Template
+
+```python
+awx-manage shell <<'EOF'
+from awx.main.models import Inventory, Project, JobTemplate, Credential
+
+try:
+    project = Project.objects.get(name="Inventory-Git-Repo")
+    inventory = Inventory.objects.get(name="centos-07-servers")
+    credential = Credential.objects.get(name="Linux Root Credential")
+except (Project.DoesNotExist,
+        Inventory.DoesNotExist,
+        Credential.DoesNotExist) as e:
+    print(f"Error: {e}")
+    exit(1)
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="Subscription_Patching_EL7",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "subscription_patching/patch-el7.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": True
+    }
+)
+
+jt.project = project
+jt.inventory = inventory
+jt.playbook = "subscription_patching/patch-el7.yml"
+jt.ask_inventory_on_launch = False
+jt.ask_limit_on_launch = True
+
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+survey_spec = {
+    "name": "target_hosts",
+    "description": "CentOS 7 Subscription Patching",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Enter host or host pattern",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "cent-07-*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.survey_enabled = True
+jt.survey_spec = survey_spec
+
+jt.save()
+
+print(f"Job Template '{jt.name}' {'created' if created else 'updated'} successfully.")
+EOF
+```
+
+# EL8 Job Template
+
+```python
+awx-manage shell <<'EOF'
+from awx.main.models import Inventory, Project, JobTemplate, Credential
+
+try:
+    project = Project.objects.get(name="Inventory-Git-Repo")
+    inventory = Inventory.objects.get(name="rocky-8-servers")
+    credential = Credential.objects.get(name="Linux Root Credential")
+except (Project.DoesNotExist,
+        Inventory.DoesNotExist,
+        Credential.DoesNotExist) as e:
+    print(f"Error: {e}")
+    exit(1)
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="Subscription_Patching_EL8",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "subscription_patching/patch-el8.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": True
+    }
+)
+
+jt.project = project
+jt.inventory = inventory
+jt.playbook = "subscription_patching/patch-el8.yml"
+jt.ask_inventory_on_launch = False
+jt.ask_limit_on_launch = True
+
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+survey_spec = {
+    "name": "target_hosts",
+    "description": "Rocky Linux 8 Subscription Patching",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Enter host or host pattern",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-08-*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.survey_enabled = True
+jt.survey_spec = survey_spec
+
+jt.save()
+
+print(f"Job Template '{jt.name}' {'created' if created else 'updated'} successfully.")
+EOF
+```
+
+
 ---
 
 # Step 6 - Configure Inventory Prompt
