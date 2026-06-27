@@ -291,22 +291,55 @@ then
 fi
 
 # ----------------------------------------------------------
-# Update MAC Address
+# Update/Create MAC Address (NetBox 4.x)
 # ----------------------------------------------------------
 
-if [ "$NB_MAC" != "$MAC" ]
-then
-    echo "Updating MAC Address..."
+echo "Checking MAC Address..."
 
-    curl -sk -X PATCH \
-    "$NETBOX_URL/dcim/interfaces/$NB_IFACE_ID/" \
+MAC_INFO=$(curl -sk \
+-H "Authorization: Token $NETBOX_TOKEN" \
+"$NETBOX_URL/dcim/mac-addresses/?assigned_object_type=dcim.interface&assigned_object_id=$NB_IFACE_ID")
+
+MAC_ID=$(echo "$MAC_INFO" | jq -r '.results[0].id // empty')
+NB_MAC=$(echo "$MAC_INFO" | jq -r '.results[0].mac_address // empty')
+
+echo "NetBox MAC : $NB_MAC"
+echo "Linux MAC  : $MAC"
+
+if [ -z "$MAC_ID" ]; then
+
+    echo "Creating MAC Address..."
+
+    curl -sk -X POST \
+    "$NETBOX_URL/dcim/mac-addresses/" \
     -H "Authorization: Token $NETBOX_TOKEN" \
     -H "Content-Type: application/json" \
     -d "{
-        \"mac_address\": \"$MAC\"
+      \"mac_address\":\"$MAC\",
+      \"assigned_object_type\":\"dcim.interface\",
+      \"assigned_object_id\":$NB_IFACE_ID
+    }" >/dev/null
+
+    echo "MAC Address Created"
+
+elif [ "$NB_MAC" != "$MAC" ]; then
+
+    echo "Updating MAC Address..."
+
+    curl -sk -X PATCH \
+    "$NETBOX_URL/dcim/mac-addresses/$MAC_ID/" \
+    -H "Authorization: Token $NETBOX_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"mac_address\":\"$MAC\"
     }" >/dev/null
 
     echo "MAC Address Updated"
+
+else
+
+    echo "MAC Address Already Up-to-date"
+
 fi
 
 # ----------------------------------------------------------
