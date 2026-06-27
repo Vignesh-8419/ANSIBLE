@@ -375,16 +375,14 @@ https://192.168.253.143/api/extras/config-contexts/ \
 # Step 9 centos-patch-context
 
 ```bash
-curl -sk -X POST \
+curl -X POST -k \
 -H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
 -H "Content-Type: application/json" \
 https://192.168.253.143/api/extras/config-contexts/ \
 -d '{
     "name": "centos-patch-context",
     "weight": 1000,
-    "is_active": true,
-    "description": "CentOS 7 Offline Patching Variables",
-    "tags": [8],
+    "tags": ["centos-patch-context"],
     "data": {
         "organization": "Default_Organization",
         "activation_key": "centos7-prod-key",
@@ -404,16 +402,14 @@ https://192.168.253.143/api/extras/config-contexts/ \
 # Step 10 rocky-patch-context
 
 ```bash
-curl -sk -X POST \
+curl -X POST -k \
 -H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
 -H "Content-Type: application/json" \
 https://192.168.253.143/api/extras/config-contexts/ \
 -d '{
     "name": "rocky-patch-context",
     "weight": 1000,
-    "is_active": true,
-    "description": "Rocky Linux 8 Offline Patching Variables",
-    "tags": [9],
+    "tags": ["rocky-patch-context"],
     "data": {
         "organization": "Default_Organization",
         "activation_key": "rocky8-prod-key",
@@ -430,6 +426,7 @@ https://192.168.253.143/api/extras/config-contexts/ \
     }
 }'
 ```
+
 
 
 ---
