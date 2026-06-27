@@ -925,6 +925,7 @@ jt.ask_inventory_on_launch = False
 ```text
 awx-manage shell <<'EOF'
 from awx.main.models import Inventory, Project, JobTemplate, Credential
+import json
 
 # Dependencies
 try:
@@ -937,44 +938,44 @@ except (Project.DoesNotExist,
     print(f"Error: Missing required dependency. {e}")
     exit(1)
 
+# Create or Update Job Template
 jt, created = JobTemplate.objects.get_or_create(
     name="provision_hosts_el7",
     defaults={
         "project": project,
         "inventory": inventory,
-        "playbook": "provision_hosts_el7.yml",
+        "playbook": "provision_hosts_el7/Foreman_provision_hosts_el7.yml",
         "ask_inventory_on_launch": False,
-        "ask_limit_on_launch": False,
-        "limit": "localhost",
+        "ask_limit_on_launch": True,
+        "limit": "localhost"
     }
 )
 
-jt.project = project
-jt.inventory = inventory
-jt.playbook = "provision_hosts_el7.yml"
-jt.ask_inventory_on_launch = False
-jt.ask_limit_on_launch = False
-jt.limit = "localhost"
+if not created:
+    jt.project = project
+    jt.inventory = inventory
+    jt.playbook = "provision_hosts_el7/Foreman_provision_hosts_el7.yml"
+    jt.ask_inventory_on_launch = False
+    jt.ask_limit_on_launch = True
+    jt.limit = "localhost"
 
+# Assign Credential
 jt.save()
-
 jt.credentials.clear()
 jt.credentials.add(credential)
 
+# Survey Specification
 survey_spec = {
-    "name": "Provision Hosts",
-    "description": "Specify NetBox host short names to provision.",
+    "name": "target_hosts",
+    "description": "Specify target hosts/group to provision.",
     "spec": [
         {
             "type": "text",
             "question_name": "Target Hosts",
-            "question_description": (
-                "Enter NetBox short hostnames separated by commas.\n"
-                "Example: cent-07-03 or cent-07-03,cent-07-04"
-            ),
+            "question_description": "Inventory host/group to run against",
             "variable": "target_hosts",
             "required": True,
-            "default": "cent-07-03",
+            "default": "localhost",
             "min": 1,
             "max": 1024
         }
@@ -990,9 +991,8 @@ print(
     f"{'created' if created else 'updated'} successfully."
 )
 print(f"Credential assigned: {credential.name}")
-print("Execution Limit : localhost")
-print("Survey Example  : cent-07-03")
-print("Multiple Hosts  : cent-07-03,cent-07-04")
+print("Default Limit: localhost")
+print("Survey 'target_hosts' configured and enabled.")
 EOF
 ```
 
