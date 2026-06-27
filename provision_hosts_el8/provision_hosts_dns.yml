@@ -25,6 +25,14 @@
         validate_certs: no
       register: netbox_ips
 
+    - name: Show inventory hostname
+      debug:
+        var: inventory_hostname
+
+    - name: Show first few NetBox IP entries
+      debug:
+        msg: "{{ netbox_ips.json.results | map(attribute='assigned_object.device.name') | list }}"
+
     - name: Determine target IP
       set_fact:
         target_ip: >-
