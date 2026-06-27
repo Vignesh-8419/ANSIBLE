@@ -203,21 +203,24 @@
           - "ID: {{ item.json.id }}"
       loop: "{{ foreman_hosts_updated.results }}"
         
-    - name: Ensure host is in build mode
+    - name: Enable build mode for existing hosts only
       uri:
-        url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}/setBuild"
+        url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}"
         method: PUT
         user: "{{ foreman_user }}"
         password: "{{ foreman_password }}"
         force_basic_auth: yes
         validate_certs: no
+        headers:
+          Content-Type: application/json
+        body_format: json
+        body:
+          host:
+            build: true
         status_code:
           - 200
-          - 201
+      when: item.json.build == false
       loop: "{{ foreman_hosts_updated.results }}"
-      when:
-        - item.status == 200
-        - item.json.id is defined
 
     - debug:
         var: foreman_create
