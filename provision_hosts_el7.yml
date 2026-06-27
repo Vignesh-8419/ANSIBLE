@@ -41,7 +41,16 @@
 
     - name: Filter only selected servers
       set_fact:
-        filtered_devices: "{{ netbox_devices.json.results | selectattr('name','in',target_servers) | list }}"
+        filtered_devices: >-
+          {{
+            netbox_devices.json.results
+            | selectattr(
+                'name',
+                'match',
+                '^(' ~ (target_servers | join('|')) ~ ')(\\.|$)'
+              )
+            | list
+          }}
 
     - name: Get interfaces from NetBox
       uri:
