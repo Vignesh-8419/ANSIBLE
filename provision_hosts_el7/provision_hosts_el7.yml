@@ -195,7 +195,7 @@
         status_code: 200
       loop: "{{ host_info }}"
       register: foreman_hosts_updated
-	  
+
     - name: Show refreshed Foreman hosts
       debug:
         msg:
