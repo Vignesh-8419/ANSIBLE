@@ -103,7 +103,7 @@
 
     exsi_hostname: "192.168.253.128"
     exsi_username: "root"
-    exsi_password: "Root@123"
+    exsi_password: "admin$22"
 
     validate_certs: false
 
@@ -115,6 +115,10 @@
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: "{{ validate_certs }}"
+      
+        datacenter: "Datacenter"
+        folder: "/Datacenter/vm"
+      
         name: "{{ item.name }}"
         state: poweredoff
       loop: "{{ filtered_devices }}"
@@ -272,6 +276,7 @@
         msg: "{{ item.name }} : {{ kernel_version.results[idx].stdout }}"
       loop: "{{ filtered_devices }}"
       loop_control:
-        index_var: idx	
+        index_var: idx
+		
 
 
