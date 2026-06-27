@@ -1,0 +1,55 @@
+---
+###########################################################################
+# Foreman / Katello
+###########################################################################
+
+organization: "Default_Organization"
+
+activation_key: "rocky8-prod-key"
+
+katello_ca_url: "http://rocky-08-01.vgs.com/pub/katello-ca-consumer-latest.noarch.rpm"
+
+###########################################################################
+# Temporary Repository URLs
+###########################################################################
+
+repo_baseos: "http://192.168.253.136/repo/rocky8/BaseOS"
+
+repo_appstream: "http://192.168.253.136/repo/rocky8/Appstream"
+
+repo_patch: "http://192.168.253.136/repo/installed_rhel8"
+
+###########################################################################
+# Package Manager
+###########################################################################
+
+package_manager: "yum"
+
+###########################################################################
+# Reboot Settings
+###########################################################################
+
+reboot_delay: 60
+
+wait_for_down_timeout: 180
+
+wait_for_up_timeout: 300
+
+post_reboot_wait: 90
+
+###########################################################################
+# Subscription Manager
+###########################################################################
+
+subscription_manager_package: "subscription-manager"
+
+###########################################################################
+# Temporary Repository Files
+###########################################################################
+
+repo_backup_dir: "/etc/yum.repos.d/backup"
+
+repo_files:
+  - "/etc/yum.repos.d/rocky8-baseos.repo"
+  - "/etc/yum.repos.d/rocky8-appstream.repo"
+  - "/etc/yum.repos.d/rocky8-installed.repo"
