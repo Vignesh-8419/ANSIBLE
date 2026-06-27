@@ -195,7 +195,14 @@
         status_code: 200
       loop: "{{ host_info }}"
       register: foreman_hosts_updated
-    
+	  
+    - name: Show refreshed Foreman hosts
+      debug:
+        msg:
+          - "Host: {{ item.json.name }}"
+          - "ID: {{ item.json.id }}"
+      loop: "{{ foreman_hosts_updated.results }}"
+        
     - name: Ensure host is in build mode
       uri:
         url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}/setBuild"
@@ -208,6 +215,9 @@
           - 200
           - 201
       loop: "{{ foreman_hosts_updated.results }}"
+      when:
+        - item.status == 200
+        - item.json.id is defined
 
     - debug:
         var: foreman_create
