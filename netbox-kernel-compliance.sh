@@ -11,6 +11,15 @@ NETBOX_TOKEN="83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
 SSH_USER="root"
 SSH_PASS="Root@123"
 
+SSH_OPTS="
+-n
+-o ConnectTimeout=5
+-o StrictHostKeyChecking=no
+-o UserKnownHostsFile=/dev/null
+-o GlobalKnownHostsFile=/dev/null
+-o LogLevel=ERROR
+"
+
 # ----------------------------------------------------------
 # Dependency Check
 # ----------------------------------------------------------
@@ -143,54 +152,47 @@ fi
 echo ""
 echo "Collecting inventory from $HOSTNAME ..."
 
+# Remove stale SSH host keys (VMs may have been rebuilt)
+[ -n "$HOST" ] && ssh-keygen -R "$HOST" >/dev/null 2>&1
+
+[ -n "$HOSTNAME" ] && ssh-keygen -R "$HOSTNAME" >/dev/null 2>&1
+
 if ! sshpass -p "$SSH_PASS" \
-ssh \
--o ConnectTimeout=5 \
--o StrictHostKeyChecking=no \
--o UserKnownHostsFile=/dev/null \
--o GlobalKnownHostsFile=/dev/null \
+ssh $SSH_OPTS \
 ${SSH_USER}@${HOST} "echo ok" >/dev/null 2>&1
 then
     echo "SSH Failed - Skipping"
     continue
 fi
 
-CURRENT_HOSTNAME=$(sshpass -p "$SSH_PASS" ssh -n \
--o StrictHostKeyChecking=no \
+CURRENT_HOSTNAME=$(sshpass -p "$SSH_PASS" ssh $SSH_OPTS \
 ${SSH_USER}@${HOST} hostname 2>/dev/null)
 
-CURRENT_KERNEL=$(sshpass -p "$SSH_PASS" ssh -n \
--o StrictHostKeyChecking=no \
+CURRENT_KERNEL=$(sshpass -p "$SSH_PASS" ssh $SSH_OPTS \
 ${SSH_USER}@${HOST} "uname -r" 2>/dev/null)
 
-OS_RELEASE=$(sshpass -p "$SSH_PASS" ssh -n \
--o StrictHostKeyChecking=no \
+OS_RELEASE=$(sshpass -p "$SSH_PASS" ssh $SSH_OPTS \
 ${SSH_USER}@${HOST} "cat /etc/redhat-release" 2>/dev/null)
 
-CPU_COUNT=$(sshpass -p "$SSH_PASS" ssh -n \
--o StrictHostKeyChecking=no \
+CPU_COUNT=$(sshpass -p "$SSH_PASS" ssh $SSH_OPTS \
 ${SSH_USER}@${HOST} "nproc" 2>/dev/null)
 
-RAM_GB=$(sshpass -p "$SSH_PASS" ssh -n \
--o StrictHostKeyChecking=no \
+RAM_GB=$(sshpass -p "$SSH_PASS" ssh $SSH_OPTS \
 ${SSH_USER}@${HOST} \
 "awk '/MemTotal/ {printf \"%d\", (\$2/1024/1024)+0.5}' /proc/meminfo")
 
-DISK_SIZE=$(sshpass -p "$SSH_PASS" ssh -n \
--o StrictHostKeyChecking=no \
+DISK_SIZE=$(sshpass -p "$SSH_PASS" ssh $SSH_OPTS \
 ${SSH_USER}@${HOST} \
 "lsblk -bdno SIZE | awk '{s+=\$1} END {printf \"%.0f GB\",s/1024/1024/1024}'")
 
-VM_TYPE=$(sshpass -p "$SSH_PASS" ssh -n \
--o StrictHostKeyChecking=no \
+VM_TYPE=$(sshpass -p "$SSH_PASS" ssh $SSH_OPTS \
 ${SSH_USER}@${HOST} \
 "systemd-detect-virt" 2>/dev/null)
 
 [ -z "$VM_TYPE" ] && VM_TYPE="Physical"
 
 
-IFACE_DATA=$(sshpass -p "$SSH_PASS" ssh -n \
--o StrictHostKeyChecking=no \
+IFACE_DATA=$(sshpass -p "$SSH_PASS" ssh $SSH_OPTS \
 ${SSH_USER}@${HOST} \
 "ip -o -4 addr show scope global | head -1")
 
@@ -198,8 +200,7 @@ IFACE=$(echo "$IFACE_DATA" | awk '{print $2}')
 
 IPADDR=$(echo "$IFACE_DATA" | awk '{print $4}')
 
-MAC=$(sshpass -p "$SSH_PASS" ssh -n \
--o StrictHostKeyChecking=no \
+MAC=$(sshpass -p "$SSH_PASS" ssh $SSH_OPTS \
 ${SSH_USER}@${HOST} \
 "cat /sys/class/net/$IFACE/address" 2>/dev/null | \
 tr '[:lower:]' '[:upper:]')
