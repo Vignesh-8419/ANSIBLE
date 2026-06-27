@@ -907,6 +907,7 @@ if [[ "$ADD_TAGS" == "yes" || "$ADD_TAGS" == "y" ]]; then
             "pxe-centos-context"
             "repo-config-context"
             "vmware-awx-context"
+			"centos-patch-context"
         )
 
     elif [[ "$CLUSTER_NAME" == "rocky-8-servers" ]]; then
@@ -916,6 +917,7 @@ if [[ "$ADD_TAGS" == "yes" || "$ADD_TAGS" == "y" ]]; then
             "pxe-rockyos-context"
             "repo-config-context"
             "vmware-awx-context"
+			"rocky-patch-context"
         )
 
     else
