@@ -5,207 +5,213 @@
   gather_facts: false
   serial: 1
 
-  vars:
-    #######################################################################
-    # Values supplied by NetBox Config Context
-    #######################################################################
-
-    organization: "{{ organization }}"
-    activation_key: "{{ activation_key }}"
-
-    katello_ca_url: "{{ katello_ca_url }}"
-
-    repo_baseos: "{{ repo_baseos }}"
-    repo_appstream: "{{ repo_appstream }}"
-    repo_patch: "{{ repo_patch }}"
-
   tasks:
 
-  #######################################################################
-  # PRECHECK
-  #######################################################################
+    #######################################################################
+    # LOAD NETBOX CONFIG CONTEXT
+    #######################################################################
 
-  - name: Display target
-    debug:
-      msg:
-        - "Inventory Host : {{ inventory_hostname }}"
-        - "Organization   : {{ organization }}"
-        - "Activation Key : {{ activation_key }}"
+    - name: Load NetBox Config Context
+      set_fact:
+        organization: "{{ config_context[0].organization }}"
+        activation_key: "{{ config_context[0].activation_key }}"
+        katello_ca_url: "{{ config_context[0].katello_ca_url }}"
+        repo_baseos: "{{ config_context[0].repo_baseos }}"
+        repo_appstream: "{{ config_context[0].repo_appstream }}"
+        repo_patch: "{{ config_context[0].repo_patch }}"
+        reboot_delay: "{{ config_context[0].reboot_delay }}"
+        wait_for_down_timeout: "{{ config_context[0].wait_for_down_timeout }}"
+        wait_for_up_timeout: "{{ config_context[0].wait_for_up_timeout }}"
+        post_reboot_wait: "{{ config_context[0].post_reboot_wait }}"
 
-  #######################################################################
-  # BACKUP EXISTING REPOSITORIES
-  #######################################################################
+    #######################################################################
+    # PRECHECK
+    #######################################################################
 
-  - name: Create repository backup directory
-    raw: mkdir -p /etc/yum.repos.d/backup
+    - name: Display target
+      debug:
+        msg:
+          - "Inventory Host : {{ inventory_hostname }}"
+          - "Organization   : {{ organization }}"
+          - "Activation Key : {{ activation_key }}"
+          - "BaseOS Repo    : {{ repo_baseos }}"
+          - "AppStream Repo : {{ repo_appstream }}"
+          - "Patch Repo     : {{ repo_patch }}"
 
-  - name: Backup existing repositories
-    raw: |
-      sh -c '
-      mv /etc/yum.repos.d/*.repo \
-      /etc/yum.repos.d/backup/ 2>/dev/null || true
-      '
-
-  #######################################################################
-  # TEMPORARY REPOSITORIES
-  #######################################################################
-
-  - name: Configure temporary BaseOS repository
-    raw: |
-      cat >/etc/yum.repos.d/rocky8-baseos.repo <<EOF
-      [rocky8-baseos]
-      name=Rocky Linux 8 BaseOS
-      baseurl={{ repo_baseos }}
-      enabled=1
-      gpgcheck=0
-      EOF
-
-  - name: Configure temporary AppStream repository
-    raw: |
-      cat >/etc/yum.repos.d/rocky8-appstream.repo <<EOF
-      [rocky8-appstream]
-      name=Rocky Linux 8 AppStream
-      baseurl={{ repo_appstream }}
-      enabled=1
-      gpgcheck=0
-      EOF
-
-  - name: Configure temporary Installed Packages repository
-    raw: |
-      cat >/etc/yum.repos.d/rocky8-installed.repo <<EOF
-      [rocky8-installed]
-      name=Rocky Linux Installed Packages
-      baseurl={{ repo_patch }}
-      enabled=1
-      gpgcheck=0
-      EOF
-
-  #######################################################################
-  # CLEAN CACHE
-  #######################################################################
-
-  - name: Clean DNF cache
-    raw: yum clean all
-
-  #######################################################################
-  # INSTALL SUBSCRIPTION MANAGER
-  #######################################################################
-
-  - name: Install subscription-manager
-    raw: yum install -y subscription-manager
-
-  #######################################################################
-  # INSTALL KATELLO CA
-  #######################################################################
-
-  - name: Install Katello CA package
-    raw: rpm -Uvh {{ katello_ca_url }} --force
-
-  #######################################################################
-  # REMOVE OLD REGISTRATION
-  #######################################################################
-
-  - name: Remove existing subscription
-    raw: |
-      subscription-manager unregister || true
-      subscription-manager clean || true
-
-  #######################################################################
-  # REGISTER
-  #######################################################################
-
-  - name: Register with Foreman/Katello
-    raw: |
-      subscription-manager register \
-      --org="{{ organization }}" \
-      --activationkey="{{ activation_key }}" \
-      --force
-
-  #######################################################################
-  # REMOVE TEMPORARY REPOSITORIES
-  #######################################################################
-
-  - name: Remove temporary repositories
-    raw: |
-      rm -f \
-      /etc/yum.repos.d/rocky8-baseos.repo \
-      /etc/yum.repos.d/rocky8-appstream.repo \
-      /etc/yum.repos.d/rocky8-installed.repo
-
-  #######################################################################
-  # REFRESH SUBSCRIPTION
-  #######################################################################
-
-  - name: Refresh subscription
-    raw: subscription-manager refresh
-
-  - name: Clean yum cache
-    raw: yum clean all
-
-  #######################################################################
-  # VERIFY REPOSITORIES
-  #######################################################################
-
-  - name: Verify enabled repositories
-    raw: yum repolist
-
-  #######################################################################
-  # PATCH SYSTEM
-  #######################################################################
-
-  - name: Apply all updates
-    raw: yum -y update
-
-  #######################################################################
-  # CHECK REBOOT
-  #######################################################################
-
-  - name: Check whether reboot is required
-    raw: needs-restarting -r
-    register: reboot_required
-    failed_when: false
-
-  #######################################################################
-  # REBOOT
-  #######################################################################
-
-  - name: Schedule reboot in one minute
-    raw: shutdown -r +1 "Reboot scheduled by Ansible after patching"
-    when: reboot_required.rc != 0
-    async: 30
-    poll: 0
-
-  - name: Wait for SSH to stop
-    wait_for:
-      host: "{{ inventory_hostname }}"
-      port: 22
-      state: drained
-      delay: 10
-      timeout: 120
-    delegate_to: localhost
-    when: reboot_required.rc != 0
-
-  - name: Wait for SSH to become available
-    wait_for:
-      host: "{{ inventory_hostname }}"
-      port: 22
-      state: started
-      delay: 30
-      timeout: 300
-    delegate_to: localhost
-    when: reboot_required.rc != 0
-
-  - name: Wait 90 seconds after reboot
-    pause:
-      seconds: 90
-    when: reboot_required.rc != 0
-
-  #######################################################################
-  # COMPLETE
-  #######################################################################
-
-  - name: Display completion message
-    debug:
-      msg:
-        - "Rocky Linux 8 patching completed successfully."
-        - "Host: {{ inventory_hostname }}"
+    #######################################################################
+    # BACKUP EXISTING REPOSITORIES
+    #######################################################################
+    
+    - name: Create repository backup directory
+      raw: mkdir -p /etc/yum.repos.d/backup
+    
+    - name: Backup existing repositories
+      raw: |
+        sh -c '
+        mv /etc/yum.repos.d/*.repo \
+        /etc/yum.repos.d/backup/ 2>/dev/null || true
+        '
+    
+    #######################################################################
+    # TEMPORARY REPOSITORIES
+    #######################################################################
+    
+    - name: Configure temporary BaseOS repository
+      raw: |
+        cat >/etc/yum.repos.d/rocky8-baseos.repo <<EOF
+        [rocky8-baseos]
+        name=Rocky Linux 8 BaseOS
+        baseurl={{ repo_baseos }}
+        enabled=1
+        gpgcheck=0
+        EOF
+    
+    - name: Configure temporary AppStream repository
+      raw: |
+        cat >/etc/yum.repos.d/rocky8-appstream.repo <<EOF
+        [rocky8-appstream]
+        name=Rocky Linux 8 AppStream
+        baseurl={{ repo_appstream }}
+        enabled=1
+        gpgcheck=0
+        EOF
+    
+    - name: Configure temporary Installed Packages repository
+      raw: |
+        cat >/etc/yum.repos.d/rocky8-installed.repo <<EOF
+        [rocky8-installed]
+        name=Rocky Linux Installed Packages
+        baseurl={{ repo_patch }}
+        enabled=1
+        gpgcheck=0
+        EOF
+    
+    #######################################################################
+    # CLEAN CACHE
+    #######################################################################
+    
+    - name: Clean DNF cache
+      raw: yum clean all
+    
+    #######################################################################
+    # INSTALL SUBSCRIPTION MANAGER
+    #######################################################################
+    
+    - name: Install subscription-manager
+      raw: yum install -y subscription-manager
+    
+    #######################################################################
+    # INSTALL KATELLO CA
+    #######################################################################
+    
+    - name: Install Katello CA package
+      raw: rpm -Uvh {{ katello_ca_url }} --force
+    
+    #######################################################################
+    # REMOVE OLD REGISTRATION
+    #######################################################################
+    
+    - name: Remove existing subscription
+      raw: |
+        subscription-manager unregister || true
+        subscription-manager clean || true
+    
+    #######################################################################
+    # REGISTER
+    #######################################################################
+    
+    - name: Register with Foreman/Katello
+      raw: |
+        subscription-manager register \
+        --org="{{ organization }}" \
+        --activationkey="{{ activation_key }}" \
+        --force
+    
+    #######################################################################
+    # REMOVE TEMPORARY REPOSITORIES
+    #######################################################################
+    
+    - name: Remove temporary repositories
+      raw: |
+        rm -f \
+        /etc/yum.repos.d/rocky8-baseos.repo \
+        /etc/yum.repos.d/rocky8-appstream.repo \
+        /etc/yum.repos.d/rocky8-installed.repo
+    
+    #######################################################################
+    # REFRESH SUBSCRIPTION
+    #######################################################################
+    
+    - name: Refresh subscription
+      raw: subscription-manager refresh
+    
+    - name: Clean yum cache
+      raw: yum clean all
+    
+    #######################################################################
+    # VERIFY REPOSITORIES
+    #######################################################################
+    
+    - name: Verify enabled repositories
+      raw: yum repolist
+    
+    #######################################################################
+    # PATCH SYSTEM
+    #######################################################################
+    
+    - name: Apply all updates
+      raw: yum -y update
+    
+    #######################################################################
+    # CHECK REBOOT
+    #######################################################################
+    
+    - name: Check whether reboot is required
+      raw: needs-restarting -r
+      register: reboot_required
+      failed_when: false
+    
+    #######################################################################
+    # REBOOT
+    #######################################################################
+    
+    - name: Schedule reboot in one minute
+      raw: shutdown -r +1 "Reboot scheduled by Ansible after patching"
+      when: reboot_required.rc != 0
+      async: 30
+      poll: 0
+    
+    - name: Wait for SSH to stop
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: 22
+        state: drained
+        delay: 10
+        timeout: 120
+      delegate_to: localhost
+      when: reboot_required.rc != 0
+    
+    - name: Wait for SSH to become available
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: 22
+        state: started
+        delay: 30
+        timeout: 300
+      delegate_to: localhost
+      when: reboot_required.rc != 0
+    
+    - name: Wait 90 seconds after reboot
+      pause:
+        seconds: 90
+      when: reboot_required.rc != 0
+    
+    #######################################################################
+    # COMPLETE
+    #######################################################################
+    
+    - name: Display completion message
+      debug:
+        msg:
+          - "Rocky Linux 8 patching completed successfully."
+          - "Host: {{ inventory_hostname }}"
