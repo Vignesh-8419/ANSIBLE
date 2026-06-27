@@ -342,6 +342,28 @@ else
 
 fi
 
+# Refresh MAC ID (new or existing)
+MAC_ID=$(curl -sk \
+-H "Authorization: Token $NETBOX_TOKEN" \
+"$NETBOX_URL/dcim/mac-addresses/?assigned_object_id=$NB_IFACE_ID" | \
+jq -r '.results[0].id')
+
+if [ -n "$MAC_ID" ] && [ "$MAC_ID" != "null" ]; then
+
+    echo "Setting Primary MAC Address..."
+
+    curl -sk -X PATCH \
+    "$NETBOX_URL/dcim/interfaces/$NB_IFACE_ID/" \
+    -H "Authorization: Token $NETBOX_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"primary_mac_address\": $MAC_ID
+    }" >/dev/null
+
+    echo "Primary MAC Address Updated"
+
+fi
+
 # ----------------------------------------------------------
 # Update Custom Fields
 # ----------------------------------------------------------
