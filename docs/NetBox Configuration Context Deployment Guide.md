@@ -407,7 +407,7 @@ https://192.168.253.143/api/extras/config-contexts/9/ \
   "data": {
     "organization": "Default_Organization",
     "activation_key": "rocky8-prod-key",
-    "katello_ca_url": "http://rocky-08-01.vgs.com/pub/katello-ca-consumer-latest.noarch.rpm",
+    "katello_ca_url": "http://cent-07-01.vgs.com/pub/katello-ca-consumer-latest.noarch.rpm",
     "repo_baseos": "http://192.168.253.136/repo/rocky8/BaseOS",
     "repo_appstream": "http://192.168.253.136/repo/rocky8/Appstream",
     "repo_patch": "http://192.168.253.136/repo/installed_rhel8",
