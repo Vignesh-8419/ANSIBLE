@@ -1,5 +1,7 @@
-- name: Create selected hosts in Foreman
-  hosts: all
+---
+- name: Create selected hosts in Foreman from NetBox
+  hosts: localhost
+  connection: local
   gather_facts: false
 
   vars:
@@ -12,83 +14,96 @@
 
     host_root_pass: "Root@123"
 
-    cluster_name: "centos-07-servers"
-    target_servers:
-      - cent-07-03
-      - cent-07-04
-
-    # ✅ Foreman IDs
+    # Foreman IDs
     org_id: 1
     loc_id: 2
-    hostgroup_id: 1        # ✅ VGS HOSTS CENTOS 7 (UEFI-ready)
+    hostgroup_id: 1
 
   tasks:
 
     ###########################################################################
-    # 1. FETCH NETBOX DATA
+    # Determine which hosts were selected in AWX Limit
     ###########################################################################
 
-    - name: Show selected host
-      debug:
-        var: inventory_hostname
-
-    - name: Get devices from NetBox cluster
-      uri:
-        url: "{{ netbox_url }}/api/dcim/devices/?cluster={{ cluster_name }}"
-        method: GET
-        headers:
-          Authorization: "Token {{ netbox_token }}"
-        validate_certs: no
-      register: netbox_devices
-
-    - name: Filter only selected servers
+    - name: Get selected hosts from AWX inventory
       set_fact:
-        filtered_devices: "{{ netbox_devices.json.results | selectattr('name','in',target_servers) | list }}"
+        selected_hosts: >-
+          {{
+            groups['all']
+            | reject('equalto', 'localhost')
+            | list
+          }}
 
-    - name: Get interfaces from NetBox
+    - name: Show selected hosts
+      debug:
+        var: selected_hosts
+
+    ###########################################################################
+    # Query NetBox for each selected host
+    ###########################################################################
+
+    - name: Get device information
       uri:
-        url: "{{ netbox_url }}/api/dcim/interfaces/"
+        url: "{{ netbox_url }}/api/dcim/devices/?name={{ item }}"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
-        validate_certs: no
-      register: netbox_interfaces
+        validate_certs: false
+      loop: "{{ selected_hosts }}"
+      register: device_result
 
-    - name: Get IP addresses from NetBox
+    - name: Get interface information
       uri:
-        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+        url: "{{ netbox_url }}/api/dcim/interfaces/?device={{ item }}"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
-        validate_certs: no
-      register: netbox_ips
+        validate_certs: false
+      loop: "{{ selected_hosts }}"
+      register: interface_result
+
+    - name: Get IP information
+      uri:
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/?device={{ item }}"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        validate_certs: false
+      loop: "{{ selected_hosts }}"
+      register: ip_result
 
     ###########################################################################
-    # 2. BUILD HOST INFO
+    # Build host information
     ###########################################################################
 
-    - name: Build host info list
+    - name: Build host information
       set_fact:
         host_info: "{{ host_info | default([]) + [ {
-          'name': item.name,
+          'name': item.item,
           'ip': (
-              netbox_ips.json.results
-              | selectattr('assigned_object.device.name','equalto',item.name)
-              | map(attribute='address')
-              | map('regex_replace','/.*$','')
-              | first | default('')
+            ip_result.results[loop_index].json.results
+            | map(attribute='address')
+            | map('regex_replace','/.*$','')
+            | first
+            | default('')
           ),
           'mac': (
-              netbox_interfaces.json.results
-              | selectattr('device.name','equalto',item.name)
-              | map(attribute='mac_address')
-              | first | default('')
+            interface_result.results[loop_index].json.results
+            | map(attribute='mac_address')
+            | first
+            | default('')
           )
         } ] }}"
-      loop: "{{ filtered_devices }}"
+      loop: "{{ device_result.results }}"
+      loop_control:
+        index_var: loop_index
+
+    - name: Display host information
+      debug:
+        var: host_info
 
     ###########################################################################
-    # 3. CREATE HOST IN FOREMAN (UEFI + Hostgroup)
+    # Create hosts in Foreman
     ###########################################################################
 
     - name: Create host in Foreman
@@ -97,21 +112,23 @@
         method: POST
         user: "{{ foreman_user }}"
         password: "{{ foreman_password }}"
-        force_basic_auth: yes
-        validate_certs: no
-        status_code: [200, 201]
+        force_basic_auth: true
+        validate_certs: false
+        status_code:
+          - 200
+          - 201
         headers:
-          Content-Type: "application/json"
+          Content-Type: application/json
         body_format: json
         body:
           host:
             name: "{{ item.name }}"
-            hostgroup_id: "{{ hostgroup_id }}"   # ✅ UEFI + OS + Medium + Ptable inherited
+            hostgroup_id: "{{ hostgroup_id }}"
             organization_id: "{{ org_id }}"
             location_id: "{{ loc_id }}"
             managed: true
             build: true
-            pxe_loader: "Grub2 UEFI"             # ✅ Ensures UEFI boot
+            pxe_loader: "Grub2 UEFI"
             root_pass: "{{ host_root_pass }}"
             interfaces_attributes:
               - type: interface
@@ -122,5 +139,6 @@
       loop: "{{ host_info }}"
       register: foreman_create
 
-    - debug:
+    - name: Show Foreman result
+      debug:
         var: foreman_create
