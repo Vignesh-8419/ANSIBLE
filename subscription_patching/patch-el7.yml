@@ -142,8 +142,17 @@
     # PATCH SERVER
     #######################################################################
     
-    - name: Apply updates
-      raw: yum -y update
+    - name: Apply updates (skip broken packages)
+      raw: |
+        yum -y update \
+          --skip-broken \
+          --setopt=obsoletes=0
+      register: yum_update
+      failed_when: false
+    
+    - name: Display yum update output
+      debug:
+        var: yum_update.stdout_lines
     
     #######################################################################
     # VERIFY REBOOT REQUIREMENT
