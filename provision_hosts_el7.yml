@@ -1,8 +1,6 @@
----
-- name: Prepare and create CENTOS hosts in Foreman using API
-  hosts: localhost
-  connection: local
-  gather_facts: no
+- name: Create selected hosts in Foreman
+  hosts: all
+  gather_facts: false
 
   vars:
     netbox_url: "https://rocky-08-03.vgs.com"
@@ -29,6 +27,10 @@
     ###########################################################################
     # 1. FETCH NETBOX DATA
     ###########################################################################
+
+    - name: Show selected host
+      debug:
+        var: inventory_hostname
 
     - name: Get devices from NetBox cluster
       uri:
