@@ -1,0 +1,112 @@
+---
+###########################################################################
+# REMOVE EXISTING REGISTRATION
+###########################################################################
+
+- name: Check subscription status
+  raw: subscription-manager identity
+  register: subscription_status
+  failed_when: false
+  changed_when: false
+
+- name: Unregister existing subscription
+  raw: subscription-manager unregister
+  when: subscription_status.rc == 0
+  failed_when: false
+
+- name: Clean subscription-manager
+  raw: subscription-manager clean
+  failed_when: false
+
+###########################################################################
+# REGISTER SYSTEM
+###########################################################################
+
+- name: Register with Foreman/Katello
+  raw: |
+    subscription-manager register \
+      --org="{{ organization }}" \
+      --activationkey="{{ activation_key }}" \
+      --force
+  register: registration_result
+
+- name: Display registration output
+  debug:
+    var: registration_result.stdout_lines
+
+###########################################################################
+# VERIFY REGISTRATION
+###########################################################################
+
+- name: Verify subscription identity
+  raw: subscription-manager identity
+  register: subscription_identity
+  changed_when: false
+
+- name: Display subscription identity
+  debug:
+    var: subscription_identity.stdout_lines
+
+###########################################################################
+# REFRESH SUBSCRIPTION
+###########################################################################
+
+- name: Refresh subscription
+  raw: subscription-manager refresh
+
+###########################################################################
+# REMOVE TEMPORARY REPOSITORIES
+###########################################################################
+
+- name: Remove EL7 temporary repositories
+  raw: |
+    rm -f \
+      /etc/yum.repos.d/base.repo \
+      /etc/yum.repos.d/patch.repo
+  failed_when: false
+
+- name: Remove EL8 temporary repositories
+  raw: |
+    rm -f \
+      /etc/yum.repos.d/rocky8-baseos.repo \
+      /etc/yum.repos.d/rocky8-appstream.repo \
+      /etc/yum.repos.d/rocky8-installed.repo
+  failed_when: false
+
+###########################################################################
+# CLEAN CACHE
+###########################################################################
+
+- name: Clean yum cache
+  raw: yum clean all
+
+###########################################################################
+# REBUILD CACHE
+###########################################################################
+
+- name: Build yum cache
+  raw: yum makecache
+
+###########################################################################
+# VERIFY ENABLED REPOSITORIES
+###########################################################################
+
+- name: List enabled repositories
+  raw: yum repolist
+  register: repo_list
+  changed_when: false
+
+- name: Display enabled repositories
+  debug:
+    var: repo_list.stdout_lines
+
+###########################################################################
+# REGISTER COMPLETE
+###########################################################################
+
+- name: Registration completed
+  debug:
+    msg:
+      - "Host successfully registered."
+      - "Organization : {{ organization }}"
+      - "Activation Key : {{ activation_key }}"
