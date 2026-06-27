@@ -109,14 +109,14 @@
 
   tasks:
 
-    - name: Power ON VM
+    - name: Power OFF VM
       community.vmware.vmware_guest_powerstate:
         hostname: "{{ exsi_hostname }}"
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: false
         name: "{{ item.name }}"
-        state: powered-on
+        state: powered-off
       loop: "{{ filtered_devices }}"
 
     - name: Set EFI Firmware
@@ -142,13 +142,13 @@
       loop: "{{ filtered_devices }}"
 
     - name: Power ON VM
-      vmware_guest:
+      community.vmware.vmware_guest_powerstate:
         hostname: "{{ exsi_hostname }}"
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
-        validate_certs: "{{ validate_certs }}"
+        validate_certs: false
         name: "{{ item.name }}"
-        state: poweredon
+        state: powered-on
       loop: "{{ filtered_devices }}"
 
     - name: Restore Disk First
