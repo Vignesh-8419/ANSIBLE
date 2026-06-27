@@ -920,7 +920,7 @@ survey_spec = {
             "question_description": "Enter host or host pattern",
             "variable": "target_hosts",
             "required": True,
-            "default": "cent-07-*",
+            "default": "cent-07-*.vgs.com",
             "min": 1,
             "max": 1024
         }
@@ -982,7 +982,7 @@ survey_spec = {
             "question_description": "Enter host or host pattern",
             "variable": "target_hosts",
             "required": True,
-            "default": "rocky-08-*",
+            "default": "rocky-08-*.vgs.com",
             "min": 1,
             "max": 1024
         }
