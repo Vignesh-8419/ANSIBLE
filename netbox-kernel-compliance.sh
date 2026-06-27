@@ -291,6 +291,25 @@ then
 fi
 
 # ----------------------------------------------------------
+# Update MAC Address
+# ----------------------------------------------------------
+
+if [ "$NB_MAC" != "$MAC" ]
+then
+    echo "Updating MAC Address..."
+
+    curl -sk -X PATCH \
+    "$NETBOX_URL/dcim/interfaces/$NB_IFACE_ID/" \
+    -H "Authorization: Token $NETBOX_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"mac_address\": \"$MAC\"
+    }" >/dev/null
+
+    echo "MAC Address Updated"
+fi
+
+# ----------------------------------------------------------
 # Update Custom Fields
 # ----------------------------------------------------------
 
