@@ -1,8 +1,11 @@
 ---
-- name: Prepare and create CENTOS hosts in Foreman using API
+- name: Prepare and create CENTOS 7 hosts in Foreman using API
   hosts: localhost
   connection: local
   gather_facts: no
+
+  collections:
+    - community.vmware
 
   vars:
     netbox_url: "https://rocky-08-03.vgs.com"
@@ -16,9 +19,10 @@
 
     cluster_name: "centos-07-servers"
 
-    # Hosts to create
+    # Leave empty to create all Rocky hosts
     target_servers: "{{ target_hosts.split(',') | map('trim') | list }}"
 
+    # Foreman IDs
     # Foreman IDs
     org_id: 1
     loc_id: 2
@@ -67,23 +71,25 @@
         msg: "No matching hosts found in NetBox."
       when: filtered_devices | length == 0
 
+
     ###########################################################################
-    # Get interfaces
+    # Get VM information from ESXi
     ###########################################################################
 
-    - name: Get interfaces from NetBox
-      uri:
-        url: "{{ netbox_url }}/api/dcim/interfaces/"
-        method: GET
-        headers:
-          Authorization: "Token {{ netbox_token }}"
-        validate_certs: no
-      register: netbox_interfaces
+    - name: Get VM information from ESXi
+      community.vmware.vmware_guest_info:
+        hostname: "192.168.253.128"
+        username: "root"
+        password: "Root@123"
+        validate_certs: false
+        name: "{{ item.name.split('.')[0] }}"
+      loop: "{{ filtered_devices }}"
+      register: vm_info
 
     ###########################################################################
     # Get IP addresses
     ###########################################################################
-
+    
     - name: Get IP addresses from NetBox
       uri:
         url: "{{ netbox_url }}/api/ipam/ip-addresses/"
@@ -93,35 +99,28 @@
         validate_certs: no
       register: netbox_ips
 
-    ###########################################################################
-    # Build host list
-    ###########################################################################
-
     - name: Initialize host info
       set_fact:
         host_info: []
-
-    - name: Build host info list
+    
+    - name: Build host info
       set_fact:
         host_info: "{{ host_info + [ {
-          'name': item.name,
+          'name': item.0.name,
           'ip': (
             netbox_ips.json.results
-            | selectattr('assigned_object.device.name','equalto',item.name)
+            | selectattr('assigned_object.device.name','equalto',item.0.name)
             | map(attribute='address')
             | map('regex_replace','/.*$','')
             | first
             | default('')
           ),
           'mac': (
-            netbox_interfaces.json.results
-            | selectattr('device.name','equalto',item.name)
-            | map(attribute='mac_address')
-            | first
+            item.1.instance.hw_eth0.macaddress
             | default('')
           )
         } ] }}"
-      loop: "{{ filtered_devices }}"
+      loop: "{{ filtered_devices | zip(vm_info.results) | list }}"
 
     - debug:
         var: host_info
