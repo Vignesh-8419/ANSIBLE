@@ -940,7 +940,7 @@ except (Project.DoesNotExist,
 
 # Create or Update Job Template
 jt, created = JobTemplate.objects.get_or_create(
-    name="provision_hosts_el7",
+    name="Provision_Hosts_el7",
     defaults={
         "project": project,
         "inventory": inventory,
@@ -987,7 +987,7 @@ jt.survey_spec = survey_spec
 jt.save()
 
 print(
-    f"Job Template 'provision_hosts_el7' "
+    f"Job Template 'Provision_Hosts_el7' "
     f"{'created' if created else 'updated'} successfully."
 )
 print(f"Credential assigned: {credential.name}")
