@@ -144,16 +144,15 @@ echo ""
 echo "Collecting inventory from $HOSTNAME ..."
 
 if ! sshpass -p "$SSH_PASS" \
-ssh -n \
+ssh \
 -o ConnectTimeout=5 \
 -o StrictHostKeyChecking=no \
+-o UserKnownHostsFile=/dev/null \
+-o GlobalKnownHostsFile=/dev/null \
 ${SSH_USER}@${HOST} "echo ok" >/dev/null 2>&1
 then
-
     echo "SSH Failed - Skipping"
-
     continue
-
 fi
 
 CURRENT_HOSTNAME=$(sshpass -p "$SSH_PASS" ssh -n \
