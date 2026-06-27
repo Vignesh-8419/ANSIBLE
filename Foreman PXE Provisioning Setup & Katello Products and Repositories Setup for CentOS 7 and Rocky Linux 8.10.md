@@ -271,7 +271,7 @@ hammer --username admin --password 'zqs977dXzqfEvTML' repository create \
 --product "CentOS 7" \
 --name "CentOS-07-BaseOS" \
 --content-type yum \
---url "http://http-server-01/repo/rocky8/BaseOS/"
+--url "http://http-server-01/repo/centos/"
 ```
 
 ## Create CentOS-07-Updates Repository
