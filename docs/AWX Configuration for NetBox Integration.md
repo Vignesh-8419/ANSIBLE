@@ -996,6 +996,82 @@ print("Survey 'target_hosts' configured and enabled.")
 EOF
 ```
 
+# Provision Hosts el8
+
+```text
+awx-manage shell <<'EOF'
+from awx.main.models import Inventory, Project, JobTemplate, Credential
+import json
+
+# Dependencies
+try:
+    project = Project.objects.get(name="Inventory-Git-Repo")
+    inventory = Inventory.objects.get(name="rocky-8-servers")
+    credential = Credential.objects.get(name="Linux Root Credential")
+except (Project.DoesNotExist,
+        Inventory.DoesNotExist,
+        Credential.DoesNotExist) as e:
+    print(f"Error: Missing required dependency. {e}")
+    exit(1)
+
+# Create or Update Job Template
+jt, created = JobTemplate.objects.get_or_create(
+    name="Provision_Hosts_el8",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "provision_hosts_el8/Foreman_provision_hosts_el8.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": True,
+        "limit": "localhost"
+    }
+)
+
+if not created:
+    jt.project = project
+    jt.inventory = inventory
+    jt.playbook = "provision_hosts_el8/Foreman_provision_hosts_el8.yml"
+    jt.ask_inventory_on_launch = False
+    jt.ask_limit_on_launch = True
+    jt.limit = "localhost"
+
+# Assign Credential
+jt.save()
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+# Survey Specification
+survey_spec = {
+    "name": "target_hosts",
+    "description": "Specify target hosts/group to provision.",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Inventory host/group to run against",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-08-*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.survey_enabled = True
+jt.survey_spec = survey_spec
+jt.save()
+
+print(
+    f"Job Template 'Provision_Hosts_el8' "
+    f"{'created' if created else 'updated'} successfully."
+)
+print(f"Credential assigned: {credential.name}")
+print("Default Limit: localhost")
+print("Survey 'target_hosts' configured and enabled.")
+EOF
+```
+
 ---
 
 # Validation Checklist
