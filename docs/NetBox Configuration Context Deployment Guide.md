@@ -52,7 +52,6 @@ Each configuration context requires a matching tag.
 ## Create All Tags
 
 ```bash
-```bash
 for TAG in \
 "vmware-awx-context" \
 "pxe-centos-context" \
