@@ -52,20 +52,28 @@ Each configuration context requires a matching tag.
 ## Create All Tags
 
 ```bash
+```bash
 for TAG in \
 "vmware-awx-context" \
 "pxe-centos-context" \
 "pxe-rockyos-context" \
 "patch-context" \
+"patch-el8-context" \
 "repo-config-context" \
 "centostorocky-context" \
-"patch-el8-context"
+"centos-patch-context" \
+"rocky-patch-context"
 do
-  curl -X POST -k \
-    -H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
-    -H "Content-Type: application/json" \
-    https://192.168.253.143/api/extras/tags/ \
-    -d "{\"name\": \"$TAG\", \"slug\": \"$TAG\"}"
+    curl -sk -X POST \
+        -H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+        -H "Content-Type: application/json" \
+        https://192.168.253.143/api/extras/tags/ \
+        -d "{
+            \"name\": \"$TAG\",
+            \"slug\": \"$TAG\"
+        }"
+
+    echo
 done
 ```
 
