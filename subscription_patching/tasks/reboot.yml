@@ -1,0 +1,81 @@
+---
+###########################################################################
+# REBOOT IF REQUIRED
+###########################################################################
+
+- name: Schedule reboot in one minute
+  raw: |
+    shutdown -r +1 "System reboot initiated by Ansible after patching."
+  async: 30
+  poll: 0
+  when: reboot_required
+
+###########################################################################
+# WAIT FOR SSH TO GO DOWN
+###########################################################################
+
+- name: Wait for SSH to stop
+  wait_for:
+    host: "{{ ansible_host | default(inventory_hostname) }}"
+    port: 22
+    state: stopped
+    delay: 15
+    timeout: 180
+  delegate_to: localhost
+  become: false
+  when: reboot_required
+
+###########################################################################
+# WAIT FOR SERVER TO COME BACK
+###########################################################################
+
+- name: Wait for SSH to become available
+  wait_for:
+    host: "{{ ansible_host | default(inventory_hostname) }}"
+    port: 22
+    state: started
+    delay: 15
+    timeout: 300
+  delegate_to: localhost
+  become: false
+  when: reboot_required
+
+###########################################################################
+# WAIT FOR SERVICES TO STABILIZE
+###########################################################################
+
+- name: Wait additional 90 seconds
+  pause:
+    seconds: 90
+  when: reboot_required
+
+###########################################################################
+# VERIFY SERVER IS ACCESSIBLE
+###########################################################################
+
+- name: Verify server is reachable
+  raw: uptime
+  register: uptime_result
+  changed_when: false
+  when: reboot_required
+
+- name: Display uptime
+  debug:
+    var: uptime_result.stdout
+  when: reboot_required
+
+###########################################################################
+# COMPLETE
+###########################################################################
+
+- name: Reboot completed
+  debug:
+    msg:
+      - "Server reboot completed successfully."
+      - "Host: {{ inventory_hostname }}"
+  when: reboot_required
+
+- name: No reboot required
+  debug:
+    msg: "No reboot required."
+  when: not reboot_required
