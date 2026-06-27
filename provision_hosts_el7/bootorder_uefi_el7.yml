@@ -272,7 +272,6 @@
         msg: "{{ item.name }} : {{ kernel_version.results[idx].stdout }}"
       loop: "{{ filtered_devices }}"
       loop_control:
-        index_var: idx
-		
+        index_var: idx	
 
 
