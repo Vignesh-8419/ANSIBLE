@@ -975,7 +975,7 @@ survey_spec = {
             "question_description": "Inventory host/group to run against",
             "variable": "target_hosts",
             "required": True,
-            "default": "localhost",
+            "default": "cent-07-*",
             "min": 1,
             "max": 1024
         }
