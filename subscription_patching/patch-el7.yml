@@ -7,181 +7,195 @@
 
   tasks:
 
-  - name: Load NetBox Config Context
-    set_fact:
-     nbctx: "{{ config_context[0] }}"
+    #######################################################################
+    # LOAD NETBOX CONFIG CONTEXT
+    #######################################################################
 
-  - name: Display target
-    debug:
-      msg:
-        - "Inventory Host : {{ inventory_hostname }}"
-        - "Organization   : {{ organization }}"
-        - "Activation Key : {{ activation_key }}"
+    - name: Load NetBox Config Context
+      set_fact:
+        organization: "{{ config_context[0].organization }}"
+        activation_key: "{{ config_context[0].activation_key }}"
+        katello_ca_url: "{{ config_context[0].katello_ca_url }}"
+        repo_base: "{{ config_context[0].repo_base }}"
+        repo_patch: "{{ config_context[0].repo_patch }}"
+        reboot_delay: "{{ config_context[0].reboot_delay }}"
+        wait_for_down_timeout: "{{ config_context[0].wait_for_down_timeout }}"
+        wait_for_up_timeout: "{{ config_context[0].wait_for_up_timeout }}"
+        post_reboot_wait: "{{ config_context[0].post_reboot_wait }}"
 
-  #######################################################################
-  # BACKUP EXISTING REPOS
-  #######################################################################
+    - name: Display target
+      debug:
+        msg:
+          - "Inventory Host : {{ inventory_hostname }}"
+          - "Organization   : {{ organization }}"
+          - "Activation Key : {{ activation_key }}"
+          - "Repo Base      : {{ repo_base }}"
+          - "Repo Patch     : {{ repo_patch }}"
 
-  - name: Create repo backup directory
-    raw: mkdir -p /etc/yum.repos.d/backup
-
-  - name: Backup current repositories
-    raw: |
-      sh -c '
-      mv /etc/yum.repos.d/*.repo \
-      /etc/yum.repos.d/backup/ 2>/dev/null || true
-      '
-
-  #######################################################################
-  # TEMPORARY REPOSITORIES
-  #######################################################################
-
-  - name: Configure temporary Base repository
-    raw: |
-      cat >/etc/yum.repos.d/base.repo <<EOF
-      [base]
-      name=Temporary Base Repo
-      baseurl={{ repo_base }}
-      enabled=1
-      gpgcheck=0
-      EOF
-
-  - name: Configure temporary Patch repository
-    raw: |
-      cat >/etc/yum.repos.d/patch.repo <<EOF
-      [patch]
-      name=Temporary Patch Repo
-      baseurl={{ repo_patch }}
-      enabled=1
-      gpgcheck=0
-      EOF
-
-  #######################################################################
-  # CLEAN CACHE
-  #######################################################################
-
-  - name: Clean yum cache
-    raw: yum clean all
-
-  #######################################################################
-  # INSTALL SUBSCRIPTION MANAGER
-  #######################################################################
-
-  - name: Install subscription-manager
-    raw: yum install -y subscription-manager
-
-  #######################################################################
-  # INSTALL KATELLO CA
-  #######################################################################
-
-  - name: Install Katello CA
-    raw: rpm -Uvh {{ katello_ca_url }} --force
-
-  #######################################################################
-  # UNREGISTER IF ALREADY REGISTERED
-  #######################################################################
-
-  - name: Remove existing subscription
-    raw: |
-      subscription-manager unregister || true
-      subscription-manager clean || true
-
-  #######################################################################
-  # REGISTER
-  #######################################################################
-
-  - name: Register with Foreman/Katello
-    raw: |
-      subscription-manager register \
-      --org="{{ organization }}" \
-      --activationkey="{{ activation_key }}" \
-      --force
-
-  #######################################################################
-  # REMOVE TEMP REPOSITORIES
-  #######################################################################
-
-  - name: Remove temporary repositories
-    raw: |
-      rm -f \
-      /etc/yum.repos.d/base.repo \
-      /etc/yum.repos.d/patch.repo
-
-  #######################################################################
-  # REFRESH
-  #######################################################################
-
-  - name: Refresh subscription
-    raw: subscription-manager refresh
-
-  - name: Clean yum
-    raw: yum clean all
-
-  #######################################################################
-  # VERIFY REPOSITORIES
-  #######################################################################
-
-  - name: Verify enabled repositories
-    raw: yum repolist
-
-  #######################################################################
-  # PATCH SERVER
-  #######################################################################
-
-  - name: Apply updates
-    raw: yum -y update
-
-  #######################################################################
-  # VERIFY REBOOT REQUIREMENT
-  #######################################################################
-
-  - name: Check if reboot required
-    raw: |
-      needs-restarting -r
-    register: reboot_required
-    failed_when: false
-
-  #######################################################################
-  # REBOOT
-  #######################################################################
-
-  - name: Schedule reboot in one minute
-    raw: shutdown -r +1 "Reboot scheduled by Ansible after patching"
-    when: reboot_required.rc != 0
-    async: 30
-    poll: 0
-
-  - name: Wait for SSH to go down
-    wait_for:
-      host: "{{ inventory_hostname }}"
-      port: 22
-      state: drained
-      delay: 10
-      timeout: 120
-    delegate_to: localhost
-    when: reboot_required.rc != 0
-
-  - name: Wait for SSH to return
-    wait_for:
-      host: "{{ inventory_hostname }}"
-      port: 22
-      state: started
-      delay: 30
-      timeout: 300
-    delegate_to: localhost
-    when: reboot_required.rc != 0
-
-  - name: Wait additional 90 seconds
-    pause:
-      seconds: 90
-    when: reboot_required.rc != 0
-
-  #######################################################################
-  # FINAL STATUS
-  #######################################################################
-
-  - name: Show completion
-    debug:
-      msg:
-        - "Patching completed successfully."
-        - "Host: {{ inventory_hostname }}"
+    #######################################################################
+    # BACKUP EXISTING REPOS
+    #######################################################################
+    
+    - name: Create repo backup directory
+      raw: mkdir -p /etc/yum.repos.d/backup
+    
+    - name: Backup current repositories
+      raw: |
+        sh -c '
+        mv /etc/yum.repos.d/*.repo \
+        /etc/yum.repos.d/backup/ 2>/dev/null || true
+        '
+    
+    #######################################################################
+    # TEMPORARY REPOSITORIES
+    #######################################################################
+    
+    - name: Configure temporary Base repository
+      raw: |
+        cat >/etc/yum.repos.d/base.repo <<EOF
+        [base]
+        name=Temporary Base Repo
+        baseurl={{ repo_base }}
+        enabled=1
+        gpgcheck=0
+        EOF
+    
+    - name: Configure temporary Patch repository
+      raw: |
+        cat >/etc/yum.repos.d/patch.repo <<EOF
+        [patch]
+        name=Temporary Patch Repo
+        baseurl={{ repo_patch }}
+        enabled=1
+        gpgcheck=0
+        EOF
+    
+    #######################################################################
+    # CLEAN CACHE
+    #######################################################################
+    
+    - name: Clean yum cache
+      raw: yum clean all
+    
+    #######################################################################
+    # INSTALL SUBSCRIPTION MANAGER
+    #######################################################################
+    
+    - name: Install subscription-manager
+      raw: yum install -y subscription-manager
+    
+    #######################################################################
+    # INSTALL KATELLO CA
+    #######################################################################
+    
+    - name: Install Katello CA
+      raw: rpm -Uvh {{ katello_ca_url }} --force
+    
+    #######################################################################
+    # UNREGISTER IF ALREADY REGISTERED
+    #######################################################################
+    
+    - name: Remove existing subscription
+      raw: |
+        subscription-manager unregister || true
+        subscription-manager clean || true
+    
+    #######################################################################
+    # REGISTER
+    #######################################################################
+    
+    - name: Register with Foreman/Katello
+      raw: |
+        subscription-manager register \
+        --org="{{ organization }}" \
+        --activationkey="{{ activation_key }}" \
+        --force
+    
+    #######################################################################
+    # REMOVE TEMP REPOSITORIES
+    #######################################################################
+    
+    - name: Remove temporary repositories
+      raw: |
+        rm -f \
+        /etc/yum.repos.d/base.repo \
+        /etc/yum.repos.d/patch.repo
+    
+    #######################################################################
+    # REFRESH
+    #######################################################################
+    
+    - name: Refresh subscription
+      raw: subscription-manager refresh
+    
+    - name: Clean yum
+      raw: yum clean all
+    
+    #######################################################################
+    # VERIFY REPOSITORIES
+    #######################################################################
+    
+    - name: Verify enabled repositories
+      raw: yum repolist
+    
+    #######################################################################
+    # PATCH SERVER
+    #######################################################################
+    
+    - name: Apply updates
+      raw: yum -y update
+    
+    #######################################################################
+    # VERIFY REBOOT REQUIREMENT
+    #######################################################################
+    
+    - name: Check if reboot required
+      raw: |
+        needs-restarting -r
+      register: reboot_required
+      failed_when: false
+    
+    #######################################################################
+    # REBOOT
+    #######################################################################
+    
+    - name: Schedule reboot in one minute
+      raw: shutdown -r +1 "Reboot scheduled by Ansible after patching"
+      when: reboot_required.rc != 0
+      async: 30
+      poll: 0
+    
+    - name: Wait for SSH to go down
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: 22
+        state: drained
+        delay: 10
+        timeout: 120
+      delegate_to: localhost
+      when: reboot_required.rc != 0
+    
+    - name: Wait for SSH to return
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: 22
+        state: started
+        delay: 30
+        timeout: 300
+      delegate_to: localhost
+      when: reboot_required.rc != 0
+    
+    - name: Wait additional 90 seconds
+      pause:
+        seconds: 90
+      when: reboot_required.rc != 0
+    
+    #######################################################################
+    # FINAL STATUS
+    #######################################################################
+    
+    - name: Show completion
+      debug:
+        msg:
+          - "Patching completed successfully."
+          - "Host: {{ inventory_hostname }}"
