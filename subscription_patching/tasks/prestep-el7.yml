@@ -1,0 +1,120 @@
+---
+###########################################################################
+# PRE-STEPS
+###########################################################################
+
+- name: Display target host
+  debug:
+    msg:
+      - "Preparing {{ inventory_hostname }} for Foreman/Katello registration"
+      - "Organization   : {{ organization }}"
+      - "Activation Key : {{ activation_key }}"
+
+###########################################################################
+# CREATE BACKUP DIRECTORY
+###########################################################################
+
+- name: Create repository backup directory
+  raw: mkdir -p /etc/yum.repos.d/backup
+
+###########################################################################
+# BACKUP EXISTING REPOSITORIES
+###########################################################################
+
+- name: Backup existing repositories
+  raw: |
+    sh -c '
+    mv /etc/yum.repos.d/*.repo \
+    /etc/yum.repos.d/backup/ 2>/dev/null || true
+    '
+
+###########################################################################
+# CREATE TEMPORARY BASE REPOSITORY
+###########################################################################
+
+- name: Configure temporary Base repository
+  raw: |
+    cat >/etc/yum.repos.d/base.repo <<EOF
+    [base]
+    name=Temporary Base Repository
+    baseurl={{ repo_base }}
+    enabled=1
+    gpgcheck=0
+    EOF
+
+###########################################################################
+# CREATE TEMPORARY PATCH REPOSITORY
+###########################################################################
+
+- name: Configure temporary Patch repository
+  raw: |
+    cat >/etc/yum.repos.d/patch.repo <<EOF
+    [patch]
+    name=Temporary Patch Repository
+    baseurl={{ repo_patch }}
+    enabled=1
+    gpgcheck=0
+    EOF
+
+###########################################################################
+# CLEAN CACHE
+###########################################################################
+
+- name: Clean yum metadata
+  raw: yum clean all
+
+###########################################################################
+# BUILD CACHE
+###########################################################################
+
+- name: Build yum cache
+  raw: yum makecache
+
+###########################################################################
+# INSTALL SUBSCRIPTION MANAGER
+###########################################################################
+
+- name: Install subscription-manager
+  raw: yum install -y subscription-manager
+
+###########################################################################
+# VERIFY INSTALLATION
+###########################################################################
+
+- name: Verify subscription-manager installation
+  raw: rpm -q subscription-manager
+  register: submgr
+
+- name: Display subscription-manager status
+  debug:
+    var: submgr.stdout
+
+###########################################################################
+# INSTALL KATELLO CA
+###########################################################################
+
+- name: Install Katello CA Consumer
+  raw: |
+    rpm -Uvh {{ katello_ca_url }} --force
+
+###########################################################################
+# VERIFY KATELLO CA
+###########################################################################
+
+- name: Verify Katello CA package
+  raw: rpm -qa | grep katello-ca-consumer
+  register: katello_ca
+
+- name: Display Katello CA package
+  debug:
+    var: katello_ca.stdout
+
+###########################################################################
+# PRESTEP COMPLETE
+###########################################################################
+
+- name: Prestep completed
+  debug:
+    msg:
+      - "Pre-registration completed."
+      - "Host is ready for Foreman/Katello registration."
