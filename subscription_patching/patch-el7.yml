@@ -5,24 +5,7 @@
   gather_facts: false
   serial: 1
 
-  vars:
-    #######################################################################
-    # Values supplied by NetBox Config Context
-    #######################################################################
-
-    organization: "{{ organization }}"
-    activation_key: "{{ activation_key }}"
-
-    katello_ca_url: "{{ katello_ca_url }}"
-
-    repo_base: "{{ repo_base }}"
-    repo_patch: "{{ repo_patch }}"
-
   tasks:
-
-  #######################################################################
-  # PRECHECK
-  #######################################################################
 
   - name: Display target
     debug:
