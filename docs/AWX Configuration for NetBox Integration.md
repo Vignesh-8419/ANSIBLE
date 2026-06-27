@@ -314,6 +314,31 @@ for cfg in configs:
 EOF
 ```
 
+# Create localhost in both inventories
+
+```text
+awx-manage shell <<'EOF'
+from awx.main.models import Inventory, Host
+
+for inventory_name in ["centos-07-servers", "rocky-8-servers"]:
+    inventory = Inventory.objects.get(name=inventory_name)
+
+    host, created = Host.objects.get_or_create(
+        name="localhost",
+        inventory=inventory,
+        defaults={
+            "variables": "ansible_connection: local\nansible_python_interpreter: /usr/bin/python3"
+        }
+    )
+
+    if not created:
+        host.variables = "ansible_connection: local\nansible_python_interpreter: /usr/bin/python3"
+        host.save()
+
+    print(f"{inventory_name}: localhost {'created' if created else 'updated'}")
+EOF
+```
+
 ---
 
 # Step 5 - Create Golden Template Project and Job Template
@@ -893,6 +918,82 @@ inventory = Inventory.objects.get(
 
 jt.inventory = inventory
 jt.ask_inventory_on_launch = False
+```
+
+# Provision Hosts el7
+
+```text
+awx-manage shell <<'EOF'
+from awx.main.models import Inventory, Project, JobTemplate, Credential
+
+# Dependencies
+try:
+    project = Project.objects.get(name="Inventory-Git-Repo")
+    inventory = Inventory.objects.get(name="centos-07-servers")
+    credential = Credential.objects.get(name="Linux Root Credential")
+except (Project.DoesNotExist,
+        Inventory.DoesNotExist,
+        Credential.DoesNotExist) as e:
+    print(f"Error: Missing required dependency. {e}")
+    exit(1)
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="provision_hosts_el7",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "provision_hosts_el7.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": False,
+        "limit": "localhost",
+    }
+)
+
+jt.project = project
+jt.inventory = inventory
+jt.playbook = "provision_hosts_el7.yml"
+jt.ask_inventory_on_launch = False
+jt.ask_limit_on_launch = False
+jt.limit = "localhost"
+
+jt.save()
+
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+survey_spec = {
+    "name": "Provision Hosts",
+    "description": "Specify NetBox host short names to provision.",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": (
+                "Enter NetBox short hostnames separated by commas.\n"
+                "Example: cent-07-03 or cent-07-03,cent-07-04"
+            ),
+            "variable": "target_hosts",
+            "required": True,
+            "default": "cent-07-03",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.survey_enabled = True
+jt.survey_spec = survey_spec
+jt.save()
+
+print(
+    f"Job Template 'provision_hosts_el7' "
+    f"{'created' if created else 'updated'} successfully."
+)
+print(f"Credential assigned: {credential.name}")
+print("Execution Limit : localhost")
+print("Survey Example  : cent-07-03")
+print("Multiple Hosts  : cent-07-03,cent-07-04")
+EOF
 ```
 
 ---
