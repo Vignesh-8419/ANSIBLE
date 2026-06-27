@@ -117,6 +117,7 @@
         validate_certs: false
         name: "{{ item.name }}"
         state: poweredoff
+      loop: "{{ filtered_devices }}"
 
     - name: Set EFI Firmware
       vmware_guest_boot_manager:
@@ -272,3 +273,6 @@
       loop: "{{ filtered_devices }}"
       loop_control:
         index_var: idx
+		
+
+
