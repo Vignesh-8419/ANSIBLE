@@ -253,7 +253,7 @@
       register: netbox_ips
 
     - name: Check kernel
-      command: uname -r
+      raw: uname -r
       register: kernel_version
       delegate_to: >-
         {{
