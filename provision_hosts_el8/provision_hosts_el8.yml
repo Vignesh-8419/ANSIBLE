@@ -87,19 +87,6 @@
       register: vm_info
 
     ###########################################################################
-    # Get interfaces
-    ###########################################################################
-
-    - name: Get interfaces from NetBox
-      uri:
-        url: "{{ netbox_url }}/api/dcim/interfaces/"
-        method: GET
-        headers:
-          Authorization: "Token {{ netbox_token }}"
-        validate_certs: no
-      register: netbox_interfaces
-
-    ###########################################################################
     # Get IP addresses
     ###########################################################################
     
@@ -111,10 +98,6 @@
           Authorization: "Token {{ netbox_token }}"
         validate_certs: no
       register: netbox_ips
-
-    - name: Show complete VM information
-      debug:
-        var: vm_info.results[0]
 
     - name: Initialize host info
       set_fact:
@@ -133,7 +116,7 @@
             | default('')
           ),
           'mac': (
-            item.1.instance.hw_interfaces[0].macaddress
+            item.1.instance.hw_eth0.macaddress
             | default('')
           )
         } ] }}"
