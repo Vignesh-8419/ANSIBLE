@@ -1,14 +1,18 @@
 ---
 - name: Create DNS records in Technitium DNS
-  hosts: all
+  hosts: localhost
+  connection: local
   gather_facts: false
   vars:
-    # Technitium DNS API
     dns_server: "192.168.253.1:5380"
-    # DNS server IP (used for nslookup only)
     dns_server_ip: "192.168.253.1"
-    # API Token
     dns_token: "14759e1e000567381175d02ef3e137d2847e6dd637e5a74bcdb726e24dabaac7"
+  
+    netbox_url: "https://192.168.253.143"
+    netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
+  
+    fqdn: "{{ target_hosts }}.vgs.com"
+
   tasks:
     ###########################################################################
     # Determine Target IP
@@ -17,17 +21,25 @@
     - name: Get IP addresses from NetBox
       delegate_to: localhost
       uri:
-        url: "https://192.168.253.143/api/ipam/ip-addresses/"
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
         method: GET
         headers:
-          Authorization: "Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
+          Authorization: "Token {{ netbox_token }}"
         return_content: yes
         validate_certs: no
       register: netbox_ips
 
+    - name: Show target_hosts
+      debug:
+        var: target_hosts
+    
+    - name: Show fqdn
+      debug:
+        var: fqdn
+
     - name: Show inventory hostname
       debug:
-        var: inventory_hostname
+        var: fqdn
 
     - name: Show first few NetBox IP entries
       debug:
@@ -38,7 +50,7 @@
         target_ip: >-
           {{
             netbox_ips.json.results
-            | selectattr('assigned_object.device.name', 'equalto', inventory_hostname)
+            | selectattr('assigned_object.device.name', 'equalto', fqdn)
             | map(attribute='address')
             | map('regex_replace', '/.*$', '')
             | first
@@ -49,16 +61,16 @@
     - name: Validate required variables
       assert:
         that:
-          - inventory_hostname | length > 0
+          - fqdn | length > 0
           - target_ip | length > 0
-        fail_msg: "inventory_hostname and target_ip must be available."
+        fail_msg: "fqdn and target_ip must be available."
     ###########################################################################
     # Calculate DNS Information
     ###########################################################################
     - name: Calculate DNS information
       set_fact:
-        short_hostname: "{{ inventory_hostname.split('.')[0] }}"
-        dns_zone: "{{ inventory_hostname.split('.', 1)[1] }}"
+        short_hostname: "{{ fqdn.split('.')[0] }}"
+        dns_zone: "{{ fqdn.split('.', 1)[1] }}"
         reverse_zone: "{{ target_ip.split('.')[2] }}.{{ target_ip.split('.')[1] }}.{{ target_ip.split('.')[0] }}.in-addr.arpa"
         last_octet: "{{ target_ip.split('.')[-1] }}"
     ###########################################################################
@@ -67,7 +79,7 @@
     - name: Display calculated values
       debug:
         msg:
-          - "FQDN          : {{ inventory_hostname }}"
+          - "FQDN          : {{ fqdn }}"
           - "Hostname      : {{ short_hostname }}"
           - "DNS Zone      : {{ dns_zone }}"
           - "IP Address    : {{ target_ip }}"
@@ -79,7 +91,7 @@
     - name: Create A Record
       delegate_to: localhost
       uri:
-        url: "http://{{ dns_server }}/api/zones/records/add?token={{ dns_token }}&zone={{ dns_zone | urlencode }}&domain={{ inventory_hostname | urlencode }}&type=A&ttl=3600&ipAddress={{ target_ip }}&ptr=false&createPtrZone=false&updateSvcbHints=false"
+        url: "http://{{ dns_server }}/api/zones/records/add?token={{ dns_token }}&zone={{ dns_zone | urlencode }}&domain={{ fqdn | urlencode }}&type=A&ttl=3600&ipAddress={{ target_ip }}&ptr=false&createPtrZone=false&updateSvcbHints=false"
         method: GET
         return_content: true
         validate_certs: false
@@ -94,7 +106,7 @@
     - name: Create PTR Record
       delegate_to: localhost
       uri:
-        url: "http://{{ dns_server }}/api/zones/records/add?token={{ dns_token }}&zone={{ reverse_zone | urlencode }}&domain={{ last_octet }}.{{ reverse_zone }}&type=PTR&ttl=3600&ptrName={{ inventory_hostname | urlencode }}"
+        url: "http://{{ dns_server }}/api/zones/records/add?token={{ dns_token }}&zone={{ reverse_zone | urlencode }}&domain={{ last_octet }}.{{ reverse_zone }}&type=PTR&ttl=3600&ptrName={{ fqdn | urlencode }}"
         method: GET
         return_content: true
         validate_certs: false
@@ -111,7 +123,7 @@
       command:
         argv:
           - nslookup
-          - "{{ inventory_hostname }}"
+          - "{{ fqdn }}"
           - "{{ dns_server_ip }}"
       register: forward_lookup
       changed_when: false
@@ -144,7 +156,7 @@
         msg:
           - "========================================="
           - "DNS record creation completed."
-          - "Host         : {{ inventory_hostname }}"
+          - "Host         : {{ fqdn }}"
           - "IP Address   : {{ target_ip }}"
           - "Forward Zone : {{ dns_zone }}"
           - "Reverse Zone : {{ reverse_zone }}"
