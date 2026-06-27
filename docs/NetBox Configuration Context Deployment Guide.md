@@ -57,9 +57,9 @@ for TAG in \
 "pxe-centos-context" \
 "pxe-rockyos-context" \
 "patch-context" \
-"patch-el8-context" \
 "repo-config-context" \
 "centostorocky-context" \
+"patch-el8-context" \
 "centos-patch-context" \
 "rocky-patch-context"
 do
