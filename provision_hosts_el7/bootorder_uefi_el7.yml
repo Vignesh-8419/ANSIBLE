@@ -272,6 +272,3 @@
       loop: "{{ filtered_devices }}"
       loop_control:
         index_var: idx
-		
-
-
