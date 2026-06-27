@@ -9,11 +9,11 @@
   gather_facts: no
 
   vars:
-    netbox_url: "https://192.168.253.134"
-    netbox_token: "668d10258cfa6ad36826afdf4c3141be6f960369"
+    netbox_url: "https://192.168.253.143"
+    netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
 
     # From AWX Survey
-    cluster_name: "{{ cluster_name }}"
+    cluster_name: "centos-07-servers"
     target_hosts: "{{ target_hosts }}"   # comma-separated list
 
   tasks:
