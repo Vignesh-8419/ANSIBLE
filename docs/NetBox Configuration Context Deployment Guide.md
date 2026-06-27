@@ -372,6 +372,66 @@ https://192.168.253.143/api/extras/config-contexts/ \
 }'
 ```
 
+# Step 9 centos-patch-context
+
+```bash
+curl -sk -X POST \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+-H "Content-Type: application/json" \
+https://192.168.253.143/api/extras/config-contexts/ \
+-d '{
+    "name": "centos-patch-context",
+    "weight": 1000,
+    "is_active": true,
+    "description": "CentOS 7 Offline Patching Variables",
+    "tags": [8],
+    "data": {
+        "organization": "Default_Organization",
+        "activation_key": "centos7-prod-key",
+        "katello_ca_url": "http://cent-07-01.vgs.com/pub/katello-ca-consumer-latest.noarch.rpm",
+        "repo_base": "http://192.168.253.136/repo/centos",
+        "repo_patch": "http://192.168.253.136/repo/installed_rhel7",
+        "subscription_manager_package": "subscription-manager",
+        "reboot_delay": 60,
+        "wait_for_down_timeout": 180,
+        "wait_for_up_timeout": 300,
+        "post_reboot_wait": 90,
+        "repo_backup_dir": "/etc/yum.repos.d/backup"
+    }
+}'
+```
+
+# Step 10 rocky-patch-context
+
+```bash
+curl -sk -X POST \
+-H "Authorization: Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd" \
+-H "Content-Type: application/json" \
+https://192.168.253.143/api/extras/config-contexts/ \
+-d '{
+    "name": "rocky-patch-context",
+    "weight": 1000,
+    "is_active": true,
+    "description": "Rocky Linux 8 Offline Patching Variables",
+    "tags": [9],
+    "data": {
+        "organization": "Default_Organization",
+        "activation_key": "rocky8-prod-key",
+        "katello_ca_url": "http://rocky-08-01.vgs.com/pub/katello-ca-consumer-latest.noarch.rpm",
+        "repo_baseos": "http://192.168.253.136/repo/rocky8/BaseOS",
+        "repo_appstream": "http://192.168.253.136/repo/rocky8/Appstream",
+        "repo_patch": "http://192.168.253.136/repo/installed_rhel8",
+        "subscription_manager_package": "subscription-manager",
+        "reboot_delay": 60,
+        "wait_for_down_timeout": 180,
+        "wait_for_up_timeout": 300,
+        "post_reboot_wait": 90,
+        "repo_backup_dir": "/etc/yum.repos.d/backup"
+    }
+}'
+```
+
+
 ---
 
 # Verification Commands
