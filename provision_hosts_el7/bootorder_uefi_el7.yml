@@ -115,7 +115,7 @@
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: false
-        name: "{{ item.name }}"
+        name: "{{ item.name.split('.')[0] }}"
         state: powered-off
       loop: "{{ filtered_devices }}"
 
@@ -125,7 +125,7 @@
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: "{{ validate_certs }}"
-        name: "{{ item.name }}"
+        name: "{{ item.name.split('.')[0] }}"
         boot_firmware: efi
       loop: "{{ filtered_devices }}"
 
@@ -135,7 +135,7 @@
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: "{{ validate_certs }}"
-        name: "{{ item.name }}"
+        name: "{{ item.name.split('.')[0] }}"
         boot_order:
           - ethernet
           - disk
@@ -147,7 +147,7 @@
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: false
-        name: "{{ item.name }}"
+        name: "{{ item.name.split('.')[0] }}"
         state: powered-on
       loop: "{{ filtered_devices }}"
 
@@ -157,7 +157,7 @@
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: "{{ validate_certs }}"
-        name: "{{ item.name }}"
+        name: "{{ item.name.split('.')[0] }}"
         boot_order:
           - disk
           - ethernet
