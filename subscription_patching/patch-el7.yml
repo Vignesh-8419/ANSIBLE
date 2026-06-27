@@ -164,47 +164,40 @@
       register: reboot_required
       failed_when: false
     
-    #######################################################################
+    ###########################################################################
     # REBOOT
-    #######################################################################
+    ###########################################################################
     
-    - name: Schedule reboot in one minute
-      raw: shutdown -r +1 "Reboot scheduled by Ansible after patching"
+    - name: Schedule reboot in 1 minute
+      raw: shutdown -r +1 "Reboot initiated by Ansible"
       when: reboot_required.rc != 0
-      async: 30
-      poll: 0
     
-    - name: Wait for SSH to go down
-      wait_for:
-        host: "{{ inventory_hostname }}"
-        port: 22
-        state: drained
-        delay: 10
-        timeout: 120
+    - name: Wait for reboot to complete
       delegate_to: localhost
-      when: reboot_required.rc != 0
-    
-    - name: Wait for SSH to return
+      become: false
       wait_for:
-        host: "{{ inventory_hostname }}"
+        host: "{{ ansible_host | default(inventory_hostname) }}"
         port: 22
+        delay: "{{ post_reboot_wait | int }}"
+        timeout: "{{ wait_for_up_timeout | int }}"
         state: started
-        delay: 30
-        timeout: 300
-      delegate_to: localhost
       when: reboot_required.rc != 0
     
-    - name: Wait additional 90 seconds
-      pause:
-        seconds: 90
+    - name: Verify server is accessible after reboot
+      raw: uptime
+      register: uptime_result
+      retries: 10
+      delay: 15
+      until: uptime_result.rc == 0
       when: reboot_required.rc != 0
     
-    #######################################################################
+    ###########################################################################
     # FINAL STATUS
-    #######################################################################
+    ###########################################################################
     
     - name: Show completion
       debug:
         msg:
           - "Patching completed successfully."
           - "Host: {{ inventory_hostname }}"
+          - "Reboot completed successfully."
