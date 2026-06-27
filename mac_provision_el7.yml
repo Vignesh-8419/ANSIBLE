@@ -19,7 +19,7 @@
 
     foreman_url: "https://rocky-08-01.vgs.com"
     foreman_user: "admin"
-    foreman_password: "{{ foreman_password }}"
+    foreman_password: "zqs977dXzqfEvTML"
 
     ###########################################################################
     # ESXi
@@ -27,7 +27,7 @@
 
     esxi_hostname: "192.168.253.128"
     vm_root_user: "root"
-    vm_root_password: "{{ vm_root_password }}"
+    vm_root_password: "Root@123"
     guest_domain: "vgs.com"
 
     ###########################################################################
