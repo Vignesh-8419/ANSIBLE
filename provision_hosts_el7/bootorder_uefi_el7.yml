@@ -41,6 +41,7 @@
       set_fact:
         cluster_id: "{{ (cluster_lookup.json.results | first).id }}"
 
+
     ###########################################################################
     # Get Devices
     ###########################################################################
@@ -67,17 +68,24 @@
     # Filter Devices
     ###########################################################################
 
+    - name: Initialize filtered_devices
+      set_fact:
+        filtered_devices: []
+    
     - name: Filter devices
       set_fact:
-        filtered_devices: >-
-          {{
-            netbox_devices.json.results
-            | selectattr('name', 'in', target_hosts_list)
-            | list
-          }}
-
+        filtered_devices: "{{ filtered_devices + [item] }}"
+      loop: "{{ netbox_devices.json.results }}"
+      when:
+        - item.name.split('.')[0] in target_hosts_list
+    
     - debug:
         var: filtered_devices
+
+    - name: Fail if no matching hosts found
+      fail:
+        msg: "No matching hosts found in NetBox."
+      when: filtered_devices | length == 0
 
 # ============================================================
 # PLAY 2: Configure ESXi Boot
@@ -163,6 +171,10 @@
   hosts: localhost
   gather_facts: no
 
+  vars:
+    netbox_url: "https://192.168.253.143"
+    netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
+
   tasks:
 
     - name: Get all IP addresses
@@ -225,8 +237,20 @@
 
   vars:
     ansible_ssh_common_args: "-o UserKnownHostsFile=/tmp/known_hosts -o StrictHostKeyChecking=no"
+    netbox_url: "https://192.168.253.143"
+    netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
 
   tasks:
+  
+    - name: Get all IP addresses
+      uri:
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        return_content: yes
+        validate_certs: no
+      register: netbox_ips
 
     - name: Check kernel
       command: uname -r
@@ -249,3 +273,6 @@
       loop: "{{ filtered_devices }}"
       loop_control:
         index_var: idx
+		
+
+
