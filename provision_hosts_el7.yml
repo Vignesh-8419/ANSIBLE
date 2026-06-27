@@ -5,7 +5,7 @@
   gather_facts: no
 
   vars:
-    netbox_url: "https://rocky-08-01.vgs.com"
+    netbox_url: "https://rocky-08-03.vgs.com"
     netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
 
     foreman_url: "https://rocky-08-01.vgs.com"
