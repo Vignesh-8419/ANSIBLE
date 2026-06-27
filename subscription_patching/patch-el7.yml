@@ -7,6 +7,10 @@
 
   tasks:
 
+  - name: Load NetBox Config Context
+    set_fact:
+     nbctx: "{{ config_context[0] }}"
+
   - name: Display target
     debug:
       msg:
