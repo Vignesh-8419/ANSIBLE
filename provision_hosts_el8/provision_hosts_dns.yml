@@ -13,6 +13,18 @@
     ###########################################################################
     # Determine Target IP
     ###########################################################################
+
+    - name: Get IP addresses from NetBox
+      delegate_to: localhost
+      uri:
+        url: "https://192.168.253.143/api/ipam/ip-addresses/"
+        method: GET
+        headers:
+          Authorization: "Token 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
+        return_content: yes
+        validate_certs: no
+      register: netbox_ips
+
     - name: Determine target IP
       set_fact:
         target_ip: >-
