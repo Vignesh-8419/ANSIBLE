@@ -17,7 +17,7 @@
     cluster_name: "rocky-8-servers"
 
     # Leave empty to create all Rocky hosts
-    target_servers: []
+    target_servers: "{{ target_hosts.split(',') | map('trim') | list }}"
 
     # Foreman IDs
     # Foreman IDs
