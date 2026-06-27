@@ -897,7 +897,7 @@ jt, created = JobTemplate.objects.get_or_create(
         "inventory": inventory,
         "playbook": "subscription_patching/patch-el7.yml",
         "ask_inventory_on_launch": False,
-        "ask_limit_on_launch": True
+        "ask_limit_on_launch": False
     }
 )
 
@@ -905,7 +905,7 @@ jt.project = project
 jt.inventory = inventory
 jt.playbook = "subscription_patching/patch-el7.yml"
 jt.ask_inventory_on_launch = False
-jt.ask_limit_on_launch = True
+jt.ask_limit_on_launch = False
 
 jt.credentials.clear()
 jt.credentials.add(credential)
@@ -959,7 +959,7 @@ jt, created = JobTemplate.objects.get_or_create(
         "inventory": inventory,
         "playbook": "subscription_patching/patch-el8.yml",
         "ask_inventory_on_launch": False,
-        "ask_limit_on_launch": True
+        "ask_limit_on_launch": False
     }
 )
 
@@ -967,7 +967,7 @@ jt.project = project
 jt.inventory = inventory
 jt.playbook = "subscription_patching/patch-el8.yml"
 jt.ask_inventory_on_launch = False
-jt.ask_limit_on_launch = True
+jt.ask_limit_on_launch = False
 
 jt.credentials.clear()
 jt.credentials.add(credential)
