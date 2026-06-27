@@ -1,0 +1,104 @@
+---
+###########################################################################
+# REFRESH SUBSCRIPTION
+###########################################################################
+
+- name: Refresh subscription
+  raw: subscription-manager refresh
+  failed_when: false
+
+###########################################################################
+# CLEAN PACKAGE CACHE
+###########################################################################
+
+- name: Clean yum cache
+  raw: yum clean all
+
+- name: Rebuild yum cache
+  raw: yum makecache
+
+###########################################################################
+# DISPLAY ENABLED REPOSITORIES
+###########################################################################
+
+- name: List enabled repositories
+  raw: yum repolist
+  register: yum_repolist
+  changed_when: false
+
+- name: Display enabled repositories
+  debug:
+    var: yum_repolist.stdout_lines
+
+###########################################################################
+# CHECK AVAILABLE UPDATES
+###########################################################################
+
+- name: Check available updates
+  raw: yum check-update
+  register: update_check
+  failed_when: false
+  changed_when: false
+
+###########################################################################
+# APPLY PATCHES
+###########################################################################
+
+- name: Apply all available updates
+  raw: yum -y update
+  register: patch_result
+
+- name: Display patch summary
+  debug:
+    var: patch_result.stdout_lines
+
+###########################################################################
+# VERIFY INSTALLED KERNEL
+###########################################################################
+
+- name: Display current kernel
+  raw: uname -r
+  register: running_kernel
+  changed_when: false
+
+- name: Display running kernel
+  debug:
+    var: running_kernel.stdout
+
+###########################################################################
+# CHECK IF REBOOT IS REQUIRED
+###########################################################################
+
+- name: Check reboot requirement
+  raw: needs-restarting -r
+  register: reboot_check
+  failed_when: false
+  changed_when: false
+
+###########################################################################
+# SET REBOOT FLAG
+###########################################################################
+
+- name: Determine reboot requirement
+  set_fact:
+    reboot_required: "{{ reboot_check.rc != 0 }}"
+
+- name: Display reboot requirement
+  debug:
+    msg: >-
+      {{
+        'System reboot is required after patching.'
+        if reboot_required
+        else
+        'No reboot required.'
+      }}
+
+###########################################################################
+# PATCH COMPLETE
+###########################################################################
+
+- name: Patching completed
+  debug:
+    msg:
+      - "Patch installation completed."
+      - "Reboot Required : {{ reboot_required }}"
