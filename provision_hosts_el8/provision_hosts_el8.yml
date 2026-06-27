@@ -20,6 +20,7 @@
     target_servers: []
 
     # Foreman IDs
+    # Foreman IDs
     org_id: 1
     loc_id: 2
     hostgroup_id: 2
@@ -56,7 +57,7 @@
         filtered_devices: "{{ filtered_devices + [item] }}"
       loop: "{{ netbox_devices.json.results }}"
       when:
-        - target_servers | length == 0 or item.name.split('.')[0] in target_servers
+        - item.name.split('.')[0] in target_servers
 
     - name: Show filtered devices
       debug:
@@ -127,10 +128,28 @@
         var: host_info
 
     ###########################################################################
+    # Check if host already exists in Foreman
+    ###########################################################################
+
+    - name: Check if host exists in Foreman
+      uri:
+        url: "{{ foreman_url }}/api/hosts/{{ item.name }}"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+        status_code:
+          - 200
+          - 404
+      loop: "{{ host_info }}"
+      register: foreman_hosts
+
+    ###########################################################################
     # Create hosts in Foreman
     ###########################################################################
 
-    - name: Create host in Foreman
+    - name: Create host in Foreman (only if missing)
       uri:
         url: "{{ foreman_url }}/api/hosts"
         method: POST
@@ -141,13 +160,12 @@
         status_code:
           - 200
           - 201
-        timeout: 120
         headers:
           Content-Type: application/json
         body_format: json
         body:
           host:
-            name: "{{ item.name }}"
+            name: "{{ item.item.name }}"
             hostgroup_id: "{{ hostgroup_id }}"
             organization_id: "{{ org_id }}"
             location_id: "{{ loc_id }}"
@@ -157,12 +175,51 @@
             root_pass: "{{ host_root_pass }}"
             interfaces_attributes:
               - type: interface
-                mac: "{{ item.mac }}"
-                ip: "{{ item.ip }}"
+                mac: "{{ item.item.mac }}"
+                ip: "{{ item.item.ip }}"
                 primary: true
                 provision: true
-      loop: "{{ host_info }}"
+      when: item.status == 404
+      loop: "{{ foreman_hosts.results }}"
       register: foreman_create
+
+    - name: Refresh Foreman host information
+      uri:
+        url: "{{ foreman_url }}/api/hosts/{{ item.name }}"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+        status_code: 200
+      loop: "{{ host_info }}"
+      register: foreman_hosts_updated
+
+    - name: Show refreshed Foreman hosts
+      debug:
+        msg:
+          - "Host: {{ item.json.name }}"
+          - "ID: {{ item.json.id }}"
+      loop: "{{ foreman_hosts_updated.results }}"
+        
+    - name: Enable build mode for existing hosts only
+      uri:
+        url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}"
+        method: PUT
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+        headers:
+          Content-Type: application/json
+        body_format: json
+        body:
+          host:
+            build: true
+        status_code:
+          - 200
+      when: item.json.build == false
+      loop: "{{ foreman_hosts_updated.results }}"
 
     - debug:
         var: foreman_create
