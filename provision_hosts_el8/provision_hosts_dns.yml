@@ -1,14 +1,8 @@
+---
 - name: Create DNS records in Technitium DNS
-  hosts: localhost
-  connection: local
+  hosts: all
   gather_facts: false
-
   vars:
-    netbox_url: "https://192.168.253.143"
-    netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
-    cluster_name: "rocky-8-servers"
-    # AWX Survey
-    target_hosts: "{{ target_hosts }}"
     # Technitium DNS API
     dns_server: "192.168.253.1:5380"
     # DNS server IP (used for nslookup only)
@@ -23,9 +17,11 @@
       set_fact:
         target_ip: >-
           {{
-            primary_ip4.address.split('/')[0]
-            if (primary_ip4 is mapping)
-            else (primary_ip4 | string)
+            netbox_ips.json.results
+            | selectattr('assigned_object.device.name', 'equalto', inventory_hostname)
+            | map(attribute='address')
+            | map('regex_replace', '/.*$', '')
+            | first
           }}
     ###########################################################################
     # Validate Variables
