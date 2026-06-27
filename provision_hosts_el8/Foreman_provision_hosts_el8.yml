@@ -1,0 +1,4 @@
+---
+- import_playbook: provision_hosts_el8.yml
+
+- import_playbook: bootorder_uefi_el8.yml
