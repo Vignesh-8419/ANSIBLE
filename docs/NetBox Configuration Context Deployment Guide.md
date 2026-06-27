@@ -111,9 +111,9 @@ https://192.168.253.143/api/extras/config-contexts/ \
         "vcenter_password": "Vigneshv12$",
         "vcenter_username": "administrator@vsphere.local",
         "vm_network": "VM Network",
-        "exsi_hostname": "192.168.253.128",
-        "exsi_password": "Root@123",
-        "exsi_username": "root",
+        "esxi_hostname": "192.168.253.128",
+        "esxi_password": "Root@123",
+        "esxi_username": "root",
         "vm_root_password": "Root@123",
         "ansible_password": "Root@123",
         "vm_root_user": "root"
