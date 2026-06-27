@@ -129,7 +129,7 @@
   vars:
     exsi_hostname: "192.168.253.128"
     exsi_username: "root"
-    exsi_password: "admin$22"
+    exsi_password: "Root@123"
     validate_certs: false
 
   tasks:
