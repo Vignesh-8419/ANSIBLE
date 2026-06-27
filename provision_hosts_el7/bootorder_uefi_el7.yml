@@ -110,18 +110,13 @@
   tasks:
 
     - name: Power OFF VM
-      vmware_guest:
+      community.vmware.vmware_guest:
         hostname: "{{ exsi_hostname }}"
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
-        validate_certs: "{{ validate_certs }}"
-      
-        datacenter: "Datacenter"
-        folder: "/Datacenter/vm"
-      
+        validate_certs: false
         name: "{{ item.name }}"
         state: poweredoff
-      loop: "{{ filtered_devices }}"
 
     - name: Set EFI Firmware
       vmware_guest_boot_manager:
@@ -277,4 +272,6 @@
       loop: "{{ filtered_devices }}"
       loop_control:
         index_var: idx
+		
+
 
