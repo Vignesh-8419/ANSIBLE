@@ -17,9 +17,7 @@
     cluster_name: "centos-07-servers"
 
     # Hosts to create
-    target_servers:
-      - cent-07-03
-      - cent-07-04
+    target_servers: "{{ target_hosts.split(',') | map('trim') | list }}"
 
     # Foreman IDs
     org_id: 1
