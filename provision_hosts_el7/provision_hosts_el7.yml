@@ -129,10 +129,28 @@
         var: host_info
 
     ###########################################################################
+    # Check if host already exists in Foreman
+    ###########################################################################
+
+    - name: Check if host exists in Foreman
+      uri:
+        url: "{{ foreman_url }}/api/hosts/{{ item.name }}"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+        status_code:
+          - 200
+          - 404
+      loop: "{{ host_info }}"
+      register: foreman_hosts
+
+    ###########################################################################
     # Create hosts in Foreman
     ###########################################################################
 
-    - name: Create host in Foreman
+    - name: Create host in Foreman (only if missing)
       uri:
         url: "{{ foreman_url }}/api/hosts"
         method: POST
@@ -148,7 +166,7 @@
         body_format: json
         body:
           host:
-            name: "{{ item.name }}"
+            name: "{{ item.item.name }}"
             hostgroup_id: "{{ hostgroup_id }}"
             organization_id: "{{ org_id }}"
             location_id: "{{ loc_id }}"
@@ -158,12 +176,38 @@
             root_pass: "{{ host_root_pass }}"
             interfaces_attributes:
               - type: interface
-                mac: "{{ item.mac }}"
-                ip: "{{ item.ip }}"
+                mac: "{{ item.item.mac }}"
+                ip: "{{ item.item.ip }}"
                 primary: true
                 provision: true
-      loop: "{{ host_info }}"
+      when: item.status == 404
+      loop: "{{ foreman_hosts.results }}"
       register: foreman_create
+
+    - name: Refresh Foreman host information
+      uri:
+        url: "{{ foreman_url }}/api/hosts/{{ item.name }}"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+        status_code: 200
+      loop: "{{ host_info }}"
+      register: foreman_hosts_updated
+    
+    - name: Ensure host is in build mode
+      uri:
+        url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}/setBuild"
+        method: PUT
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+        status_code:
+          - 200
+          - 201
+      loop: "{{ foreman_hosts_updated.results }}"
 
     - debug:
         var: foreman_create
