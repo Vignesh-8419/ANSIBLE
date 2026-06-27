@@ -109,14 +109,14 @@
 
   tasks:
 
-    - name: Power OFF VM
-      community.vmware.vmware_guest:
+    - name: Power ON VM
+      community.vmware.vmware_guest_powerstate:
         hostname: "{{ exsi_hostname }}"
         username: "{{ exsi_username }}"
         password: "{{ exsi_password }}"
         validate_certs: false
         name: "{{ item.name }}"
-        state: poweredoff
+        state: powered-on
       loop: "{{ filtered_devices }}"
 
     - name: Set EFI Firmware
@@ -273,5 +273,3 @@
       loop: "{{ filtered_devices }}"
       loop_control:
         index_var: idx
-
-
