@@ -373,6 +373,7 @@ set -e
 dnf module reset nodejs -y
 sudo dnf module enable -y nodejs:18
 sudo dnf install -y nodejs npm
+rm -rf /root/foreman-frontend
 npx create-react-app foreman-frontend -y
 mkdir -p /root/foreman-frontend/ssl
 openssl req -x509 -newkey rsa:2048 -nodes -keyout /root/foreman-frontend/ssl/server.key -out /root/foreman-frontend/ssl/server.crt -days 365 -subj "/O=VGS/OU=VGS/CN=rocky-08-01.vgs.com"
