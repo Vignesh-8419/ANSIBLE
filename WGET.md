@@ -30,6 +30,12 @@ chmod +x working_netbox.sh
 ```
 
 ```text
+curl -L -o netbox-initial-bootstrap.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/netbox-initial-bootstrap.sh?$(date +%s)" && \
+chmod +x netbox-initial-bootstrap.sh
+```
+
+```text
 curl -L -o netbox-bootstrap.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/netbox-bootstrap.sh?$(date +%s)" && \
 chmod +x netbox-bootstrap.sh
