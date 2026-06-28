@@ -284,8 +284,8 @@ echo -e "${GREEN}✅ Background:${NC} Created and patched the Ingress resource s
 # 16. Wait for migration task (delayed)
 # -----------------------------
 echo -e "${BLUE}# 16. Wait for migration task${NC}"
-echo "⏳ Sleeping for 15 minutes to allow migrations to complete..."
-sleep 900
+echo "⏳ Sleeping for 10 minutes to allow migrations to complete..."
+sleep 600
 
 echo "📜 Checking migration pod logs again..."
 MIGRATION_POD=$(kubectl get pods -n "$NAMESPACE" \
