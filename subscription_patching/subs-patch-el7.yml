@@ -155,22 +155,6 @@
         var: yum_update.stdout_lines
     
     #######################################################################
-    # PATCH SERVER
-    #######################################################################
-    
-    - name: Apply updates (skip broken packages)
-      raw: |
-        yum -y update \
-          --skip-broken \
-          --setopt=obsoletes=0
-      register: yum_update
-      failed_when: false
-    
-    - name: Display yum update output
-      debug:
-        var: yum_update.stdout_lines
-    
-    #######################################################################
     # CHECK IF REBOOT IS REQUIRED
     #######################################################################
     
