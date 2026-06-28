@@ -4,7 +4,6 @@ set -e
 # -------------------------------
 # CONFIGURATION
 # -------------------------------
-REPO_MOUNT="//192.168.31.87/ISO"
 MOUNT_POINT="http-server-01.vgs.com/repo"
 #USERNAME="vigne"
 #PASSWORD="Vigneshv12$"
