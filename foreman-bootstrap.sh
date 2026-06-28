@@ -98,7 +98,7 @@ echo "============================================================"
 echo "Checking CentOS 7 Installation Media..."
 
 if $HAMMER medium info --name "CentOS 7 Remote" >/dev/null 2>&1; then
-    echo "[SKIP] CentOS 7 Remote already exists."
+    skip "CentOS 7 Remote already exists."
 else
     echo "Creating CentOS 7 Remote..."
 
@@ -107,7 +107,7 @@ else
         --path "http://192.168.253.136/repo/centos/" \
         --os-family "Redhat"
 
-    echo "[OK] CentOS 7 Remote created."
+    ok "CentOS 7 Remote created."
 fi
 
 echo
@@ -119,7 +119,7 @@ echo
 echo "Checking Rocky Linux 8 Installation Media..."
 
 if $HAMMER medium info --name "Rocky 8 Remote" >/dev/null 2>&1; then
-    echo "[SKIP] Rocky 8 Remote already exists."
+    skip "Rocky 8 Remote already exists."
 else
     echo "Creating Rocky 8 Remote..."
 
@@ -128,7 +128,7 @@ else
         --path "http://192.168.253.136/repo/rocky8/" \
         --os-family "Redhat"
 
-    echo "[OK] Rocky 8 Remote created."
+    ok "Rocky 8 Remote created."
 fi
 
 echo
@@ -160,7 +160,7 @@ echo "============================================================"
 echo "Checking CentOS Linux 7..."
 
 if $HAMMER os info --title "CentOSLinux 7" >/dev/null 2>&1; then
-    echo "[SKIP] CentOSLinux 7 already exists."
+    skip "CentOSLinux 7 already exists."
 else
     echo "Creating CentOSLinux 7..."
 
@@ -172,7 +172,7 @@ else
         --partition-tables "Kickstart default" \
         --media "CentOS 7 Remote"
 
-    echo "[OK] CentOSLinux 7 created."
+    ok "CentOSLinux 7 created."
 fi
 
 echo
@@ -184,7 +184,7 @@ echo
 echo "Checking Rocky Linux 8.10..."
 
 if $HAMMER os info --title "RockyLinux 8.10" >/dev/null 2>&1; then
-    echo "[SKIP] RockyLinux 8.10 already exists."
+    skip "RockyLinux 8.10 already exists."
 else
     echo "Creating RockyLinux 8.10..."
 
@@ -197,7 +197,7 @@ else
         --partition-tables "Kickstart default" \
         --media "Rocky 8 Remote"
 
-    echo "[OK] RockyLinux 8.10 created."
+    ok "RockyLinux 8.10 created."
 fi
 
 echo
@@ -256,7 +256,7 @@ hostname=<%= @host.name %>
 }
 EOF
 
-echo "[OK] Template file generated."
+ok "Template file generated."
 echo
 
 ###############################################################################
@@ -268,7 +268,7 @@ echo "Checking PXE Template..."
 if $HAMMER template info \
     --name "PXEGrub2 RockyOS UEFI Static Kickstart" >/dev/null 2>&1; then
 
-    echo "[SKIP] Template already exists."
+    skip "Template already exists."
 
 else
 
@@ -279,7 +279,7 @@ else
         --type PXEGrub2 \
         --file /tmp/rocky-pxegrub2.erb
 
-    echo "[OK] Template imported."
+    ok "Template imported."
 
 fi
 
@@ -295,7 +295,7 @@ if $HAMMER os info \
     --title "RockyLinux 8.10" | \
     grep -q "PXEGrub2 RockyOS UEFI Static Kickstart"; then
 
-    echo "[SKIP] Template already assigned."
+    skip "Template already assigned."
 
 else
 
@@ -305,7 +305,7 @@ else
         --title "RockyLinux 8.10" \
         --provisioning-template "PXEGrub2 RockyOS UEFI Static Kickstart"
 
-    echo "[OK] Template assigned."
+    ok "Template assigned."
 
 fi
 
@@ -365,7 +365,7 @@ hostname=<%= @host.name %>
 }
 EOF
 
-echo "[OK] Template file generated."
+ok "Template file generated."
 echo
 
 ###############################################################################
@@ -377,7 +377,7 @@ echo "Checking PXE Template..."
 if $HAMMER template info \
     --name "PXEGrub2 CentOS UEFI Static Kickstart" >/dev/null 2>&1; then
 
-    echo "[SKIP] Template already exists."
+    skip "Template already exists."
 
 else
 
@@ -388,7 +388,7 @@ else
         --type PXEGrub2 \
         --file /tmp/centos-pxegrub2.erb
 
-    echo "[OK] Template imported."
+    ok "Template imported."
 
 fi
 
@@ -404,7 +404,7 @@ if $HAMMER os info \
     --title "CentOSLinux 7" | \
     grep -q "PXEGrub2 CentOS UEFI Static Kickstart"; then
 
-    echo "[SKIP] Template already assigned."
+    skip "Template already assigned."
 
 else
 
@@ -414,7 +414,7 @@ else
         --title "CentOSLinux 7" \
         --provisioning-template "PXEGrub2 CentOS UEFI Static Kickstart"
 
-    echo "[OK] Template assigned."
+    ok "Template assigned."
 
 fi
 
@@ -451,7 +451,7 @@ echo "Checking CentOS Subnet..."
 if $HAMMER subnet info \
     --name "vgs-subnet-centos" >/dev/null 2>&1; then
 
-    echo "[SKIP] vgs-subnet-centos already exists."
+    skip "vgs-subnet-centos already exists."
 
 else
 
@@ -472,7 +472,7 @@ else
         --dhcp "cent-07-01.vgs.com" \
         --tftp "cent-07-01.vgs.com"
 
-    echo "[OK] CentOS subnet created."
+    ok "CentOS subnet created."
 
 fi
 
@@ -487,7 +487,7 @@ echo "Checking Rocky Linux Subnet..."
 if $HAMMER subnet info \
     --name "vgs-subnet-rockyos" >/dev/null 2>&1; then
 
-    echo "[SKIP] vgs-subnet-rockyos already exists."
+    skip "vgs-subnet-rockyos already exists."
 
 else
 
@@ -508,7 +508,7 @@ else
         --dhcp "cent-07-02.vgs.com" \
         --tftp "cent-07-02.vgs.com"
 
-    echo "[OK] Rocky subnet created."
+    ok "Rocky subnet created."
 
 fi
 
@@ -546,7 +546,7 @@ if $HAMMER hostgroup info \
     --organization "Default Organization" \
     --name "VGS HOSTS CENTOS 7" >/dev/null 2>&1; then
 
-    echo "[SKIP] Host Group 'VGS HOSTS CENTOS 7' already exists."
+    skip "Host Group 'VGS HOSTS CENTOS 7' already exists."
 
 else
 
@@ -566,7 +566,7 @@ else
         --content-view "Default Organization View" \
         --lifecycle-environment "Library"
 
-    echo "[OK] CentOS Host Group created."
+    ok "CentOS Host Group created."
 
 fi
 
@@ -582,7 +582,7 @@ if $HAMMER hostgroup info \
     --organization "Default Organization" \
     --name "VGS HOSTS ROCKY 8" >/dev/null 2>&1; then
 
-    echo "[SKIP] Host Group 'VGS HOSTS ROCKY 8' already exists."
+    skip "Host Group 'VGS HOSTS ROCKY 8' already exists."
 
 else
 
@@ -602,7 +602,7 @@ else
         --content-view "Default Organization View" \
         --lifecycle-environment "Library"
 
-    echo "[OK] Rocky Host Group created."
+    ok "Rocky Host Group created."
 
 fi
 
@@ -668,12 +668,12 @@ awk -F'|' '/PXEGrub2 RockyOS UEFI Static Kickstart/ {gsub(/ /,"",$1); print $1}'
 ###############################################################################
 
 if [[ -z "$CENTOS_OS_ID" || -z "$CENTOS_TEMPLATE_ID" ]]; then
-    echo "[ERROR] Unable to locate CentOS OS or Template."
+    error "Unable to locate CentOS OS or Template."
     exit 1
 fi
 
 if [[ -z "$ROCKY_OS_ID" || -z "$ROCKY_TEMPLATE_ID" ]]; then
-    echo "[ERROR] Unable to locate Rocky OS or Template."
+    error "Unable to locate Rocky OS or Template."
     exit 1
 fi
 
@@ -686,7 +686,7 @@ echo "Checking CentOS default template..."
 if $HAMMER os info --id "$CENTOS_OS_ID" | \
 grep -q "PXEGrub2 CentOS UEFI Static Kickstart"; then
 
-    echo "[SKIP] CentOS default template already configured."
+    skip "CentOS default template already configured."
 
 else
 
@@ -696,7 +696,7 @@ else
         --id "$CENTOS_OS_ID" \
         --provisioning-template-id "$CENTOS_TEMPLATE_ID"
 
-    echo "[OK] CentOS default template configured."
+    ok "CentOS default template configured."
 
 fi
 
@@ -711,7 +711,7 @@ echo "Checking Rocky default template..."
 if $HAMMER os info --id "$ROCKY_OS_ID" | \
 grep -q "PXEGrub2 RockyOS UEFI Static Kickstart"; then
 
-    echo "[SKIP] Rocky default template already configured."
+    skip "Rocky default template already configured."
 
 else
 
@@ -721,7 +721,7 @@ else
         --id "$ROCKY_OS_ID" \
         --provisioning-template-id "$ROCKY_TEMPLATE_ID"
 
-    echo "[OK] Rocky default template configured."
+    ok "Rocky default template configured."
 
 fi
 
@@ -773,13 +773,13 @@ echo "============================================================"
 # Rocky Linux 8 Product
 ###############################################################################
 
-echo "Checking Product : Rocky Linux 8"
+info "Checking Product : Rocky Linux 8"
 
 if $HAMMER product info \
     --organization "Default Organization" \
     --name "Rocky Linux 8" >/dev/null 2>&1; then
 
-    echo "[SKIP] Product 'Rocky Linux 8' already exists."
+    skip "Product 'Rocky Linux 8' already exists."
 
 else
 
@@ -789,7 +789,7 @@ else
         --organization "Default Organization" \
         --name "Rocky Linux 8"
 
-    echo "[OK] Product created."
+    ok "Product created."
 
 fi
 
@@ -805,7 +805,7 @@ if $HAMMER product info \
     --organization "Default Organization" \
     --name "CentOS 7" >/dev/null 2>&1; then
 
-    echo "[SKIP] Product 'CentOS 7' already exists."
+    skip "Product 'CentOS 7' already exists."
 
 else
 
@@ -815,7 +815,7 @@ else
         --organization "Default Organization" \
         --name "CentOS 7"
 
-    echo "[OK] Product created."
+    ok "Product created."
 
 fi
 
@@ -853,7 +853,7 @@ if $HAMMER repository info \
     --product "CentOS 7" \
     --name "CentOS-07-BaseOS" >/dev/null 2>&1; then
 
-    echo "[SKIP] Repository already exists."
+    skip "Repository already exists."
 
 else
 
@@ -866,7 +866,7 @@ else
         --content-type yum \
         --url "http://http-server-01/repo/centos/"
 
-    echo "[OK] Repository created."
+    ok "Repository created."
 
 fi
 
@@ -883,7 +883,7 @@ if $HAMMER repository info \
     --product "CentOS 7" \
     --name "CentOS-07-Updates" >/dev/null 2>&1; then
 
-    echo "[SKIP] Repository already exists."
+    skip "Repository already exists."
 
 else
 
@@ -896,7 +896,7 @@ else
         --content-type yum \
         --url "http://http-server-01/repo/installed_rhel7/"
 
-    echo "[OK] Repository created."
+    ok "Repository created."
 
 fi
 
@@ -921,7 +921,7 @@ if $HAMMER repository info \
     --product "Rocky Linux 8" \
     --name "Rocky-08-BaseOS" >/dev/null 2>&1; then
 
-    echo "[SKIP] Repository already exists."
+    skip "Repository already exists."
 
 else
 
@@ -934,7 +934,7 @@ else
         --content-type yum \
         --url "http://192.168.253.136/repo/rocky8/BaseOS"
 
-    echo "[OK] Repository created."
+    ok "Repository created."
 
 fi
 
@@ -951,7 +951,7 @@ if $HAMMER repository info \
     --product "Rocky Linux 8" \
     --name "Rocky-08-AppStream" >/dev/null 2>&1; then
 
-    echo "[SKIP] Repository already exists."
+    skip "Repository already exists."
 
 else
 
@@ -964,7 +964,7 @@ else
         --content-type yum \
         --url "http://192.168.253.136/repo/rocky8/Appstream"
 
-    echo "[OK] Repository created."
+    ok "Repository created."
 
 fi
 
@@ -981,7 +981,7 @@ if $HAMMER repository info \
     --product "Rocky Linux 8" \
     --name "Rocky-08-RHEL-Installed" >/dev/null 2>&1; then
 
-    echo "[SKIP] Repository already exists."
+    skip "Repository already exists."
 
 else
 
@@ -994,7 +994,7 @@ else
         --content-type yum \
         --url "http://192.168.253.136/repo/installed_rhel8"
 
-    echo "[OK] Repository created."
+    ok "Repository created."
 
 fi
 
@@ -1051,7 +1051,7 @@ sync_repository() {
     case "$SYNC_STATUS" in
 
         running|Running)
-            echo "[SKIP] Synchronization already running."
+            skip "Synchronization already running."
             ;;
 
         *)
@@ -1062,7 +1062,7 @@ sync_repository() {
                 --product "$PRODUCT" \
                 --name "$REPO"
 
-            echo "[OK] Synchronization started."
+            ok "Synchronization started."
             ;;
 
     esac
@@ -1131,7 +1131,7 @@ create_content_view() {
         --organization "Default Organization" \
         --name "$CV_NAME" >/dev/null 2>&1; then
 
-        echo "[SKIP] Content View '$CV_NAME' already exists."
+        skip "Content View '$CV_NAME' already exists."
 
     else
 
@@ -1141,7 +1141,7 @@ create_content_view() {
             --organization "Default Organization" \
             --name "$CV_NAME"
 
-        echo "[OK] Content View created."
+        ok "Content View created."
 
     fi
 
@@ -1237,7 +1237,7 @@ $HAMMER repository list \
     --product "Rocky Linux 8" || true
 
 echo
-echo "[OK] Verification completed."
+ok "Verification completed."
 echo
 
 ###############################################################################
@@ -1268,7 +1268,7 @@ attach_subscription() {
         --organization "Default Organization" \
         --name "$KEY" | grep -q "Subscription ID.*$SUB_ID"; then
 
-        echo "[SKIP] Subscription $SUB_ID already attached."
+        skip "Subscription $SUB_ID already attached."
 
     else
 
@@ -1279,7 +1279,7 @@ attach_subscription() {
             --name "$KEY" \
             --subscription-id "$SUB_ID"
 
-        echo "[OK] Subscription attached."
+        ok "Subscription attached."
 
     fi
 
