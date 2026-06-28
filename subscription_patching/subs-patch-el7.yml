@@ -155,22 +155,46 @@
         var: yum_update.stdout_lines
     
     #######################################################################
-    # VERIFY REBOOT REQUIREMENT
+    # PATCH SERVER
     #######################################################################
     
-    - name: Check if reboot required
+    - name: Apply updates (skip broken packages)
       raw: |
-        needs-restarting -r
-      register: reboot_required
+        yum -y update \
+          --skip-broken \
+          --setopt=obsoletes=0
+      register: yum_update
       failed_when: false
     
-    ###########################################################################
+    - name: Display yum update output
+      debug:
+        var: yum_update.stdout_lines
+    
+    #######################################################################
+    # CHECK IF REBOOT IS REQUIRED
+    #######################################################################
+    
+    - name: Get running kernel
+      raw: uname -r
+      register: running_kernel
+    
+    - name: Get latest installed kernel
+      raw: rpm -q kernel --last | head -1 | awk '{print $1}' | sed 's/kernel-//'
+      register: installed_kernel
+    
+    - name: Show kernel versions
+      debug:
+        msg:
+          - "Running Kernel : {{ running_kernel.stdout }}"
+          - "Installed Kernel: {{ installed_kernel.stdout }}"
+    
+    #######################################################################
     # REBOOT
-    ###########################################################################
+    #######################################################################
     
     - name: Schedule reboot in 1 minute
       raw: shutdown -r +1 "Reboot initiated by Ansible"
-      when: reboot_required.rc != 0
+      when: running_kernel.stdout != installed_kernel.stdout
     
     - name: Wait for reboot to complete
       delegate_to: localhost
@@ -181,7 +205,7 @@
         delay: "{{ post_reboot_wait | int }}"
         timeout: "{{ wait_for_up_timeout | int }}"
         state: started
-      when: reboot_required.rc != 0
+      when: running_kernel.stdout != installed_kernel.stdout
     
     - name: Verify server is accessible after reboot
       raw: uptime
@@ -189,7 +213,7 @@
       retries: 10
       delay: 15
       until: uptime_result.rc == 0
-      when: reboot_required.rc != 0
+      when: running_kernel.stdout != installed_kernel.stdout
     
     ###########################################################################
     # FINAL STATUS
