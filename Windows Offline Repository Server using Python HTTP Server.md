@@ -215,13 +215,13 @@ net start Nginx
 Configure automatic startup:
 
 ```cmd
-sc config Nginx start= auto
+sc.exe config Nginx start= auto
 ```
 
 Verify:
 
 ```cmd
-sc query Nginx
+sc.exe query Nginx
 ```
 
 Expected:
