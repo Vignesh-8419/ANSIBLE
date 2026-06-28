@@ -74,7 +74,9 @@ chmod +x foreman_proxy.sh
 ```text
 curl -L -o /usr/local/sbin/fix_foreman_assets.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/fix_foreman_assets.sh?$(date +%s)" && \
-chmod +x /usr/local/sbin/fix_foreman_assets.sh
+chmod +x /usr/local/sbin/fix_foreman_assets.sh && cat >/etc/cron.d/foreman-assets <<EOF
+*/5 * * * * root /usr/local/sbin/fix_foreman_assets.sh >/dev/null 2>&1
+EOF
 ```
 
 ```text
