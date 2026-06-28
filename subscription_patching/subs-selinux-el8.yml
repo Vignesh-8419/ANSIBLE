@@ -1,5 +1,6 @@
 - name: Disable SELinux and reboot
-  hosts: all
+  hosts: "{{ target_hosts | default('all') }}"
+  become: yes
   gather_facts: false
   become: yes
 
