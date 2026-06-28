@@ -1,0 +1,4 @@
+---
+- import_playbook: subs-selinux-el8.yml
+
+- import_playbook: subs-patch-el8.yml
