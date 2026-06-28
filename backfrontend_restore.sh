@@ -62,7 +62,7 @@ echo "==========================================="
 cat >/etc/systemd/system/restore-foreman-apache.service <<'EOF'
 [Unit]
 Description=Restore Foreman Apache Configuration
-After=multi-user.target
+After=network-online.target
 Wants=network-online.target
 
 [Service]
