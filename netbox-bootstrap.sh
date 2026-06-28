@@ -147,8 +147,10 @@ get_custom_field_id() {
 }
 
 get_choice_set_id() {
-    api_get "/api/extras/custom-field-choice-sets/?name=$1" \
+
+    api_get "/api/extras/custom-field-choice-sets/?name=${1// /%20}" \
     | jq -r '.results[0].id // empty'
+
 }
 
 ###############################################
