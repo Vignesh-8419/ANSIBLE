@@ -12,25 +12,24 @@
     - name: Disable SELinux permanently
       raw: sed -i 's/^SELINUX=.*/SELINUX=disabled/' /etc/selinux/config
 
-    - name: Schedule reboot in 1 minute
+    - name: Schedule reboot
       raw: shutdown -r +1 "Reboot initiated by Ansible"
-      when: reboot_required.rc != 0
     
-    - name: Wait for reboot to complete
+    - name: Wait for SSH to go down
       delegate_to: localhost
       become: false
       wait_for:
         host: "{{ ansible_host | default(inventory_hostname) }}"
         port: 22
-        delay: "{{ post_reboot_wait | int }}"
-        timeout: "{{ wait_for_up_timeout | int }}"
-        state: started
-      when: reboot_required.rc != 0
+        state: stopped
+        timeout: 180
     
-    - name: Verify server is accessible after reboot
-      raw: uptime
-      register: uptime_result
-      retries: 10
-      delay: 15
-      until: uptime_result.rc == 0
-      when: reboot_required.rc != 0
+    - name: Wait for SSH to come back
+      delegate_to: localhost
+      become: false
+      wait_for:
+        host: "{{ ansible_host | default(inventory_hostname) }}"
+        port: 22
+        state: started
+        delay: 10
+        timeout: 600
