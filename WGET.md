@@ -42,6 +42,19 @@ chmod +x netbox-bootstrap.sh
 ```
 
 ```text
+curl -L -o Device_Creation_Netbox.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Device_Creation_Netbox.sh?$(date +%s)" && \
+chmod +x Device_Creation_Netbox.sh
+```
+
+```text
+curl -L -o /root/netbox-kernel-compliance.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/netbox-kernel-compliance.sh?$(date +%s)" && \
+chmod +x /root/netbox-kernel-compliance.sh && \
+(crontab -l 2>/dev/null | grep -v netbox-kernel-compliance.sh; echo "*/2 * * * * /root/netbox-kernel-compliance.sh >> /var/log/netbox-kernel-compliance.log 2>&1") | crontab -
+```
+
+```text
 curl -L -o Offline_Patching_el8_cifs.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Offline_Patching_el8_cifs.sh?$(date +%s)" && \
 chmod +x Offline_Patching_el8_cifs.sh
@@ -113,19 +126,6 @@ chmod +x frontbackend.sh
 curl -L -o backfrontend_restore.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/backfrontend_restore.sh?$(date +%s)" && \
 chmod +x backfrontend_restore.sh
-```
-
-```text
-curl -L -o Device_Creation_Netbox.sh \
-"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Device_Creation_Netbox.sh?$(date +%s)" && \
-chmod +x Device_Creation_Netbox.sh
-```
-
-```text
-curl -L -o /root/netbox-kernel-compliance.sh \
-"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/netbox-kernel-compliance.sh?$(date +%s)" && \
-chmod +x /root/netbox-kernel-compliance.sh && \
-(crontab -l 2>/dev/null | grep -v netbox-kernel-compliance.sh; echo "*/2 * * * * /root/netbox-kernel-compliance.sh >> /var/log/netbox-kernel-compliance.log 2>&1") | crontab -
 ```
 
 ```text
