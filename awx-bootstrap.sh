@@ -483,8 +483,6 @@ echo "  ✓ ROCKYOS-VM-TEMPLATE"
 echo "  ✓ CENTOS-VM-TEMPLATE"
 echo "  ✓ Local_DNS"
 
-exit
-
 # ==============================================================
 # Offline_Patching_el7
 # ==============================================================
