@@ -638,7 +638,8 @@ fi
 info "Checking CentOS default template..."
 
 if $HAMMER os info --id "$CENTOS_OS_ID" | \
-grep -q "PXEGrub2 CentOS UEFI Static Kickstart"; then
+    awk '/Default templates:/,/Architectures:/' | \
+    grep -q "PXEGrub2 CentOS UEFI Static Kickstart"; then
 
     skip "CentOS default template already configured."
 
@@ -663,7 +664,8 @@ echo
 info "Checking Rocky default template..."
 
 if $HAMMER os info --id "$ROCKY_OS_ID" | \
-grep -q "PXEGrub2 RockyOS UEFI Static Kickstart"; then
+    awk '/Default templates:/,/Architectures:/' | \
+    grep -q "PXEGrub2 RockyOS UEFI Static Kickstart"; then
 
     skip "Rocky default template already configured."
 
