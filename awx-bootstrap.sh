@@ -1066,7 +1066,7 @@ jt, created = JobTemplate.objects.get_or_create(
         "inventory": inventory,
         "playbook": "provision_hosts_el7/Foreman_provision_hosts_el7.yml",
         "ask_inventory_on_launch": False,
-        "ask_limit_on_launch": True,
+        "ask_limit_on_launch": False,
         "limit": "localhost"
     }
 )
@@ -1075,7 +1075,7 @@ jt.project = project
 jt.inventory = inventory
 jt.playbook = "provision_hosts_el7/Foreman_provision_hosts_el7.yml"
 jt.ask_inventory_on_launch = False
-jt.ask_limit_on_launch = True
+jt.ask_limit_on_launch = False
 jt.limit = "localhost"
 
 jt.save()
@@ -1143,68 +1143,8 @@ echo "Provision_Hosts_el7 completed successfully."
 # Provision_Hosts_el8
 # ==============================================================
 
-awx-manage shell <<'EOF'
-from awx.main.models import (
-    Inventory,
-    Project,
-    JobTemplate,
-    Credential
-)
-
-project = Project.objects.get(name="Inventory-Git-Repo")
-inventory = Inventory.objects.get(name="rocky-8-servers")
-credential = Credential.objects.get(name="Linux Root Credential")
-
-jt, created = JobTemplate.objects.get_or_create(
-    name="Provision_Hosts_el8",
-    defaults={
-        "project": project,
-        "inventory": inventory,
-        "playbook": "provision_hosts_el8/Foreman_provision_hosts_el8.yml",
-        "ask_inventory_on_launch": False,
-        "ask_limit_on_launch": True,
-        "limit": "localhost"
-    }
-)
-
-jt.project = project
-jt.inventory = inventory
-jt.playbook = "provision_hosts_el8/Foreman_provision_hosts_el8.yml"
-jt.ask_inventory_on_launch = False
-jt.ask_limit_on_launch = True
-jt.limit = "localhost"
-
-jt.save()
-
-jt.credentials.clear()
-jt.credentials.add(credential)
-
-survey_spec = {
-    "name": "target_hosts",
-    "description": "Specify target hosts/group to provision.",
-    "spec": [
-        {
-            "type": "text",
-            "question_name": "Target Hosts",
-            "question_description": "Inventory host/group to run against",
-            "variable": "target_hosts",
-            "required": True,
-            "default": "rocky-08-*",
-            "min": 1,
-            "max": 1024
-        }
-    ]
-}
-
-jt.survey_enabled = True
-jt.survey_spec = survey_spec
-jt.save()
-
-print(
-    f"Provision_Hosts_el8 "
-    f"{'created' if created else 'updated'} successfully."
-)
-EOF
+echo
+echo "Provision_Hosts_el7 completed successfully."
 
 
 # ==============================================================
