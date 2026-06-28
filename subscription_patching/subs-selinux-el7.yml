@@ -1,20 +1,28 @@
-- name: Disable SELinux and reboot
+- name: Disable SELinux and reboot only if required
   hosts: "{{ target_hosts | default('all') }}"
   become: yes
   gather_facts: false
-  become: yes
 
   tasks:
 
+    - name: Check SELinux configuration
+      raw: grep '^SELINUX=' /etc/selinux/config
+      register: selinux_config
+      changed_when: false
+      failed_when: false
+
     - name: Disable SELinux immediately
       raw: setenforce 0 || true
+      when: "'SELINUX=disabled' not in selinux_config.stdout"
 
     - name: Disable SELinux permanently
       raw: sed -i 's/^SELINUX=.*/SELINUX=disabled/' /etc/selinux/config
+      when: "'SELINUX=disabled' not in selinux_config.stdout"
 
     - name: Schedule reboot
       raw: shutdown -r +1 "Reboot initiated by Ansible"
-    
+      when: "'SELINUX=disabled' not in selinux_config.stdout"
+
     - name: Wait for SSH to go down
       delegate_to: localhost
       become: false
@@ -23,7 +31,8 @@
         port: 22
         state: stopped
         timeout: 180
-    
+      when: "'SELINUX=disabled' not in selinux_config.stdout"
+
     - name: Wait for SSH to come back
       delegate_to: localhost
       become: false
@@ -33,3 +42,9 @@
         state: started
         delay: 10
         timeout: 600
+      when: "'SELINUX=disabled' not in selinux_config.stdout"
+
+    - name: Report SELinux already disabled
+      debug:
+        msg: "SELinux is already disabled. Skipping reboot."
+      when: "'SELINUX=disabled' in selinux_config.stdout"
