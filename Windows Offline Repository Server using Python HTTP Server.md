@@ -8,7 +8,7 @@ This document describes how to configure a Windows machine as a persistent HTTP 
 
 | Item            | Value                     |
 | --------------- | ------------------------- |
-| Repository Root | `E:\repo`                 |
+| Repository Root | `E:\`                 |
 | Repository URL  | `http://192.168.253.136/` |
 | HTTP Server     | Nginx                     |
 | Service Manager | NSSM                      |
@@ -88,7 +88,7 @@ http {
 
         server_name _;
 
-        root E:/repo;
+        root E:/;
 
         autoindex on;
         autoindex_exact_size off;
