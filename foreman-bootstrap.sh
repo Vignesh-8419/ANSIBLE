@@ -1,22 +1,3 @@
-#!/bin/bash
-###############################################################################
-# Foreman PXE Provisioning + Katello Bootstrap
-# CentOS 7 & Rocky Linux 8.10
-###############################################################################
-
-set -e
-
-echo "============================================================"
-echo " Foreman PXE Provisioning + Katello Bootstrap"
-echo "============================================================"
-echo
-
-###############################################################################
-# Variables
-###############################################################################
-
-HAMMER="hammer --username admin --password zqs977dXzqfEvTML"
-
 ###############################################################################
 # 1. Create Installation Media
 ###############################################################################
@@ -25,24 +6,58 @@ echo "============================================================"
 echo "[1/13] Creating Installation Media"
 echo "============================================================"
 
-echo "Creating CentOS 7 Installation Media..."
+###############################################################################
+# CentOS 7 Installation Media
+###############################################################################
 
-$HAMMER medium create \
---name "CentOS 7 Remote" \
---path "http://192.168.253.136/repo/centos/" \
---os-family "Redhat"
+echo "Checking CentOS 7 Installation Media..."
 
-echo "Done."
+if $HAMMER medium info --name "CentOS 7 Remote" >/dev/null 2>&1; then
+    echo "[SKIP] CentOS 7 Remote already exists."
+else
+    echo "Creating CentOS 7 Remote..."
+
+    $HAMMER medium create \
+        --name "CentOS 7 Remote" \
+        --path "http://192.168.253.136/repo/centos/" \
+        --os-family "Redhat"
+
+    echo "[OK] CentOS 7 Remote created."
+fi
+
 echo
 
-echo "Creating Rocky Linux 8 Installation Media..."
+###############################################################################
+# Rocky Linux 8 Installation Media
+###############################################################################
 
-$HAMMER medium create \
---name "Rocky 8 Remote" \
---path "http://192.168.253.136/repo/rocky8/" \
---os-family "Redhat"
+echo "Checking Rocky Linux 8 Installation Media..."
 
-echo "Done."
+if $HAMMER medium info --name "Rocky 8 Remote" >/dev/null 2>&1; then
+    echo "[SKIP] Rocky 8 Remote already exists."
+else
+    echo "Creating Rocky 8 Remote..."
+
+    $HAMMER medium create \
+        --name "Rocky 8 Remote" \
+        --path "http://192.168.253.136/repo/rocky8/" \
+        --os-family "Redhat"
+
+    echo "[OK] Rocky 8 Remote created."
+fi
+
+echo
+
+###############################################################################
+# Verification
+###############################################################################
+
+echo "============================================================"
+echo "Installation Media"
+echo "============================================================"
+
+$HAMMER medium list
+
 echo
 
 ###############################################################################
@@ -53,31 +68,53 @@ echo "============================================================"
 echo "[2/13] Creating Operating Systems"
 echo "============================================================"
 
-echo "Creating CentOS Linux 7..."
+###############################################################################
+# CentOS Linux 7
+###############################################################################
 
-$HAMMER os create \
---name CentOSLinux \
---major 7 \
---family Redhat \
---architectures x86_64 \
---partition-tables "Kickstart default" \
---media "CentOS 7 Remote"
+echo "Checking CentOS Linux 7..."
 
-echo "Done."
+if $HAMMER os info --title "CentOSLinux 7" >/dev/null 2>&1; then
+    echo "[SKIP] CentOSLinux 7 already exists."
+else
+    echo "Creating CentOSLinux 7..."
+
+    $HAMMER os create \
+        --name "CentOSLinux" \
+        --major 7 \
+        --family Redhat \
+        --architectures x86_64 \
+        --partition-tables "Kickstart default" \
+        --media "CentOS 7 Remote"
+
+    echo "[OK] CentOSLinux 7 created."
+fi
+
 echo
 
-echo "Creating Rocky Linux 8.10..."
+###############################################################################
+# Rocky Linux 8.10
+###############################################################################
 
-$HAMMER os create \
---name RockyLinux \
---major 8 \
---minor 10 \
---family Redhat \
---architectures x86_64 \
---partition-tables "Kickstart default" \
---media "Rocky 8 Remote"
+echo "Checking Rocky Linux 8.10..."
 
-echo "Done."
+if $HAMMER os info --title "RockyLinux 8.10" >/dev/null 2>&1; then
+    echo "[SKIP] RockyLinux 8.10 already exists."
+else
+    echo "Creating RockyLinux 8.10..."
+
+    $HAMMER os create \
+        --name "RockyLinux" \
+        --major 8 \
+        --minor 10 \
+        --family Redhat \
+        --architectures x86_64 \
+        --partition-tables "Kickstart default" \
+        --media "Rocky 8 Remote"
+
+    echo "[OK] RockyLinux 8.10 created."
+fi
+
 echo
 
 ###############################################################################
@@ -85,33 +122,28 @@ echo
 ###############################################################################
 
 echo "============================================================"
-echo "Verifying Installation Media"
-echo "============================================================"
-
-$HAMMER medium list
-
-echo
-
-echo "============================================================"
-echo "Verifying Operating Systems"
+echo "Operating Systems"
 echo "============================================================"
 
 $HAMMER os list
 
 echo
-echo "Part 1A Completed Successfully."
+echo "Part 2 Completed Successfully."
 echo
 
 ###############################################################################
-# 3. Create PXEGrub2 Provisioning Template
-# Rocky Linux 8.10
+# 3. Create PXEGrub2 Provisioning Template - Rocky Linux 8.10
 ###############################################################################
 
 echo "============================================================"
 echo "[3/13] Creating Rocky Linux PXEGrub2 Template"
 echo "============================================================"
 
-echo "Creating Rocky PXEGrub2 template file..."
+###############################################################################
+# Create Template File
+###############################################################################
+
+echo "Generating Rocky PXEGrub2 template..."
 
 cat > /tmp/rocky-pxegrub2.erb <<'EOF'
 <%#
@@ -139,48 +171,90 @@ hostname=<%= @host.name %>
 }
 EOF
 
-echo "Template file created."
+echo "[OK] Template file generated."
 echo
 
-echo "Importing Rocky PXEGrub2 template into Foreman..."
+###############################################################################
+# Import Template
+###############################################################################
 
-$HAMMER template create \
---name "PXEGrub2 RockyOS UEFI Static Kickstart" \
---type PXEGrub2 \
---file /tmp/rocky-pxegrub2.erb
+echo "Checking PXE Template..."
 
-echo "Done."
+if $HAMMER template info \
+    --name "PXEGrub2 RockyOS UEFI Static Kickstart" >/dev/null 2>&1; then
+
+    echo "[SKIP] Template already exists."
+
+else
+
+    echo "Importing template..."
+
+    $HAMMER template create \
+        --name "PXEGrub2 RockyOS UEFI Static Kickstart" \
+        --type PXEGrub2 \
+        --file /tmp/rocky-pxegrub2.erb
+
+    echo "[OK] Template imported."
+
+fi
+
 echo
 
-echo "Assigning Rocky PXEGrub2 template to RockyLinux 8.10..."
+###############################################################################
+# Assign Template to OS
+###############################################################################
 
-$HAMMER os add-provisioning-template \
---title "RockyLinux 8.10" \
---provisioning-template "PXEGrub2 RockyOS UEFI Static Kickstart"
+echo "Checking template assignment..."
 
-echo "Done."
+if $HAMMER os info \
+    --title "RockyLinux 8.10" | \
+    grep -q "PXEGrub2 RockyOS UEFI Static Kickstart"; then
+
+    echo "[SKIP] Template already assigned."
+
+else
+
+    echo "Assigning template..."
+
+    $HAMMER os add-provisioning-template \
+        --title "RockyLinux 8.10" \
+        --provisioning-template "PXEGrub2 RockyOS UEFI Static Kickstart"
+
+    echo "[OK] Template assigned."
+
+fi
+
 echo
 
-echo "Current PXE Templates"
+###############################################################################
+# Verification
+###############################################################################
 
-$HAMMER template list | grep -i Rocky
+echo "============================================================"
+echo "Rocky PXE Templates"
+echo "============================================================"
+
+$HAMMER template list | grep -i Rocky || true
 
 echo
 echo "Rocky PXE Template Completed."
 echo
 
 ###############################################################################
-# 3. Create PXEGrub2 Provisioning Template
-# CentOS Linux 7
+# 4. Create PXEGrub2 Provisioning Template - CentOS Linux 7
 ###############################################################################
 
 echo "============================================================"
 echo "[4/13] Creating CentOS Linux PXEGrub2 Template"
 echo "============================================================"
 
-echo "Creating CentOS PXEGrub2 template file..."
+###############################################################################
+# Create Template File
+###############################################################################
 
-cat > /tmp/centos-pxegrub2.erb <<'EOF'
+echo "Generating CentOS PXEGrub2 template..."
+
+cat >/tmp/centos-pxegrub2.erb <<'EOF'
 <%#
 name: PXEGrub2 CentOS UEFI Static Kickstart
 kind: PXEGrub2
@@ -206,44 +280,77 @@ hostname=<%= @host.name %>
 }
 EOF
 
-echo "Template file created."
-echo
-
-echo "Importing CentOS PXEGrub2 template into Foreman..."
-
-$HAMMER template create \
---name "PXEGrub2 CentOS UEFI Static Kickstart" \
---type PXEGrub2 \
---file /tmp/centos-pxegrub2.erb
-
-echo "Done."
-echo
-
-echo "Assigning CentOS PXEGrub2 template to CentOSLinux 7..."
-
-$HAMMER os add-provisioning-template \
---title "CentOSLinux 7" \
---provisioning-template "PXEGrub2 CentOS UEFI Static Kickstart"
-
-echo "Done."
+echo "[OK] Template file generated."
 echo
 
 ###############################################################################
-# Verify Templates
+# Import Template
+###############################################################################
+
+echo "Checking PXE Template..."
+
+if $HAMMER template info \
+    --name "PXEGrub2 CentOS UEFI Static Kickstart" >/dev/null 2>&1; then
+
+    echo "[SKIP] Template already exists."
+
+else
+
+    echo "Importing template..."
+
+    $HAMMER template create \
+        --name "PXEGrub2 CentOS UEFI Static Kickstart" \
+        --type PXEGrub2 \
+        --file /tmp/centos-pxegrub2.erb
+
+    echo "[OK] Template imported."
+
+fi
+
+echo
+
+###############################################################################
+# Assign Template to OS
+###############################################################################
+
+echo "Checking template assignment..."
+
+if $HAMMER os info \
+    --title "CentOSLinux 7" | \
+    grep -q "PXEGrub2 CentOS UEFI Static Kickstart"; then
+
+    echo "[SKIP] Template already assigned."
+
+else
+
+    echo "Assigning template..."
+
+    $HAMMER os add-provisioning-template \
+        --title "CentOSLinux 7" \
+        --provisioning-template "PXEGrub2 CentOS UEFI Static Kickstart"
+
+    echo "[OK] Template assigned."
+
+fi
+
+echo
+
+###############################################################################
+# Verification
 ###############################################################################
 
 echo "============================================================"
 echo "Current PXE Templates"
 echo "============================================================"
 
-$HAMMER template list | grep -i UEFI
+$HAMMER template list | grep -i UEFI || true
 
 echo
 echo "CentOS PXE Template Completed."
 echo
 
 ###############################################################################
-# 4. Create Subnets
+# 5. Create Subnets
 ###############################################################################
 
 echo "============================================================"
@@ -251,55 +358,79 @@ echo "[5/13] Creating Subnets"
 echo "============================================================"
 
 ###############################################################################
-# Create CentOS Subnet
+# CentOS Subnet
 ###############################################################################
 
-echo "Creating CentOS Subnet..."
+echo "Checking CentOS Subnet..."
 
-$HAMMER subnet create \
---name "vgs-subnet-centos" \
---network "192.168.253.0" \
---mask "255.255.255.0" \
---gateway "192.168.253.2" \
---dns-primary "192.168.253.1" \
---from "192.168.253.10" \
---to "192.168.253.240" \
---ipam DHCP \
---boot-mode DHCP \
---mtu 1500 \
---domains "vgs.com" \
---dhcp "cent-07-01.vgs.com" \
---tftp "cent-07-01.vgs.com"
+if $HAMMER subnet info \
+    --name "vgs-subnet-centos" >/dev/null 2>&1; then
 
-echo "CentOS subnet created."
+    echo "[SKIP] vgs-subnet-centos already exists."
+
+else
+
+    echo "Creating CentOS Subnet..."
+
+    $HAMMER subnet create \
+        --name "vgs-subnet-centos" \
+        --network "192.168.253.0" \
+        --mask "255.255.255.0" \
+        --gateway "192.168.253.2" \
+        --dns-primary "192.168.253.1" \
+        --from "192.168.253.10" \
+        --to "192.168.253.240" \
+        --ipam DHCP \
+        --boot-mode DHCP \
+        --mtu 1500 \
+        --domains "vgs.com" \
+        --dhcp "cent-07-01.vgs.com" \
+        --tftp "cent-07-01.vgs.com"
+
+    echo "[OK] CentOS subnet created."
+
+fi
+
 echo
 
 ###############################################################################
-# Create Rocky Linux Subnet
+# Rocky Linux Subnet
 ###############################################################################
 
-echo "Creating Rocky Linux Subnet..."
+echo "Checking Rocky Linux Subnet..."
 
-$HAMMER subnet create \
---name "vgs-subnet-rockyos" \
---network "192.168.253.0" \
---mask "255.255.255.0" \
---gateway "192.168.253.2" \
---dns-primary "192.168.253.1" \
---from "192.168.253.10" \
---to "192.168.253.240" \
---ipam DHCP \
---boot-mode DHCP \
---mtu 1500 \
---domains "vgs.com" \
---dhcp "cent-07-02.vgs.com" \
---tftp "cent-07-02.vgs.com"
+if $HAMMER subnet info \
+    --name "vgs-subnet-rockyos" >/dev/null 2>&1; then
 
-echo "Rocky subnet created."
+    echo "[SKIP] vgs-subnet-rockyos already exists."
+
+else
+
+    echo "Creating Rocky Linux Subnet..."
+
+    $HAMMER subnet create \
+        --name "vgs-subnet-rockyos" \
+        --network "192.168.253.0" \
+        --mask "255.255.255.0" \
+        --gateway "192.168.253.2" \
+        --dns-primary "192.168.253.1" \
+        --from "192.168.253.10" \
+        --to "192.168.253.240" \
+        --ipam DHCP \
+        --boot-mode DHCP \
+        --mtu 1500 \
+        --domains "vgs.com" \
+        --dhcp "cent-07-02.vgs.com" \
+        --tftp "cent-07-02.vgs.com"
+
+    echo "[OK] Rocky subnet created."
+
+fi
+
 echo
 
 ###############################################################################
-# Verify Subnets
+# Verification
 ###############################################################################
 
 echo "============================================================"
@@ -309,11 +440,11 @@ echo "============================================================"
 $HAMMER subnet list
 
 echo
-echo "Subnets Created Successfully."
+echo "Subnets Verified."
 echo
 
 ###############################################################################
-# 5. Create Host Groups
+# 6. Create Host Groups
 ###############################################################################
 
 echo "============================================================"
@@ -324,50 +455,90 @@ echo "============================================================"
 # CentOS 7 Host Group
 ###############################################################################
 
-echo "Creating CentOS 7 Host Group..."
+echo "Checking CentOS 7 Host Group..."
 
-$HAMMER hostgroup create \
---organization "Default Organization" \
---name "VGS HOSTS CENTOS 7" \
---architecture x86_64 \
---operatingsystem "CentOSLinux 7" \
---medium "CentOS 7 Remote" \
---partition-table "Kickstart default" \
---pxe-loader "Grub2 UEFI" \
---domain "vgs.com" \
---subnet "vgs-subnet-centos" \
---content-source "cent-07-01.vgs.com" \
---content-view "Default Organization View" \
---lifecycle-environment "Library"
+if $HAMMER hostgroup info \
+    --organization "Default Organization" \
+    --name "VGS HOSTS CENTOS 7" >/dev/null 2>&1; then
 
-echo "CentOS Host Group created."
+    echo "[SKIP] Host Group 'VGS HOSTS CENTOS 7' already exists."
+
+else
+
+    echo "Creating CentOS 7 Host Group..."
+
+    $HAMMER hostgroup create \
+        --organization "Default Organization" \
+        --name "VGS HOSTS CENTOS 7" \
+        --architecture x86_64 \
+        --operatingsystem "CentOSLinux 7" \
+        --medium "CentOS 7 Remote" \
+        --partition-table "Kickstart default" \
+        --pxe-loader "Grub2 UEFI" \
+        --domain "vgs.com" \
+        --subnet "vgs-subnet-centos" \
+        --content-source "cent-07-01.vgs.com" \
+        --content-view "Default Organization View" \
+        --lifecycle-environment "Library"
+
+    echo "[OK] CentOS Host Group created."
+
+fi
+
 echo
 
 ###############################################################################
 # Rocky Linux 8 Host Group
 ###############################################################################
 
-echo "Creating Rocky Linux 8 Host Group..."
+echo "Checking Rocky Linux 8 Host Group..."
 
-$HAMMER hostgroup create \
---organization "Default Organization" \
---name "VGS HOSTS ROCKY 8" \
---architecture x86_64 \
---operatingsystem "RockyLinux 8.10" \
---medium "Rocky 8 Remote" \
---partition-table "Kickstart default" \
---pxe-loader "Grub2 UEFI" \
---domain "vgs.com" \
---subnet "vgs-subnet-rockyos" \
---content-source "cent-07-01.vgs.com" \
---content-view "Default Organization View" \
---lifecycle-environment "Library"
+if $HAMMER hostgroup info \
+    --organization "Default Organization" \
+    --name "VGS HOSTS ROCKY 8" >/dev/null 2>&1; then
 
-echo "Rocky Host Group created."
+    echo "[SKIP] Host Group 'VGS HOSTS ROCKY 8' already exists."
+
+else
+
+    echo "Creating Rocky Linux 8 Host Group..."
+
+    $HAMMER hostgroup create \
+        --organization "Default Organization" \
+        --name "VGS HOSTS ROCKY 8" \
+        --architecture x86_64 \
+        --operatingsystem "RockyLinux 8.10" \
+        --medium "Rocky 8 Remote" \
+        --partition-table "Kickstart default" \
+        --pxe-loader "Grub2 UEFI" \
+        --domain "vgs.com" \
+        --subnet "vgs-subnet-rockyos" \
+        --content-source "cent-07-01.vgs.com" \
+        --content-view "Default Organization View" \
+        --lifecycle-environment "Library"
+
+    echo "[OK] Rocky Host Group created."
+
+fi
+
 echo
 
 ###############################################################################
-# 6. Set Default PXE Templates
+# Verification
+###############################################################################
+
+echo "============================================================"
+echo "Host Groups"
+echo "============================================================"
+
+$HAMMER hostgroup list
+
+echo
+echo "Host Groups Verified."
+echo
+
+###############################################################################
+# 7. Set Default PXE Templates
 ###############################################################################
 
 echo "============================================================"
@@ -375,47 +546,100 @@ echo "[7/13] Setting Default PXE Templates"
 echo "============================================================"
 
 echo "Current Operating Systems"
-
 $HAMMER os list
 
 echo
 echo "Current PXE Templates"
-
-$HAMMER template list | grep -i UEFI
+$HAMMER template list | grep -i UEFI || true
 
 echo
 
 ###############################################################################
-# IMPORTANT
-#
-# Verify the IDs below before running the next commands.
-#
-# Example:
-#
-# OS ID 2   = CentOSLinux 7
-# OS ID 3   = RockyLinux 8.10
-#
-# Template ID 172 = PXEGrub2 CentOS UEFI Static Kickstart
-# Template ID 173 = PXEGrub2 RockyOS UEFI Static Kickstart
-#
+# Get IDs Dynamically
 ###############################################################################
 
-echo "Assigning Default Template for CentOS..."
+CENTOS_OS_ID=$(
+$HAMMER os list | \
+awk -F'|' '/CentOSLinux 7/ {gsub(/ /,"",$1); print $1}'
+)
 
-$HAMMER os set-default-template \
---id 2 \
---provisioning-template-id 172
+ROCKY_OS_ID=$(
+$HAMMER os list | \
+awk -F'|' '/RockyLinux 8.10/ {gsub(/ /,"",$1); print $1}'
+)
 
-echo "Done."
+CENTOS_TEMPLATE_ID=$(
+$HAMMER template list | \
+awk -F'|' '/PXEGrub2 CentOS UEFI Static Kickstart/ {gsub(/ /,"",$1); print $1}'
+)
+
+ROCKY_TEMPLATE_ID=$(
+$HAMMER template list | \
+awk -F'|' '/PXEGrub2 RockyOS UEFI Static Kickstart/ {gsub(/ /,"",$1); print $1}'
+)
+
+###############################################################################
+# Validation
+###############################################################################
+
+if [[ -z "$CENTOS_OS_ID" || -z "$CENTOS_TEMPLATE_ID" ]]; then
+    echo "[ERROR] Unable to locate CentOS OS or Template."
+    exit 1
+fi
+
+if [[ -z "$ROCKY_OS_ID" || -z "$ROCKY_TEMPLATE_ID" ]]; then
+    echo "[ERROR] Unable to locate Rocky OS or Template."
+    exit 1
+fi
+
+###############################################################################
+# CentOS Default Template
+###############################################################################
+
+echo "Checking CentOS default template..."
+
+if $HAMMER os info --id "$CENTOS_OS_ID" | \
+grep -q "PXEGrub2 CentOS UEFI Static Kickstart"; then
+
+    echo "[SKIP] CentOS default template already configured."
+
+else
+
+    echo "Setting CentOS default template..."
+
+    $HAMMER os set-default-template \
+        --id "$CENTOS_OS_ID" \
+        --provisioning-template-id "$CENTOS_TEMPLATE_ID"
+
+    echo "[OK] CentOS default template configured."
+
+fi
+
 echo
 
-echo "Assigning Default Template for Rocky Linux..."
+###############################################################################
+# Rocky Default Template
+###############################################################################
 
-$HAMMER os set-default-template \
---id 3 \
---provisioning-template-id 173
+echo "Checking Rocky default template..."
 
-echo "Done."
+if $HAMMER os info --id "$ROCKY_OS_ID" | \
+grep -q "PXEGrub2 RockyOS UEFI Static Kickstart"; then
+
+    echo "[SKIP] Rocky default template already configured."
+
+else
+
+    echo "Setting Rocky default template..."
+
+    $HAMMER os set-default-template \
+        --id "$ROCKY_OS_ID" \
+        --provisioning-template-id "$ROCKY_TEMPLATE_ID"
+
+    echo "[OK] Rocky default template configured."
+
+fi
+
 echo
 
 ###############################################################################
@@ -436,7 +660,7 @@ $HAMMER os list
 
 echo
 echo "PXE Templates"
-$HAMMER template list | grep -i UEFI
+$HAMMER template list | grep -i UEFI || true
 
 echo
 echo "Subnets"
@@ -453,7 +677,7 @@ echo "============================================================"
 echo
 
 ###############################################################################
-# Katello Products and Repositories Setup
+# 8. Create Katello Products
 ###############################################################################
 
 echo "============================================================"
@@ -461,25 +685,68 @@ echo "[8/13] Creating Katello Products"
 echo "============================================================"
 
 ###############################################################################
-# Create Products
+# Rocky Linux 8 Product
 ###############################################################################
 
-echo "Creating Rocky Linux 8 Product..."
+echo "Checking Product : Rocky Linux 8"
 
-$HAMMER product create \
---organization "Default Organization" \
---name "Rocky Linux 8"
+if $HAMMER product info \
+    --organization "Default Organization" \
+    --name "Rocky Linux 8" >/dev/null 2>&1; then
 
-echo "Done."
+    echo "[SKIP] Product 'Rocky Linux 8' already exists."
+
+else
+
+    echo "Creating Product : Rocky Linux 8"
+
+    $HAMMER product create \
+        --organization "Default Organization" \
+        --name "Rocky Linux 8"
+
+    echo "[OK] Product created."
+
+fi
+
 echo
 
-echo "Creating CentOS 7 Product..."
+###############################################################################
+# CentOS 7 Product
+###############################################################################
 
-$HAMMER product create \
---organization "Default Organization" \
---name "CentOS 7"
+echo "Checking Product : CentOS 7"
 
-echo "Done."
+if $HAMMER product info \
+    --organization "Default Organization" \
+    --name "CentOS 7" >/dev/null 2>&1; then
+
+    echo "[SKIP] Product 'CentOS 7' already exists."
+
+else
+
+    echo "Creating Product : CentOS 7"
+
+    $HAMMER product create \
+        --organization "Default Organization" \
+        --name "CentOS 7"
+
+    echo "[OK] Product created."
+
+fi
+
+echo
+
+###############################################################################
+# Verification
+###############################################################################
+
+echo "============================================================"
+echo "Products"
+echo "============================================================"
+
+$HAMMER product list \
+    --organization "Default Organization"
+
 echo
 
 ###############################################################################
@@ -490,28 +757,64 @@ echo "============================================================"
 echo "Creating CentOS 7 Repositories"
 echo "============================================================"
 
-echo "Creating CentOS-07-BaseOS Repository..."
+###############################################################################
+# CentOS-07-BaseOS
+###############################################################################
 
-$HAMMER repository create \
---organization "Default Organization" \
---product "CentOS 7" \
---name "CentOS-07-BaseOS" \
---content-type yum \
---url "http://http-server-01/repo/centos/"
+echo "Checking Repository : CentOS-07-BaseOS"
 
-echo "Done."
+if $HAMMER repository info \
+    --organization "Default Organization" \
+    --product "CentOS 7" \
+    --name "CentOS-07-BaseOS" >/dev/null 2>&1; then
+
+    echo "[SKIP] Repository already exists."
+
+else
+
+    echo "Creating Repository..."
+
+    $HAMMER repository create \
+        --organization "Default Organization" \
+        --product "CentOS 7" \
+        --name "CentOS-07-BaseOS" \
+        --content-type yum \
+        --url "http://http-server-01/repo/centos/"
+
+    echo "[OK] Repository created."
+
+fi
+
 echo
 
-echo "Creating CentOS-07-Updates Repository..."
+###############################################################################
+# CentOS-07-Updates
+###############################################################################
 
-$HAMMER repository create \
---organization "Default Organization" \
---product "CentOS 7" \
---name "CentOS-07-Updates" \
---content-type yum \
---url "http://http-server-01/repo/installed_rhel7/"
+echo "Checking Repository : CentOS-07-Updates"
 
-echo "Done."
+if $HAMMER repository info \
+    --organization "Default Organization" \
+    --product "CentOS 7" \
+    --name "CentOS-07-Updates" >/dev/null 2>&1; then
+
+    echo "[SKIP] Repository already exists."
+
+else
+
+    echo "Creating Repository..."
+
+    $HAMMER repository create \
+        --organization "Default Organization" \
+        --product "CentOS 7" \
+        --name "CentOS-07-Updates" \
+        --content-type yum \
+        --url "http://http-server-01/repo/installed_rhel7/"
+
+    echo "[OK] Repository created."
+
+fi
+
 echo
 
 ###############################################################################
@@ -522,295 +825,94 @@ echo "============================================================"
 echo "Creating Rocky Linux 8 Repositories"
 echo "============================================================"
 
-echo "Creating Rocky-08-BaseOS Repository..."
-
-$HAMMER repository create \
---organization "Default Organization" \
---product "Rocky Linux 8" \
---name "Rocky-08-BaseOS" \
---content-type yum \
---url "http://192.168.253.136/repo/rocky8/BaseOS"
-
-echo "Done."
-echo
-
-echo "Creating Rocky-08-AppStream Repository..."
-
-$HAMMER repository create \
---organization "Default Organization" \
---product "Rocky Linux 8" \
---name "Rocky-08-AppStream" \
---content-type yum \
---url "http://192.168.253.136/repo/rocky8/Appstream"
-
-echo "Done."
-echo
-
-echo "Creating Rocky-08-RHEL-Installed Repository..."
-
-$HAMMER repository create \
---organization "Default Organization" \
---product "Rocky Linux 8" \
---name "Rocky-08-RHEL-Installed" \
---content-type yum \
---url "http://192.168.253.136/repo/installed_rhel8"
-
-echo "Done."
-echo
-
-echo "============================================================"
-echo "Products and Repository Creation Completed"
-echo "============================================================"
-echo
-
 ###############################################################################
-# Synchronize Repositories
+# Rocky-08-BaseOS
 ###############################################################################
 
-echo "============================================================"
-echo "[9/13] Synchronizing Repositories"
-echo "============================================================"
+echo "Checking Repository : Rocky-08-BaseOS"
 
-###############################################################################
-# CentOS 7 Repository Synchronization
-###############################################################################
+if $HAMMER repository info \
+    --organization "Default Organization" \
+    --product "Rocky Linux 8" \
+    --name "Rocky-08-BaseOS" >/dev/null 2>&1; then
 
-echo "Synchronizing CentOS-07-BaseOS..."
+    echo "[SKIP] Repository already exists."
 
-$HAMMER repository synchronize \
---organization "Default Organization" \
---product "CentOS 7" \
---name "CentOS-07-BaseOS"
+else
 
-echo "Done."
-echo
+    echo "Creating Repository..."
 
-echo "Synchronizing CentOS-07-Updates..."
+    $HAMMER repository create \
+        --organization "Default Organization" \
+        --product "Rocky Linux 8" \
+        --name "Rocky-08-BaseOS" \
+        --content-type yum \
+        --url "http://192.168.253.136/repo/rocky8/BaseOS"
 
-$HAMMER repository synchronize \
---organization "Default Organization" \
---product "CentOS 7" \
---name "CentOS-07-Updates"
+    echo "[OK] Repository created."
 
-echo "Done."
-echo
-
-###############################################################################
-# Rocky Linux 8 Repository Synchronization
-###############################################################################
-
-echo "Synchronizing Rocky-08-AppStream..."
-
-$HAMMER repository synchronize \
---organization "Default Organization" \
---product "Rocky Linux 8" \
---name "Rocky-08-AppStream"
-
-echo "Done."
-echo
-
-echo "Synchronizing Rocky-08-BaseOS..."
-
-$HAMMER repository synchronize \
---organization "Default Organization" \
---product "Rocky Linux 8" \
---name "Rocky-08-BaseOS"
-
-echo "Done."
-echo
-
-echo "Synchronizing Rocky-08-RHEL-Installed..."
-
-$HAMMER repository synchronize \
---organization "Default Organization" \
---product "Rocky Linux 8" \
---name "Rocky-08-RHEL-Installed"
-
-echo "Done."
-echo
-
-###############################################################################
-# Verify Products
-###############################################################################
-
-echo "============================================================"
-echo "Verifying Products"
-echo "============================================================"
-
-$HAMMER product list \
---organization "Default Organization"
+fi
 
 echo
 
 ###############################################################################
-# Verify CentOS 7 Repositories
+# Rocky-08-AppStream
 ###############################################################################
 
-echo "============================================================"
-echo "CentOS 7 Repositories"
-echo "============================================================"
+echo "Checking Repository : Rocky-08-AppStream"
 
-$HAMMER repository list \
---organization "Default Organization" \
---product "CentOS 7"
+if $HAMMER repository info \
+    --organization "Default Organization" \
+    --product "Rocky Linux 8" \
+    --name "Rocky-08-AppStream" >/dev/null 2>&1; then
 
-echo
+    echo "[SKIP] Repository already exists."
 
-###############################################################################
-# Verify Rocky Linux 8 Repositories
-###############################################################################
+else
 
-echo "============================================================"
-echo "Rocky Linux 8 Repositories"
-echo "============================================================"
+    echo "Creating Repository..."
 
-$HAMMER repository list \
---organization "Default Organization" \
---product "Rocky Linux 8"
+    $HAMMER repository create \
+        --organization "Default Organization" \
+        --product "Rocky Linux 8" \
+        --name "Rocky-08-AppStream" \
+        --content-type yum \
+        --url "http://192.168.253.136/repo/rocky8/Appstream"
 
-echo
+    echo "[OK] Repository created."
 
-echo "============================================================"
-echo "Katello Products & Repositories Setup Completed Successfully"
-echo "============================================================"
+fi
+
 echo
 
 ###############################################################################
-# Katello Content Views and Activation Keys
+# Rocky-08-RHEL-Installed
 ###############################################################################
 
-echo "============================================================"
-echo "[10/13] Creating Content Views"
-echo "============================================================"
+echo "Checking Repository : Rocky-08-RHEL-Installed"
 
-###############################################################################
-# CentOS 7 Content View
-###############################################################################
+if $HAMMER repository info \
+    --organization "Default Organization" \
+    --product "Rocky Linux 8" \
+    --name "Rocky-08-RHEL-Installed" >/dev/null 2>&1; then
 
-echo "Creating Content View : CentOS7-CV"
+    echo "[SKIP] Repository already exists."
 
-$HAMMER content-view create \
---organization "Default Organization" \
---name "CentOS7-CV"
+else
 
-echo "Done."
-echo
+    echo "Creating Repository..."
 
-echo "Adding CentOS-07-BaseOS..."
+    $HAMMER repository create \
+        --organization "Default Organization" \
+        --product "Rocky Linux 8" \
+        --name "Rocky-08-RHEL-Installed" \
+        --content-type yum \
+        --url "http://192.168.253.136/repo/installed_rhel8"
 
-$HAMMER content-view add-repository \
---organization "Default Organization" \
---name "CentOS7-CV" \
---product "CentOS 7" \
---repository "CentOS-07-BaseOS"
+    echo "[OK] Repository created."
 
-echo "Done."
-echo
+fi
 
-echo "Adding CentOS-07-Updates..."
-
-$HAMMER content-view add-repository \
---organization "Default Organization" \
---name "CentOS7-CV" \
---product "CentOS 7" \
---repository "CentOS-07-Updates"
-
-echo "Done."
-echo
-
-echo "Publishing CentOS7-CV..."
-
-$HAMMER content-view publish \
---organization "Default Organization" \
---name "CentOS7-CV" \
---description "Initial Publish"
-
-echo "Done."
-echo
-
-echo "Creating Activation Key : centos7-prod-key"
-
-$HAMMER activation-key create \
---organization "Default Organization" \
---name "centos7-prod-key" \
---lifecycle-environment "Library" \
---content-view "CentOS7-CV"
-
-echo "Done."
-echo
-
-###############################################################################
-# Rocky Linux 8 Content View
-###############################################################################
-
-echo "============================================================"
-echo "Creating Rocky8-CV"
-echo "============================================================"
-
-$HAMMER content-view create \
---organization "Default Organization" \
---name "Rocky8-CV"
-
-echo "Done."
-echo
-
-echo "Adding Rocky-08-BaseOS..."
-
-$HAMMER content-view add-repository \
---organization "Default Organization" \
---name "Rocky8-CV" \
---product "Rocky Linux 8" \
---repository "Rocky-08-BaseOS"
-
-echo "Done."
-echo
-
-echo "Adding Rocky-08-AppStream..."
-
-$HAMMER content-view add-repository \
---organization "Default Organization" \
---name "Rocky8-CV" \
---product "Rocky Linux 8" \
---repository "Rocky-08-AppStream"
-
-echo "Done."
-echo
-
-echo "Adding Rocky-08-RHEL-Installed..."
-
-$HAMMER content-view add-repository \
---organization "Default Organization" \
---name "Rocky8-CV" \
---product "Rocky Linux 8" \
---repository "Rocky-08-RHEL-Installed"
-
-echo "Done."
-echo
-
-echo "Publishing Rocky8-CV..."
-
-$HAMMER content-view publish \
---organization "Default Organization" \
---name "Rocky8-CV" \
---description "Initial Publish"
-
-echo "Done."
-echo
-
-echo "Creating Activation Key : rocky8-prod-key"
-
-$HAMMER activation-key create \
---organization "Default Organization" \
---name "rocky8-prod-key" \
---lifecycle-environment "Library" \
---content-view "Rocky8-CV"
-
-echo "Done."
-echo
-
-echo "============================================================"
-echo "Content Views Created Successfully"
-echo "============================================================"
 echo
 
 ###############################################################################
@@ -818,75 +920,243 @@ echo
 ###############################################################################
 
 echo "============================================================"
+echo "Repositories"
+echo "============================================================"
+
+echo
+echo "CentOS 7"
+
+$HAMMER repository list \
+    --organization "Default Organization" \
+    --product "CentOS 7"
+
+echo
+echo "Rocky Linux 8"
+
+$HAMMER repository list \
+    --organization "Default Organization" \
+    --product "Rocky Linux 8"
+
+echo
+
+###############################################################################
+# 9. Synchronize Repositories
+###############################################################################
+
+echo "============================================================"
+echo "[9/13] Synchronizing Repositories"
+echo "============================================================"
+
+sync_repository() {
+
+    PRODUCT="$1"
+    REPO="$2"
+
+    echo
+    echo "Checking Repository : $REPO"
+
+    SYNC_STATUS=$(
+        $HAMMER repository info \
+            --organization "Default Organization" \
+            --product "$PRODUCT" \
+            --name "$REPO" 2>/dev/null | \
+        awk -F': ' '/Sync State/ {print $2}'
+    )
+
+    case "$SYNC_STATUS" in
+
+        running|Running)
+            echo "[SKIP] Synchronization already running."
+            ;;
+
+        *)
+            echo "Starting synchronization..."
+
+            $HAMMER repository synchronize \
+                --organization "Default Organization" \
+                --product "$PRODUCT" \
+                --name "$REPO"
+
+            echo "[OK] Synchronization started."
+            ;;
+
+    esac
+
+}
+
+###############################################################################
+# CentOS 7
+###############################################################################
+
+sync_repository "CentOS 7" "CentOS-07-BaseOS"
+sync_repository "CentOS 7" "CentOS-07-Updates"
+
+###############################################################################
+# Rocky Linux 8
+###############################################################################
+
+sync_repository "Rocky Linux 8" "Rocky-08-BaseOS"
+sync_repository "Rocky Linux 8" "Rocky-08-AppStream"
+sync_repository "Rocky Linux 8" "Rocky-08-RHEL-Installed"
+
+###############################################################################
+# Verification
+###############################################################################
+
+echo
+echo "============================================================"
+echo "Repository Synchronization"
+echo "============================================================"
+
+echo
+echo "CentOS 7"
+
+$HAMMER repository list \
+    --organization "Default Organization" \
+    --product "CentOS 7"
+
+echo
+echo "Rocky Linux 8"
+
+$HAMMER repository list \
+    --organization "Default Organization" \
+    --product "Rocky Linux 8"
+
+echo
+
+###############################################################################
+# 10. Create Content Views
+###############################################################################
+
+echo "============================================================"
+echo "[10/13] Creating Content Views"
+echo "============================================================"
+
+###############################################################################
+# Function : Create Content View if Missing
+###############################################################################
+
+create_content_view() {
+
+    CV_NAME="$1"
+
+    echo "Checking Content View : $CV_NAME"
+
+    if $HAMMER content-view info \
+        --organization "Default Organization" \
+        --name "$CV_NAME" >/dev/null 2>&1; then
+
+        echo "[SKIP] Content View '$CV_NAME' already exists."
+
+    else
+
+        echo "Creating Content View..."
+
+        $HAMMER content-view create \
+            --organization "Default Organization" \
+            --name "$CV_NAME"
+
+        echo "[OK] Content View created."
+
+    fi
+
+    echo
+}
+
+###############################################################################
+# Create Content Views
+###############################################################################
+
+create_content_view "CentOS7-CV"
+create_content_view "Rocky8-CV"
+
+###############################################################################
+# 11. Verify Content Views and Activation Keys
+###############################################################################
+
+echo "============================================================"
 echo "[11/13] Verifying Content Views and Activation Keys"
 echo "============================================================"
 
-echo "Listing Content Views..."
-
-$HAMMER content-view list
-
-echo
-
-echo "Listing Activation Keys..."
-
-$HAMMER activation-key list
-
-echo
-
 ###############################################################################
-# Verify CentOS7-CV
+# Content Views
 ###############################################################################
 
+echo
+echo "Content Views"
+echo "-------------"
+
+$HAMMER content-view list || true
+
+###############################################################################
+# Activation Keys
+###############################################################################
+
+echo
+echo "Activation Keys"
+echo "---------------"
+
+$HAMMER activation-key list \
+    --organization "Default Organization" || true
+
+###############################################################################
+# CentOS7-CV
+###############################################################################
+
+echo
 echo "============================================================"
-echo "Verifying CentOS7-CV"
+echo "CentOS7-CV"
 echo "============================================================"
 
 $HAMMER content-view info \
---organization "Default Organization" \
---name "CentOS7-CV"
+    --organization "Default Organization" \
+    --name "CentOS7-CV" || true
+
+###############################################################################
+# Rocky8-CV
+###############################################################################
 
 echo
-
-###############################################################################
-# Verify Rocky8-CV
-###############################################################################
-
 echo "============================================================"
-echo "Verifying Rocky8-CV"
+echo "Rocky8-CV"
 echo "============================================================"
 
 $HAMMER content-view info \
---organization "Default Organization" \
---name "Rocky8-CV"
+    --organization "Default Organization" \
+    --name "Rocky8-CV" || true
+
+###############################################################################
+# CentOS Repositories
+###############################################################################
 
 echo
-
-###############################################################################
-# Verify Repositories
-###############################################################################
-
 echo "============================================================"
-echo "CentOS 7 Repositories"
+echo "CentOS Repositories"
 echo "============================================================"
 
 $HAMMER repository list \
---organization "Default Organization" \
---product "CentOS 7"
+    --organization "Default Organization" \
+    --product "CentOS 7" || true
+
+###############################################################################
+# Rocky Repositories
+###############################################################################
 
 echo
-
 echo "============================================================"
-echo "Rocky Linux 8 Repositories"
+echo "Rocky Repositories"
 echo "============================================================"
 
 $HAMMER repository list \
---organization "Default Organization" \
---product "Rocky Linux 8"
+    --organization "Default Organization" \
+    --product "Rocky Linux 8" || true
 
+echo
+echo "[OK] Verification completed."
 echo
 
 ###############################################################################
-# Available Subscriptions
+# 12. Available Subscriptions & Activation Keys
 ###############################################################################
 
 echo "============================================================"
@@ -894,60 +1164,52 @@ echo "[12/13] Available Subscriptions"
 echo "============================================================"
 
 $HAMMER subscription list \
---organization "Default Organization"
+    --organization "Default Organization"
 
 echo
 
 ###############################################################################
-# CentOS Activation Key
+# Function : Attach Subscription
 ###############################################################################
 
-echo "============================================================"
-echo "CentOS 7 Activation Key"
-echo "============================================================"
+attach_subscription() {
 
-$HAMMER activation-key info \
---organization "Default Organization" \
---name "centos7-prod-key"
+    KEY="$1"
+    SUB_ID="$2"
 
-echo
+    echo "Checking Activation Key : $KEY"
 
-echo "Attaching Subscription ID 2..."
+    if $HAMMER activation-key info \
+        --organization "Default Organization" \
+        --name "$KEY" | grep -q "Subscription ID.*$SUB_ID"; then
 
-$HAMMER activation-key add-subscription \
---organization "Default Organization" \
---name "centos7-prod-key" \
---subscription-id 2
+        echo "[SKIP] Subscription $SUB_ID already attached."
 
-echo "Done."
-echo
+    else
 
-###############################################################################
-# Rocky Activation Key
-###############################################################################
+        echo "Attaching Subscription $SUB_ID..."
 
-echo "============================================================"
-echo "Rocky Linux 8 Activation Key"
-echo "============================================================"
+        $HAMMER activation-key add-subscription \
+            --organization "Default Organization" \
+            --name "$KEY" \
+            --subscription-id "$SUB_ID"
 
-$HAMMER activation-key info \
---organization "Default Organization" \
---name "rocky8-prod-key"
+        echo "[OK] Subscription attached."
 
-echo
+    fi
 
-echo "Attaching Subscription ID 1..."
-
-$HAMMER activation-key add-subscription \
---organization "Default Organization" \
---name "rocky8-prod-key" \
---subscription-id 1
-
-echo "Done."
-echo
+    echo
+}
 
 ###############################################################################
-# Verify Activation Keys
+# Attach Subscriptions
+###############################################################################
+
+attach_subscription "centos7-prod-key" 2
+attach_subscription "rocky8-prod-key" 1
+
+###############################################################################
+# Verification
 ###############################################################################
 
 echo "============================================================"
@@ -955,34 +1217,56 @@ echo "Activation Keys"
 echo "============================================================"
 
 $HAMMER activation-key list \
---organization "Default Organization"
+    --organization "Default Organization"
+
+echo
+
+echo "============================================================"
+echo "CentOS Activation Key"
+echo "============================================================"
+
+$HAMMER activation-key info \
+    --organization "Default Organization" \
+    --name "centos7-prod-key"
+
+echo
+
+echo "============================================================"
+echo "Rocky Activation Key"
+echo "============================================================"
+
+$HAMMER activation-key info \
+    --organization "Default Organization" \
+    --name "rocky8-prod-key"
 
 echo
 
 ###############################################################################
-# Registration Commands
+# 13. Host Registration Commands
 ###############################################################################
 
 echo "============================================================"
 echo "[13/13] Host Registration Commands"
 echo "============================================================"
 
+echo
+echo "CentOS 7 Registration"
+echo "------------------------------------------------------------"
+
 cat <<EOF
-
-Register CentOS 7 Host
-
 subscription-manager register \
---org="Default Organization" \
---activationkey="centos7-prod-key"
+    --org="Default Organization" \
+    --activationkey="centos7-prod-key"
+EOF
 
-------------------------------------------------------------
+echo
+echo "Rocky Linux 8 Registration"
+echo "------------------------------------------------------------"
 
-Register Rocky Linux 8 Host
-
+cat <<EOF
 subscription-manager register \
---org="Default Organization" \
---activationkey="rocky8-prod-key"
-
+    --org="Default Organization" \
+    --activationkey="rocky8-prod-key"
 EOF
 
 echo
@@ -991,85 +1275,86 @@ echo
 # Repository Assignment
 ###############################################################################
 
+echo "============================================================"
+echo "Repository Assignment"
+echo "============================================================"
+
 cat <<EOF
 
-============================================================
-Repository Assignment
-============================================================
-
 CentOS7-CV
-
+-----------
   - CentOS-07-BaseOS
   - CentOS-07-Updates
 
 Rocky8-CV
-
+----------
   - Rocky-08-BaseOS
   - Rocky-08-AppStream
   - Rocky-08-RHEL-Installed
 
 EOF
 
-echo
-
 ###############################################################################
-# Important Notes
+# Final Verification
 ###############################################################################
 
-cat <<EOF
-
-============================================================
-Important
-============================================================
-
-Do NOT use:
-
-hammer activation-key content-override ...
-
-Repository overrides apply only to Red Hat CDN Repository Sets.
-
-For custom repositories the correct workflow is:
-
-1. Create Product
-2. Create Repository
-3. Synchronize Repository
-4. Create Content View
-5. Add Repository to Content View
-6. Publish Content View
-7. Create Activation Key
-8. Attach Subscription
-9. Register Host
-
-Repositories assigned to a Content View are automatically
-available to hosts registered with the corresponding
-Activation Key.
-
-EOF
+echo
+echo "============================================================"
+echo "Final Verification"
+echo "============================================================"
 
 echo
+echo "Installation Media"
+$HAMMER medium list || true
+
+echo
+echo "Operating Systems"
+$HAMMER os list || true
+
+echo
+echo "Host Groups"
+$HAMMER hostgroup list || true
+
+echo
+echo "Products"
+$HAMMER product list \
+    --organization "Default Organization" || true
+
+echo
+echo "Repositories"
+$HAMMER repository list \
+    --organization "Default Organization" || true
+
+echo
+echo "Content Views"
+$HAMMER content-view list || true
+
+echo
+echo "Activation Keys"
+$HAMMER activation-key list \
+    --organization "Default Organization" || true
 
 ###############################################################################
 # Completed
 ###############################################################################
 
+echo
 echo "============================================================"
 echo " Foreman PXE Provisioning + Katello Bootstrap Completed"
 echo "============================================================"
 
 echo
-echo "Installation Media          : OK"
-echo "Operating Systems           : OK"
-echo "PXE Templates               : OK"
-echo "Subnets                     : OK"
-echo "Host Groups                 : OK"
-echo "Products                    : OK"
-echo "Repositories                : OK"
-echo "Repository Synchronization  : OK"
-echo "Content Views               : OK"
-echo "Activation Keys             : OK"
-echo "Subscriptions               : OK"
+printf "%-35s %s\n" "Installation Media"          "[OK]"
+printf "%-35s %s\n" "Operating Systems"           "[OK]"
+printf "%-35s %s\n" "PXE Templates"               "[OK]"
+printf "%-35s %s\n" "Subnets"                     "[OK]"
+printf "%-35s %s\n" "Host Groups"                 "[OK]"
+printf "%-35s %s\n" "Products"                    "[OK]"
+printf "%-35s %s\n" "Repositories"                "[OK]"
+printf "%-35s %s\n" "Repository Synchronization"  "[OK]"
+printf "%-35s %s\n" "Content Views"               "[OK]"
+printf "%-35s %s\n" "Activation Keys"             "[OK]"
 
 echo
 echo "Bootstrap completed successfully."
 echo
-
