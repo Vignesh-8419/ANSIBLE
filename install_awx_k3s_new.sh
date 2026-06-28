@@ -314,3 +314,26 @@ for i in {1..80}; do
     sleep 15
 done
 echo -e "${GREEN}✅ Background:${NC} Confirmed the AWX web UI is responding with HTTP 200 at the VIP, meaning the dashboard is live."
+
+# -----------------------------
+# 18. Configure Default Execution Environment
+# -----------------------------
+echo -e "${BLUE}# 18. Configure Default Execution Environment${NC}"
+echo "🔧 Setting AWX EE (24.6.1) as the default Execution Environment..."
+
+kubectl exec -i deployment/awx-server-task -n "$NAMESPACE" -- awx-manage shell <<'PYTHON'
+from awx.main.models import Organization
+from awx.main.models.execution_environments import ExecutionEnvironment
+
+org = Organization.objects.get(name="Default")
+ee = ExecutionEnvironment.objects.get(name="AWX EE (24.6.1)")
+
+org.default_environment = ee
+org.save()
+
+print(f"Organization : {org.name}")
+print(f"Default EE   : {org.default_environment.name}")
+print(f"Image        : {org.default_environment.image}")
+PYTHON
+
+echo -e "${GREEN}✅ Background:${NC} Configured the Default organization to use AWX EE (24.6.1)."
