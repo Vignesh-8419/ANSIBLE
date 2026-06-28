@@ -15,7 +15,7 @@ echo
 # Variables
 ###############################################################################
 
-HAMMER="hammer --username admin --password 'zqs977dXzqfEvTML'"
+HAMMER="hammer --username admin --password zqs977dXzqfEvTML"
 
 ###############################################################################
 # 1. Create Installation Media
