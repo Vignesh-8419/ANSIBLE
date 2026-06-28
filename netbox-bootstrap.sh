@@ -537,27 +537,15 @@ create_or_update_context "patch-el8-context" "$JSON"
 
 }
 
-###############################################################################
-# Execute Part 3
-###############################################################################
+create_centos_patch_context() {
 
-###############################################################################
-# Update CentOS Patch Context
-###############################################################################
-
-update_centos_patch_context() {
-
-info "Updating centos-patch-context..."
-
-ID=$(get_context_id "centos-patch-context")
-
-if [ -z "$ID" ]; then
-    warn "Context centos-patch-context does not exist. Skipping..."
-    return
-fi
+info "Creating CentOS Patch Context..."
 
 JSON=$(cat <<'EOF'
 {
+    "name": "centos-patch-context",
+    "weight": 1000,
+    "tags": ["centos-patch-context"],
     "data": {
         "organization": "Default_Organization",
         "activation_key": "centos7-prod-key",
@@ -575,31 +563,19 @@ JSON=$(cat <<'EOF'
 EOF
 )
 
-api_patch "/api/extras/config-contexts/${ID}/" "$JSON" >/dev/null
-
-success "Updated centos-patch-context"
-
-echo
+create_or_update_context "centos-patch-context" "$JSON"
 
 }
 
-###############################################################################
-# Update Rocky Patch Context
-###############################################################################
+create_rocky_patch_context() {
 
-update_rocky_patch_context() {
-
-info "Updating rocky-patch-context..."
-
-ID=$(get_context_id "rocky-patch-context")
-
-if [ -z "$ID" ]; then
-    warn "Context rocky-patch-context does not exist. Skipping..."
-    return
-fi
+info "Creating Rocky Patch Context..."
 
 JSON=$(cat <<'EOF'
 {
+    "name": "rocky-patch-context",
+    "weight": 1000,
+    "tags": ["rocky-patch-context"],
     "data": {
         "organization": "Default_Organization",
         "activation_key": "rocky8-prod-key",
@@ -618,13 +594,14 @@ JSON=$(cat <<'EOF'
 EOF
 )
 
-api_patch "/api/extras/config-contexts/${ID}/" "$JSON" >/dev/null
-
-success "Updated rocky-patch-context"
-
-echo
+create_or_update_context "rocky-patch-context" "$JSON"
 
 }
+
+
+###############################################################################
+# Execute Part 3
+###############################################################################
 
 ###############################################################################
 # Verification
@@ -969,6 +946,8 @@ verify_context "patch-context"
 verify_context "repo-config-context"
 verify_context "centostorocky-context"
 verify_context "patch-el8-context"
+verify_context "centos-patch-context"
+verify_context "rocky-patch-context"
 
 echo
 
@@ -1028,6 +1007,8 @@ create_patch_context
 create_repo_config_context
 create_centostorocky_context
 create_patch_el8_context
+create_centos_patch_context
+create_rocky_patch_context
 
 #update_centos_patch_context
 #update_rocky_patch_context
