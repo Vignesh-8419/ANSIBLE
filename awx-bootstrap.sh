@@ -1279,7 +1279,11 @@ echo "  ✓ CENTOS-VM-TEMPLATE-WF"
 echo "  ✓ ROCKYOS-VM-TEMPLATE-WF"
 
 echo
-echo "AWX environment is fully configured."
+echo "=========================================================="
+echo "AWX Bootstrap Completed"
+echo "=========================================================="
 
+CONTAINER
 
-
+echo
+echo "Bootstrap completed successfully."
