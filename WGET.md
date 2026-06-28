@@ -18,6 +18,12 @@ chmod +x install_awx_k3s_new.sh
 ```
 
 ```text
+curl -L -o awx-bootstrap.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/awx-bootstrap.sh?$(date +%s)" && \
+chmod +x awx-bootstrap.sh
+```
+
+```text
 curl -L -o working_netbox.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/working_netbox.sh?$(date +%s)" && \
 chmod +x working_netbox.sh
