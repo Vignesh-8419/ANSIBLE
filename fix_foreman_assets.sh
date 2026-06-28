@@ -8,6 +8,12 @@
 
 set -e
 
+# Exit immediately if assets already exist
+if [ -d /var/lib/foreman/public/assets/bastion ] && \
+   [ -d /var/lib/foreman/public/assets/bastion_katello ]; then
+    exit 0
+fi
+
 ASSET_DST="/var/lib/foreman/public/assets"
 
 KATELLO_VERSION=$(ls -d /opt/theforeman/tfm/root/usr/share/gems/gems/katello-* 2>/dev/null | head -1)
@@ -41,32 +47,19 @@ fi
 
 mkdir -p "$ASSET_DST"
 
-echo
-echo "Removing broken asset directories..."
+echo "Creating symbolic links..."
 
 rm -rf "$ASSET_DST/bastion"
 rm -rf "$ASSET_DST/bastion_katello"
 
-echo
-echo "Creating symbolic links..."
-
 ln -s "$ASSET_SRC/bastion" "$ASSET_DST/bastion"
 ln -s "$ASSET_SRC/bastion_katello" "$ASSET_DST/bastion_katello"
-
-echo
-echo "Restoring SELinux labels..."
 
 if command -v restorecon >/dev/null 2>&1; then
     restorecon -RF "$ASSET_DST" || true
 fi
 
-echo
-echo "Restarting Apache..."
-
 systemctl restart httpd
-
-echo
-echo "Testing asset..."
 
 HOSTNAME_FQDN=$(hostname -f)
 
@@ -75,24 +68,10 @@ URL="https://${HOSTNAME_FQDN}/assets/bastion/$(basename "$ASSET_SRC"/bastion/bas
 STATUS=$(curl -ks -o /dev/null -w "%{http_code}" "$URL")
 
 echo
-echo "HTTP Status : $STATUS"
+echo "HTTP Status: $STATUS"
 
 if [ "$STATUS" = "200" ]; then
-    echo
-    echo "========================================="
-    echo " SUCCESS"
-    echo "========================================="
-    echo
-    echo "Foreman/Katello assets are healthy."
+    echo "SUCCESS: Foreman/Katello assets repaired successfully."
 else
-    echo
-    echo "========================================="
-    echo " WARNING"
-    echo "========================================="
-    echo
-    echo "Assets restored, but HTTP test returned:"
-    echo "$STATUS"
+    echo "WARNING: Assets restored, but HTTP returned $STATUS"
 fi
-
-echo
-echo "Done."
