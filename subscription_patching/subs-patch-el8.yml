@@ -172,21 +172,30 @@
         var: yum_update.stdout_lines
     
     #######################################################################
-    # CHECK REBOOT
+    # CHECK IF REBOOT IS REQUIRED
     #######################################################################
     
-    - name: Check whether reboot is required
-      raw: needs-restarting -r
-      register: reboot_required
-      failed_when: false
+    - name: Get running kernel
+      raw: uname -r
+      register: running_kernel
     
-    ###########################################################################
+    - name: Get latest installed kernel
+      raw: rpm -q kernel --last | head -1 | awk '{print $1}' | sed 's/kernel-//'
+      register: installed_kernel
+    
+    - name: Show kernel versions
+      debug:
+        msg:
+          - "Running Kernel : {{ running_kernel.stdout }}"
+          - "Installed Kernel: {{ installed_kernel.stdout }}"
+    
+    #######################################################################
     # REBOOT
-    ###########################################################################
+    #######################################################################
     
     - name: Schedule reboot in 1 minute
       raw: shutdown -r +1 "Reboot initiated by Ansible"
-      when: reboot_required.rc != 0
+      when: running_kernel.stdout != installed_kernel.stdout
     
     - name: Wait for reboot to complete
       delegate_to: localhost
@@ -197,22 +206,23 @@
         delay: "{{ post_reboot_wait | int }}"
         timeout: "{{ wait_for_up_timeout | int }}"
         state: started
-      when: reboot_required.rc != 0
+      when: running_kernel.stdout != installed_kernel.stdout
     
-    - name: Verify server is reachable after reboot
+    - name: Verify server is accessible after reboot
       raw: uptime
       register: uptime_result
       retries: 10
       delay: 15
       until: uptime_result.rc == 0
-      when: reboot_required.rc != 0
+      when: running_kernel.stdout != installed_kernel.stdout
     
-    #######################################################################
-    # COMPLETE
-    #######################################################################
+    ###########################################################################
+    # FINAL STATUS
+    ###########################################################################
     
-    - name: Display completion message
+    - name: Show completion
       debug:
         msg:
-          - "Rocky Linux 8 patching completed successfully."
+          - "Patching completed successfully."
           - "Host: {{ inventory_hostname }}"
+          - "Reboot completed successfully."
