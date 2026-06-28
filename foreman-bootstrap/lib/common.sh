@@ -533,3 +533,556 @@ retry() {
 ###############################################################################
 # End Part 1D-2
 ###############################################################################
+
+###############################################################################
+# Part 1D-3A
+#
+# Foreman Object Helper Functions
+###############################################################################
+
+###############################################################################
+# Installation Media
+###############################################################################
+
+media_exists() {
+
+    local MEDIA="$1"
+
+    object_exists "medium list" "$MEDIA"
+
+}
+
+create_media() {
+
+    local NAME="$1"
+    local URL="$2"
+
+    if media_exists "$NAME"
+    then
+        log_success "Installation Media already exists : $NAME"
+        return
+    fi
+
+    log_info "Creating Installation Media : $NAME"
+
+    hammer_exec \
+        medium create \
+        --name "\"$NAME\"" \
+        --path "\"$URL\"" \
+        --os-family Redhat
+
+}
+
+###############################################################################
+# Operating Systems
+###############################################################################
+
+os_exists() {
+
+    local NAME="$1"
+
+    object_exists "os list" "$NAME"
+
+}
+
+create_os() {
+
+    local NAME="$1"
+    local MAJOR="$2"
+    local MINOR="$3"
+    local MEDIA="$4"
+
+    if os_exists "$NAME"
+    then
+        log_success "Operating System already exists : $NAME"
+        return
+    fi
+
+    log_info "Creating Operating System : $NAME"
+
+    CMD="os create \
+        --name \"$NAME\" \
+        --major \"$MAJOR\" \
+        --family \"$OS_FAMILY\" \
+        --architectures \"$ARCH\" \
+        --partition-tables \"$PARTITION_TABLE\" \
+        --media \"$MEDIA\""
+
+    if [[ -n "$MINOR" ]]
+    then
+        CMD="$CMD --minor \"$MINOR\""
+    fi
+
+    hammer_exec $CMD
+
+}
+
+###############################################################################
+# PXE Templates
+###############################################################################
+
+template_exists() {
+
+    local TEMPLATE="$1"
+
+    object_exists "template list" "$TEMPLATE"
+
+}
+
+create_template() {
+
+    local NAME="$1"
+    local FILE="$2"
+
+    if template_exists "$NAME"
+    then
+        log_success "Template already exists : $NAME"
+        return
+    fi
+
+    log_info "Creating Template : $NAME"
+
+    hammer_exec \
+        template create \
+        --name "\"$NAME\"" \
+        --type PXEGrub2 \
+        --file "\"$FILE\""
+
+}
+
+###############################################################################
+# Assign Template to Operating System
+###############################################################################
+
+assign_template() {
+
+    local OS="$1"
+    local TEMPLATE="$2"
+
+    log_info "Assigning template"
+
+    hammer_exec \
+        os add-provisioning-template \
+        --title "\"$OS\"" \
+        --provisioning-template "\"$TEMPLATE\""
+
+}
+
+###############################################################################
+# Default Template
+###############################################################################
+
+set_default_template() {
+
+    local OS="$1"
+    local TEMPLATE="$2"
+
+    OS_ID=$(get_os_id "$OS")
+    TEMPLATE_ID=$(get_template_id "$TEMPLATE")
+
+    if [[ -z "$OS_ID" ]]
+    then
+        log_error "OS ID not found : $OS"
+        exit 1
+    fi
+
+    if [[ -z "$TEMPLATE_ID" ]]
+    then
+        log_error "Template ID not found : $TEMPLATE"
+        exit 1
+    fi
+
+    hammer_exec \
+        os set-default-template \
+        --id "$OS_ID" \
+        --provisioning-template-id "$TEMPLATE_ID"
+
+}
+
+###############################################################################
+# Subnets
+###############################################################################
+
+subnet_exists() {
+
+    local NAME="$1"
+
+    object_exists "subnet list" "$NAME"
+
+}
+
+create_subnet() {
+
+    local NAME="$1"
+    local DHCP="$2"
+    local TFTP="$3"
+
+    if subnet_exists "$NAME"
+    then
+        log_success "Subnet already exists : $NAME"
+        return
+    fi
+
+    log_info "Creating Subnet : $NAME"
+
+    hammer_exec \
+        subnet create \
+        --name "\"$NAME\"" \
+        --network "$NETWORK" \
+        --mask "$NETMASK" \
+        --gateway "$GATEWAY" \
+        --dns-primary "$DNS_SERVER" \
+        --from "$RANGE_FROM" \
+        --to "$RANGE_TO" \
+        --ipam DHCP \
+        --boot-mode DHCP \
+        --mtu "$MTU" \
+        --domains "\"$DOMAIN\"" \
+        --dhcp "\"$DHCP\"" \
+        --tftp "\"$TFTP\""
+
+}
+
+###############################################################################
+# Host Groups
+###############################################################################
+
+hostgroup_exists() {
+
+    local HG="$1"
+
+    object_exists "hostgroup list --organization \"$ORG\"" "$HG"
+
+}
+
+create_hostgroup() {
+
+    local HG="$1"
+    local OS="$2"
+    local MEDIA="$3"
+    local SUBNET="$4"
+
+    if hostgroup_exists "$HG"
+    then
+        log_success "Host Group already exists : $HG"
+        return
+    fi
+
+    log_info "Creating Host Group : $HG"
+
+    hammer_exec \
+        hostgroup create \
+        --organization "\"$ORG\"" \
+        --name "\"$HG\"" \
+        --architecture "\"$ARCH\"" \
+        --operatingsystem "\"$OS\"" \
+        --medium "\"$MEDIA\"" \
+        --partition-table "\"$PARTITION_TABLE\"" \
+        --pxe-loader "\"$PXE_LOADER\"" \
+        --domain "\"$DOMAIN\"" \
+        --subnet "\"$SUBNET\"" \
+        --content-source "\"$CONTENT_SOURCE\"" \
+        --content-view "\"Default Organization View\"" \
+        --lifecycle-environment "\"$LIFECYCLE\""
+
+}
+
+###############################################################################
+# Verification Helpers
+###############################################################################
+
+verify_media() {
+
+    media_exists "$1"
+
+}
+
+verify_os() {
+
+    os_exists "$1"
+
+}
+
+verify_template() {
+
+    template_exists "$1"
+
+}
+
+verify_subnet() {
+
+    subnet_exists "$1"
+
+}
+
+verify_hostgroup() {
+
+    hostgroup_exists "$1"
+
+}
+
+###############################################################################
+# End Part 1D-3A
+###############################################################################
+
+###############################################################################
+# Part 1D-3B
+#
+# Katello Helper Functions
+###############################################################################
+
+###############################################################################
+# Products
+###############################################################################
+
+product_exists() {
+
+    local PRODUCT="$1"
+
+    object_exists \
+        "product list --organization \"$ORG\"" \
+        "$PRODUCT"
+
+}
+
+create_product() {
+
+    local PRODUCT="$1"
+
+    if product_exists "$PRODUCT"
+    then
+        log_success "Product exists : $PRODUCT"
+        return
+    fi
+
+    log_info "Creating Product : $PRODUCT"
+
+    hammer_exec \
+        product create \
+        --organization "\"$ORG\"" \
+        --name "\"$PRODUCT\""
+
+}
+
+###############################################################################
+# Repositories
+###############################################################################
+
+repository_exists() {
+
+    local PRODUCT="$1"
+    local REPO="$2"
+
+    object_exists \
+        "repository list --organization \"$ORG\" --product \"$PRODUCT\"" \
+        "$REPO"
+
+}
+
+create_repository() {
+
+    local PRODUCT="$1"
+    local REPO="$2"
+    local URL="$3"
+
+    if repository_exists "$PRODUCT" "$REPO"
+    then
+        log_success "Repository exists : $REPO"
+        return
+    fi
+
+    log_info "Creating Repository : $REPO"
+
+    hammer_exec \
+        repository create \
+        --organization "\"$ORG\"" \
+        --product "\"$PRODUCT\"" \
+        --name "\"$REPO\"" \
+        --content-type yum \
+        --url "\"$URL\""
+
+}
+
+sync_repository() {
+
+    local PRODUCT="$1"
+    local REPO="$2"
+
+    log_info "Synchronizing : $REPO"
+
+    hammer_exec \
+        repository synchronize \
+        --organization "\"$ORG\"" \
+        --product "\"$PRODUCT\"" \
+        --name "\"$REPO\""
+
+    wait_for_sync "$PRODUCT" "$REPO"
+
+}
+
+###############################################################################
+# Content Views
+###############################################################################
+
+content_view_exists() {
+
+    local CV="$1"
+
+    object_exists \
+        "content-view list --organization \"$ORG\"" \
+        "$CV"
+
+}
+
+create_content_view() {
+
+    local CV="$1"
+
+    if content_view_exists "$CV"
+    then
+        log_success "Content View exists : $CV"
+        return
+    fi
+
+    hammer_exec \
+        content-view create \
+        --organization "\"$ORG\"" \
+        --name "\"$CV\""
+
+}
+
+add_repository_to_cv() {
+
+    local CV="$1"
+    local PRODUCT="$2"
+    local REPO="$3"
+
+    hammer_exec \
+        content-view add-repository \
+        --organization "\"$ORG\"" \
+        --name "\"$CV\"" \
+        --product "\"$PRODUCT\"" \
+        --repository "\"$REPO\""
+
+}
+
+publish_content_view() {
+
+    local CV="$1"
+
+    hammer_exec \
+        content-view publish \
+        --organization "\"$ORG\"" \
+        --name "\"$CV\"" \
+        --description "\"$CV_DESCRIPTION\""
+
+}
+
+###############################################################################
+# Activation Keys
+###############################################################################
+
+activation_key_exists() {
+
+    local KEY="$1"
+
+    object_exists \
+        "activation-key list --organization \"$ORG\"" \
+        "$KEY"
+
+}
+
+create_activation_key() {
+
+    local KEY="$1"
+    local CV="$2"
+
+    if activation_key_exists "$KEY"
+    then
+        log_success "Activation Key exists : $KEY"
+        return
+    fi
+
+    hammer_exec \
+        activation-key create \
+        --organization "\"$ORG\"" \
+        --name "\"$KEY\"" \
+        --lifecycle-environment "\"$LIFECYCLE\"" \
+        --content-view "\"$CV\""
+
+}
+
+###############################################################################
+# Subscriptions
+###############################################################################
+
+get_subscription_id() {
+
+    local PRODUCT="$1"
+
+    $HAMMER subscription list \
+        --organization "$ORG" \
+        --csv 2>/dev/null |
+    awk -F',' -v p="$PRODUCT" '
+        NR>1 && $2==p {
+            print $1
+            exit
+        }
+    '
+
+}
+
+attach_subscription() {
+
+    local KEY="$1"
+    local PRODUCT="$2"
+
+    local SUB_ID
+
+    SUB_ID=$(get_subscription_id "$PRODUCT")
+
+    if [[ -z "$SUB_ID" ]]
+    then
+        log_error "Subscription not found : $PRODUCT"
+        return 1
+    fi
+
+    hammer_exec \
+        activation-key add-subscription \
+        --organization "\"$ORG\"" \
+        --name "\"$KEY\"" \
+        --subscription-id "$SUB_ID"
+
+}
+
+###############################################################################
+# Verification
+###############################################################################
+
+verify_product() {
+
+    product_exists "$1"
+
+}
+
+verify_repository() {
+
+    repository_exists "$1" "$2"
+
+}
+
+verify_content_view() {
+
+    content_view_exists "$1"
+
+}
+
+verify_activation_key() {
+
+    activation_key_exists "$1"
+
+}
+
+###############################################################################
+# End of common.sh
+###############################################################################
