@@ -72,9 +72,21 @@ chmod +x foreman_proxy.sh
 ```
 
 ```text
+curl -L -o /usr/local/sbin/fix_foreman_assets.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/fix_foreman_assets.sh?$(date +%s)" && \
+chmod +x /usr/local/sbin/fix_foreman_assets.sh
+```
+
+```text
 curl -L -o frontbackend.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/frontbackend.sh?$(date +%s)" && \
 chmod +x frontbackend.sh
+```
+
+```text
+curl -L -o backfrontend_restore.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/backfrontend_restore.sh?$(date +%s)" && \
+chmod +x backfrontend_restore.sh
 ```
 
 ```text
