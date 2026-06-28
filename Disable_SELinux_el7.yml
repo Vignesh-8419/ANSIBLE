@@ -19,6 +19,6 @@
       wait_for:
         host: "{{ inventory_hostname }}"
         port: 22
-        delay: 90
-        timeout: 300
+        delay: 180
+        timeout: 600
         state: started
