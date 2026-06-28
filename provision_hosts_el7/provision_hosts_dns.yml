@@ -6,7 +6,7 @@
   vars:
     dns_server: "192.168.253.1:5380"
     dns_server_ip: "192.168.253.1"
-    dns_token: "14759e1e000567381175d02ef3e137d2847e6dd637e5a74bcdb726e24dabaac7"
+    dns_token: "9a3e274c36aee5b2d8075c6411af68756f0434a5be500d54af5d3d95ddbd7fe4"
   
     netbox_url: "https://192.168.253.143"
     netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
