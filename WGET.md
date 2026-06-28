@@ -33,6 +33,7 @@ chmod +x working_netbox.sh
 curl -L -o netbox-bootstrap.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/netbox-bootstrap.sh?$(date +%s)" && \
 chmod +x netbox-bootstrap.sh
+```
 
 ```text
 curl -L -o Offline_Patching_el8_cifs.sh \
