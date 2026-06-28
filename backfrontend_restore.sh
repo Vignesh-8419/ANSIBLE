@@ -1,22 +1,23 @@
 #!/bin/bash
 # ============================================================
-# Foreman Apache Configuration Auto Restore
-# Restores custom 05-foreman*.conf after reboot
+# Install Foreman Apache Restore Service
 # ============================================================
 
 set -e
 
 echo "==========================================="
-echo " Creating backup of working configuration"
+echo " Checking backup files"
 echo "==========================================="
 
-mkdir -p /opt/vgs/apache
+if [ ! -f /opt/vgs/apache/05-foreman.conf ]; then
+    echo "ERROR: /opt/vgs/apache/05-foreman.conf not found"
+    exit 1
+fi
 
-cp -f /etc/httpd/conf.d/05-foreman.conf \
-      /opt/vgs/apache/05-foreman.conf
-
-cp -f /etc/httpd/conf.d/05-foreman-ssl.conf \
-      /opt/vgs/apache/05-foreman-ssl.conf
+if [ ! -f /opt/vgs/apache/05-foreman-ssl.conf ]; then
+    echo "ERROR: /opt/vgs/apache/05-foreman-ssl.conf not found"
+    exit 1
+fi
 
 echo "==========================================="
 echo " Creating restore script"
@@ -25,7 +26,13 @@ echo "==========================================="
 cat >/opt/vgs/apache/restore_foreman_apache.sh <<'EOF'
 #!/bin/bash
 
-echo "Restoring custom Apache configuration..."
+LOG=/var/log/restore_foreman_apache.log
+
+echo "===================================" >> $LOG
+echo "$(date) Starting restore" >> $LOG
+
+# Wait until Foreman/Puppet finishes startup
+sleep 180
 
 cp -f /opt/vgs/apache/05-foreman.conf \
       /etc/httpd/conf.d/05-foreman.conf
@@ -35,11 +42,15 @@ cp -f /opt/vgs/apache/05-foreman-ssl.conf \
 
 restorecon -Rv /etc/httpd/conf.d >/dev/null 2>&1 || true
 
-httpd -t || exit 1
+if httpd -t; then
+    systemctl restart httpd
+    echo "$(date) Apache restarted successfully" >> $LOG
+else
+    echo "$(date) Apache configuration invalid" >> $LOG
+    exit 1
+fi
 
-systemctl restart httpd
-
-echo "Apache configuration restored successfully."
+echo "$(date) Restore completed" >> $LOG
 EOF
 
 chmod +x /opt/vgs/apache/restore_foreman_apache.sh
@@ -51,12 +62,11 @@ echo "==========================================="
 cat >/etc/systemd/system/restore-foreman-apache.service <<'EOF'
 [Unit]
 Description=Restore Foreman Apache Configuration
-After=network-online.target
+After=multi-user.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStartPre=/bin/sleep 60
 ExecStart=/opt/vgs/apache/restore_foreman_apache.sh
 RemainAfterExit=yes
 
@@ -76,19 +86,10 @@ echo "==========================================="
 echo " Installation Complete"
 echo "==========================================="
 echo
-echo "Backups stored in:"
-echo "  /opt/vgs/apache/"
-echo
-echo "Restore script:"
-echo "  /opt/vgs/apache/restore_foreman_apache.sh"
-echo
-echo "Service:"
-echo "  restore-foreman-apache.service"
-echo
-echo "Test now using:"
+echo "Test with:"
 echo
 echo "systemctl start restore-foreman-apache.service"
 echo
-echo "Check status:"
+echo "View log:"
 echo
-echo "systemctl status restore-foreman-apache.service"
+echo "cat /var/log/restore_foreman_apache.log"
