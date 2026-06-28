@@ -661,7 +661,7 @@ fi
 
 info "Creating Custom Field : $NAME"
 
-api_post "/api/extras/custom-fields/" "$PAYLOAD" >/dev/null
+api_post "/api/extras/custom-fields/" "$PAYLOAD"
 
 success "Created Custom Field : $NAME"
 
@@ -853,9 +853,9 @@ create_custom_field "last_patch_check" "$JSON"
 
 create_patch_status_cf() {
 
-create_patch_choice_set
+    create_patch_choice_set
 
-JSON=$(cat <<EOF
+    JSON=$(cat <<EOF
 {
     "name":"patch_status",
     "label":"Patch Status",
@@ -866,8 +866,10 @@ JSON=$(cat <<EOF
 EOF
 )
 
-create_custom_field "patch_status" "$JSON"
+    echo "PATCH_STATUS_ID=${PATCH_STATUS_ID}"
+    echo "$JSON"
 
+    create_custom_field "patch_status" "$JSON"
 }
 
 ###############################################################################
