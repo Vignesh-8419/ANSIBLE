@@ -647,9 +647,10 @@ else
 
     info "Setting CentOS default template..."
 
-    $HAMMER os set-default-template \
-        --id "$CENTOS_OS_ID" \
-        --provisioning-template-id "$CENTOS_TEMPLATE_ID"
+   $HAMMER os set-default-template \
+         --id "$CENTOS_OS_ID" \
+         --provisioning-template-id "$CENTOS_TEMPLATE_ID" \
+         >/dev/null 2>&1
 
     ok "CentOS default template configured."
 
@@ -675,7 +676,8 @@ else
 
     $HAMMER os set-default-template \
         --id "$ROCKY_OS_ID" \
-        --provisioning-template-id "$ROCKY_TEMPLATE_ID"
+        --provisioning-template-id "$ROCKY_TEMPLATE_ID" \
+        >/dev/null 2>&1
 
     ok "Rocky default template configured."
 
