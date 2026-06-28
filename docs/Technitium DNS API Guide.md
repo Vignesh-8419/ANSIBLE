@@ -298,7 +298,7 @@ Click **Save Settings**.
 # Configure Windows DNS Client
 
 ```powershell
-Set-DnsClientServerAddress -InterfaceAlias "Wi-Fi" -ServerAddresses 192.168.253.1
+Set-DnsClientServerAddress -InterfaceAlias "Wi-Fi" -ServerAddresses 192.168.253.1,192.168.31.1
 ```
 
 Flush DNS cache:
