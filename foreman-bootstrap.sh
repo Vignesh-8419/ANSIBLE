@@ -73,7 +73,7 @@ HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
 # 1. Create Installation Media
 ###############################################################################
 
-header "[1/13] Creating Installation Media"
+header "[1/12] Creating Installation Media"
 
 ###############################################################################
 # CentOS 7 Installation Media
@@ -131,7 +131,7 @@ echo
 # 2. Create Operating Systems
 ###############################################################################
 
-header "[2/13] Creating Operating Systems"
+header "[2/12] Creating Operating Systems"
 
 ###############################################################################
 # CentOS Linux 7
@@ -198,7 +198,7 @@ echo
 # 3. Create PXEGrub2 Provisioning Template - Rocky Linux 8.10
 ###############################################################################
 
-header "[3/13] Creating Rocky Linux PXE Template"
+header "[3/12] Creating Rocky Linux PXE Template"
 
 ###############################################################################
 # Create Template File
@@ -303,7 +303,7 @@ echo
 # 4. Create PXEGrub2 Provisioning Template - CentOS Linux 7
 ###############################################################################
 
-header "[4/13] Creating CentOS Linux PXE Template"
+header "[4/12] Creating CentOS Linux PXE Template"
 
 ###############################################################################
 # Create Template File
@@ -408,7 +408,7 @@ echo
 # 5. Create Subnets
 ###############################################################################
 
-header "[5/13] Creating Subnets"
+header "[5/12] Creating Subnets"
 
 ###############################################################################
 # CentOS Subnet
@@ -495,7 +495,7 @@ echo
 ok "Subnets Verified."
 echo
 
-header "[6/13] Creating Host Groups"
+header "[6/12] Creating Host Groups"
 
 ###############################################################################
 # CentOS 7 Host Group
@@ -582,7 +582,7 @@ echo
 ok "Host Groups Verified."
 echo
 
-header "[7/13] Setting Default PXE Templates"
+header "[7/12] Setting Default PXE Templates"
 
 info "Current Operating Systems"
 $HAMMER os list
@@ -714,7 +714,7 @@ header "PXE Provisioning Setup Completed Successfully"
 echo
 
 
-header "[8/13] Creating Katello Products"
+header "[8/12] Creating Katello Products"
 
 
 ###############################################################################
@@ -967,7 +967,7 @@ $HAMMER repository list \
 
 echo
 
-header "[9/13] Synchronizing Repositories"
+header "[9/12] Synchronizing Repositories"
 
 sync_repository() {
 
@@ -1044,7 +1044,7 @@ $HAMMER repository list \
 
 echo
 
-header "[10/13] Creating Content Views"
+header "[10/12] Creating Content Views"
 
 
 ###############################################################################
@@ -1139,14 +1139,26 @@ publish_cv() {
 
     CV="$1"
 
-    info "Publishing $CV..."
+    info "Checking Content View : $CV"
 
-    $HAMMER content-view publish \
+    if $HAMMER content-view info \
         --organization "Default Organization" \
-        --name "$CV" \
-        --description "Bootstrap Publish $(date '+%Y-%m-%d %H:%M:%S')"
+        --name "$CV" | grep -q "Last published"; then
 
-    ok "Published."
+        skip "Content View already published."
+
+    else
+
+        info "Publishing Content View..."
+
+        $HAMMER content-view publish \
+            --organization "Default Organization" \
+            --name "$CV" \
+            --description "Bootstrap Publish $(date '+%Y-%m-%d %H:%M:%S')"
+
+        ok "Content View published."
+
+    fi
 
     echo
 }
@@ -1198,3 +1210,112 @@ create_activation_key() {
 
 create_activation_key "centos7-prod-key" "CentOS7-CV"
 create_activation_key "rocky8-prod-key" "Rocky8-CV"
+
+header "[11/12] Verification"
+
+###############################################################################
+# Content Views
+###############################################################################
+
+echo
+header "Content Views"
+
+$HAMMER content-view list || true
+
+###############################################################################
+# Activation Keys
+###############################################################################
+
+echo
+header "Activation Keys"
+
+$HAMMER activation-key list \
+    --organization "Default Organization" || true
+
+###############################################################################
+# CentOS7-CV
+###############################################################################
+
+echo
+header "CentOS7-CV"
+
+
+$HAMMER content-view info \
+    --organization "Default Organization" \
+    --name "CentOS7-CV" || true
+
+###############################################################################
+# Rocky8-CV
+###############################################################################
+
+echo
+header "Rocky8-CV"
+
+
+$HAMMER content-view info \
+    --organization "Default Organization" \
+    --name "Rocky8-CV" || true
+
+###############################################################################
+# CentOS Repositories
+###############################################################################
+
+echo
+header "CentOS Repositories"
+
+
+$HAMMER repository list \
+    --organization "Default Organization" \
+    --product "CentOS 7" || true
+
+###############################################################################
+# Rocky Repositories
+###############################################################################
+
+echo
+header "Rocky Repositories"
+
+$HAMMER repository list \
+    --organization "Default Organization" \
+    --product "Rocky Linux 8" || true
+
+echo
+ok "Verification completed."
+echo
+
+header "[12/12] Registration Commands"
+
+echo
+info "CentOS 7"
+
+echo "subscription-manager register \\"
+echo "  --org=\"Default Organization\" \\"
+echo "  --activationkey=\"centos7-prod-key\""
+
+echo
+info "Rocky Linux 8"
+
+echo "subscription-manager register \\"
+echo "  --org=\"Default Organization\" \\"
+echo "  --activationkey=\"rocky8-prod-key\""
+
+echo
+
+header "Bootstrap Summary"
+
+summary_ok "Installation Media"
+summary_ok "Operating Systems"
+summary_ok "PXE Templates"
+summary_ok "Subnets"
+summary_ok "Host Groups"
+summary_ok "Katello Products"
+summary_ok "Repositories"
+summary_ok "Repository Synchronization"
+summary_ok "Content Views"
+summary_ok "Activation Keys"
+summary_ok "Verification"
+summary_ok "Registration Commands"
+
+echo
+ok "Foreman PXE Provisioning + Katello Bootstrap Completed Successfully."
+echo
