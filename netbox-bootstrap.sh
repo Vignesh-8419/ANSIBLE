@@ -133,30 +133,22 @@ echo -e "${BLUE}[INFO]${NC} $1"
 
 get_tag_id() {
     api_get "/api/extras/tags/?name=$1" \
-    | grep -o '"id":[0-9]*' \
-    | head -1 \
-    | cut -d: -f2 || true
+    | jq -r '.results[0].id // empty'
 }
 
 get_context_id() {
     api_get "/api/extras/config-contexts/?name=$1" \
-    | grep -o '"id":[0-9]*' \
-    | head -1 \
-    | cut -d: -f2 || true
+    | jq -r '.results[0].id // empty'
 }
 
 get_custom_field_id() {
     api_get "/api/extras/custom-fields/?name=$1" \
-    | grep -o '"id":[0-9]*' \
-    | head -1 \
-    | cut -d: -f2 || true
+    | jq -r '.results[0].id // empty'
 }
 
 get_choice_set_id() {
     api_get "/api/extras/custom-field-choice-sets/?name=$1" \
-    | grep -o '"id":[0-9]*' \
-    | head -1 \
-    | cut -d: -f2 || true
+    | jq -r '.results[0].id // empty'
 }
 
 ###############################################
