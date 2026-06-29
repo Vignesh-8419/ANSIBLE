@@ -217,7 +217,12 @@
     - name: Show completion
       debug:
         msg:
-          - "Patching completed successfully."
+          - >-
+            {{
+              'System is already up-to-date.'
+              if 'Nothing to do.' in yum_update.stdout
+              else 'Patching completed successfully.'
+            }}
           - "Host: {{ inventory_hostname }}"
           - >-
             {{
