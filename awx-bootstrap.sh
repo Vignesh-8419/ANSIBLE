@@ -348,6 +348,7 @@ echo "---------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import Inventory, Project, JobTemplate
+import json
 
 project = Project.objects.get(name="Inventory-Git-Repo")
 inventory = Inventory.objects.get(name="rocky-8-servers")
@@ -359,20 +360,45 @@ jt, created = JobTemplate.objects.get_or_create(
         "inventory": inventory,
         "playbook": "ROCKYOS-VM-TEMPLATE/ROCKYOS-VM-TEMPLATE.yml",
         "ask_inventory_on_launch": False,
-        "ask_limit_on_launch": True
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
     }
 )
 
 jt.project = project
 jt.inventory = inventory
 jt.playbook = "ROCKYOS-VM-TEMPLATE/ROCKYOS-VM-TEMPLATE.yml"
+
+# No inventory prompt
 jt.ask_inventory_on_launch = False
-jt.ask_limit_on_launch = True
+
+# Disable Limit prompt
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more Rocky Linux hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: rocky-08-01 or rocky-08-01,rocky-08-02 or rocky-08-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-08-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
 jt.save()
 
 print(f"ROCKYOS-VM-TEMPLATE {'created' if created else 'updated'}")
 EOF
-
 
 # ==============================================================
 # CENTOS-VM-TEMPLATE Job Template
@@ -391,15 +417,41 @@ jt, created = JobTemplate.objects.get_or_create(
         "inventory": inventory,
         "playbook": "CENTOS-VM-TEMPLATE/CENTOS-VM-TEMPLATE.yml",
         "ask_inventory_on_launch": False,
-        "ask_limit_on_launch": True
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
     }
 )
 
 jt.project = project
 jt.inventory = inventory
 jt.playbook = "CENTOS-VM-TEMPLATE/CENTOS-VM-TEMPLATE.yml"
+
+# Inventory is fixed
 jt.ask_inventory_on_launch = False
-jt.ask_limit_on_launch = True
+
+# Do not use Limit
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more CentOS 7 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: cent-07-01 or cent-07-01,cent-07-02 or cent-07-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "cent-07-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
 jt.save()
 
 print(f"CENTOS-VM-TEMPLATE {'created' if created else 'updated'}")
@@ -420,16 +472,43 @@ jt, created = JobTemplate.objects.get_or_create(
     defaults={
         "project": project,
         "playbook": "Local_DNS.yml",
+        "inventory": None,
         "ask_inventory_on_launch": True,
-        "ask_limit_on_launch": True
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
     }
 )
 
 jt.project = project
 jt.playbook = "Local_DNS.yml"
+
+# Inventory selected at launch (or inherited from Workflow)
 jt.inventory = None
 jt.ask_inventory_on_launch = True
-jt.ask_limit_on_launch = True
+
+# Do not use Limit
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more target hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: cent-07-01, rocky-08-01, cent-07-01,cent-07-02, rocky-08-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
 jt.save()
 
 print(f"Local_DNS {'created' if created else 'updated'}")
@@ -501,15 +580,41 @@ jt, created = JobTemplate.objects.get_or_create(
         "inventory": inventory,
         "playbook": "offline_patching_el7/offline-patch-el7.yml",
         "ask_inventory_on_launch": False,
-        "ask_limit_on_launch": True
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
     }
 )
 
 jt.project = project
 jt.inventory = inventory
 jt.playbook = "offline_patching_el7/offline-patch-el7.yml"
+
+# Fixed inventory
 jt.ask_inventory_on_launch = False
-jt.ask_limit_on_launch = True
+
+# Disable Limit
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more CentOS 7 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: cent-07-01 or cent-07-01,cent-07-02 or cent-07-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "cent-07-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
 jt.save()
 
 jt.credentials.clear()
@@ -517,7 +622,6 @@ jt.credentials.add(credential)
 
 print(f"Offline_Patching_el7 {'created' if created else 'updated'}")
 EOF
-
 
 # ==============================================================
 # Offline_Patching_el8
@@ -537,15 +641,41 @@ jt, created = JobTemplate.objects.get_or_create(
         "inventory": inventory,
         "playbook": "offline_patching_el8/offline-patch-el8.yml",
         "ask_inventory_on_launch": False,
-        "ask_limit_on_launch": True
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
     }
 )
 
 jt.project = project
 jt.inventory = inventory
 jt.playbook = "offline_patching_el8/offline-patch-el8.yml"
+
+# Fixed inventory
 jt.ask_inventory_on_launch = False
-jt.ask_limit_on_launch = True
+
+# Disable Limit
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more Rocky Linux 8 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: rocky-08-01 or rocky-08-01,rocky-08-02 or rocky-08-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-08-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
 jt.save()
 
 jt.credentials.clear()
@@ -575,15 +705,41 @@ jt, created = JobTemplate.objects.get_or_create(
         "inventory": inventory,
         "playbook": "Disable_SELinux_el7.yml",
         "ask_inventory_on_launch": False,
-        "ask_limit_on_launch": True
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
     }
 )
 
 jt.project = project
 jt.inventory = inventory
 jt.playbook = "Disable_SELinux_el7.yml"
+
+# Fixed inventory
 jt.ask_inventory_on_launch = False
-jt.ask_limit_on_launch = True
+
+# Disable Limit
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more CentOS 7 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: cent-07-01 or cent-07-01,cent-07-02 or cent-07-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "cent-07-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
 jt.save()
 
 jt.credentials.clear()
@@ -615,15 +771,41 @@ jt, created = JobTemplate.objects.get_or_create(
         "inventory": inventory,
         "playbook": "Disable_SELinux_el8.yml",
         "ask_inventory_on_launch": False,
-        "ask_limit_on_launch": True
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
     }
 )
 
 jt.project = project
 jt.inventory = inventory
 jt.playbook = "Disable_SELinux_el8.yml"
+
+# Fixed inventory
 jt.ask_inventory_on_launch = False
-jt.ask_limit_on_launch = True
+
+# Disable Limit
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more Rocky Linux 8 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: rocky-08-01 or rocky-08-01,rocky-08-02 or rocky-08-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-08-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
 jt.save()
 
 jt.credentials.clear()
@@ -707,10 +889,33 @@ wf, created = WorkflowJobTemplate.objects.get_or_create(
 # Remove existing workflow nodes
 wf.workflow_job_template_nodes.all().delete()
 
+# Fixed inventory and credential
 wf.inventory = inv
-wf.ask_limit_on_launch = True
-wf.ask_inventory_on_launch = True
-wf.ask_credential_on_launch = True
+
+# Disable prompts at workflow launch
+wf.ask_inventory_on_launch = False
+wf.ask_limit_on_launch = False
+wf.ask_credential_on_launch = False
+
+# Enable survey so target_hosts is prompted once
+wf.survey_enabled = True
+wf.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more CentOS 7 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: cent-07-01 or cent-07-01,cent-07-02 or cent-07-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "cent-07-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
 wf.save()
 
 wf.credentials.clear()
@@ -732,7 +937,7 @@ n3 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt3
 )
 
-# Link nodes
+# Execution order
 n1.success_nodes.add(n2)
 n2.success_nodes.add(n3)
 
@@ -789,10 +994,33 @@ wf, created = WorkflowJobTemplate.objects.get_or_create(
 # Remove existing workflow nodes
 wf.workflow_job_template_nodes.all().delete()
 
+# Fixed inventory and credential
 wf.inventory = inv
-wf.ask_inventory_on_launch = True
-wf.ask_limit_on_launch = True
-wf.ask_credential_on_launch = True
+
+# Disable launch prompts
+wf.ask_inventory_on_launch = False
+wf.ask_limit_on_launch = False
+wf.ask_credential_on_launch = False
+
+# Enable survey
+wf.survey_enabled = True
+wf.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more Rocky Linux 8 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: rocky-08-01 or rocky-08-01,rocky-08-02 or rocky-08-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-08-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
 wf.save()
 
 wf.credentials.clear()
@@ -814,7 +1042,7 @@ n3 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt3
 )
 
-# Success flow
+# Execution order
 n1.success_nodes.add(n2)
 n2.success_nodes.add(n3)
 
@@ -830,6 +1058,9 @@ print("   |")
 print("   v")
 print(jt3.name)
 EOF
+
+echo
+echo "ROCKY Workflow created successfully."
 
 
 # ==============================================================
