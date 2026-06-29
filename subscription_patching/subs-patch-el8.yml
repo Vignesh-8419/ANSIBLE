@@ -1,7 +1,14 @@
 ---
 - name: Register and Patch Rocky Linux 8 using Foreman/Katello
-#  hosts: "{{ target_hosts | default('all') }}"
-  hosts: "{{ (target_hosts + '.vgs.com') if (target_hosts is defined and target_hosts != 'all' and '.vgs.com' not in target_hosts) else (target_hosts | default('all')) }}"
+  hosts: >-
+    {{
+      target_hosts
+      | split(',')
+      | map('trim')
+      | reject('equalto', '')
+      | map('regex_replace', '$', '.vgs.com')
+      | join(',')
+    }}
   become: yes
   gather_facts: false
   serial: 1
