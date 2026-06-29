@@ -233,4 +233,9 @@
         msg:
           - "Patching completed successfully."
           - "Host: {{ inventory_hostname }}"
-          - "Reboot completed successfully."
+          - >-
+            {{
+              'Reboot completed successfully.'
+              if (running_kernel.stdout | trim != installed_kernel.stdout | trim)
+              else 'Reboot not required. System is already running the latest kernel.'
+            }}
