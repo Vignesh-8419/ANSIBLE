@@ -1,6 +1,6 @@
 ---
 - name: Bootstrap EL7 for Python3
-  hosts: all
+  hosts: "{{ target_hosts.split(',') | map('trim') | reject('equalto', '') | map('regex_replace', '$', '.vgs.com') | join(',') }}"
   become: true
   gather_facts: false
 
