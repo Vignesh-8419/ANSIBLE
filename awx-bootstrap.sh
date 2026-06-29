@@ -1582,6 +1582,8 @@ echo "  ✓ Subscription_Patching_EL7"
 echo "  ✓ Subscription_Patching_EL8"
 echo "  ✓ Provision_Hosts_el7"
 echo "  ✓ Provision_Hosts_el8"
+echo "  ✓ Provision_Hosts_el7_Subscription_Patching_EL7"
+echo "  ✓ Provision_Hosts_el8_Subscription_Patching_EL8"
 echo "  ✓ CENTOS-VM-TEMPLATE-WF"
 echo "  ✓ ROCKYOS-VM-TEMPLATE-WF"
 
