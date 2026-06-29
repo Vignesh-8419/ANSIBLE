@@ -1,4 +1,6 @@
 ---
+- import_playbook: ensure_vm_exists.yml
+
 - import_playbook: provision_hosts_dns.yml
 
 - import_playbook: provision_hosts_el7.yml
