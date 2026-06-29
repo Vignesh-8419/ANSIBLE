@@ -1143,8 +1143,377 @@ echo "Provision_Hosts_el7 completed successfully."
 # Provision_Hosts_el8
 # ==============================================================
 
+awx-manage shell <<'EOF'
+from awx.main.models import (
+    Inventory,
+    Project,
+    JobTemplate,
+    Credential
+)
+
+project = Project.objects.get(name="Inventory-Git-Repo")
+inventory = Inventory.objects.get(name="rocky-8-servers")
+credential = Credential.objects.get(name="Linux Root Credential")
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="Provision_Hosts_el8",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "provision_hosts_el8/Foreman_provision_hosts_el8.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": False,
+        "limit": "localhost"
+    }
+)
+
+jt.project = project
+jt.inventory = inventory
+jt.playbook = "provision_hosts_el8/Foreman_provision_hosts_el8.yml"
+
+# Always run the playbook on localhost
+jt.ask_inventory_on_launch = False
+jt.ask_limit_on_launch = False
+jt.limit = "localhost"
+
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+survey_spec = {
+    "name": "target_hosts",
+    "description": "Specify target hosts/group to provision.",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Inventory host/group to provision",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-08-*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.survey_enabled = True
+jt.survey_spec = survey_spec
+
+jt.save()
+
+print(
+    f"Provision_Hosts_el8 "
+    f"{'created' if created else 'updated'} successfully."
+)
+print(f"Credential assigned: {credential.name}")
+print("Default Limit : localhost")
+print(f"Ask Limit     : {jt.ask_limit_on_launch}")
+print("Survey enabled.")
+EOF
+
+
+# ==============================================================
+# Verify Provision_Hosts_el8
+# ==============================================================
+
+awx-manage shell <<'EOF'
+from awx.main.models import JobTemplate
+
+jt = JobTemplate.objects.get(name="Provision_Hosts_el8")
+
+print()
+print("Template  :", jt.name)
+print("Playbook  :", jt.playbook)
+print("Inventory :", jt.inventory.name)
+print("Limit     :", jt.limit)
+print("Ask Limit :", jt.ask_limit_on_launch)
+print("Survey    :", jt.survey_enabled)
+
+print("\nCredentials")
+for c in jt.credentials.all():
+    print(" -", c.name)
+EOF
+
 echo
-echo "Provision_Hosts_el7 completed successfully."
+echo "Provision_Hosts_el8 completed successfully."
+
+# ==============================================================
+# Workflow : Provision_Hosts_el7_Subscription_Patching_EL7
+# ==============================================================
+
+awx-manage shell <<'EOF'
+from awx.main.models import (
+    WorkflowJobTemplate,
+    WorkflowJobTemplateNode,
+    JobTemplate,
+    Credential,
+    Inventory,
+    Organization
+)
+
+ORG_NAME = "Default"
+WORKFLOW_NAME = "Provision_Hosts_el7_Subscription_Patching_EL7"
+
+JT1_NAME = "Provision_Hosts_el7"
+JT2_NAME = "Subscription_Patching_EL7"
+
+CREDENTIAL_NAME = "Linux Root Credential"
+INVENTORY_NAME = "centos-07-servers"
+
+org = Organization.objects.get(name=ORG_NAME)
+
+jt1 = JobTemplate.objects.get(name=JT1_NAME)
+jt2 = JobTemplate.objects.get(name=JT2_NAME)
+
+cred = Credential.objects.get(name=CREDENTIAL_NAME)
+inv = Inventory.objects.get(name=INVENTORY_NAME)
+
+wf, created = WorkflowJobTemplate.objects.get_or_create(
+    name=WORKFLOW_NAME,
+    organization=org
+)
+
+# --------------------------------------------------------------
+# Remove existing workflow nodes
+# --------------------------------------------------------------
+wf.workflow_job_template_nodes.all().delete()
+
+# --------------------------------------------------------------
+# Workflow Configuration
+# --------------------------------------------------------------
+wf.inventory = inv
+wf.ask_inventory_on_launch = False
+wf.ask_limit_on_launch = False
+wf.ask_credential_on_launch = False
+wf.ask_variables_on_launch = True
+wf.limit = "localhost"
+
+# --------------------------------------------------------------
+# Workflow Survey
+# --------------------------------------------------------------
+wf.survey_enabled = True
+wf.survey_spec = {
+    "name": "target_hosts",
+    "description": "Provision Hosts + Subscription Patching (EL7)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Enter host(s) to provision and patch",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "cent-07-*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+wf.save()
+
+# --------------------------------------------------------------
+# Assign Credential
+# --------------------------------------------------------------
+wf.credentials.clear()
+wf.credentials.add(cred)
+
+# --------------------------------------------------------------
+# Create Workflow Nodes
+# --------------------------------------------------------------
+n1 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt1
+)
+
+n2 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt2
+)
+
+# --------------------------------------------------------------
+# Execution Flow
+# --------------------------------------------------------------
+n1.success_nodes.add(n2)
+
+print(
+    f"Workflow '{wf.name}' "
+    f"{'created' if created else 'updated'} successfully."
+)
+
+print()
+print("Execution Order")
+print("----------------")
+print(jt1.name)
+print("   |")
+print("   v")
+print(jt2.name)
+EOF
+
+
+# ==============================================================
+# Verify Provision_Hosts_el7_Subscription_Patching_EL7
+# ==============================================================
+
+awx-manage shell <<'EOF'
+from awx.main.models import WorkflowJobTemplate
+
+wf = WorkflowJobTemplate.objects.get(
+    name="Provision_Hosts_el7_Subscription_Patching_EL7"
+)
+
+print()
+print("Workflow   :", wf.name)
+print("Inventory  :", wf.inventory.name)
+print("Limit      :", wf.limit)
+print("Ask Limit  :", wf.ask_limit_on_launch)
+print("Survey     :", wf.survey_enabled)
+
+print("\nWorkflow Nodes")
+for node in wf.workflow_job_template_nodes.all():
+    print(" -", node.unified_job_template.name)
+EOF
+
+echo
+echo "Provision_Hosts_el7_Subscription_Patching_EL7 workflow completed successfully."
+
+# ==============================================================
+# Workflow : Provision_Hosts_el8_Subscription_Patching_EL8
+# ==============================================================
+
+awx-manage shell <<'EOF'
+from awx.main.models import (
+    WorkflowJobTemplate,
+    WorkflowJobTemplateNode,
+    JobTemplate,
+    Credential,
+    Inventory,
+    Organization
+)
+
+ORG_NAME = "Default"
+WORKFLOW_NAME = "Provision_Hosts_el8_Subscription_Patching_EL8"
+
+JT1_NAME = "Provision_Hosts_el8"
+JT2_NAME = "Subscription_Patching_EL8"
+
+CREDENTIAL_NAME = "Linux Root Credential"
+INVENTORY_NAME = "rocky-8-servers"
+
+org = Organization.objects.get(name=ORG_NAME)
+
+jt1 = JobTemplate.objects.get(name=JT1_NAME)
+jt2 = JobTemplate.objects.get(name=JT2_NAME)
+
+cred = Credential.objects.get(name=CREDENTIAL_NAME)
+inv = Inventory.objects.get(name=INVENTORY_NAME)
+
+wf, created = WorkflowJobTemplate.objects.get_or_create(
+    name=WORKFLOW_NAME,
+    organization=org
+)
+
+# --------------------------------------------------------------
+# Remove existing workflow nodes
+# --------------------------------------------------------------
+wf.workflow_job_template_nodes.all().delete()
+
+# --------------------------------------------------------------
+# Workflow Configuration
+# --------------------------------------------------------------
+wf.inventory = inv
+wf.ask_inventory_on_launch = False
+wf.ask_limit_on_launch = False
+wf.ask_credential_on_launch = False
+wf.ask_variables_on_launch = True
+wf.limit = "localhost"
+
+# --------------------------------------------------------------
+# Workflow Survey
+# --------------------------------------------------------------
+wf.survey_enabled = True
+wf.survey_spec = {
+    "name": "target_hosts",
+    "description": "Provision Hosts + Subscription Patching (EL8)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Enter host(s) to provision and patch",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-08-*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+wf.save()
+
+# --------------------------------------------------------------
+# Assign Credential
+# --------------------------------------------------------------
+wf.credentials.clear()
+wf.credentials.add(cred)
+
+# --------------------------------------------------------------
+# Create Workflow Nodes
+# --------------------------------------------------------------
+n1 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt1
+)
+
+n2 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt2
+)
+
+# --------------------------------------------------------------
+# Execution Flow
+# --------------------------------------------------------------
+n1.success_nodes.add(n2)
+
+print(
+    f"Workflow '{wf.name}' "
+    f"{'created' if created else 'updated'} successfully."
+)
+
+print()
+print("Execution Order")
+print("----------------")
+print(jt1.name)
+print("   |")
+print("   v")
+print(jt2.name)
+EOF
+
+
+# ==============================================================
+# Verify Provision_Hosts_el8_Subscription_Patching_EL8
+# ==============================================================
+
+awx-manage shell <<'EOF'
+from awx.main.models import WorkflowJobTemplate
+
+wf = WorkflowJobTemplate.objects.get(
+    name="Provision_Hosts_el8_Subscription_Patching_EL8"
+)
+
+print()
+print("Workflow   :", wf.name)
+print("Inventory  :", wf.inventory.name)
+print("Limit      :", wf.limit)
+print("Ask Limit  :", wf.ask_limit_on_launch)
+print("Survey     :", wf.survey_enabled)
+
+print("\nWorkflow Nodes")
+for node in wf.workflow_job_template_nodes.all():
+    print(" -", node.unified_job_template.name)
+EOF
+
+echo
+echo "Provision_Hosts_el8_Subscription_Patching_EL8 workflow completed successfully."
 
 
 # ==============================================================
