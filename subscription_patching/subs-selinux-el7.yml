@@ -1,5 +1,5 @@
 ---
-- name: Register and Patch Rocky Linux 8 using Foreman/Katello
+- name: Disable SELinux and reboot if only required
   hosts: >-
     {{
       target_hosts
