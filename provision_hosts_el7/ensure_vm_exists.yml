@@ -1,0 +1,143 @@
+---
+- name: Ensure selected VMs exist on ESXi
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  collections:
+    - community.vmware
+
+  vars:
+
+    ###########################################################################
+    # ESXi
+    ###########################################################################
+
+    esxi_hostname: "192.168.253.128"
+    esxi_username: "root"
+    esxi_password: "Root@123"
+
+    datastore: "datastore1"
+    network_name: "VM Network"
+    datacenter: "ha-datacenter"
+    folder: "/"
+
+    ###########################################################################
+    # NetBox
+    ###########################################################################
+
+    netbox_url: "https://192.168.253.143"
+    netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
+
+    cluster_name: "centos-07-servers"
+
+    target_servers: "{{ target_hosts.split(',') | map('trim') | list }}"
+
+  tasks:
+
+    ###########################################################################
+    # Get Devices
+    ###########################################################################
+
+    - name: Get devices from NetBox cluster
+      uri:
+        url: "{{ netbox_url }}/api/dcim/devices/?cluster={{ cluster_name }}"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        validate_certs: false
+      register: netbox_devices
+
+    ###########################################################################
+    # Filter Devices
+    ###########################################################################
+
+    - name: Initialize filtered devices
+      set_fact:
+        filtered_devices: []
+
+    - name: Filter requested hosts
+      set_fact:
+        filtered_devices: "{{ filtered_devices + [item] }}"
+      loop: "{{ netbox_devices.json.results }}"
+      when:
+        - item.name.split('.')[0] in target_servers
+
+    - name: Show selected hosts
+      debug:
+        msg: "{{ filtered_devices | map(attribute='name') | list }}"
+
+    - name: Fail if no hosts selected
+      fail:
+        msg: "No matching hosts found."
+      when: filtered_devices | length == 0
+
+    ###########################################################################
+    # Check VM
+    ###########################################################################
+
+    - name: Check if VM exists
+      community.vmware.vmware_guest_info:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: false
+        name: "{{ item.name.split('.')[0] }}"
+      loop: "{{ filtered_devices }}"
+      register: vm_info
+      failed_when: false
+
+    ###########################################################################
+    # Create Missing VM
+    ###########################################################################
+
+    - name: Create VM if missing
+      community.vmware.vmware_guest:
+
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: false
+
+        datacenter: "{{ datacenter }}"
+        folder: "{{ folder }}"
+        datastore: "{{ datastore }}"
+
+        name: "{{ item.item.name.split('.')[0] }}"
+        state: poweredoff
+
+        guest_id: centos7_64Guest
+
+        hardware:
+          memory_mb: 4096
+          num_cpus: 4
+          num_cpu_cores_per_socket: 2
+          boot_firmware: efi
+
+        disk:
+          - size_gb: 100
+            datastore: "{{ datastore }}"
+            type: thin
+
+        networks:
+          - name: "{{ network_name }}"
+            device_type: vmxnet3
+
+      loop: "{{ vm_info.results }}"
+      when:
+        - item.failed | default(false)
+
+    ###########################################################################
+    # Summary
+    ###########################################################################
+
+    - name: Show VM status
+      debug:
+        msg: >-
+          {{
+            'Created VM : ' ~ item.item.name.split('.')[0]
+            if (item.failed | default(false))
+            else
+            'VM already exists : ' ~ item.item.name.split('.')[0]
+          }}
+      loop: "{{ vm_info.results }}"
