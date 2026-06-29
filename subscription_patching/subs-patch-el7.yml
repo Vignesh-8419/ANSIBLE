@@ -186,7 +186,8 @@
     
     - name: Schedule reboot in 1 minute
       raw: shutdown -r +1 "Reboot initiated by Ansible"
-      when: running_kernel.stdout != installed_kernel.stdout
+      when:
+       - running_kernel.stdout | trim != installed_kernel.stdout | trim
     
     - name: Wait for reboot to complete
       delegate_to: localhost
@@ -197,7 +198,8 @@
         delay: "{{ post_reboot_wait | int }}"
         timeout: "{{ wait_for_up_timeout | int }}"
         state: started
-      when: running_kernel.stdout != installed_kernel.stdout
+      when:
+       - running_kernel.stdout | trim != installed_kernel.stdout | trim
     
     - name: Verify server is accessible after reboot
       raw: uptime
@@ -205,7 +207,8 @@
       retries: 10
       delay: 15
       until: uptime_result.rc == 0
-      when: running_kernel.stdout != installed_kernel.stdout
+      when:
+       - running_kernel.stdout | trim != installed_kernel.stdout | trim
     
     ###########################################################################
     # FINAL STATUS
@@ -216,4 +219,9 @@
         msg:
           - "Patching completed successfully."
           - "Host: {{ inventory_hostname }}"
-          - "Reboot completed successfully."
+          - >-
+            {{
+              'Reboot completed successfully.'
+              if (running_kernel.stdout | trim != installed_kernel.stdout | trim)
+              else 'Reboot not required. System is already running the latest kernel.'
+            }}
