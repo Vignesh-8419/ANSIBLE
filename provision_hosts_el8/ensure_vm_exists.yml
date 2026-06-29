@@ -113,6 +113,24 @@
       register: vm_create
 
     ###########################################################################
+    # Get VM Information
+    ###########################################################################
+    
+    - name: Get VM information
+      community.vmware.vmware_guest_info:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: false
+        name: "{{ item.name.split('.')[0] }}"
+      loop: "{{ filtered_devices }}"
+      register: vm_info
+    
+    - name: Show VM information
+      debug:
+        var: vm_info.results
+
+    ###########################################################################
     # Summary
     ###########################################################################
 
