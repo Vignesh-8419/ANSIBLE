@@ -17,9 +17,9 @@
     esxi_username: "root"
     esxi_password: "Root@123"
 
-    datastore: "datastore1"
-    network_name: "VM Network"
     datacenter: "ha-datacenter"
+    datastore: "datastore1"
+    vm_network: "VM Network"
     folder: "/"
 
     ###########################################################################
@@ -29,14 +29,14 @@
     netbox_url: "https://192.168.253.143"
     netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
 
-    cluster_name: "centos-07-servers"
+    cluster_name: "rocky-8-servers"
 
     target_servers: "{{ target_hosts.split(',') | map('trim') | list }}"
 
   tasks:
 
     ###########################################################################
-    # Get Devices
+    # Get Devices from NetBox
     ###########################################################################
 
     - name: Get devices from NetBox cluster
@@ -49,7 +49,7 @@
       register: netbox_devices
 
     ###########################################################################
-    # Filter Devices
+    # Filter Selected Devices
     ###########################################################################
 
     - name: Initialize filtered devices
@@ -63,35 +63,20 @@
       when:
         - item.name.split('.')[0] in target_servers
 
-    - name: Show selected hosts
+    - name: Fail if no hosts found
+      fail:
+        msg: "No matching hosts found in NetBox."
+      when: filtered_devices | length == 0
+
+    - name: Show selected VMs
       debug:
         msg: "{{ filtered_devices | map(attribute='name') | list }}"
 
-    - name: Fail if no hosts selected
-      fail:
-        msg: "No matching hosts found."
-      when: filtered_devices | length == 0
-
     ###########################################################################
-    # Check VM
+    # Create VM (only if missing)
     ###########################################################################
 
-    - name: Check if VM exists
-      community.vmware.vmware_guest_info:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: false
-        name: "{{ item.name.split('.')[0] }}"
-      loop: "{{ filtered_devices }}"
-      register: vm_info
-      failed_when: false
-
-    ###########################################################################
-    # Create Missing VM
-    ###########################################################################
-
-    - name: Create VM if missing
+    - name: Ensure VM exists
       community.vmware.vmware_guest:
 
         hostname: "{{ esxi_hostname }}"
@@ -103,8 +88,8 @@
         folder: "{{ folder }}"
         datastore: "{{ datastore }}"
 
-        name: "{{ item.item.name.split('.')[0] }}"
-        state: poweredoff
+        name: "{{ item.name.split('.')[0] }}"
+        state: present
 
         guest_id: centos7_64Guest
 
@@ -120,24 +105,20 @@
             type: thin
 
         networks:
-          - name: "{{ network_name }}"
+          - name: "{{ vm_network }}"
+            start_connected: true
             device_type: vmxnet3
 
-      loop: "{{ vm_info.results }}"
-      when:
-        - item.failed | default(false)
+      loop: "{{ filtered_devices }}"
+      register: vm_create
 
     ###########################################################################
     # Summary
     ###########################################################################
 
-    - name: Show VM status
+    - name: Show result
       debug:
-        msg: >-
-          {{
-            'Created VM : ' ~ item.item.name.split('.')[0]
-            if (item.failed | default(false))
-            else
-            'VM already exists : ' ~ item.item.name.split('.')[0]
-          }}
-      loop: "{{ vm_info.results }}"
+        msg:
+          - "VM Name : {{ item.instance.hw_name }}"
+          - "Changed : {{ item.changed }}"
+      loop: "{{ vm_create.results }}"
