@@ -1,6 +1,6 @@
 ---
 - name: Offline Infrastructure Patching Orchestrator EL7
-  hosts: all
+  hosts: "{{ target_hosts.split(',') | map('trim') | reject('equalto', '') | map('regex_replace', '$', '.vgs.com') | join(',') }}"
   become: yes
   gather_facts: no
   any_errors_fatal: false
