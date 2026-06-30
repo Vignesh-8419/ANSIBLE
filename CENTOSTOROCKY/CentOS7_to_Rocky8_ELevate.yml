@@ -151,24 +151,30 @@
     # Install Leapp
     ####################################################################
 
-    - name: Check if Leapp is already installed
-      command: rpm -q leapp-upgrade
+    - name: Check if leapp command exists
+      command: which leapp
       register: leapp_installed
       changed_when: false
       failed_when: false
-
+    
     - name: Install Leapp packages
       yum:
         name:
-          - leapp-upgrade
+          - leapp
           - leapp-data-rocky
         state: present
       when: leapp_installed.rc != 0
-
+    
     - name: Verify Leapp installation
-      command: rpm -q leapp-upgrade leapp-data-rocky
+      shell: |
+        leapp --version
+        rpm -qa | grep '^leapp' | sort
       register: leapp_verify
       changed_when: false
+    
+    - name: Display Leapp installation status
+      debug:
+        var: leapp_verify.stdout_lines
 
     - name: Display Leapp installation status
       debug:
