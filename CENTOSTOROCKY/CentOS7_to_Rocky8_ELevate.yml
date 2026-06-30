@@ -1,13 +1,6 @@
 ---
 - name: CentOS 7 to Rocky Linux 8 - ELevate Migration
-  hosts: >-
-    {{
-      target_hosts
-      | split(',')
-      | map('trim')
-      | map('regex_replace', '$', '*')
-      | join(',')
-    }}
+  hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
   become: yes
   gather_facts: false
 
