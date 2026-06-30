@@ -159,11 +159,19 @@
       when: el7_rpms.stdout != ""
 
     - name: Remove leftover EL7 RPMs
-      shell: |
-        while read pkg; do
-          [ -n "$pkg" ] && rpm -e --nodeps "$pkg" || true
-        done < /tmp/rhel7.txt
-      when: el7_rpms.stdout != ""
+      command:
+        argv:
+          - rpm
+          - -e
+          - --nodeps
+          - "{{ item }}"
+      loop: "{{ el7_rpms.stdout_lines }}"
+      register: remove_el7
+      ignore_errors: yes
+    
+    - name: Show EL7 package removal results
+      debug:
+        var: remove_el7.results
 
     ####################################################################
     # Remove Leapp packages
