@@ -1249,6 +1249,165 @@ print(
 )
 EOF
 
+# ==============================================================
+# CENTOSTOROCKY
+# ==============================================================
+
+awx-manage shell <<'EOF'
+from awx.main.models import Inventory, Project, JobTemplate, Credential
+
+project = Project.objects.get(name="Inventory-Git-Repo")
+inventory = Inventory.objects.get(name="centos-07-servers")
+credential = Credential.objects.get(name="Linux Root Credential")
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="CENTOSTOROCKY",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "CENTOSTOROCKY/CENTOSTOROCKY.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
+    }
+)
+
+jt.project = project
+jt.inventory = inventory
+jt.playbook = "CENTOSTOROCKY/CENTOSTOROCKY.yml"
+
+# Fixed inventory
+jt.ask_inventory_on_launch = False
+
+# Disable Limit
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more CentOS 7 hosts (without domain name)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: cent-07-01 or cent-07-01,cent-07-02 or cent-07-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "cent-07-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.save()
+
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+print(
+    f"Job Template 'CENTOSTOROCKY' "
+    f"{'created' if created else 'updated'} successfully."
+)
+print(f"Credential assigned: {credential.name}")
+EOF
+
+# ==============================================================
+# Workflow : CENTOSTOROCKY-WF
+# ==============================================================
+awx-manage shell <<'EOF'
+from awx.main.models import (
+    WorkflowJobTemplate,
+    WorkflowJobTemplateNode,
+    JobTemplate,
+    Credential,
+    Inventory,
+    Organization
+)
+
+ORG_NAME = "Default"
+WORKFLOW_NAME = "CENTOSTOROCKY-WF"
+
+JT1_NAME = "Offline_Patching_el7"
+JT2_NAME = "CENTOSTOROCKY"
+
+CREDENTIAL_NAME = "Linux Root Credential"
+INVENTORY_NAME = "centos-07-servers"
+
+org = Organization.objects.get(name=ORG_NAME)
+
+jt1 = JobTemplate.objects.get(name=JT1_NAME)
+jt2 = JobTemplate.objects.get(name=JT2_NAME)
+
+cred = Credential.objects.get(name=CREDENTIAL_NAME)
+inv = Inventory.objects.get(name=INVENTORY_NAME)
+
+wf, created = WorkflowJobTemplate.objects.get_or_create(
+    name=WORKFLOW_NAME,
+    organization=org
+)
+
+# Remove existing workflow nodes
+wf.workflow_job_template_nodes.all().delete()
+
+# Fixed inventory
+wf.inventory = inv
+
+# Disable prompts at workflow launch
+wf.ask_inventory_on_launch = False
+wf.ask_limit_on_launch = False
+wf.ask_credential_on_launch = False
+
+# Enable survey so target_hosts is prompted once
+wf.survey_enabled = True
+wf.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more CentOS 7 hosts (without domain name)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: cent-07-01 or cent-07-01,cent-07-02 or cent-07-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "cent-07-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+wf.save()
+
+wf.credentials.clear()
+wf.credentials.add(cred)
+
+# Create workflow nodes
+n1 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt1
+)
+
+n2 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt2
+)
+
+# Execution order
+n1.success_nodes.add(n2)
+
+print(f"Workflow '{wf.name}' {'created' if created else 'updated'}")
+print("Execution Order:")
+print(f"  {jt1.name}")
+print("      ↓")
+print(f"  {jt2.name}")
+EOF
+
+echo
+echo "CENTOSTOROCKY Workflow created successfully."
+
 
 # ==============================================================
 # Verify EL8 Subscription Template
