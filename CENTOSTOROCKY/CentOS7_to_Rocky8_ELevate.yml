@@ -291,7 +291,6 @@
     - name: Display preupgrade report location
       debug:
         msg: "/var/log/leapp/leapp-report.txt"
-		
 
     ####################################################################
     # Prepare Upgrade
@@ -354,7 +353,6 @@
           - -i
           - "{{ rocky_repo_file }}"
       when: "'i' in repo_attr.stdout"
-	  
 
     ####################################################################
     # Upgrade
