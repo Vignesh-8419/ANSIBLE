@@ -39,10 +39,12 @@
 
     - name: Move repository files to backup
       shell: |
-        shopt -s extglob
-        mv /etc/yum.repos.d/!(backup) /etc/yum.repos.d/backup/ || true
-      args:
-        executable: /bin/bash
+        mkdir -p /etc/yum.repos.d/backup
+    
+        find /etc/yum.repos.d \
+          -maxdepth 1 \
+          -name "*.repo" \
+          -exec mv {} /etc/yum.repos.d/backup/ \; 2>/dev/null || true
 
     - name: Create Rocky Linux repositories
       copy:
@@ -62,22 +64,25 @@
           gpgcheck=0
 
     - name: Backup RPM database
-      command: mv /var/lib/rpm /var/lib/rpm.bak-{{ ansible_date_time.epoch }}
-      args:
-        creates: /var/lib/rpm.bak-{{ ansible_date_time.epoch }}
-
+      shell: |
+        if [ -d /var/lib/rpm ] && [ ! -d /var/lib/rpm.bak ]; then
+          mv /var/lib/rpm /var/lib/rpm.bak
+        fi
+    
     - name: Create new RPM database directory
       file:
         path: /var/lib/rpm
         state: directory
         mode: "0755"
-
+    
     - name: Initialize RPM database
       command: rpm --initdb
-
+    
     - name: Restore Packages file
-      command: cp -av /var/lib/rpm.bak-{{ ansible_date_time.epoch }}/Packages /var/lib/rpm/
-      ignore_errors: yes
+      shell: |
+        if [ -f /var/lib/rpm.bak/Packages ]; then
+          cp -av /var/lib/rpm.bak/Packages /var/lib/rpm/
+        fi
 
     - name: Remove RPM database locks
       shell: rm -f /var/lib/rpm/__db.*
@@ -151,6 +156,7 @@
       copy:
         dest: /tmp/rhel7.txt
         content: "{{ el7_rpms.stdout }}"
+      when: el7_rpms.stdout != ""
 
     - name: Remove leftover EL7 RPMs
       shell: |
@@ -185,7 +191,12 @@
     ####################################################################
 
     - name: Reinstall current kernel-core
-      shell: dnf reinstall -y kernel-core-$(uname -r)
+      command:
+        argv:
+          - dnf
+          - -y
+          - reinstall
+          - "kernel-core-{{ ansible_kernel }}"
 
     - name: Verify EL7 kernels are removed from grub
       shell: |
@@ -202,21 +213,25 @@
     ####################################################################
 
     - name: Remove old rescue images
-      shell: rm -f /boot/vmlinuz-*rescue* /boot/initramfs-*rescue*
-      args:
-        warn: false
+      shell: |
+        rm -f /boot/vmlinuz-*rescue* /boot/initramfs-*rescue*
 
     ####################################################################
     # Rescue Image Regeneration
     ####################################################################
 
     - name: Regenerate rescue image
-      shell: |
-        /usr/lib/kernel/install.d/51-dracut-rescue.install \
-          add "$(uname -r)" /boot "/boot/vmlinuz-$(uname -r)"
+      command:
+        argv:
+          - /usr/lib/kernel/install.d/51-dracut-rescue.install
+          - add
+          - "{{ ansible_kernel }}"
+          - /boot
+          - "/boot/vmlinuz-{{ ansible_kernel }}"
 
     - name: List regenerated rescue images
-      shell: ls -1 /boot/vmlinuz-*rescue* /boot/initramfs-*rescue*
+      shell: |
+        ls -1 /boot/vmlinuz-*rescue* /boot/initramfs-*rescue* 2>/dev/null || true
       register: rescue_files
       changed_when: false
 
@@ -227,7 +242,7 @@
     - name: Validate rescue initramfs
       shell: |
         lsinitrd /boot/initramfs-*rescue*.img | \
-        grep -qm1 "$(uname -r)/kernel/" && echo OK || echo FAIL
+        grep -qm1 "{{ ansible_kernel }}/kernel/" && echo OK || echo FAIL
       register: rescue_validation
       changed_when: false
 
@@ -236,7 +251,14 @@
         var: rescue_validation.stdout_lines
 
     - name: Display rescue grub entry
-      shell: grubby --info "$(ls /boot/vmlinuz-*rescue*)"
+      shell: |
+        RESCUE=$(ls /boot/vmlinuz-*rescue* 2>/dev/null | head -1)
+    
+        if [ -n "$RESCUE" ]; then
+          grubby --info "$RESCUE"
+        else
+          echo "No rescue kernel found."
+        fi
       register: grub_rescue
       changed_when: false
 
