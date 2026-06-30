@@ -1,6 +1,6 @@
 ---
 - name: End-to-End VM Provisioning and Configuration
-  hosts: "{{ target_hosts.split(',') | map('trim') | reject('equalto', '') | map('regex_replace', '$', '.vgs.com') | join(',') }}"
+  hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
   gather_facts: no
   vars:
     ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
