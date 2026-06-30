@@ -24,7 +24,27 @@
     - name: Gather facts
       setup:
 
+    - name: Skip migration if already Rocky Linux 8
+      debug:
+        msg: "Host is already running Rocky Linux {{ ansible_distribution_version }}. Skipping ELevate migration."
+      when:
+        - ansible_distribution == "Rocky"
+        - ansible_distribution_major_version == "8"
+
+    - name: End play when already Rocky Linux 8
+      meta: end_play
+      when:
+        - ansible_distribution == "Rocky"
+        - ansible_distribution_major_version == "8"
+
+    - name: Validate source operating system
+      fail:
+        msg: "This playbook supports only CentOS 7."
+      when: ansible_distribution != "CentOS" or ansible_distribution_major_version != "7"
+
   tasks:
+  
+ 
 
     ####################################################################
     # Configure ELevate Repository
@@ -45,13 +65,13 @@
           baseurl=http://192.168.253.136/repo/elevate/
           enabled=1
           gpgcheck=0
-          
+
           [baseos]
           name=CentOS Base Repository
           baseurl=http://192.168.253.136/repo/centos/
           enabled=1
           gpgcheck=0
-          
+
           [patch]
           name=Installed EL7 Repository
           baseurl=http://192.168.253.136/repo/installed_rhel7/
@@ -62,38 +82,80 @@
     # Complete pending yum transaction
     ####################################################################
 
+    - name: Check if yum-complete-transaction exists
+      stat:
+        path: /usr/bin/yum-complete-transaction
+      register: yum_complete
+
     - name: Check pending yum transaction
       shell: |
         yum-complete-transaction --cleanup-only --quiet --skip-broken
         echo $?
       register: yum_pending
       changed_when: false
+      when: yum_complete.stat.exists
 
     - name: Complete pending yum transaction
       command: yum-complete-transaction -y
-      when: yum_pending.stdout != "0"
+      when:
+        - yum_complete.stat.exists
+        - yum_pending.stdout != "0"
+
+    - name: Skip pending transaction cleanup
+      debug:
+        msg: "yum-complete-transaction is not installed. Skipping transaction cleanup."
+      when: not yum_complete.stat.exists
 
     ####################################################################
     # Install deltarpm
     ####################################################################
+
+    - name: Check if deltarpm is already installed
+      stat:
+        path: /usr/bin/applydeltarpm
+      register: deltarpm_bin
 
     - name: Download deltarpm package
       get_url:
         url: http://vault.centos.org/7.9.2009/os/x86_64/Packages/deltarpm-3.6-3.el7.x86_64.rpm
         dest: /tmp/deltarpm-3.6-3.el7.x86_64.rpm
         mode: "0644"
+      when: not deltarpm_bin.stat.exists
       retries: 3
       delay: 5
-      ignore_errors: yes
 
     - name: Install deltarpm
-      command: rpm -ivh /tmp/deltarpm-3.6-3.el7.x86_64.rpm
-      args:
-        creates: /usr/bin/applydeltarpm
+      command:
+        argv:
+          - rpm
+          - -ivh
+          - /tmp/deltarpm-3.6-3.el7.x86_64.rpm
+      when: not deltarpm_bin.stat.exists
+
+    - name: Verify deltarpm installation
+      command: rpm -q deltarpm
+      register: deltarpm_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display deltarpm status
+      debug:
+        msg: >-
+          {{
+            'deltarpm is installed.'
+            if deltarpm_check.rc == 0
+            else 'deltarpm is not installed.'
+          }}
 
     ####################################################################
     # Install Leapp
     ####################################################################
+
+    - name: Check if Leapp is already installed
+      command: rpm -q leapp-upgrade
+      register: leapp_installed
+      changed_when: false
+      failed_when: false
 
     - name: Install Leapp packages
       yum:
@@ -101,18 +163,40 @@
           - leapp-upgrade
           - leapp-data-rocky
         state: present
+      when: leapp_installed.rc != 0
+
+    - name: Verify Leapp installation
+      command: rpm -q leapp-upgrade leapp-data-rocky
+      register: leapp_verify
+      changed_when: false
+
+    - name: Display Leapp installation status
+      debug:
+        var: leapp_verify.stdout_lines
+		
 
     ####################################################################
     # Configure Rocky repositories
     ####################################################################
 
+    - name: Ensure Leapp repository directory exists
+      file:
+        path: /etc/leapp/files
+        state: directory
+        mode: "0755"
+
+    - name: Check if Leapp repository file exists
+      stat:
+        path: "{{ rocky_repo_file }}"
+      register: leapp_repo
+
     - name: Backup existing Leapp repository
       copy:
-        src: /etc/leapp/files/leapp_upgrade_repositories.repo
-        dest: /etc/leapp/files/leapp_upgrade_repositories.repo.bak
+        src: "{{ rocky_repo_file }}"
+        dest: "{{ rocky_repo_file }}.bak"
         remote_src: yes
         backup: yes
-      ignore_errors: yes
+      when: leapp_repo.stat.exists
 
     - name: Configure Rocky upgrade repositories
       copy:
@@ -131,80 +215,175 @@
           enabled=1
           gpgcheck=0
 
+    - name: Check immutable attribute
+      command: lsattr "{{ rocky_repo_file }}"
+      register: repo_attr
+      changed_when: false
+      failed_when: false
+
     - name: Lock Leapp repository file
-      command: chattr +i {{ rocky_repo_file }}
+      command:
+        argv:
+          - chattr
+          - +i
+          - "{{ rocky_repo_file }}"
+      when: "'i' not in repo_attr.stdout"
 
     ####################################################################
     # Cleanup mounts
     ####################################################################
 
+    - name: Check if repository mount exists
+      command: mountpoint -q "{{ mount_point }}"
+      register: mount_check
+      changed_when: false
+      failed_when: false
+
     - name: Unmount repository
       mount:
         path: "{{ mount_point }}"
         state: unmounted
-      ignore_errors: yes
+      when: mount_check.rc == 0
 
-    - name: Remove fstab entry
+    - name: Remove repository entry from fstab
       lineinfile:
         path: /etc/fstab
-        regexp: "{{ repo_mount | regex_escape }}"
+        regexp: "^{{ repo_mount | regex_escape }}\\s"
         state: absent
+
+    - name: Verify repository is not mounted
+      command: mountpoint -q "{{ mount_point }}"
+      register: mount_verify
+      changed_when: false
+      failed_when: false
+
+    - name: Display mount status
+      debug:
+        msg: >-
+          {{
+            'Repository successfully unmounted.'
+            if mount_verify.rc != 0
+            else 'Repository is still mounted.'
+          }}
 
     ####################################################################
     # Leapp Preupgrade
     ####################################################################
 
-    - name: Run leapp preupgrade
-      command: leapp preupgrade
+    - name: Check if Leapp report already exists
+      stat:
+        path: /var/log/leapp/leapp-report.txt
+      register: leapp_report
+
+    - name: Run Leapp preupgrade
+      command:
+        argv:
+          - leapp
+          - preupgrade
       register: preupgrade_result
+      when: not leapp_report.stat.exists
       ignore_errors: yes
 
     - name: Display preupgrade output
       debug:
         var: preupgrade_result.stdout_lines
+      when: preupgrade_result is defined
+
+    - name: Display preupgrade report location
+      debug:
+        msg: "/var/log/leapp/leapp-report.txt"
+		
 
     ####################################################################
     # Prepare Upgrade
     ####################################################################
 
-    - name: Set SELinux permissive
-      command: setenforce 0
+    - name: Set SELinux to permissive
+      command:
+        argv:
+          - setenforce
+          - "0"
       ignore_errors: yes
 
-    - name: Remove incompatible kernel modules
-      shell: |
-        modprobe -r floppy || true
-        modprobe -r pata_acpi || true
+    - name: Remove floppy kernel module
+      command:
+        argv:
+          - modprobe
+          - -r
+          - floppy
+      ignore_errors: yes
 
-    - name: Answer Leapp questions
-      shell: |
-        leapp answer --section authselect_check.confirm=True
-        leapp answer --section remove_pam_pkcs11_module_check.confirm=True
+    - name: Remove pata_acpi kernel module
+      command:
+        argv:
+          - modprobe
+          - -r
+          - pata_acpi
+      ignore_errors: yes
 
-    - name: Unlock repository file
-      command: chattr -i {{ rocky_repo_file }}
+    - name: Answer authselect confirmation
+      command:
+        argv:
+          - leapp
+          - answer
+          - --section
+          - authselect_check.confirm=True
+      ignore_errors: yes
+
+    - name: Answer PAM PKCS11 confirmation
+      command:
+        argv:
+          - leapp
+          - answer
+          - --section
+          - remove_pam_pkcs11_module_check.confirm=True
+      ignore_errors: yes
+
+    - name: Check immutable attribute
+      command:
+        argv:
+          - lsattr
+          - "{{ rocky_repo_file }}"
+      register: repo_attr
+      changed_when: false
+      failed_when: false
+
+    - name: Unlock Leapp repository file
+      command:
+        argv:
+          - chattr
+          - -i
+          - "{{ rocky_repo_file }}"
+      when: "'i' in repo_attr.stdout"
+	  
 
     ####################################################################
     # Upgrade
     ####################################################################
 
-    - name: Run leapp upgrade
-      command: leapp upgrade
+    - name: Run Leapp upgrade
+      command:
+        argv:
+          - leapp
+          - upgrade
       register: upgrade_result
       ignore_errors: yes
 
     - name: Display upgrade output
       debug:
         var: upgrade_result.stdout_lines
-
+      when: upgrade_result is defined
+	
     ####################################################################
     # Reboot
     ####################################################################
 
     - name: Reboot into Rocky Linux 8
       reboot:
-        reboot_timeout: 180000
-      when: upgrade_result.rc == 0
+        reboot_timeout: 1800
+      when:
+        - upgrade_result is defined
+        - upgrade_result.rc == 0
 
     ####################################################################
     # Python 3
@@ -223,7 +402,7 @@
       set_fact:
         ansible_python_interpreter: /usr/bin/python3
 
-    - name: Gather facts
+    - name: Gather facts after upgrade
       setup:
 
     ####################################################################
@@ -231,10 +410,32 @@
     ####################################################################
 
     - name: Verify Rocky Linux installation
-      command: cat /etc/os-release
+      command:
+        argv:
+          - cat
+          - /etc/os-release
       register: os_release
       changed_when: false
 
     - name: Display operating system information
       debug:
         var: os_release.stdout_lines
+
+    - name: Display running kernel
+      command:
+        argv:
+          - uname
+          - -r
+      register: kernel_version
+      changed_when: false
+
+    - name: Show running kernel
+      debug:
+        var: kernel_version.stdout
+
+    - name: Display migration status
+      debug:
+        msg:
+          - "Migration completed successfully."
+          - "Operating System : {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Kernel           : {{ ansible_kernel }}"
