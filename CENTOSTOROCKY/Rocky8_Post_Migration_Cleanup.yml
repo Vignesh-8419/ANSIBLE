@@ -279,6 +279,7 @@
         path: /tmp/rhel7.txt
         state: absent
 
+
     ####################################################################
     # Final Reboot
     ####################################################################
@@ -290,3 +291,106 @@
         reboot_timeout: 600
         pre_reboot_delay: 10
         post_reboot_delay: 30
+
+    - meta: reset_connection
+    
+    - name: Gather facts after reboot
+      setup:
+
+
+    ####################################################################
+    # Final Validation
+    ####################################################################
+    
+    - name: Verify operating system
+      command:
+        argv:
+          - cat
+          - /etc/os-release
+      register: os_release
+      changed_when: false
+    
+    - name: Display operating system information
+      debug:
+        var: os_release.stdout_lines
+    
+    - name: Verify running kernel
+      command:
+        argv:
+          - uname
+          - -r
+      register: kernel_version
+      changed_when: false
+    
+    - name: Display running kernel
+      debug:
+        var: kernel_version.stdout
+    
+    - name: Verify remaining EL7 packages
+      shell: |
+        rpm -qa | \
+        grep '\.el7' | \
+        grep -vE '^(gpg-pubkey|katello-ca-consumer|libmoduled)' || true
+      register: remaining_el7
+      changed_when: false
+    
+    - name: Display remaining EL7 packages
+      debug:
+        var: remaining_el7.stdout_lines
+    
+    - name: Verify remaining EL7 kernel directories
+      shell: |
+        ls -d /lib/modules/*.el7* 2>/dev/null || true
+      register: remaining_kernel_dirs
+      changed_when: false
+    
+    - name: Display remaining EL7 kernel directories
+      debug:
+        var: remaining_kernel_dirs.stdout_lines
+    
+    - name: Verify grub entries
+      shell: |
+        grubby --info=ALL | grep '\.el7' || true
+      register: grub_verify
+      changed_when: false
+    
+    - name: Display grub verification
+      debug:
+        var: grub_verify.stdout_lines
+    
+    - name: Verify rescue image
+      shell: |
+        ls /boot/*rescue* 2>/dev/null || true
+      register: rescue_verify
+      changed_when: false
+    
+    - name: Display rescue image
+      debug:
+        var: rescue_verify.stdout_lines
+    
+    - name: Display cleanup summary
+      debug:
+        msg:
+          - "Operating System : {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Kernel           : {{ ansible_kernel }}"
+          - "EL7 Packages     : {{ remaining_el7.stdout_lines | length }}"
+          - "EL7 Kernels      : {{ remaining_kernel_dirs.stdout_lines | length }}"
+          - "EL7 Grub Entries : {{ grub_verify.stdout_lines | length }}"
+
+    - name: Fail if EL7 artifacts still exist
+      fail:
+        msg: |
+          Post-migration cleanup is incomplete.
+    
+          Remaining EL7 packages:
+          {{ remaining_el7.stdout | default('None') }}
+    
+          Remaining EL7 kernel directories:
+          {{ remaining_kernel_dirs.stdout | default('None') }}
+    
+          Remaining EL7 grub entries:
+          {{ grub_verify.stdout | default('None') }}
+      when: >
+        remaining_el7.stdout != "" or
+        remaining_kernel_dirs.stdout != "" or
+        grub_verify.stdout != ""
