@@ -1,0 +1,10 @@
+---
+- import_playbook: bootstrap-centos-07-python.yml
+
+- import_playbook: Offline_Patching_el7.yml
+
+- import_playbook: validation-el7.yml
+
+- import_playbook: CentOS7_to_Rocky8_ELevate.yml
+
+- import_playbook: Rocky8_Post_Migration_Cleanup.yml
