@@ -173,7 +173,6 @@
     - name: Display Leapp installation status
       debug:
         var: leapp_verify.stdout_lines
-		
 
     ####################################################################
     # Configure Rocky repositories
