@@ -7,8 +7,6 @@
   vars:
     elevate_repo_file: /etc/yum.repos.d/elevate.repo
     rocky_repo_file: /etc/leapp/files/leapp_upgrade_repositories.repo
-    repo_mount: "//192.168.31.87/ISO"
-    mount_point: "/var/www/html/repo"
 
   pre_tasks:
 
@@ -42,9 +40,7 @@
         msg: "This playbook supports only CentOS 7."
       when: ansible_distribution != "CentOS" or ansible_distribution_major_version != "7"
 
-  tasks:
-  
- 
+  tasks: 
 
     ####################################################################
     # Configure ELevate Repository
@@ -233,43 +229,6 @@
           - +i
           - "{{ rocky_repo_file }}"
       when: "'i' not in repo_attr.stdout"
-
-    ####################################################################
-    # Cleanup mounts
-    ####################################################################
-
-    - name: Check if repository mount exists
-      command: mountpoint -q "{{ mount_point }}"
-      register: mount_check
-      changed_when: false
-      failed_when: false
-
-    - name: Unmount repository
-      mount:
-        path: "{{ mount_point }}"
-        state: unmounted
-      when: mount_check.rc == 0
-
-    - name: Remove repository entry from fstab
-      lineinfile:
-        path: /etc/fstab
-        regexp: "^{{ repo_mount | regex_escape }}\\s"
-        state: absent
-
-    - name: Verify repository is not mounted
-      command: mountpoint -q "{{ mount_point }}"
-      register: mount_verify
-      changed_when: false
-      failed_when: false
-
-    - name: Display mount status
-      debug:
-        msg: >-
-          {{
-            'Repository successfully unmounted.'
-            if mount_verify.rc != 0
-            else 'Repository is still mounted.'
-          }}
 
     ####################################################################
     # Leapp Preupgrade
