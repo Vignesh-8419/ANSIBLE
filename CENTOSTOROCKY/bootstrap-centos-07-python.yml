@@ -1,0 +1,82 @@
+---
+- name: Bootstrap EL7 for Python3
+#  hosts: "{{ target_hosts.split(',') | map('trim') | reject('equalto', '') | map('regex_replace', '$', '.vgs.com') | join(',') }}"
+  hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
+  become: true
+  gather_facts: false
+
+  vars:
+    backup_dir: /etc/yum.repos.d/bootstrap_backup
+
+  pre_tasks:
+
+    - name: Load NetBox Context
+      set_fact:
+        nb_ctx: "{{ config_context[0] }}"
+
+    - name: Build Repository Variables
+      set_fact:
+        repo_url: "{{ nb_ctx.httpd_server_url | regex_replace('/$','') }}"
+        base_repo: "{{ (nb_ctx.repositories | selectattr('id','equalto','base') | first).folder }}"
+        patch_repo: "{{ (nb_ctx.repositories | selectattr('id','equalto','patch') | first).folder }}"
+
+    - name: Display NetBox Context
+      debug:
+        msg:
+          - "Repository URL : {{ repo_url }}"
+          - "Base Repo      : {{ base_repo }}"
+          - "Patch Repo     : {{ patch_repo }}"
+
+  tasks:
+
+    - name: Create backup directory
+      raw: mkdir -p {{ backup_dir }}
+
+    - name: Backup existing repositories
+      raw: |
+        mv /etc/yum.repos.d/*.repo {{ backup_dir }}/ 2>/dev/null || true
+
+    - name: Create temporary base repository
+      raw: |
+        cat > /etc/yum.repos.d/base.repo <<EOF
+        [base]
+        name=EL7 Base Repository
+        baseurl={{ repo_url }}/{{ base_repo }}
+        enabled=1
+        gpgcheck=0
+        EOF
+
+    - name: Create temporary patch repository
+      raw: |
+        cat > /etc/yum.repos.d/patch.repo <<EOF
+        [patch]
+        name=EL7 Patch Repository
+        baseurl={{ repo_url }}/{{ patch_repo }}
+        enabled=1
+        gpgcheck=0
+        EOF
+
+    - name: Clean yum cache
+      raw: yum clean all
+
+    - name: Build yum cache
+      raw: yum makecache
+
+    - name: Install Python3
+      raw: yum install -y python3
+
+    - name: Install sshpass
+      raw: yum install -y sshpass
+
+    - name: Verify Python3
+      raw: python3 --version
+
+    - name: Remove temporary repositories
+      raw: |
+        rm -f /etc/yum.repos.d/base.repo
+        rm -f /etc/yum.repos.d/patch.repo
+
+    - name: Restore original repositories
+      raw: |
+        mv {{ backup_dir }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
+        rmdir {{ backup_dir }} 2>/dev/null || true
