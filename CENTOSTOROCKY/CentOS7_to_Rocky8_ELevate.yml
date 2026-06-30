@@ -45,10 +45,16 @@
           baseurl=http://192.168.253.136/repo/elevate/
           enabled=1
           gpgcheck=0
-
+          
           [baseos]
           name=CentOS Base Repository
           baseurl=http://192.168.253.136/repo/centos/
+          enabled=1
+          gpgcheck=0
+          
+          [patch]
+          name=Installed EL7 Repository
+          baseurl=http://192.168.253.136/repo/installed_rhel7/
           enabled=1
           gpgcheck=0
 
