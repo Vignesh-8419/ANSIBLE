@@ -1,0 +1,241 @@
+---
+- name: CentOS 7 to Rocky Linux 8 - ELevate Migration
+  hosts: >-
+    {{
+      target_hosts
+      | split(',')
+      | map('trim')
+      | map('regex_replace', '$', '*')
+      | join(',')
+    }}
+  become: yes
+  gather_facts: false
+
+  vars:
+    elevate_repo_file: /etc/yum.repos.d/elevate.repo
+    rocky_repo_file: /etc/leapp/files/leapp_upgrade_repositories.repo
+    repo_mount: "//192.168.31.87/ISO"
+    mount_point: "/var/www/html/repo"
+
+  pre_tasks:
+
+    - name: Ensure Python is installed
+      raw: |
+        if ! command -v python >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then
+          yum -y install python
+        fi
+      changed_when: false
+
+    - meta: reset_connection
+
+    - name: Gather facts
+      setup:
+
+  tasks:
+
+    ####################################################################
+    # Configure ELevate Repository
+    ####################################################################
+
+    - name: Backup existing repository files
+      shell: |
+        mkdir -p /etc/yum.repos.d/backup
+        mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/ 2>/dev/null || true
+
+    - name: Create elevate.repo
+      copy:
+        dest: "{{ elevate_repo_file }}"
+        mode: "0644"
+        content: |
+          [elevate]
+          name=ELevate Repository
+          baseurl=http://192.168.253.136/repo/elevate/
+          enabled=1
+          gpgcheck=0
+
+          [baseos]
+          name=CentOS Base Repository
+          baseurl=http://192.168.253.136/repo/centos/
+          enabled=1
+          gpgcheck=0
+
+    ####################################################################
+    # Complete pending yum transaction
+    ####################################################################
+
+    - name: Check pending yum transaction
+      shell: |
+        yum-complete-transaction --cleanup-only --quiet --skip-broken
+        echo $?
+      register: yum_pending
+      changed_when: false
+
+    - name: Complete pending yum transaction
+      command: yum-complete-transaction -y
+      when: yum_pending.stdout != "0"
+
+    ####################################################################
+    # Install deltarpm
+    ####################################################################
+
+    - name: Download deltarpm package
+      get_url:
+        url: http://vault.centos.org/7.9.2009/os/x86_64/Packages/deltarpm-3.6-3.el7.x86_64.rpm
+        dest: /tmp/deltarpm-3.6-3.el7.x86_64.rpm
+        mode: "0644"
+      retries: 3
+      delay: 5
+      ignore_errors: yes
+
+    - name: Install deltarpm
+      command: rpm -ivh /tmp/deltarpm-3.6-3.el7.x86_64.rpm
+      args:
+        creates: /usr/bin/applydeltarpm
+
+    ####################################################################
+    # Install Leapp
+    ####################################################################
+
+    - name: Install Leapp packages
+      yum:
+        name:
+          - leapp-upgrade
+          - leapp-data-rocky
+        state: present
+
+    ####################################################################
+    # Configure Rocky repositories
+    ####################################################################
+
+    - name: Backup existing Leapp repository
+      copy:
+        src: /etc/leapp/files/leapp_upgrade_repositories.repo
+        dest: /etc/leapp/files/leapp_upgrade_repositories.repo.bak
+        remote_src: yes
+        backup: yes
+      ignore_errors: yes
+
+    - name: Configure Rocky upgrade repositories
+      copy:
+        dest: "{{ rocky_repo_file }}"
+        mode: "0644"
+        content: |
+          [rocky8-baseos]
+          name=Rocky Linux 8 BaseOS
+          baseurl=http://192.168.253.136/repo/rocky8/BaseOS/
+          enabled=1
+          gpgcheck=0
+
+          [rocky8-appstream]
+          name=Rocky Linux 8 AppStream
+          baseurl=http://192.168.253.136/repo/rocky8/AppStream/
+          enabled=1
+          gpgcheck=0
+
+    - name: Lock Leapp repository file
+      command: chattr +i {{ rocky_repo_file }}
+
+    ####################################################################
+    # Cleanup mounts
+    ####################################################################
+
+    - name: Unmount repository
+      mount:
+        path: "{{ mount_point }}"
+        state: unmounted
+      ignore_errors: yes
+
+    - name: Remove fstab entry
+      lineinfile:
+        path: /etc/fstab
+        regexp: "{{ repo_mount | regex_escape }}"
+        state: absent
+
+    ####################################################################
+    # Leapp Preupgrade
+    ####################################################################
+
+    - name: Run leapp preupgrade
+      command: leapp preupgrade
+      register: preupgrade_result
+      ignore_errors: yes
+
+    - name: Display preupgrade output
+      debug:
+        var: preupgrade_result.stdout_lines
+
+    ####################################################################
+    # Prepare Upgrade
+    ####################################################################
+
+    - name: Set SELinux permissive
+      command: setenforce 0
+      ignore_errors: yes
+
+    - name: Remove incompatible kernel modules
+      shell: |
+        modprobe -r floppy || true
+        modprobe -r pata_acpi || true
+
+    - name: Answer Leapp questions
+      shell: |
+        leapp answer --section authselect_check.confirm=True
+        leapp answer --section remove_pam_pkcs11_module_check.confirm=True
+
+    - name: Unlock repository file
+      command: chattr -i {{ rocky_repo_file }}
+
+    ####################################################################
+    # Upgrade
+    ####################################################################
+
+    - name: Run leapp upgrade
+      command: leapp upgrade
+      register: upgrade_result
+      ignore_errors: yes
+
+    - name: Display upgrade output
+      debug:
+        var: upgrade_result.stdout_lines
+
+    ####################################################################
+    # Reboot
+    ####################################################################
+
+    - name: Reboot into Rocky Linux 8
+      reboot:
+        reboot_timeout: 180000
+      when: upgrade_result.rc == 0
+
+    ####################################################################
+    # Python 3
+    ####################################################################
+
+    - name: Ensure Python 3 is installed
+      raw: |
+        if ! command -v python3 >/dev/null 2>&1; then
+          dnf -y install python3
+        fi
+      changed_when: false
+
+    - meta: reset_connection
+
+    - name: Switch to Python 3
+      set_fact:
+        ansible_python_interpreter: /usr/bin/python3
+
+    - name: Gather facts
+      setup:
+
+    ####################################################################
+    # Verify Upgrade
+    ####################################################################
+
+    - name: Verify Rocky Linux installation
+      command: cat /etc/os-release
+      register: os_release
+      changed_when: false
+
+    - name: Display operating system information
+      debug:
+        var: os_release.stdout_lines
