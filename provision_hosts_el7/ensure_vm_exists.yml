@@ -48,6 +48,10 @@
         validate_certs: false
       register: netbox_devices
 
+    - name: Show devices in cluster
+      debug:
+        msg: "{{ netbox_devices.json.results | map(attribute='name') | list }}"
+
     ###########################################################################
     # Filter Selected Devices
     ###########################################################################
