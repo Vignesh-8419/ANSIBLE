@@ -225,7 +225,7 @@
           - "ID: {{ item.json.id }}"
       loop: "{{ foreman_hosts_updated.results }}"
         
-    - name: Enable build mode for existing hosts only
+    - name: Update existing Foreman host
       uri:
         url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}"
         method: PUT
@@ -238,11 +238,42 @@
         body_format: json
         body:
           host:
+            hostgroup_id: "{{ hostgroup_id }}"
+            organization_id: "{{ org_id }}"
+            location_id: "{{ loc_id }}"
+            managed: true
             build: true
+            pxe_loader: "Grub2 UEFI"
+            root_pass: "{{ host_root_pass }}"
+            interfaces_attributes:
+              - id: "{{ item.json.interfaces[0].id }}"
+                mac: "{{ item.json.interfaces[0].mac }}"
+                ip: "{{ item.json.interfaces[0].ip }}"
+                primary: true
+                provision: true
         status_code:
           - 200
-      when: item.json.build == false
       loop: "{{ foreman_hosts_updated.results }}"
+    
+    - name: Verify updated host group
+      uri:
+        url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+        status_code: 200
+      loop: "{{ foreman_hosts_updated.results }}"
+      register: verify_hosts
+    
+    - name: Show host group
+      debug:
+        msg:
+          - "Host      : {{ item.json.name }}"
+          - "Host Group: {{ item.json.hostgroup_name }}"
+          - "HostGroup ID: {{ item.json.hostgroup_id }}"
+      loop: "{{ verify_hosts.results }}"
 
     - debug:
         var: foreman_create
