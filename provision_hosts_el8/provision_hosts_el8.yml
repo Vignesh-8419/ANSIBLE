@@ -10,13 +10,23 @@
   vars:
     netbox_url: "https://rocky-08-03.vgs.com"
     netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
-
-    foreman_url: "https://rocky-08-01.vgs.com"
+  
+    # 1 = Frontend (default)
+    # 2 = Backend
+    foreman_server: "{{ foreman_server | default('1', true) }}"
+  
+    foreman_url: >-
+      {{
+        {
+          '1': 'https://rocky-08-01.vgs.com',
+          '2': 'https://cent-07-01.vgs.com'
+        }[foreman_server | string]
+      }}
+  
     foreman_user: "admin"
     foreman_password: "zqs977dXzqfEvTML"
 
     host_root_pass: "Root@123"
-
     cluster_name: "rocky-8-servers"
 
     # Leave empty to create all Rocky hosts
