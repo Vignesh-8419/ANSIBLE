@@ -45,24 +45,28 @@
     # 2 = Rocky
     ###########################################################################
     
-    hostgroup: "{{ hostgroup | default('1', true) }}"
-    
     hostgroup_id: >-
       {{
-        2 if (hostgroup | string) == '2'
-        else 1
+        {
+          '1': 1,
+          '2': 2
+        }[hostgroup | string]
       }}
     
     operatingsystem_id: >-
       {{
-        3 if (hostgroup | string) == '2'
-        else 2
+        {
+          '1': 2,
+          '2': 3
+        }[hostgroup | string]
       }}
     
     medium_id: >-
       {{
-        16 if (hostgroup | string) == '2'
-        else 15
+        {
+          '1': 15,
+          '2': 16
+        }[hostgroup | string]
       }}
     
     ptable_id: 126
