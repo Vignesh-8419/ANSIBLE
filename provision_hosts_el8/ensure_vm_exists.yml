@@ -48,6 +48,10 @@
         validate_certs: false
       register: netbox_devices
 
+    - name: Show devices in cluster
+      debug:
+        msg: "{{ netbox_devices.json.results | map(attribute='name') | list }}"
+
     ###########################################################################
     # Filter Selected Devices
     ###########################################################################
@@ -55,13 +59,22 @@
     - name: Initialize filtered devices
       set_fact:
         filtered_devices: []
-
-    - name: Filter requested hosts
+    
+    - name: Build target patterns
       set_fact:
-        filtered_devices: "{{ filtered_devices + [item] }}"
-      loop: "{{ netbox_devices.json.results }}"
-      when:
-        - item.name.split('.')[0] in target_servers
+        target_patterns: >-
+          {{
+            target_hosts.split(',')
+            | map('trim')
+            | map('regex_replace', '\*', '.*')
+            | list
+          }}
+    
+    - name: Add matching devices
+      set_fact:
+        filtered_devices: "{{ filtered_devices + [item.0] }}"
+      loop: "{{ netbox_devices.json.results | product(target_patterns) | list }}"
+      when: item.0.name.split('.')[0] is match('^' ~ item.1 ~ '$')
 
     - name: Fail if no hosts found
       fail:
@@ -85,7 +98,7 @@
         name: "{{ item.name.split('.')[0] }}"
       loop: "{{ filtered_devices }}"
       register: vm_lookup
-      ignore_errors: true
+      failed_when: false
 
 
     ###########################################################################
