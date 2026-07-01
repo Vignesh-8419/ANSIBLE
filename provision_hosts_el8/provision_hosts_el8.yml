@@ -67,6 +67,12 @@
           '2': 16
         }[hostgroup | string]
       }}
+
+    subnet_id: >-
+      {{
+        2 if (hostgroup | string) == '2'
+        else 1
+      }}
     
     ptable_id: 126
 
