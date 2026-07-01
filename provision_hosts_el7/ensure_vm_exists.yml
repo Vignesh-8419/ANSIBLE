@@ -29,7 +29,7 @@
     netbox_url: "https://192.168.253.143"
     netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
 
-    cluster_name: "rocky-8-servers"
+    cluster_name: "centos-07-servers"
 
     target_servers: "{{ target_hosts.split(',') | map('trim') | list }}"
 
