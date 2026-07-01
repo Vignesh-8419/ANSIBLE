@@ -58,9 +58,9 @@ echo "******** NEW DEVICE ********"
     HOSTNAME=$(echo "$DEVICE" | jq -r '.name')
     STATUS=$(echo "$DEVICE" | jq -r '.status.value')
     PRIMARY_IP=$(echo "$DEVICE" | jq -r '.primary_ip4.address // "NO-IP"')
-    
-	HOST=$(echo "$PRIMARY_IP" | cut -d/ -f1)
-	
+
+        HOST=$(echo "$PRIMARY_IP" | cut -d/ -f1)
+
     echo "----------------------------------------"
     echo "Device ID : $DEVICE_ID"
     echo "Hostname  : $HOSTNAME"
@@ -248,6 +248,106 @@ echo "Patch Status    : $PATCH_STATUS"
 echo ""
 
 # ----------------------------------------------------------
+# OS Compliance (Cluster + Tags)
+# ----------------------------------------------------------
+
+if echo "$OS_RELEASE" | grep -qi "release 7"; then
+
+    TARGET_CLUSTER="centos-07-servers"
+
+    TAGS=(
+        "centostorocky-context"
+        "patch-context"
+        "pxe-centos-context"
+        "repo-config-context"
+        "vmware-awx-context"
+        "centos-patch-context"
+    )
+
+elif echo "$OS_RELEASE" | grep -qi "release 8"; then
+
+    TARGET_CLUSTER="rocky-8-servers"
+
+    TAGS=(
+        "patch-el8-context"
+        "pxe-rockyos-context"
+        "repo-config-context"
+        "vmware-awx-context"
+        "rocky-patch-context"
+    )
+
+else
+
+    TARGET_CLUSTER=""
+    TAGS=()
+
+fi
+
+if [ -n "$TARGET_CLUSTER" ]; then
+
+    TARGET_CLUSTER_ID=$(curl -sk \
+        -H "Authorization: Token $NETBOX_TOKEN" \
+        "$NETBOX_URL/virtualization/clusters/?name=$TARGET_CLUSTER" |
+        jq -r '.results[0].id // empty')
+
+    if [ -n "$TARGET_CLUSTER_ID" ]; then
+
+        if [ "$CLUSTER_ID" != "$TARGET_CLUSTER_ID" ]; then
+
+            echo "Updating Cluster..."
+            echo "Current : ${CLUSTER_NAME:-None}"
+            echo "Target  : $TARGET_CLUSTER"
+
+            curl -sk -X PATCH \
+                "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
+                -H "Authorization: Token $NETBOX_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{
+                    \"cluster\": $TARGET_CLUSTER_ID
+                }" >/dev/null
+
+            echo "Cluster Updated"
+
+        else
+
+            echo "Cluster already correct"
+
+        fi
+
+    fi
+
+    TAG_IDS=()
+
+    for TAG in "${TAGS[@]}"
+    do
+        ID=$(curl -sk \
+            -H "Authorization: Token $NETBOX_TOKEN" \
+            "$NETBOX_URL/extras/tags/" |
+            jq -r --arg TAG "$TAG" '.results[] | select(.name==$TAG) | .id')
+
+        if [ -n "$ID" ]; then
+            TAG_IDS+=("$ID")
+            echo "Adding Tag: $TAG"
+        fi
+    done
+
+    if [ ${#TAG_IDS[@]} -gt 0 ]; then
+
+        JSON_TAGS=$(printf '%s\n' "${TAG_IDS[@]}" | jq -R . | jq -s .)
+
+        curl -sk -X PATCH \
+            "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
+            -H "Authorization: Token $NETBOX_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"tags\":$JSON_TAGS}" >/dev/null
+
+        echo "Tags Updated"
+
+    fi
+
+fi
+
+# ----------------------------------------------------------
 # INTERFACE SYNC
 # ----------------------------------------------------------
 
@@ -417,4 +517,3 @@ echo ""
 done < <(
     echo "$DEVICES" | jq -c '.results[]'
 )
-
