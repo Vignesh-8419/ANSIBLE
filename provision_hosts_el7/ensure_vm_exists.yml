@@ -55,14 +55,26 @@
     - name: Initialize filtered devices
       set_fact:
         filtered_devices: []
-
+    
+    - name: Build target patterns
+      set_fact:
+        target_patterns: >-
+          {{
+            target_hosts.split(',')
+            | map('trim')
+            | map('regex_replace', '\\*', '.*')
+            | list
+          }}
+    
     - name: Filter requested hosts
       set_fact:
         filtered_devices: "{{ filtered_devices + [item] }}"
       loop: "{{ netbox_devices.json.results }}"
-      when: item.name.split('.')[0] is match(
-              '^' ~ (target_hosts | regex_replace('\\*', '.*')) ~ '$'
-            )
+      when: >
+        target_patterns
+        | select('match', '^' ~ item.name.split('.')[0] ~ '$')
+        | list
+        | length > 0
 
     - name: Fail if no hosts found
       fail:
