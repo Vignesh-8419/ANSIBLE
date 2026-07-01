@@ -1216,6 +1216,46 @@ create_activation_key "centos7-prod-key" "CentOS7-CV"
 create_activation_key "rocky8-prod-key" "Rocky8-CV"
 
 ###############################################################################
+# Attach Subscriptions to Activation Keys
+###############################################################################
+
+header "Attaching Subscriptions"
+
+CENTOS_SUB_ID=$(
+$HAMMER subscription list \
+  --organization "Default Organization" |
+awk -F'|' '$3 ~ /CentOS 7/ {gsub(/ /,"",$1); print $1}'
+)
+
+ROCKY_SUB_ID=$(
+$HAMMER subscription list \
+  --organization "Default Organization" |
+awk -F'|' '$3 ~ /Rocky Linux 8/ {gsub(/ /,"",$1); print $1}'
+)
+
+info "Attaching CentOS 7 subscription..."
+
+$HAMMER activation-key add-subscription \
+    --organization "Default Organization" \
+    --name "centos7-prod-key" \
+    --subscription-id "$CENTOS_SUB_ID" || true
+
+ok "CentOS 7 subscription attached."
+
+echo
+
+info "Attaching Rocky Linux 8 subscription..."
+
+$HAMMER activation-key add-subscription \
+    --organization "Default Organization" \
+    --name "rocky8-prod-key" \
+    --subscription-id "$ROCKY_SUB_ID" || true
+
+ok "Rocky Linux 8 subscription attached."
+
+echo
+
+###############################################################################
 # Verification
 ###############################################################################
 
