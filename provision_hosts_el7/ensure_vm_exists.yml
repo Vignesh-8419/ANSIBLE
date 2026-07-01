@@ -73,43 +73,60 @@
         msg: "{{ filtered_devices | map(attribute='name') | list }}"
 
     ###########################################################################
-    # Create VM (only if missing)
+    # Check whether VM already exists
     ###########################################################################
-
-    - name: Ensure VM exists
-      community.vmware.vmware_guest:
-
+    
+    - name: Check if VM already exists
+      community.vmware.vmware_guest_info:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: false
+        name: "{{ item.name.split('.')[0] }}"
+      loop: "{{ filtered_devices }}"
+      register: vm_lookup
+      ignore_errors: true
 
+
+    ###########################################################################
+    # Create VM (only if missing)
+    ###########################################################################
+
+    - name: Create VM only if it does not exist
+      community.vmware.vmware_guest:
+    
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: false
+    
         datacenter: "{{ datacenter }}"
         folder: "{{ folder }}"
         datastore: "{{ datastore }}"
-
-        name: "{{ item.name.split('.')[0] }}"
+    
+        name: "{{ item.item.name.split('.')[0] }}"
         state: present
-
+    
         guest_id: centos7_64Guest
-
+    
         hardware:
           memory_mb: 4096
           num_cpus: 4
           num_cpu_cores_per_socket: 2
           boot_firmware: efi
-
+    
         disk:
           - size_gb: 100
             datastore: "{{ datastore }}"
             type: thin
-
+    
         networks:
           - name: "{{ vm_network }}"
             start_connected: true
             device_type: vmxnet3
-
-      loop: "{{ filtered_devices }}"
+    
+      loop: "{{ vm_lookup.results }}"
+      when: item.failed
       register: vm_create
 
     - name: Power on VM
