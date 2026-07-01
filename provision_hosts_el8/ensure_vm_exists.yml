@@ -179,5 +179,6 @@
       debug:
         msg:
           - "VM Name : {{ item.instance.hw_name }}"
-          - "Changed : {{ item.changed }}"
-      loop: "{{ vm_create.results }}"
+          - "Power    : {{ item.instance.hw_power_status }}"
+          - "MAC      : {{ item.instance.hw_eth0.macaddress }}"
+      loop: "{{ vm_info.results }}"
