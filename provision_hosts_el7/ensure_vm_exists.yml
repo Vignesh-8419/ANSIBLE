@@ -62,19 +62,15 @@
           {{
             target_hosts.split(',')
             | map('trim')
-            | map('regex_replace', '\\*', '.*')
+            | map('regex_replace', '\*', '.*')
             | list
           }}
     
-    - name: Filter requested hosts
+    - name: Add matching devices
       set_fact:
-        filtered_devices: "{{ filtered_devices + [item] }}"
-      loop: "{{ netbox_devices.json.results }}"
-      when: >
-        target_patterns
-        | select('match', '^' ~ item.name.split('.')[0] ~ '$')
-        | list
-        | length > 0
+        filtered_devices: "{{ filtered_devices + [item.0] }}"
+      loop: "{{ netbox_devices.json.results | product(target_patterns) | list }}"
+      when: item.0.name.split('.')[0] is match('^' ~ item.1 ~ '$')
 
     - name: Fail if no hosts found
       fail:
