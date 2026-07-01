@@ -41,10 +41,18 @@
     
     ###########################################################################
     # Host Group
-    # 1 = CentOS (Default)
+    # 1 = CentOS
     # 2 = Rocky
     ###########################################################################
     
+    hostgroup: "{{ hostgroup | default('1', true) }}"
+    
+    subnet_id: >-
+      {{
+        2 if (hostgroup | string) == '2'
+        else 1
+      }}
+
     hostgroup_id: >-
       {{
         {
@@ -68,15 +76,8 @@
           '2': 16
         }[hostgroup | string]
       }}
-
-    subnet_id: >-
-      {{
-        2 if (hostgroup | string) == '2'
-        else 1
-      }}
     
     ptable_id: 126
-
   tasks:
 
     ###########################################################################
@@ -212,6 +213,7 @@
         body_format: json
         body:
           host:
+            name: "{{ item.item.name }}"
             hostgroup_id: "{{ hostgroup_id }}"
             operatingsystem_id: "{{ operatingsystem_id }}"
             medium_id: "{{ medium_id }}"
@@ -228,6 +230,8 @@
               - type: interface
                 mac: "{{ item.item.mac }}"
                 ip: "{{ item.item.ip }}"
+                subnet_id: "{{ subnet_id }}"
+                domain_id: 1
                 primary: true
                 provision: true
       when: item.status == 404
@@ -266,25 +270,104 @@
         body_format: json
         body:
           host:
+            name: "{{ item.json.name }}"
+        
             hostgroup_id: "{{ hostgroup_id }}"
             operatingsystem_id: "{{ operatingsystem_id }}"
             medium_id: "{{ medium_id }}"
             ptable_id: "{{ ptable_id }}"
             architecture_id: 1
+        
+            subnet_id: "{{ subnet_id }}"
+            domain_id: 1
+        
             build: true
             pxe_loader: "Grub2 UEFI"
             root_pass: "{{ host_root_pass }}"
+        
+            interfaces_attributes:
+              - id: "{{ item.json.interfaces[0].id }}"
+                subnet_id: "{{ subnet_id }}"
+                domain_id: 1
+                mac: "{{ item.json.interfaces[0].mac }}"
+                ip: "{{ item.json.interfaces[0].ip }}"
+                primary: true
+                provision: true
         status_code:
           - 200
       loop: "{{ foreman_hosts_updated.results }}"
+
+    - name: Verify updated Foreman host
+      uri:
+        url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+        status_code: 200
+      loop: "{{ foreman_hosts_updated.results }}"
+      register: verify_hosts
+
+
+    - name: Disable build
+      uri:
+        url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}"
+        method: PUT
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+        headers:
+          Content-Type: application/json
+        body_format: json
+        body:
+          host:
+            build: false
+        status_code: 200
+      loop: "{{ verify_hosts.results }}"
+      
     
-    - name: Show host group
+    - name: Enable build
+      uri:
+        url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}"
+        method: PUT
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+        headers:
+          Content-Type: application/json
+        body_format: json
+        body:
+          host:
+            build: true
+        status_code: 200
+      loop: "{{ verify_hosts.results }}"
+
+    - name: Verify final Foreman host
+      uri:
+        url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+        status_code: 200
+      loop: "{{ verify_hosts.results }}"
+      register: final_hosts
+    
+    - name: Show final host configuration
       debug:
         msg:
           - "Host      : {{ item.json.name }}"
           - "Host Group: {{ item.json.hostgroup_name }}"
-          - "HostGroup ID: {{ item.json.hostgroup_id }}"
-      loop: "{{ foreman_hosts_updated.results }}"
+          - "OS        : {{ item.json.operatingsystem_name }}"
+          - "Medium    : {{ item.json.medium_name }}"
+          - "Subnet    : {{ item.json.subnet_name }}"
+          - "PXE Loader: {{ item.json.pxe_loader }}"
+          - "Build     : {{ item.json.build }}"
+      loop: "{{ final_hosts.results }}"
 
     - debug:
         var: foreman_create
