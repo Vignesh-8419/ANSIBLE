@@ -60,8 +60,9 @@
       set_fact:
         filtered_devices: "{{ filtered_devices + [item] }}"
       loop: "{{ netbox_devices.json.results }}"
-      when:
-        - item.name.split('.')[0] in target_servers
+      when: item.name.split('.')[0] is match(
+              '^' ~ (target_hosts | regex_replace('\\*', '.*')) ~ '$'
+            )
 
     - name: Fail if no hosts found
       fail:
@@ -85,7 +86,7 @@
         name: "{{ item.name.split('.')[0] }}"
       loop: "{{ filtered_devices }}"
       register: vm_lookup
-      ignore_errors: true
+      failed_when: false
 
 
     ###########################################################################
