@@ -44,24 +44,28 @@
     # 2 = CentOS
     ###########################################################################
     
-    hostgroup: "{{ hostgroup | default('1', true) }}"
-    
     hostgroup_id: >-
       {{
-        1 if (hostgroup | string) == '2'
-        else 2
+        {
+          '1': 1,
+          '2': 2
+        }[hostgroup | string]
       }}
     
     operatingsystem_id: >-
       {{
-        2 if (hostgroup | string) == '2'
-        else 3
+        {
+          '1': 2,
+          '2': 3
+        }[hostgroup | string]
       }}
     
     medium_id: >-
       {{
-        15 if (hostgroup | string) == '2'
-        else 16
+        {
+          '1': 15,
+          '2': 16
+        }[hostgroup | string]
       }}
     
     ptable_id: 126
