@@ -269,7 +269,7 @@
           - "Host      : {{ item.json.name }}"
           - "Host Group: {{ item.json.hostgroup_name }}"
           - "HostGroup ID: {{ item.json.hostgroup_id }}"
-      loop: "{{ verify_hosts.results }}"
+      loop: "{{ foreman_hosts_updated.results }}"
 
     - debug:
         var: foreman_create
