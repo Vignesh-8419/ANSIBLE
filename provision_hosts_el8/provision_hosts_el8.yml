@@ -211,11 +211,14 @@
         body_format: json
         body:
           host:
-            name: "{{ item.item.name }}"
             hostgroup_id: "{{ hostgroup_id }}"
-            organization_id: "{{ org_id }}"
-            location_id: "{{ loc_id }}"
-            managed: true
+            operatingsystem_id: "{{ operatingsystem_id }}"
+            medium_id: "{{ medium_id }}"
+            architecture_id: 1
+            ptable_id: "{{ ptable_id }}"
+        
+            subnet_id: "{{ subnet_id }}"
+            domain_id: 1
             build: true
             pxe_loader: "Grub2 UEFI"
             root_pass: "{{ host_root_pass }}"
