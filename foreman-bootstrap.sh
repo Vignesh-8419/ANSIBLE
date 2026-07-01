@@ -1215,6 +1215,46 @@ create_activation_key() {
 create_activation_key "centos7-prod-key" "CentOS7-CV"
 create_activation_key "rocky8-prod-key" "Rocky8-CV"
 
+###############################################################################
+# Enable Repository Sets for Activation Keys
+###############################################################################
+
+header "Enabling Repository Sets"
+
+# CentOS 7
+for repo in CentOS-07-BaseOS CentOS-07-Updates; do
+    info "Enabling $repo for centos7-prod-key"
+
+    $HAMMER activation-key content-override \
+        --organization "Default Organization" \
+        --activation-key "centos7-prod-key" \
+        --content-label "$repo" \
+        --value 1
+
+    ok "$repo enabled."
+done
+
+echo
+
+# Rocky Linux 8
+for repo in Rocky-08-BaseOS Rocky-08-AppStream Rocky-08-RHEL-Installed; do
+    info "Enabling $repo for rocky8-prod-key"
+
+    $HAMMER activation-key content-override \
+        --organization "Default Organization" \
+        --activation-key "rocky8-prod-key" \
+        --content-label "$repo" \
+        --value 1
+
+    ok "$repo enabled."
+done
+
+echo
+
+###############################################################################
+# Verification
+###############################################################################
+
 header "[11/12] Verification"
 
 ###############################################################################
