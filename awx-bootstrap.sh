@@ -1475,12 +1475,12 @@ jt.credentials.add(credential)
 
 survey_spec = {
     "name": "Provision_Hosts_el7",
-    "description": "Specify target hosts and Foreman server.",
+    "description": "Provision EL7 hosts into Foreman.",
     "spec": [
         {
             "type": "text",
             "question_name": "Target Hosts",
-            "question_description": "Inventory host/group to run against",
+            "question_description": "Inventory host/group to provision",
             "variable": "target_hosts",
             "required": True,
             "default": "cent-07-*",
@@ -1492,6 +1492,15 @@ survey_spec = {
             "question_name": "Foreman Server",
             "question_description": "Select the Foreman server",
             "variable": "foreman_server",
+            "required": True,
+            "default": "1",
+            "choices": "1\n2"
+        },
+        {
+            "type": "multiplechoice",
+            "question_name": "Host Group",
+            "question_description": "1 = CentOS (Default), 2 = Rocky",
+            "variable": "hostgroup",
             "required": True,
             "default": "1",
             "choices": "1\n2"
@@ -1509,11 +1518,17 @@ print(
     f"{'created' if created else 'updated'} successfully."
 )
 print(f"Credential assigned: {credential.name}")
-print("Default Limit: localhost")
+print("Default Limit : localhost")
 print("Survey enabled.")
-print("Foreman Server:")
-print("  1 = rocky-08-01.vgs.com (Default)")
-print("  2 = cent-07-01.vgs.com")
+print()
+print("Survey Values:")
+print("  Foreman Server")
+print("    1 = rocky-08-01.vgs.com (Default)")
+print("    2 = cent-07-01.vgs.com")
+print()
+print("  Host Group")
+print("    1 = CentOS (Default)")
+print("    2 = Rocky")
 EOF
 
 
@@ -1527,11 +1542,11 @@ from awx.main.models import JobTemplate
 jt = JobTemplate.objects.get(name="Provision_Hosts_el7")
 
 print()
-print("Template :", jt.name)
-print("Playbook :", jt.playbook)
-print("Inventory:", jt.inventory.name)
-print("Limit    :", jt.limit)
-print("Survey   :", jt.survey_enabled)
+print("Template  :", jt.name)
+print("Playbook  :", jt.playbook)
+print("Inventory :", jt.inventory.name)
+print("Limit     :", jt.limit)
+print("Survey    :", jt.survey_enabled)
 
 print("\nCredentials")
 for c in jt.credentials.all():
@@ -1540,13 +1555,12 @@ for c in jt.credentials.all():
 print("\nSurvey Questions")
 for q in jt.survey_spec.get("spec", []):
     print(f" - {q['question_name']} ({q['variable']})")
-    if q["type"] == "multiplechoice":
-        print("   Choices:")
-        for choice in q["choices"].split("\n"):
-            if choice == "1":
-                print("     1 = rocky-08-01.vgs.com (Default)")
-            elif choice == "2":
-                print("     2 = cent-07-01.vgs.com")
+    if q["variable"] == "foreman_server":
+        print("     1 = rocky-08-01.vgs.com (Default)")
+        print("     2 = cent-07-01.vgs.com")
+    elif q["variable"] == "hostgroup":
+        print("     1 = CentOS (Default)")
+        print("     2 = Rocky")
 EOF
 
 echo
@@ -1589,12 +1603,14 @@ jt.ask_inventory_on_launch = False
 jt.ask_limit_on_launch = False
 jt.limit = "localhost"
 
+jt.save()
+
 jt.credentials.clear()
 jt.credentials.add(credential)
 
 survey_spec = {
     "name": "Provision_Hosts_el8",
-    "description": "Specify target hosts and Foreman server.",
+    "description": "Provision EL8 hosts into Foreman.",
     "spec": [
         {
             "type": "text",
@@ -1614,6 +1630,15 @@ survey_spec = {
             "required": True,
             "default": "1",
             "choices": "1\n2"
+        },
+        {
+            "type": "multiplechoice",
+            "question_name": "Host Group",
+            "question_description": "1 = CentOS, 2 = Rocky (Default)",
+            "variable": "hostgroup",
+            "required": True,
+            "default": "2",
+            "choices": "1\n2"
         }
     ]
 }
@@ -1631,9 +1656,15 @@ print(f"Credential assigned: {credential.name}")
 print("Default Limit : localhost")
 print(f"Ask Limit     : {jt.ask_limit_on_launch}")
 print("Survey enabled.")
-print("Foreman Server:")
-print("  1 = rocky-08-01.vgs.com (Default)")
-print("  2 = cent-07-01.vgs.com")
+print()
+print("Survey Values:")
+print("  Foreman Server")
+print("    1 = rocky-08-01.vgs.com (Default)")
+print("    2 = cent-07-01.vgs.com")
+print()
+print("  Host Group")
+print("    1 = CentOS")
+print("    2 = Rocky (Default)")
 EOF
 
 
@@ -1661,13 +1692,12 @@ for c in jt.credentials.all():
 print("\nSurvey Questions")
 for q in jt.survey_spec.get("spec", []):
     print(f" - {q['question_name']} ({q['variable']})")
-    if q["type"] == "multiplechoice":
-        print("   Choices:")
-        for choice in q["choices"].split("\n"):
-            if choice == "1":
-                print("     1 = rocky-08-01.vgs.com (Default)")
-            elif choice == "2":
-                print("     2 = cent-07-01.vgs.com")
+    if q["variable"] == "foreman_server":
+        print("     1 = rocky-08-01.vgs.com (Default)")
+        print("     2 = cent-07-01.vgs.com")
+    elif q["variable"] == "hostgroup":
+        print("     1 = CentOS")
+        print("     2 = Rocky (Default)")
 EOF
 
 echo
