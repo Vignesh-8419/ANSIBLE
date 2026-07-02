@@ -336,7 +336,7 @@ menuentry 'Install Rocky Linux 9 via Kickstart' {
 
     linuxefi /rocky9/vmlinuz \
     ip=dhcp \
-    inst.repo=http://192.168.253.136/repo/rocky9 \
+    inst.repo=http://192.168.253.136/repo/rocky9/ \
     inst.ks=http://192.168.253.136/repo/rocky9/kickstart/rockyos.cfg \
     inst.text \
     hostname=<%= @host.name %>
