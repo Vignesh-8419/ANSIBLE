@@ -1760,12 +1760,20 @@ awk -F'|' '$3 ~ /Rocky Linux 9/ {gsub(/ /,"",$1); print $1}'
 
 info "Attaching CentOS 7 subscription..."
 
+OUTPUT=$(
 $HAMMER activation-key add-subscription \
     --organization "Default Organization" \
     --name "centos7-prod-key" \
-    --subscription-id "$CENTOS_SUB_ID"
+    --subscription-id "$CENTOS_SUB_ID" 2>&1
+)
 
-if [ $? -eq 0 ]; then
+echo "$OUTPUT"
+
+if echo "$OUTPUT" | grep -qi "already been registered"; then
+    skip "CentOS 7 subscription already attached."
+elif echo "$OUTPUT" | grep -qi "added"; then
+    ok "CentOS 7 subscription attached."
+elif [ $? -eq 0 ]; then
     ok "CentOS 7 subscription attached."
 else
     error "Subscription attachment failed."
@@ -1776,33 +1784,25 @@ echo
 
 info "Attaching Rocky Linux 8 subscription..."
 
+OUTPUT=$(
 $HAMMER activation-key add-subscription \
     --organization "Default Organization" \
     --name "rocky8-prod-key" \
-    --subscription-id "$ROCKY_SUB_ID"
+    --subscription-id "$ROCKY_SUB_ID" 2>&1
+)
 
-if [ $? -eq 0 ]; then
+echo "$OUTPUT"
+
+if echo "$OUTPUT" | grep -qi "already been registered"; then
+    skip "Rocky Linux 8 subscription already attached."
+elif echo "$OUTPUT" | grep -qi "added"; then
+    ok "Rocky Linux 8 subscription attached."
+elif [ $? -eq 0 ]; then
     ok "Rocky Linux 8 subscription attached."
 else
     error "Subscription attachment failed."
     record_failure "rocky8-prod-key"
 fi
-
-info "Attaching Rocky Linux 9 subscription..."
-
-$HAMMER activation-key add-subscription \
-    --organization "Default Organization" \
-    --name "rocky9-prod-key" \
-    --subscription-id "$ROCKY9_SUB_ID"
-
-if [ $? -eq 0 ]; then
-    ok "Rocky Linux 9 subscription attached."
-else
-    error "Subscription attachment failed."
-    record_failure "rocky9-prod-key"
-fi
-
-echo
 
 ###############################################################################
 # Verification
