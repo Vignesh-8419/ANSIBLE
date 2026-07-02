@@ -498,7 +498,7 @@ oses:
 set default=0
 set timeout=5
 
-menuentry 'Install CentOS via Kickstart' {
+menuentry 'Install CentOS 7 via Kickstart' {
 
     linuxefi /centos/vmlinuz \
 inst.stage2=http://192.168.253.136/repo/centos/ \
