@@ -192,12 +192,15 @@ for TAG in \
 vmware-awx-context \
 pxe-centos-context \
 pxe-rockyos-context \
+pxe-rocky9-context \
 patch-context \
 repo-config-context \
 centostorocky-context \
 patch-el8-context \
+patch-el9-context \
 centos-patch-context \
-rocky-patch-context
+rocky-patch-context \
+rocky9-patch-context
 do
     create_tag "$TAG"
 done
@@ -349,6 +352,34 @@ EOF
 )
 
 create_or_update_context "pxe-rockyos-context" "$JSON"
+
+}
+
+
+create_pxe_rocky9_context() {
+
+info "Creating PXE Rocky 9 Context..."
+
+JSON=$(cat <<'EOF'
+{
+    "name": "pxe-rocky9-context",
+    "weight": 1000,
+    "tags": [
+        "pxe-rocky9-context"
+    ],
+    "data": {
+        "http_server": "192.168.253.136",
+        "rocky9_kickstart_url": "http://192.168.253.136/repo/rocky9/kickstart/rockyos.cfg",
+        "pxe_folder": "/var/lib/tftpboot",
+        "rocky9_template_name": "GOLDENTEMPLATE_ROCKYOS_09",
+        "vm_root_password": "Root@123",
+        "vm_root_user": "root"
+    }
+}
+EOF
+)
+
+create_or_update_context "pxe-rocky9-context" "$JSON"
 
 }
 
@@ -531,6 +562,45 @@ create_or_update_context "patch-el8-context" "$JSON"
 
 }
 
+create_patch_el9_context() {
+
+info "Creating EL9 Patch Context..."
+
+JSON=$(cat <<'EOF'
+{
+    "name": "patch-el9-context",
+    "weight": 1000,
+    "tags": [
+        "patch-el9-context"
+    ],
+    "data": {
+        "httpd_server_url": "http://192.168.253.136/repo/",
+        "repositories": [
+            {
+                "id": "rocky9-baseos",
+                "name": "Rocky Linux 9 BaseOS",
+                "folder": "rocky9/BaseOS"
+            },
+            {
+                "id": "rocky9-appstream",
+                "name": "Rocky Linux 9 AppStream",
+                "folder": "rocky9/AppStream"
+            },
+            {
+                "id": "rocky9-rhel-installed",
+                "name": "Rocky Linux 9 Installed RHEL",
+                "folder": "installed_rhel9"
+            }
+        ]
+    }
+}
+EOF
+)
+
+create_or_update_context "patch-el9-context" "$JSON"
+
+}
+
 create_centos_patch_context() {
 
 info "Creating CentOS Patch Context..."
@@ -589,6 +659,38 @@ EOF
 )
 
 create_or_update_context "rocky-patch-context" "$JSON"
+
+}
+
+
+create_rocky9_patch_context() {
+
+info "Creating Rocky 9 Patch Context..."
+
+JSON=$(cat <<'EOF'
+{
+    "name": "rocky9-patch-context",
+    "weight": 1000,
+    "tags": ["rocky9-patch-context"],
+    "data": {
+        "organization": "Default_Organization",
+        "activation_key": "rocky9-prod-key",
+        "katello_ca_url": "http://cent-07-01.vgs.com/pub/katello-ca-consumer-latest.noarch.rpm",
+        "repo_baseos": "http://192.168.253.136/repo/rocky9/BaseOS",
+        "repo_appstream": "http://192.168.253.136/repo/rocky9/AppStream",
+        "repo_patch": "http://192.168.253.136/repo/installed_rhel9",
+        "subscription_manager_package": "subscription-manager",
+        "reboot_delay": 0,
+        "wait_for_down_timeout": 300,
+        "wait_for_up_timeout": 600,
+        "post_reboot_wait": 120,
+        "repo_backup_dir": "/etc/yum.repos.d/backup"
+    }
+}
+EOF
+)
+
+create_or_update_context "rocky9-patch-context" "$JSON"
 
 }
 
@@ -998,13 +1100,16 @@ create_tags
 create_vmware_awx_context
 create_pxe_centos_context
 create_pxe_rocky_context
+create_pxe_rocky9_context
 
 create_patch_context
 create_repo_config_context
 create_centostorocky_context
 create_patch_el8_context
+create_patch_el9_context
 create_centos_patch_context
 create_rocky_patch_context
+create_rocky9_patch_context
 
 #update_centos_patch_context
 #update_rocky_patch_context
