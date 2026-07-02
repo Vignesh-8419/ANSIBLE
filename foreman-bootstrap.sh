@@ -323,11 +323,10 @@ set timeout=5
 
 menuentry 'Install RockyOS via Kickstart' {
 
-    linuxefi /rocky9/vmlinuz \
-inst.stage2=http://192.168.253.136/repo/rocky9/ \
+linuxefi /rocky9/vmlinuz \
+inst.repo=http://192.168.253.136/repo/rocky9 \
 inst.ks=http://192.168.253.136/repo/rocky9/kickstart/rockyos.cfg \
 inst.text \
-inst.default_fstype=ext4 \
 inst.ks.device=bootif \
 BOOTIF=01-${net_default_mac} \
 hostname=<%= @host.name %>
