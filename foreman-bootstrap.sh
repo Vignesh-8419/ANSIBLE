@@ -292,7 +292,7 @@ oses:
 set default=0
 set timeout=5
 
-menuentry 'Install RockyOS via Kickstart' {
+menuentry 'Install Rocky 8 via Kickstart' {
 
     linuxefi /rockyos/vmlinuz \
 inst.stage2=http://192.168.253.136/repo/rocky8/ \
@@ -321,7 +321,7 @@ oses:
 set default=0
 set timeout=5
 
-menuentry 'Install RockyOS via Kickstart' {
+menuentry 'Install Rocky 9 via Kickstart' {
 
 linuxefi /rocky9/vmlinuz \
 inst.repo=http://192.168.253.136/repo/rocky9 \
