@@ -39,44 +39,51 @@
     org_id: 1
     loc_id: 2
     
-    ###########################################################################
-    # Host Group
-    # 1 = CentOS
-    # 2 = Rocky
-    ###########################################################################
-    
-    hostgroup: "{{ hostgroup | default('1', true) }}"
-    
-    subnet_id: >-
-      {{
-        2 if (hostgroup | string) == '2'
-        else 1
-      }}
+###########################################################################
+# Host Group
+# 1 = CentOS 7
+# 2 = Rocky Linux 8
+# 3 = Rocky Linux 9
+###########################################################################
 
-    hostgroup_id: >-
-      {{
-        {
-          '1': 1,
-          '2': 2
-        }[hostgroup | string]
-      }}
-    
-    operatingsystem_id: >-
-      {{
-        {
-          '1': 2,
-          '2': 3
-        }[hostgroup | string]
-      }}
-    
-    medium_id: >-
-      {{
-        {
-          '1': 15,
-          '2': 16
-        }[hostgroup | string]
-      }}
-    
+hostgroup: "{{ hostgroup | default('1', true) }}"
+
+subnet_id: >-
+  {{
+    {
+      '1': 1,
+      '2': 2,
+      '3': 2
+    }[hostgroup | string]
+  }}
+
+hostgroup_id: >-
+  {{
+    {
+      '1': 1,
+      '2': 2,
+      '3': 3
+    }[hostgroup | string]
+  }}
+
+operatingsystem_id: >-
+  {{
+    {
+      '1': 2,
+      '2': 3,
+      '3': 5
+    }[hostgroup | string]
+  }}
+
+medium_id: >-
+  {{
+    {
+      '1': 15,
+      '2': 16,
+      '3': 17
+    }[hostgroup | string]
+  }}
+  
     ptable_id: 126
   tasks:
 
