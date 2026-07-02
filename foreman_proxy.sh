@@ -202,10 +202,10 @@ chmod 644 /var/lib/tftpboot/rocky8/*
 mkdir -p /var/lib/tftpboot/rocky9
 
 curl -o /var/lib/tftpboot/rocky9/vmlinuz \
-http://http-server-01/repo/rocky9/isolinux/vmlinuz
+http://http-server-01/repo/rocky9/images/pxeboot/vmlinuz
 
 curl -o /var/lib/tftpboot/rocky9/initrd.img \
-http://http-server-01/repo/rocky9/isolinux/initrd.img
+http://http-server-01/repo/rocky9/images/pxeboot/initrd.img
 
 chown -R foreman-proxy:root /var/lib/tftpboot/rocky9
 chmod 644 /var/lib/tftpboot/rocky9/*
