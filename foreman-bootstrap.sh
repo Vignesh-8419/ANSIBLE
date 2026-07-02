@@ -118,6 +118,25 @@ fi
 echo
 
 ###############################################################################
+# Rocky Linux 9 Installation Media
+###############################################################################
+
+info "Checking Rocky Linux 9 Installation Media..."
+
+if $HAMMER medium info --name "Rocky 9 Remote" >/dev/null 2>&1; then
+    skip "Rocky 9 Remote already exists."
+else
+    info "Creating Rocky 9 Remote..."
+
+    $HAMMER medium create \
+        --name "Rocky 9 Remote" \
+        --path "http://192.168.253.136/repo/rocky9/" \
+        --os-family "Redhat"
+
+    ok "Rocky 9 Remote created."
+fi
+
+###############################################################################
 # Verification
 ###############################################################################
 
@@ -183,6 +202,29 @@ fi
 echo
 
 ###############################################################################
+# Rocky Linux 9
+###############################################################################
+
+info "Checking Rocky Linux 9..."
+
+if $HAMMER os info --title "RockyLinux 9.6" >/dev/null 2>&1; then
+    skip "RockyLinux 9.6 already exists."
+else
+    info "Creating RockyLinux 9.6..."
+
+    $HAMMER os create \
+        --name "RockyLinux" \
+        --major 9 \
+        --minor 6 \
+        --family Redhat \
+        --architectures x86_64 \
+        --partition-tables "Kickstart default" \
+        --media "Rocky 9 Remote"
+
+    ok "RockyLinux 9.6 created."
+fi
+
+###############################################################################
 # Verification
 ###############################################################################
 
@@ -235,6 +277,36 @@ EOF
 ok "Template file generated."
 echo
 
+cat > /tmp/rocky-9-pxegrub2.erb <<'EOF'
+<%#
+name: PXEGrub2 Rocky9 UEFI Static Kickstart
+kind: PXEGrub2
+oses:
+- RockyLinux
+%>
+set default=0
+set timeout=5
+
+menuentry 'Install RockyOS via Kickstart' {
+
+    linuxefi /rocky9/vmlinuz \
+inst.stage2=http://192.168.253.136/repo/rocky9/ \
+inst.ks=http://192.168.253.136/repo/rocky9/kickstart/rockyos.cfg \
+inst.text \
+inst.default_fstype=ext4 \
+inst.ks.device=bootif \
+BOOTIF=01-${net_default_mac} \
+hostname=<%= @host.name %>
+
+    initrdefi /rocky9/initrd.img
+
+}
+EOF
+
+ok "Template file generated."
+echo
+
+
 ###############################################################################
 # Import Template
 ###############################################################################
@@ -262,6 +334,32 @@ fi
 echo
 
 ###############################################################################
+# Import Rocky Linux 9 PXE Template
+###############################################################################
+
+info "Checking Rocky 9 PXE Template..."
+
+if $HAMMER template info \
+    --name "PXEGrub2 Rocky9 UEFI Static Kickstart" >/dev/null 2>&1; then
+
+    skip "Rocky 9 Template already exists."
+
+else
+
+    info "Importing Rocky 9 template..."
+
+    $HAMMER template create \
+        --name "PXEGrub2 Rocky9 UEFI Static Kickstart" \
+        --type PXEGrub2 \
+        --file /tmp/rocky-9-pxegrub2.erb
+
+    ok "Rocky 9 Template imported."
+
+fi
+
+echo
+
+###############################################################################
 # Assign Template to OS
 ###############################################################################
 
@@ -282,6 +380,31 @@ else
         --provisioning-template "PXEGrub2 RockyOS UEFI Static Kickstart"
 
     ok "Template assigned."
+fi
+
+echo
+
+###############################################################################
+# Assign Rocky Linux 9 Template
+###############################################################################
+
+info "Checking Rocky Linux 9 template assignment..."
+
+if $HAMMER os info \
+    --title "RockyLinux 9.6" | \
+    grep -q "PXEGrub2 Rocky9 UEFI Static Kickstart"; then
+
+    skip "Rocky 9 template already assigned."
+
+else
+
+    info "Assigning Rocky 9 template..."
+
+    $HAMMER os add-provisioning-template \
+        --title "RockyLinux 9.6" \
+        --provisioning-template "PXEGrub2 Rocky9 UEFI Static Kickstart"
+
+    ok "Rocky 9 template assigned."
 
 fi
 
@@ -570,6 +693,42 @@ fi
 echo
 
 ###############################################################################
+# Rocky Linux 9 Host Group
+###############################################################################
+
+info "Checking Rocky Linux 9 Host Group..."
+
+if $HAMMER hostgroup info \
+    --organization "Default Organization" \
+    --name "VGS HOSTS ROCKY 9" >/dev/null 2>&1; then
+
+    skip "Host Group 'VGS HOSTS ROCKY 9' already exists."
+
+else
+
+    info "Creating Rocky Linux 9 Host Group..."
+
+    $HAMMER hostgroup create \
+        --organization "Default Organization" \
+        --name "VGS HOSTS ROCKY 9" \
+        --architecture x86_64 \
+        --operatingsystem "RockyLinux 9.6" \
+        --medium "Rocky 9 Remote" \
+        --partition-table "Kickstart default" \
+        --pxe-loader "Grub2 UEFI" \
+        --domain "vgs.com" \
+        --subnet "vgs-subnet-rockyos" \
+        --content-source "cent-07-01.vgs.com" \
+        --content-view "Default Organization View" \
+        --lifecycle-environment "Library"
+
+    ok "Rocky Linux 9 Host Group created."
+
+fi
+
+echo
+
+###############################################################################
 # Verification
 ###############################################################################
 
@@ -617,6 +776,16 @@ $HAMMER template list | \
 awk -F'|' '/PXEGrub2 RockyOS UEFI Static Kickstart/ {gsub(/ /,"",$1); print $1}'
 )
 
+ROCKY9_OS_ID=$(
+$HAMMER os list | \
+awk -F'|' '/RockyLinux 9.6/ {gsub(/ /,"",$1); print $1}'
+)
+
+ROCKY9_TEMPLATE_ID=$(
+$HAMMER template list | \
+awk -F'|' '/PXEGrub2 Rocky9 UEFI Static Kickstart/ {gsub(/ /,"",$1); print $1}'
+)
+
 ###############################################################################
 # Validation
 ###############################################################################
@@ -628,6 +797,11 @@ fi
 
 if [[ -z "$ROCKY_OS_ID" || -z "$ROCKY_TEMPLATE_ID" ]]; then
     error "Unable to locate Rocky OS or Template."
+    exit 1
+fi
+
+if [[ -z "$ROCKY9_OS_ID" || -z "$ROCKY9_TEMPLATE_ID" ]]; then
+    error "Unable to locate Rocky 9 OS or Template."
     exit 1
 fi
 
@@ -680,6 +854,33 @@ else
         >/dev/null 2>&1
 
     ok "Rocky default template configured."
+
+fi
+
+echo
+
+###############################################################################
+# Rocky Linux 9 Default Template
+###############################################################################
+
+info "Checking Rocky Linux 9 default template..."
+
+if $HAMMER os info --id "$ROCKY9_OS_ID" | \
+    awk '/Default templates:/,/Architectures:/' | \
+    grep -q "PXEGrub2 Rocky9 UEFI Static Kickstart"; then
+
+    skip "Rocky 9 default template already configured."
+
+else
+
+    info "Setting Rocky 9 default template..."
+
+$HAMMER os set-default-template \
+    --id "$ROCKY9_OS_ID" \
+    --provisioning-template-id "$ROCKY9_TEMPLATE_ID" \
+    >/dev/null 2>&1
+
+    ok "Rocky 9 default template configured."
 
 fi
 
@@ -766,6 +967,32 @@ else
     $HAMMER product create \
         --organization "Default Organization" \
         --name "CentOS 7"
+
+    ok "Product created."
+
+fi
+
+echo
+
+###############################################################################
+# Rocky 9 Product
+###############################################################################
+
+info "Checking Product : Rocky Linux 9"
+
+if $HAMMER product info \
+    --organization "Default Organization" \
+    --name "Rocky Linux 9" >/dev/null 2>&1; then
+
+    skip "Product 'Rocky Linux 9' already exists."
+
+else
+
+    info "Creating Product : Rocky Linux 9"
+
+    $HAMMER product create \
+        --organization "Default Organization" \
+        --name "Rocky Linux 9"
 
     ok "Product created."
 
@@ -911,7 +1138,7 @@ else
         --product "Rocky Linux 8" \
         --name "Rocky-08-AppStream" \
         --content-type yum \
-        --url "http://192.168.253.136/repo/rocky8/Appstream"
+        --url "http://192.168.253.136/repo/rocky8/AppStream"
 
     ok "Repository created."
 
@@ -942,6 +1169,96 @@ else
         --name "Rocky-08-RHEL-Installed" \
         --content-type yum \
         --url "http://192.168.253.136/repo/installed_rhel8"
+
+    ok "Repository created."
+
+fi
+
+echo
+
+###############################################################################
+# Rocky-09-BaseOS
+###############################################################################
+
+info "Checking Repository : Rocky-09-BaseOS"
+
+if $HAMMER repository info \
+    --organization "Default Organization" \
+    --product "Rocky Linux 9" \
+    --name "Rocky-09-BaseOS" >/dev/null 2>&1; then
+
+    skip "Repository already exists."
+
+else
+
+    info "Creating Repository..."
+
+    $HAMMER repository create \
+        --organization "Default Organization" \
+        --product "Rocky Linux 9" \
+        --name "Rocky-09-BaseOS" \
+        --content-type yum \
+        --url "http://192.168.253.136/repo/rocky9/BaseOS"
+
+    ok "Repository created."
+
+fi
+
+echo
+
+###############################################################################
+# Rocky-09-AppStream
+###############################################################################
+
+info "Checking Repository : Rocky-09-AppStream"
+
+if $HAMMER repository info \
+    --organization "Default Organization" \
+    --product "Rocky Linux 9" \
+    --name "Rocky-09-AppStream" >/dev/null 2>&1; then
+
+    skip "Repository already exists."
+
+else
+
+    info "Creating Repository..."
+
+    $HAMMER repository create \
+        --organization "Default Organization" \
+        --product "Rocky Linux 9" \
+        --name "Rocky-09-AppStream" \
+        --content-type yum \
+        --url "http://192.168.253.136/repo/rocky9/AppStream"
+
+    ok "Repository created."
+
+fi
+
+echo
+
+###############################################################################
+# Rocky-09-RHEL-Installed
+###############################################################################
+
+info "Checking Repository : Rocky-09-RHEL-Installed"
+
+if $HAMMER repository info \
+    --organization "Default Organization" \
+    --product "Rocky Linux 9" \
+    --name "Rocky-09-RHEL-Installed" >/dev/null 2>&1; then
+
+    skip "Repository already exists."
+
+else
+
+    info "Creating Repository..."
+
+    $HAMMER repository create \
+        --organization "Default Organization" \
+        --product "Rocky Linux 9" \
+        --name "Rocky-09-RHEL-Installed" \
+        --content-type yum \
+        --url "http://192.168.253.136/repo/installed_rhel9"
 
     ok "Repository created."
 
@@ -1026,6 +1343,14 @@ sync_repository "Rocky Linux 8" "Rocky-08-AppStream"
 sync_repository "Rocky Linux 8" "Rocky-08-RHEL-Installed"
 
 ###############################################################################
+# Rocky Linux 9
+###############################################################################
+
+sync_repository "Rocky Linux 9" "Rocky-09-BaseOS"
+sync_repository "Rocky Linux 9" "Rocky-09-AppStream"
+sync_repository "Rocky Linux 9" "Rocky-09-RHEL-Installed"
+
+###############################################################################
 # Verification
 ###############################################################################
 
@@ -1088,6 +1413,7 @@ create_content_view() {
 
 create_content_view "CentOS7-CV"
 create_content_view "Rocky8-CV"
+create_content_view "Rocky9-CV"
 
 ###############################################################################
 # Function : Add Repository to Content View
@@ -1135,6 +1461,10 @@ add_repository_to_cv "Rocky8-CV" "Rocky Linux 8" "Rocky-08-BaseOS"
 add_repository_to_cv "Rocky8-CV" "Rocky Linux 8" "Rocky-08-AppStream"
 add_repository_to_cv "Rocky8-CV" "Rocky Linux 8" "Rocky-08-RHEL-Installed"
 
+add_repository_to_cv "Rocky9-CV" "Rocky Linux 9" "Rocky-09-BaseOS"
+add_repository_to_cv "Rocky9-CV" "Rocky Linux 9" "Rocky-09-AppStream"
+add_repository_to_cv "Rocky9-CV" "Rocky Linux 9" "Rocky-09-RHEL-Installed"
+
 ###############################################################################
 # Function : Publish Content View
 ###############################################################################
@@ -1173,6 +1503,7 @@ publish_cv() {
 
 publish_cv "CentOS7-CV"
 publish_cv "Rocky8-CV"
+publish_cv "Rocky9-CV"
 
 ###############################################################################
 # Function : Create Activation Key
@@ -1214,6 +1545,7 @@ create_activation_key() {
 
 create_activation_key "centos7-prod-key" "CentOS7-CV"
 create_activation_key "rocky8-prod-key" "Rocky8-CV"
+create_activation_key "rocky9-prod-key" "Rocky9-CV"
 
 ###############################################################################
 # Attach Subscriptions to Activation Keys
@@ -1231,6 +1563,12 @@ ROCKY_SUB_ID=$(
 $HAMMER subscription list \
   --organization "Default Organization" |
 awk -F'|' '$3 ~ /Rocky Linux 8/ {gsub(/ /,"",$1); print $1}'
+)
+
+ROCKY9_SUB_ID=$(
+$HAMMER subscription list \
+  --organization "Default Organization" |
+awk -F'|' '$3 ~ /Rocky Linux 9/ {gsub(/ /,"",$1); print $1}'
 )
 
 info "Attaching CentOS 7 subscription..."
@@ -1252,6 +1590,15 @@ $HAMMER activation-key add-subscription \
     --subscription-id "$ROCKY_SUB_ID" || true
 
 ok "Rocky Linux 8 subscription attached."
+
+info "Attaching Rocky Linux 9 subscription..."
+
+$HAMMER activation-key add-subscription \
+    --organization "Default Organization" \
+    --name "rocky9-prod-key" \
+    --subscription-id "$ROCKY9_SUB_ID" || true
+
+ok "Rocky Linux 9 subscription attached."
 
 echo
 
@@ -1299,7 +1646,6 @@ $HAMMER content-view info \
 echo
 header "Rocky8-CV"
 
-
 $HAMMER content-view info \
     --organization "Default Organization" \
     --name "Rocky8-CV" || true
@@ -1315,6 +1661,24 @@ header "CentOS Repositories"
 $HAMMER repository list \
     --organization "Default Organization" \
     --product "CentOS 7" || true
+
+###############################################################################
+# Rocky 9 Repositories
+###############################################################################
+
+echo
+header "Rocky9-CV"
+
+$HAMMER content-view info \
+    --organization "Default Organization" \
+    --name "Rocky9-CV"
+
+echo
+header "Rocky Linux 9 Repositories"
+
+$HAMMER repository list \
+    --organization "Default Organization" \
+    --product "Rocky Linux 9" || true
 
 ###############################################################################
 # Rocky Repositories
@@ -1348,6 +1712,13 @@ echo "  --org=\"Default Organization\" \\"
 echo "  --activationkey=\"rocky8-prod-key\""
 
 echo
+
+echo
+info "Rocky Linux 9"
+
+echo "subscription-manager register \\"
+echo "  --org=\"Default Organization\" \\"
+echo "  --activationkey=\"rocky9-prod-key\""
 
 header "Bootstrap Summary"
 
