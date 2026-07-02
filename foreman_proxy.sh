@@ -181,16 +181,34 @@ sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev
 sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@rocky-08-03.vgs.com:/boot/efi/EFI/rocky/grub.cfg /var/lib/tftpboot/grub2/
 
 
-mkdir -p /var/lib/tftpboot/rockyos
+# ======================================================
+# Rocky Linux 8 PXE Boot Files
+# ======================================================
+mkdir -p /var/lib/tftpboot/rocky8
 
-curl -o /var/lib/tftpboot/rockyos/vmlinuz \
+curl -o /var/lib/tftpboot/rocky8/vmlinuz \
 http://http-server-01/repo/rocky8/isolinux/vmlinuz
 
-curl -o /var/lib/tftpboot/rockyos/initrd.img \
+curl -o /var/lib/tftpboot/rocky8/initrd.img \
 http://http-server-01/repo/rocky8/isolinux/initrd.img
 
-chown -R foreman-proxy:root /var/lib/tftpboot/rockyos
-chmod 644 /var/lib/tftpboot/rockyos/*
+chown -R foreman-proxy:root /var/lib/tftpboot/rocky8
+chmod 644 /var/lib/tftpboot/rocky8/*
+
+
+# ======================================================
+# Rocky Linux 9 PXE Boot Files
+# ======================================================
+mkdir -p /var/lib/tftpboot/rocky9
+
+curl -o /var/lib/tftpboot/rocky9/vmlinuz \
+http://http-server-01/repo/rocky9/isolinux/vmlinuz
+
+curl -o /var/lib/tftpboot/rocky9/initrd.img \
+http://http-server-01/repo/rocky9/isolinux/initrd.img
+
+chown -R foreman-proxy:root /var/lib/tftpboot/rocky9
+chmod 644 /var/lib/tftpboot/rocky9/*
 
 echo "✅ Smart Proxy installation completed."
 REMOTE_SCRIPT
