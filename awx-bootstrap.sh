@@ -183,7 +183,8 @@ org = Organization.objects.get(name="Default")
 
 inventories = [
     "centos-07-servers",
-    "rocky-8-servers"
+    "rocky-8-servers",
+    "rocky-9-servers"
 ]
 
 for inv_name in inventories:
@@ -260,6 +261,10 @@ configs = [
     (
         "centos-07-servers",
         "centos-07-servers_inventory.yml"
+    ),
+    (
+        "rocky-9-servers",
+        "rocky-9-servers_inventory.yml"
     )
 ]
 
