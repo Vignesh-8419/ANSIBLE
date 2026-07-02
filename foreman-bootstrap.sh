@@ -4,9 +4,13 @@
 # CentOS 7 & Rocky Linux 8.10
 ###############################################################################
 
-set -e
+set +e
 
-trap 'error "Command failed at line ${LINENO}: ${BASH_COMMAND}"; exit 1' ERR
+FAILED_STEPS=()
+
+record_failure() {
+    FAILED_STEPS+=("$1")
+}
 
 ###############################################################################
 # Colors
@@ -90,8 +94,13 @@ else
         --name "CentOS 7 Remote" \
         --path "http://192.168.253.136/repo/centos/" \
         --os-family "Redhat"
-
-    ok "CentOS 7 Remote created."
+    
+    if [ $? -eq 0 ]; then
+        ok "CentOS 7 Remote created."
+    else
+        error "Failed to create CentOS 7 Remote."
+        record_failure "CentOS 7 Remote"
+    fi
 fi
 
 echo
@@ -111,8 +120,13 @@ else
         --name "Rocky 8 Remote" \
         --path "http://192.168.253.136/repo/rocky8/" \
         --os-family "Redhat"
-
-    ok "Rocky 8 Remote created."
+    
+    if [ $? -eq 0 ]; then
+        ok "Rocky 8 Remote created."
+    else
+        error "Failed to create Rocky 8 Remote."
+        record_failure "Rocky 8 Remote"
+    fi
 fi
 
 echo
@@ -132,8 +146,13 @@ else
         --name "Rocky 9 Remote" \
         --path "http://192.168.253.136/repo/rocky9/" \
         --os-family "Redhat"
-
-    ok "Rocky 9 Remote created."
+    
+    if [ $? -eq 0 ]; then
+        ok "Rocky 9 Remote created."
+    else
+        error "Failed to create Rocky 9 Remote."
+        record_failure "Rocky 9 Remote"
+    fi
 fi
 
 ###############################################################################
@@ -171,7 +190,12 @@ else
         --partition-tables "Kickstart default" \
         --media "CentOS 7 Remote"
 
-    ok "CentOSLinux 7 created."
+    if [ $? -eq 0 ]; then
+        ok "CentOSLinux 7 created."
+    else
+        error "CentOSLinux 7 creation failed."
+        record_failure "CentOSLinux 7"
+    fi
 fi
 
 echo
@@ -196,7 +220,12 @@ else
         --partition-tables "Kickstart default" \
         --media "Rocky 8 Remote"
 
-    ok "RockyLinux 8.10 created."
+    if [ $? -eq 0 ]; then
+        ok "RockyLinux 8.10 created."
+    else
+        error "RockyLinux 8.10 creation failed."
+        record_failure "RockyLinux 8.10"
+    fi
 fi
 
 echo
@@ -221,7 +250,12 @@ else
         --partition-tables "Kickstart default" \
         --media "Rocky 9 Remote"
 
-    ok "RockyLinux 9.6 created."
+    if [ $? -eq 0 ]; then
+        ok "RockyLinux 9.6 created."
+    else
+        error "RockyLinux 9.6 creation failed."
+        record_failure "RockyLinux 9.6"
+    fi
 fi
 
 ###############################################################################
@@ -326,8 +360,13 @@ else
         --name "PXEGrub2 RockyOS UEFI Static Kickstart" \
         --type PXEGrub2 \
         --file /tmp/rocky-pxegrub2.erb
-
-    ok "Template imported."
+    
+    if [ $? -eq 0 ]; then
+        ok "Template imported."
+    else
+        error "Template import failed."
+        record_failure "PXEGrub2 RockyOS UEFI Static Kickstart"
+    fi
 
 fi
 
@@ -353,7 +392,12 @@ else
         --type PXEGrub2 \
         --file /tmp/rocky-9-pxegrub2.erb
 
-    ok "Rocky 9 Template imported."
+    if [ $? -eq 0 ]; then
+        ok "Template imported."
+    else
+        error "Template import failed."
+        record_failure "PXEGrub2 Rocky9 UEFI Static Kickstart"
+    fi
 
 fi
 
@@ -378,8 +422,14 @@ else
     $HAMMER os add-provisioning-template \
         --title "RockyLinux 8.10" \
         --provisioning-template "PXEGrub2 RockyOS UEFI Static Kickstart"
+    
+    if [ $? -eq 0 ]; then
+        ok "Template assigned."
+    else
+        error "Template assignment failed."
+        record_failure "RockyLinux 8 Template Assignment"
+    fi
 
-    ok "Template assigned."
 fi
 
 echo
@@ -404,7 +454,12 @@ else
         --title "RockyLinux 9.6" \
         --provisioning-template "PXEGrub2 Rocky9 UEFI Static Kickstart"
 
-    ok "Rocky 9 template assigned."
+    if [ $? -eq 0 ]; then
+        ok "Template assigned."
+    else
+        error "Template assignment failed."
+        record_failure "RockyLinux 9.6 Template Assignment"
+    fi
 
 fi
 
@@ -483,7 +538,12 @@ else
         --type PXEGrub2 \
         --file /tmp/centos-pxegrub2.erb
 
-    ok "Template imported."
+    if [ $? -eq 0 ]; then
+        ok "Template imported."
+    else
+        error "Template import failed."
+        record_failure "PXEGrub2 CentOS UEFI Static Kickstart"
+    fi
 
 fi
 
@@ -509,7 +569,12 @@ else
         --title "CentOSLinux 7" \
         --provisioning-template "PXEGrub2 CentOS UEFI Static Kickstart"
 
-    ok "Template assigned."
+    if [ $? -eq 0 ]; then
+        ok "Template assigned."
+    else
+        error "Template assignment failed."
+        record_failure "CentOSLinux 7 Template Assignment"
+    fi
 
 fi
 
@@ -563,7 +628,13 @@ else
         --dhcp "cent-07-01.vgs.com" \
         --tftp "cent-07-01.vgs.com"
 
-    ok "CentOS subnet created."
+    if [ $? -eq 0 ]; then
+        ok "CentOS subnet created."
+    else
+        error "CentOS subnet creation failed."
+        record_failure "vgs-subnet-centos"
+    fi
+
 
 fi
 
@@ -599,7 +670,13 @@ else
         --dhcp "cent-07-02.vgs.com" \
         --tftp "cent-07-02.vgs.com"
 
-    ok "Rocky subnet created."
+    if [ $? -eq 0 ]; then
+        ok "RockyOS subnet created."
+    else
+        error "RockyOS subnet creation failed."
+        record_failure "vgs-subnet-rockyos"
+    fi
+
 
 fi
 
@@ -650,7 +727,12 @@ else
         --content-view "Default Organization View" \
         --lifecycle-environment "Library"
 
-    ok "CentOS Host Group created."
+    if [ $? -eq 0 ]; then
+        ok "CentOS 7 Host Group created."
+    else
+        error "Host Group creation failed."
+        record_failure "VGS HOSTS CentOS 7"
+    fi
 
 fi
 
@@ -686,7 +768,12 @@ else
         --content-view "Default Organization View" \
         --lifecycle-environment "Library"
 
-    ok "Rocky Host Group created."
+    if [ $? -eq 0 ]; then
+        ok "Rocky Host Group created."
+    else
+        error "Host Group creation failed."
+        record_failure "VGS HOSTS ROCKY 8"
+    fi
 
 fi
 
@@ -722,7 +809,12 @@ else
         --content-view "Default Organization View" \
         --lifecycle-environment "Library"
 
-    ok "Rocky Linux 9 Host Group created."
+    if [ $? -eq 0 ]; then
+        ok "Rocky 9 Host Group created."
+    else
+        error "Host Group creation failed."
+        record_failure "VGS HOSTS ROCKY 9"
+    fi
 
 fi
 
@@ -792,17 +884,17 @@ awk -F'|' '/PXEGrub2 Rocky9 UEFI Static Kickstart/ {gsub(/ /,"",$1); print $1}'
 
 if [[ -z "$CENTOS_OS_ID" || -z "$CENTOS_TEMPLATE_ID" ]]; then
     error "Unable to locate CentOS OS or Template."
-    exit 1
+    record_failure "CentOS OS or Template Missing"
 fi
 
 if [[ -z "$ROCKY_OS_ID" || -z "$ROCKY_TEMPLATE_ID" ]]; then
     error "Unable to locate Rocky OS or Template."
-    exit 1
+    record_failure "Rocky OS or Template Missing"
 fi
 
 if [[ -z "$ROCKY9_OS_ID" || -z "$ROCKY9_TEMPLATE_ID" ]]; then
     error "Unable to locate Rocky 9 OS or Template."
-    exit 1
+    record_failure "Rocky 9 OS or Template Missing"
 fi
 
 ###############################################################################
@@ -821,12 +913,18 @@ else
 
     info "Setting CentOS default template..."
 
-   $HAMMER os set-default-template \
-         --id "$CENTOS_OS_ID" \
-         --provisioning-template-id "$CENTOS_TEMPLATE_ID" \
-         >/dev/null 2>&1
 
-    ok "CentOS default template configured."
+    $HAMMER os set-default-template \
+        --id "$CENTOS_OS_ID" \
+        --provisioning-template-id "$CENTOS_TEMPLATE_ID" \
+        >/dev/null 2>&1
+    
+    if [ $? -eq 0 ]; then
+        ok "CentOS default template configured."
+    else
+        error "Failed to configure CentOS default template."
+        record_failure "CentOS Default Template"
+    fi
 
 fi
 
@@ -852,8 +950,13 @@ else
         --id "$ROCKY_OS_ID" \
         --provisioning-template-id "$ROCKY_TEMPLATE_ID" \
         >/dev/null 2>&1
-
-    ok "Rocky default template configured."
+    
+    if [ $? -eq 0 ]; then
+        ok "RockyOS default template configured."
+    else
+        error "Failed to configure RockyOS default template."
+        record_failure "RockyOS Default Template"
+    fi
 
 fi
 
@@ -875,12 +978,17 @@ else
 
     info "Setting Rocky 9 default template..."
 
-$HAMMER os set-default-template \
-    --id "$ROCKY9_OS_ID" \
-    --provisioning-template-id "$ROCKY9_TEMPLATE_ID" \
-    >/dev/null 2>&1
-
-    ok "Rocky 9 default template configured."
+    $HAMMER os set-default-template \
+        --id "$ROCKY9_OS_ID" \
+        --provisioning-template-id "$ROCKY9_TEMPLATE_ID" \
+        >/dev/null 2>&1
+        
+    if [ $? -eq 0 ]; then
+        ok "Rocky 9 default template configured."
+    else
+        error "Failed to configure Rocky 9 default template."
+        record_failure "Rocky 9 Default Template"
+    fi
 
 fi
 
@@ -941,8 +1049,13 @@ else
     $HAMMER product create \
         --organization "Default Organization" \
         --name "Rocky Linux 8"
-
-    ok "Product created."
+    
+    if [ $? -eq 0 ]; then
+        ok "Product created."
+    else
+        error "Product creation failed."
+        record_failure "Rocky Linux 8 Product"
+    fi
 
 fi
 
@@ -967,8 +1080,13 @@ else
     $HAMMER product create \
         --organization "Default Organization" \
         --name "CentOS 7"
-
-    ok "Product created."
+    
+    if [ $? -eq 0 ]; then
+        ok "Product created."
+    else
+        error "Product creation failed."
+        record_failure "CentOS 7 Product"
+    fi
 
 fi
 
@@ -990,11 +1108,17 @@ else
 
     info "Creating Product : Rocky Linux 9"
 
-    $HAMMER product create \
-        --organization "Default Organization" \
-        --name "Rocky Linux 9"
-
-    ok "Product created."
+        $HAMMER product create \
+            --organization "Default Organization" \
+            --name "Rocky Linux 9"
+        
+        if [ $? -eq 0 ]; then
+            ok "Product created."
+        else
+            error "Product creation failed."
+            record_failure "Rocky Linux 9 Product"
+        fi
+        
 
 fi
 
@@ -1042,7 +1166,12 @@ else
         --content-type yum \
         --url "http://192.168.253.136/repo/centos/"
 
-    ok "Repository created."
+    if [ $? -eq 0 ]; then
+        ok "Repository created."
+    else
+        error "Repository creation failed."
+        record_failure "$PRODUCT -> $REPO"
+    fi
 
 fi
 
@@ -1072,7 +1201,12 @@ else
         --content-type yum \
         --url "http://192.168.253.136/repo/installed_rhel7/"
 
-    ok "Repository created."
+    if [ $? -eq 0 ]; then
+        ok "Repository created."
+    else
+        error "Repository creation failed."
+        record_failure "$PRODUCT -> $REPO"
+    fi
 
 fi
 
@@ -1110,7 +1244,12 @@ else
         --content-type yum \
         --url "http://192.168.253.136/repo/rocky8/BaseOS"
 
-    ok "Repository created."
+    if [ $? -eq 0 ]; then
+        ok "Repository created."
+    else
+        error "Repository creation failed."
+        record_failure "$PRODUCT -> $REPO"
+    fi
 
 fi
 
@@ -1139,8 +1278,13 @@ else
         --name "Rocky-08-AppStream" \
         --content-type yum \
         --url "http://192.168.253.136/repo/rocky8/AppStream"
-
-    ok "Repository created."
+    
+    if [ $? -eq 0 ]; then
+        ok "Repository created."
+    else
+        error "Repository creation failed."
+        record_failure "Rocky Linux 8 -> Rocky-08-AppStream"
+    fi
 
 fi
 
@@ -1170,8 +1314,13 @@ else
         --content-type yum \
         --url "http://192.168.253.136/repo/installed_rhel8"
 
-    ok "Repository created."
-
+    
+    if [ $? -eq 0 ]; then
+        ok "Repository created."
+    else
+        error "Repository creation failed."
+        record_failure "Rocky Linux 8 -> Rocky-08-RHEL-Installed"
+    fi
 fi
 
 echo
@@ -1193,6 +1342,7 @@ else
 
     info "Creating Repository..."
 
+
     $HAMMER repository create \
         --organization "Default Organization" \
         --product "Rocky Linux 9" \
@@ -1200,8 +1350,13 @@ else
         --content-type yum \
         --url "http://192.168.253.136/repo/rocky9/BaseOS"
 
-    ok "Repository created."
-
+    
+    if [ $? -eq 0 ]; then
+        ok "Repository created."
+    else
+        error "Repository creation failed."
+        record_failure "Rocky Linux 9 -> Rocky-09-BaseOS"
+    fi
 fi
 
 echo
@@ -1230,7 +1385,13 @@ else
         --content-type yum \
         --url "http://192.168.253.136/repo/rocky9/AppStream"
 
-    ok "Repository created."
+    
+    if [ $? -eq 0 ]; then
+        ok "Repository created."
+    else
+        error "Repository creation failed."
+        record_failure "Rocky Linux 9 -> Rocky-09-AppStream"
+    fi
 
 fi
 
@@ -1260,8 +1421,13 @@ else
         --content-type yum \
         --url "http://192.168.253.136/repo/installed_rhel9"
 
-    ok "Repository created."
-
+    
+    if [ $? -eq 0 ]; then
+        ok "Repository created."
+    else
+        error "Repository creation failed."
+        record_failure "Rocky Linux 9 -> Rocky-09-RHEL-Installed"
+    fi
 fi
 
 echo
@@ -1319,8 +1485,13 @@ sync_repository() {
                 --organization "Default Organization" \
                 --product "$PRODUCT" \
                 --name "$REPO"
-
-            ok "Synchronization started."
+            
+            if [ $? -eq 0 ]; then
+                ok "Synchronization started."
+            else
+                error "Synchronization failed."
+                record_failure "$PRODUCT -> $REPO"
+            fi
             ;;
 
     esac
@@ -1399,8 +1570,13 @@ create_content_view() {
         $HAMMER content-view create \
             --organization "Default Organization" \
             --name "$CV_NAME"
-
-        ok "Content View created."
+        
+        if [ $? -eq 0 ]; then
+            ok "Content View created."
+        else
+            error "Content View creation failed."
+            record_failure "Content View : $CV_NAME"
+        fi
 
     fi
 
@@ -1442,8 +1618,13 @@ add_repository_to_cv() {
             --name "$CV" \
             --product "$PRODUCT" \
             --repository "$REPO"
-
-        ok "Repository added."
+        
+        if [ $? -eq 0 ]; then
+            ok "Repository added."
+        else
+            error "Failed to add repository."
+            record_failure "$REPO -> $CV"
+        fi
 
     fi
 
@@ -1483,14 +1664,17 @@ publish_cv() {
 
     else
 
-        info "Publishing Content View..."
-
         $HAMMER content-view publish \
             --organization "Default Organization" \
             --name "$CV" \
             --description "Bootstrap Publish $(date '+%Y-%m-%d %H:%M:%S')"
-
-        ok "Content View published."
+        
+        if [ $? -eq 0 ]; then
+            ok "Content View published."
+        else
+            error "Content View publish failed."
+            record_failure "Publish : $CV"
+        fi
 
     fi
 
@@ -1524,15 +1708,18 @@ create_activation_key() {
 
     else
 
-        info "Creating Activation Key..."
-
         $HAMMER activation-key create \
             --organization "Default Organization" \
             --name "$KEY" \
             --lifecycle-environment "Library" \
             --content-view "$CV"
-
-        ok "Activation Key created."
+        
+        if [ $? -eq 0 ]; then
+            ok "Activation Key created."
+        else
+            error "Activation Key creation failed."
+            record_failure "Activation Key : $KEY"
+        fi
 
     fi
 
@@ -1576,9 +1763,14 @@ info "Attaching CentOS 7 subscription..."
 $HAMMER activation-key add-subscription \
     --organization "Default Organization" \
     --name "centos7-prod-key" \
-    --subscription-id "$CENTOS_SUB_ID" || true
+    --subscription-id "$CENTOS_SUB_ID"
 
-ok "CentOS 7 subscription attached."
+if [ $? -eq 0 ]; then
+    ok "CentOS 7 subscription attached."
+else
+    error "Subscription attachment failed."
+    record_failure "centos7-prod-key"
+fi
 
 echo
 
@@ -1587,18 +1779,28 @@ info "Attaching Rocky Linux 8 subscription..."
 $HAMMER activation-key add-subscription \
     --organization "Default Organization" \
     --name "rocky8-prod-key" \
-    --subscription-id "$ROCKY_SUB_ID" || true
+    --subscription-id "$ROCKY_SUB_ID"
 
-ok "Rocky Linux 8 subscription attached."
+if [ $? -eq 0 ]; then
+    ok "Rocky Linux 8 subscription attached."
+else
+    error "Subscription attachment failed."
+    record_failure "rocky8-prod-key"
+fi
 
 info "Attaching Rocky Linux 9 subscription..."
 
 $HAMMER activation-key add-subscription \
     --organization "Default Organization" \
     --name "rocky9-prod-key" \
-    --subscription-id "$ROCKY9_SUB_ID" || true
+    --subscription-id "$ROCKY9_SUB_ID"
 
-ok "Rocky Linux 9 subscription attached."
+if [ $? -eq 0 ]; then
+    ok "Rocky Linux 9 subscription attached."
+else
+    error "Subscription attachment failed."
+    record_failure "rocky9-prod-key"
+fi
 
 echo
 
@@ -1720,21 +1922,21 @@ echo "subscription-manager register \\"
 echo "  --org=\"Default Organization\" \\"
 echo "  --activationkey=\"rocky9-prod-key\""
 
-header "Bootstrap Summary"
+echo
+header "FAILED OPERATIONS"
 
-summary_ok "Installation Media"
-summary_ok "Operating Systems"
-summary_ok "PXE Templates"
-summary_ok "Subnets"
-summary_ok "Host Groups"
-summary_ok "Katello Products"
-summary_ok "Repositories"
-summary_ok "Repository Synchronization"
-summary_ok "Content Views"
-summary_ok "Activation Keys"
-summary_ok "Verification"
-summary_ok "Registration Commands"
+if [ ${#FAILED_STEPS[@]} -eq 0 ]; then
+    ok "No failures detected."
+else
+    for i in "${FAILED_STEPS[@]}"; do
+        error "$i"
+    done
+fi
 
 echo
-ok "Foreman PXE Provisioning + Katello Bootstrap Completed Successfully."
-echo
+
+if [ ${#FAILED_STEPS[@]} -eq 0 ]; then
+    ok "Foreman PXE Provisioning + Katello Bootstrap Completed Successfully."
+else
+    warn "Bootstrap completed with ${#FAILED_STEPS[@]} failure(s)."
+fi
