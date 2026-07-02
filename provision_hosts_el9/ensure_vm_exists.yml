@@ -1,0 +1,197 @@
+---
+- name: Ensure selected VMs exist on ESXi
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  collections:
+    - community.vmware
+
+  vars:
+
+    ###########################################################################
+    # ESXi
+    ###########################################################################
+
+    esxi_hostname: "192.168.253.128"
+    esxi_username: "root"
+    esxi_password: "Root@123"
+
+    datacenter: "ha-datacenter"
+    datastore: "datastore1"
+    vm_network: "VM Network"
+    folder: "/"
+
+    ###########################################################################
+    # NetBox
+    ###########################################################################
+
+    netbox_url: "https://192.168.253.143"
+    netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
+
+    cluster_name: "rocky-9-servers"
+
+    target_servers: "{{ target_hosts.split(',') | map('trim') | list }}"
+
+  tasks:
+
+    ###########################################################################
+    # Get Devices from NetBox
+    ###########################################################################
+
+    - name: Get devices from NetBox cluster
+      uri:
+        url: "{{ netbox_url }}/api/dcim/devices/?cluster={{ cluster_name }}"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        validate_certs: false
+      register: netbox_devices
+
+    - name: Show devices in cluster
+      debug:
+        msg: "{{ netbox_devices.json.results | map(attribute='name') | list }}"
+
+    ###########################################################################
+    # Filter Selected Devices
+    ###########################################################################
+
+    - name: Initialize filtered devices
+      set_fact:
+        filtered_devices: []
+    
+    - name: Build target patterns
+      set_fact:
+        target_patterns: >-
+          {{
+            target_hosts.split(',')
+            | map('trim')
+            | map('regex_replace', '\*', '.*')
+            | list
+          }}
+    
+    - name: Add matching devices
+      set_fact:
+        filtered_devices: "{{ filtered_devices + [item.0] }}"
+      loop: "{{ netbox_devices.json.results | product(target_patterns) | list }}"
+      when: item.0.name.split('.')[0] is match('^' ~ item.1 ~ '$')
+
+    - name: Fail if no hosts found
+      fail:
+        msg: "No matching hosts found in NetBox."
+      when: filtered_devices | length == 0
+
+    - name: Show selected VMs
+      debug:
+        msg: "{{ filtered_devices | map(attribute='name') | list }}"
+
+    ###########################################################################
+    # Check whether VM already exists
+    ###########################################################################
+    
+    - name: Check if VM already exists
+      community.vmware.vmware_guest_info:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: false
+        name: "{{ item.name.split('.')[0] }}"
+      loop: "{{ filtered_devices }}"
+      register: vm_lookup
+      failed_when: false
+
+
+    ###########################################################################
+    # Create VM (only if missing)
+    ###########################################################################
+
+    - name: Create VM only if it does not exist
+      community.vmware.vmware_guest:
+    
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: false
+    
+        datacenter: "{{ datacenter }}"
+        folder: "{{ folder }}"
+        datastore: "{{ datastore }}"
+    
+        name: "{{ item.item.name.split('.')[0] }}"
+        state: present
+    
+        guest_id: centos7_64Guest
+    
+        hardware:
+          memory_mb: 4096
+          num_cpus: 4
+          num_cpu_cores_per_socket: 2
+          boot_firmware: efi
+    
+        disk:
+          - size_gb: 100
+            datastore: "{{ datastore }}"
+            type: thin
+    
+        networks:
+          - name: "{{ vm_network }}"
+            start_connected: true
+            device_type: vmxnet3
+    
+      loop: "{{ vm_lookup.results }}"
+      when: item.failed
+      register: vm_create
+
+    - name: Power on VM
+      community.vmware.vmware_guest_powerstate:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: false
+        name: "{{ item.name.split('.')[0] }}"
+        state: powered-on
+      loop: "{{ filtered_devices }}"
+    
+    - name: Wait for ESXi to assign MAC
+      pause:
+        seconds: 10
+    
+    - name: Power off VM
+      community.vmware.vmware_guest_powerstate:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: false
+        name: "{{ item.name.split('.')[0] }}"
+        state: powered-off
+      loop: "{{ filtered_devices }}"
+
+    ###########################################################################
+    # Get VM Information
+    ###########################################################################
+    
+    - name: Get VM information
+      community.vmware.vmware_guest_info:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: false
+        name: "{{ item.name.split('.')[0] }}"
+      loop: "{{ filtered_devices }}"
+      register: vm_info
+    
+    - name: Show VM information
+      debug:
+        var: vm_info.results
+
+    ###########################################################################
+    # Summary
+    ###########################################################################
+
+    - name: Show result
+      debug:
+        msg:
+          - "VM Name : {{ item.instance.hw_name }}"
+          - "Power    : {{ item.instance.hw_power_status }}"
+          - "MAC      : {{ item.instance.hw_eth0.macaddress }}"
+      loop: "{{ vm_info.results }}"
