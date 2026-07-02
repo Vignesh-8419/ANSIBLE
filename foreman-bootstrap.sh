@@ -317,22 +317,26 @@ name: PXEGrub2 Rocky9 UEFI Static Kickstart
 kind: PXEGrub2
 oses:
 - RockyLinux
+<%#
+name: PXEGrub2 Rocky9 UEFI Static Kickstart
+kind: PXEGrub2
+oses:
+- RockyLinux
 %>
+
 set default=0
 set timeout=5
 
-menuentry 'Install Rocky 9 via Kickstart' {
+menuentry 'Install Rocky Linux 9 via Kickstart' {
 
-linuxefi /rocky9/vmlinuz \
-inst.repo=http://192.168.253.136/repo/rocky9 \
-inst.ks=http://192.168.253.136/repo/rocky9/kickstart/rockyos.cfg \
-inst.text \
-inst.ks.device=bootif \
-BOOTIF=01-${net_default_mac} \
-hostname=<%= @host.name %>
+    linuxefi /rocky9/vmlinuz \
+    inst.ks=http://192.168.253.136/repo/rocky9/kickstart/rockyos.cfg \
+    inst.text \
+    inst.ks.device=bootif \
+    BOOTIF=01-${net_default_mac} \
+    hostname=<%= @host.name %>
 
     initrdefi /rocky9/initrd.img
-
 }
 EOF
 
