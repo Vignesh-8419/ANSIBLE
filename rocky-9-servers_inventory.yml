@@ -1,0 +1,29 @@
+---
+plugin: netbox.netbox.nb_inventory
+api_endpoint: https://192.168.253.143
+token: 83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd
+validate_certs: false
+timeout: 180
+
+# Stop schema fetch (better for low-memory servers)
+validate_query_filters: false
+fetch_all: true
+
+# Pull only required data
+config_context: true
+interfaces: true
+primary_ip: true
+services: false
+
+group_by:
+  - status
+  - tags
+
+query_filters:
+  - cluster_id: 3
+  - status: active
+  - status: staged
+
+compose:
+  ansible_host: primary_ip4.address.split('/')[0]
+  primary_ip4: primary_ip4.address.split('/')[0]
