@@ -40,23 +40,28 @@
     
     ###########################################################################
     # Host Group
-    # 1 = CentOS
-    # 2 = Rocky
+    # 1 = CentOS 7
+    # 2 = Rocky Linux 8
+    # 3 = Rocky Linux 9
     ###########################################################################
     
     hostgroup: "{{ hostgroup | default('1', true) }}"
     
     subnet_id: >-
       {{
-        2 if (hostgroup | string) == '2'
-        else 1
+        {
+          '1': 1,
+          '2': 2,
+          '3': 2
+        }[hostgroup | string]
       }}
-
+    
     hostgroup_id: >-
       {{
         {
           '1': 1,
-          '2': 2
+          '2': 2,
+          '3': 3
         }[hostgroup | string]
       }}
     
@@ -64,7 +69,8 @@
       {{
         {
           '1': 2,
-          '2': 3
+          '2': 3,
+          '3': 5
         }[hostgroup | string]
       }}
     
@@ -72,7 +78,8 @@
       {{
         {
           '1': 15,
-          '2': 16
+          '2': 16,
+          '3': 17
         }[hostgroup | string]
       }}
     
