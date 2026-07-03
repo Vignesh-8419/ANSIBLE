@@ -1,0 +1,134 @@
+---
+###########################################################################
+# PRE-STEPS
+###########################################################################
+
+- name: Display target host
+  debug:
+    msg:
+      - "Preparing {{ inventory_hostname }} for Foreman/Katello registration"
+      - "Organization   : {{ organization }}"
+      - "Activation Key : {{ activation_key }}"
+
+###########################################################################
+# CREATE BACKUP DIRECTORY
+###########################################################################
+
+- name: Create repository backup directory
+  raw: mkdir -p /etc/yum.repos.d/backup
+
+###########################################################################
+# BACKUP EXISTING REPOSITORIES
+###########################################################################
+
+- name: Backup existing repositories
+  raw: |
+    sh -c '
+    mv /etc/yum.repos.d/*.repo \
+    /etc/yum.repos.d/backup/ 2>/dev/null || true
+    '
+
+###########################################################################
+# CREATE TEMPORARY BASEOS REPOSITORY
+###########################################################################
+
+- name: Configure temporary BaseOS repository
+  raw: |
+    cat >/etc/yum.repos.d/rocky9-baseos.repo <<EOF
+    [rocky9-baseos]
+    name=Rocky Linux 9 BaseOS
+    baseurl={{ repo_baseos }}
+    enabled=1
+    gpgcheck=0
+    EOF
+
+###########################################################################
+# CREATE TEMPORARY APPSTREAM REPOSITORY
+###########################################################################
+
+- name: Configure temporary AppStream repository
+  raw: |
+    cat >/etc/yum.repos.d/rocky9-appstream.repo <<EOF
+    [rocky9-appstream]
+    name=Rocky Linux 9 AppStream
+    baseurl={{ repo_appstream }}
+    enabled=1
+    gpgcheck=0
+    EOF
+
+###########################################################################
+# CREATE TEMPORARY PATCH REPOSITORY
+###########################################################################
+
+- name: Configure temporary Installed Packages repository
+  raw: |
+    cat >/etc/yum.repos.d/rocky9-installed.repo <<EOF
+    [rocky9-installed]
+    name=Rocky Linux 9 Installed Packages
+    baseurl={{ repo_patch }}
+    enabled=1
+    gpgcheck=0
+    EOF
+
+###########################################################################
+# CLEAN CACHE
+###########################################################################
+
+- name: Clean yum cache
+  raw: yum clean all
+
+###########################################################################
+# BUILD CACHE
+###########################################################################
+
+- name: Build yum cache
+  raw: yum makecache
+
+###########################################################################
+# INSTALL SUBSCRIPTION MANAGER
+###########################################################################
+
+- name: Install subscription-manager
+  raw: yum install -y subscription-manager
+
+###########################################################################
+# VERIFY SUBSCRIPTION MANAGER
+###########################################################################
+
+- name: Verify subscription-manager installation
+  raw: rpm -q subscription-manager
+  register: submgr
+
+- name: Display subscription-manager version
+  debug:
+    var: submgr.stdout
+
+###########################################################################
+# INSTALL KATELLO CA
+###########################################################################
+
+- name: Install Katello CA Consumer
+  raw: |
+    rpm -Uvh {{ katello_ca_url }} --force
+
+###########################################################################
+# VERIFY KATELLO CA
+###########################################################################
+
+- name: Verify Katello CA package
+  raw: rpm -qa | grep katello-ca-consumer
+  register: katello_ca
+
+- name: Display Katello CA package
+  debug:
+    var: katello_ca.stdout
+
+###########################################################################
+# PRESTEP COMPLETE
+###########################################################################
+
+- name: Prestep completed
+  debug:
+    msg:
+      - "Pre-registration completed successfully."
+      - "Host is ready for Foreman/Katello registration."
