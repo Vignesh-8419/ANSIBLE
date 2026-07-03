@@ -68,7 +68,7 @@
       raw: |
         cat >/etc/yum.repos.d/rocky9-baseos.repo <<EOF
         [rocky9-baseos]
-        name=Rocky Linux 8 BaseOS
+        name=Rocky Linux 9 BaseOS
         baseurl={{ repo_baseos }}
         enabled=1
         gpgcheck=0
@@ -78,7 +78,7 @@
       raw: |
         cat >/etc/yum.repos.d/rocky9-appstream.repo <<EOF
         [rocky9-appstream]
-        name=Rocky Linux 8 AppStream
+        name=Rocky Linux 9 AppStream
         baseurl={{ repo_appstream }}
         enabled=1
         gpgcheck=0
