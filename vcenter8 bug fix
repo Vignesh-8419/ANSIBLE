@@ -1,5 +1,5 @@
 Solution:
-Convert the VCSA OVA to an OVF using OVFTool.
+Convert the VCSA OVA to an OVF using OVFTool. - ctrl + run give control and file system explorer hide extension type
 
 . Delete the Original VCSA OVF manifest(mf) file So that validation will not fail due to our changes.
 
