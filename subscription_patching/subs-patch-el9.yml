@@ -1,0 +1,246 @@
+---
+- name: Register and Patch Rocky Linux 9 using Foreman/Katello
+  hosts: >-
+    {{
+      target_hosts
+      | split(',')
+      | map('trim')
+      | reject('equalto', '')
+      | map('regex_replace', '$', '.vgs.com')
+      | join(',')
+    }}
+  become: yes
+  gather_facts: false
+  serial: 1
+
+  tasks:
+
+    #######################################################################
+    # LOAD NETBOX CONFIG CONTEXT
+    #######################################################################
+
+    - name: Load NetBox Config Context
+      set_fact:
+        organization: "{{ config_context[0].organization }}"
+        activation_key: "{{ config_context[0].activation_key }}"
+        katello_ca_url: "{{ config_context[0].katello_ca_url }}"
+        repo_baseos: "{{ config_context[0].repo_baseos }}"
+        repo_appstream: "{{ config_context[0].repo_appstream }}"
+        repo_patch: "{{ config_context[0].repo_patch }}"
+        reboot_delay: "{{ config_context[0].reboot_delay }}"
+        wait_for_down_timeout: "{{ config_context[0].wait_for_down_timeout }}"
+        wait_for_up_timeout: "{{ config_context[0].wait_for_up_timeout }}"
+        post_reboot_wait: "{{ config_context[0].post_reboot_wait }}"
+
+    #######################################################################
+    # PRECHECK
+    #######################################################################
+
+    - name: Display target
+      debug:
+        msg:
+          - "Inventory Host : {{ inventory_hostname }}"
+          - "Organization   : {{ organization }}"
+          - "Activation Key : {{ activation_key }}"
+          - "BaseOS Repo    : {{ repo_baseos }}"
+          - "AppStream Repo : {{ repo_appstream }}"
+          - "Patch Repo     : {{ repo_patch }}"
+
+    #######################################################################
+    # BACKUP EXISTING REPOSITORIES
+    #######################################################################
+    
+    - name: Create repository backup directory
+      raw: mkdir -p /etc/yum.repos.d/backup
+    
+    - name: Backup existing repositories
+      raw: |
+        sh -c '
+        mv /etc/yum.repos.d/*.repo \
+        /etc/yum.repos.d/backup/ 2>/dev/null || true
+        '
+    
+    #######################################################################
+    # TEMPORARY REPOSITORIES
+    #######################################################################
+    
+    - name: Configure temporary BaseOS repository
+      raw: |
+        cat >/etc/yum.repos.d/rocky9-baseos.repo <<EOF
+        [rocky9-baseos]
+        name=Rocky Linux 8 BaseOS
+        baseurl={{ repo_baseos }}
+        enabled=1
+        gpgcheck=0
+        EOF
+    
+    - name: Configure temporary AppStream repository
+      raw: |
+        cat >/etc/yum.repos.d/rocky9-appstream.repo <<EOF
+        [rocky9-appstream]
+        name=Rocky Linux 8 AppStream
+        baseurl={{ repo_appstream }}
+        enabled=1
+        gpgcheck=0
+        EOF
+    
+    - name: Configure temporary Installed Packages repository
+      raw: |
+        cat >/etc/yum.repos.d/rocky9-installed.repo <<EOF
+        [rocky9-installed]
+        name=Rocky Linux Installed Packages
+        baseurl={{ repo_patch }}
+        enabled=1
+        gpgcheck=0
+        EOF
+    
+    #######################################################################
+    # CLEAN CACHE
+    #######################################################################
+    
+    - name: Clean DNF cache
+      raw: yum clean all
+    
+    #######################################################################
+    # INSTALL SUBSCRIPTION MANAGER
+    #######################################################################
+    
+    - name: Install subscription-manager
+      raw: yum install -y subscription-manager
+    
+    #######################################################################
+    # INSTALL KATELLO CA
+    #######################################################################
+    
+    - name: Install Katello CA package
+      raw: rpm -Uvh {{ katello_ca_url }} --force
+    
+    #######################################################################
+    # REMOVE OLD REGISTRATION
+    #######################################################################
+    
+    - name: Remove existing subscription
+      raw: |
+        subscription-manager unregister || true
+        subscription-manager clean || true
+    
+    #######################################################################
+    # REGISTER
+    #######################################################################
+    
+    - name: Register with Foreman/Katello
+      raw: |
+        subscription-manager register \
+        --org="{{ organization }}" \
+        --activationkey="{{ activation_key }}" \
+        --force
+    
+    #######################################################################
+    # REMOVE TEMPORARY REPOSITORIES
+    #######################################################################
+    
+    - name: Remove temporary repositories
+      raw: |
+        rm -f \
+        /etc/yum.repos.d/rocky9-baseos.repo \
+        /etc/yum.repos.d/rocky9-appstream.repo \
+        /etc/yum.repos.d/rocky9-installed.repo
+    
+    #######################################################################
+    # REFRESH SUBSCRIPTION
+    #######################################################################
+    
+    - name: Refresh subscription
+      raw: subscription-manager refresh
+    
+    - name: Clean yum cache
+      raw: yum clean all
+    
+    #######################################################################
+    # VERIFY REPOSITORIES
+    #######################################################################
+    
+    - name: Verify enabled repositories
+      raw: yum repolist
+    
+    #######################################################################
+    # PATCH SYSTEM
+    #######################################################################
+    
+    - name: Apply updates
+      raw: |
+        dnf -y update --allowerasing
+      register: yum_update
+    
+    - name: Display yum update output
+      debug:
+        var: yum_update.stdout_lines
+    
+    #######################################################################
+    # CHECK IF REBOOT IS REQUIRED
+    #######################################################################
+    
+    - name: Get running kernel
+      raw: uname -r
+      register: running_kernel
+    
+    - name: Get latest installed kernel
+      raw: rpm -q kernel --last | head -1 | awk '{print $1}' | sed 's/kernel-//'
+      register: installed_kernel
+    
+    - name: Show kernel versions
+      debug:
+        msg:
+          - "Running Kernel : {{ running_kernel.stdout }}"
+          - "Installed Kernel: {{ installed_kernel.stdout }}"
+    
+    #######################################################################
+    # REBOOT
+    #######################################################################
+    
+    - name: Schedule reboot in 1 minute
+      raw: shutdown -r +1 "Reboot initiated by Ansible"
+      when:
+       - running_kernel.stdout | trim != installed_kernel.stdout | trim
+    
+    - name: Wait for reboot to complete
+      delegate_to: localhost
+      become: false
+      wait_for:
+        host: "{{ ansible_host | default(inventory_hostname) }}"
+        port: 22
+        delay: "{{ post_reboot_wait | int }}"
+        timeout: "{{ wait_for_up_timeout | int }}"
+        state: started
+      when:
+       - running_kernel.stdout | trim != installed_kernel.stdout | trim
+    
+    - name: Verify server is accessible after reboot
+      raw: uptime
+      register: uptime_result
+      retries: 10
+      delay: 15
+      until: uptime_result.rc == 0
+      when:
+       - running_kernel.stdout | trim != installed_kernel.stdout | trim
+    
+    ###########################################################################
+    # FINAL STATUS
+    ###########################################################################
+    
+    - name: Show completion
+      debug:
+        msg:
+          - >-
+            {{
+              'System is already up-to-date.'
+              if 'Nothing to do.' in yum_update.stdout
+              else 'Patching completed successfully.'
+            }}
+          - "Host: {{ inventory_hostname }}"
+          - >-
+            {{
+              'Reboot completed successfully.'
+              if (running_kernel.stdout | trim != installed_kernel.stdout | trim)
+              else 'Reboot not required. System is already running the latest kernel.'
+            }}
