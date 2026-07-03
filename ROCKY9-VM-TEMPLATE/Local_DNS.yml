@@ -1,0 +1,129 @@
+---
+- name: Create DNS records in Technitium DNS
+  hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
+  gather_facts: false
+  vars:
+    # Technitium DNS API
+    dns_server: "192.168.253.1:5380"
+    # DNS server IP (used for nslookup only)
+    dns_server_ip: "192.168.253.1"
+    # API Token
+    dns_token: "9a3e274c36aee5b2d8075c6411af68756f0434a5be500d54af5d3d95ddbd7fe4"
+  tasks:
+    ###########################################################################
+    # Determine Target IP
+    ###########################################################################
+    - name: Determine target IP
+      set_fact:
+        target_ip: >-
+          {{
+            primary_ip4.address.split('/')[0]
+            if (primary_ip4 is mapping)
+            else (primary_ip4 | string)
+          }}
+    ###########################################################################
+    # Validate Variables
+    ###########################################################################
+    - name: Validate required variables
+      assert:
+        that:
+          - inventory_hostname | length > 0
+          - target_ip | length > 0
+        fail_msg: "inventory_hostname and target_ip must be available."
+    ###########################################################################
+    # Calculate DNS Information
+    ###########################################################################
+    - name: Calculate DNS information
+      set_fact:
+        short_hostname: "{{ inventory_hostname.split('.')[0] }}"
+        dns_zone: "{{ inventory_hostname.split('.', 1)[1] }}"
+        reverse_zone: "{{ target_ip.split('.')[2] }}.{{ target_ip.split('.')[1] }}.{{ target_ip.split('.')[0] }}.in-addr.arpa"
+        last_octet: "{{ target_ip.split('.')[-1] }}"
+    ###########################################################################
+    # Display Information
+    ###########################################################################
+    - name: Display calculated values
+      debug:
+        msg:
+          - "FQDN          : {{ inventory_hostname }}"
+          - "Hostname      : {{ short_hostname }}"
+          - "DNS Zone      : {{ dns_zone }}"
+          - "IP Address    : {{ target_ip }}"
+          - "Reverse Zone  : {{ reverse_zone }}"
+          - "PTR Record    : {{ last_octet }}"
+    ###########################################################################
+    # Create A Record
+    ###########################################################################
+    - name: Create A Record
+      delegate_to: localhost
+      uri:
+        url: "http://{{ dns_server }}/api/zones/records/add?token={{ dns_token }}&zone={{ dns_zone | urlencode }}&domain={{ inventory_hostname | urlencode }}&type=A&ttl=3600&ipAddress={{ target_ip }}&ptr=false&createPtrZone=false&updateSvcbHints=false"
+        method: GET
+        return_content: true
+        validate_certs: false
+        status_code: 200
+      register: a_record_result
+    - name: Show A Record Response
+      debug:
+        var: a_record_result.json
+    ###########################################################################
+    # Create PTR Record
+    ###########################################################################
+    - name: Create PTR Record
+      delegate_to: localhost
+      uri:
+        url: "http://{{ dns_server }}/api/zones/records/add?token={{ dns_token }}&zone={{ reverse_zone | urlencode }}&domain={{ last_octet }}.{{ reverse_zone }}&type=PTR&ttl=3600&ptrName={{ inventory_hostname | urlencode }}"
+        method: GET
+        return_content: true
+        validate_certs: false
+        status_code: 200
+      register: ptr_record_result
+    - name: Show PTR Record Response
+      debug:
+        var: ptr_record_result.json
+    ###########################################################################
+    # Verify Forward DNS
+    ###########################################################################
+    - name: Verify Forward DNS
+      delegate_to: localhost
+      command:
+        argv:
+          - nslookup
+          - "{{ inventory_hostname }}"
+          - "{{ dns_server_ip }}"
+      register: forward_lookup
+      changed_when: false
+      failed_when: false
+    - name: Show Forward Lookup
+      debug:
+        var: forward_lookup.stdout_lines
+
+    ###########################################################################
+    # Verify Reverse DNS
+    ###########################################################################
+    - name: Verify Reverse DNS
+      delegate_to: localhost
+      command:
+        argv:
+          - nslookup
+          - "{{ target_ip }}"
+          - "{{ dns_server_ip }}"
+      register: reverse_lookup
+      changed_when: false
+      failed_when: false
+    - name: Show Reverse Lookup
+      debug:
+        var: reverse_lookup.stdout_lines
+    ###########################################################################
+    # Summary
+    ###########################################################################
+    - name: Summary
+      debug:
+        msg:
+          - "========================================="
+          - "DNS record creation completed."
+          - "Host         : {{ inventory_hostname }}"
+          - "IP Address   : {{ target_ip }}"
+          - "Forward Zone : {{ dns_zone }}"
+          - "Reverse Zone : {{ reverse_zone }}"
+          - "========================================="
