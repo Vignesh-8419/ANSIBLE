@@ -693,6 +693,70 @@ echo
 echo "Offline patching templates completed."
 
 # ==============================================================
+# Offline_Patching_el9
+# ==============================================================
+
+awx-manage shell <<'EOF'
+from awx.main.models import Inventory, Project, JobTemplate, Credential
+
+project = Project.objects.get(name="Inventory-Git-Repo")
+inventory = Inventory.objects.get(name="rocky-9-servers")
+credential = Credential.objects.get(name="Linux Root Credential")
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="Offline_Patching_el9",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "offline_patching_el9/offline-patch-el9.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
+    }
+)
+
+jt.project = project
+jt.inventory = inventory
+jt.playbook = "offline_patching_el9/offline-patch-el9.yml"
+
+# Fixed inventory
+jt.ask_inventory_on_launch = False
+
+# Disable Limit
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more Rocky Linux 9 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: rocky-09-01 or rocky-09-01,rocky-09-02 or rocky-09-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-09-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.save()
+
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+print(f"Offline_Patching_el9 {'created' if created else 'updated'}")
+EOF
+
+echo
+echo "Offline patching EL9 template completed."
+
+# ==============================================================
 # Disable_SELinux_el7
 # ==============================================================
 
@@ -823,6 +887,70 @@ print(
 print(f"Credential assigned: {credential.name}")
 EOF
 
+# ==============================================================
+# Disable_SELinux_el9
+# ==============================================================
+
+awx-manage shell <<'EOF'
+from awx.main.models import Inventory, Project, JobTemplate, Credential
+
+project = Project.objects.get(name="Inventory-Git-Repo")
+inventory = Inventory.objects.get(name="rocky-9-servers")
+credential = Credential.objects.get(name="Linux Root Credential")
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="Disable_SELinux_el9",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "Disable_SELinux_el9.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
+    }
+)
+
+jt.project = project
+jt.inventory = inventory
+jt.playbook = "Disable_SELinux_el9.yml"
+
+# Fixed inventory
+jt.ask_inventory_on_launch = False
+
+# Disable Limit
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more Rocky Linux 9 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: rocky-09-01 or rocky-09-01,rocky-09-02 or rocky-09-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-09-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.save()
+
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+print(
+    f"Job Template 'Disable_SELinux_el9' "
+    f"{'created' if created else 'updated'} successfully."
+)
+print(f"Credential assigned: {credential.name}")
+EOF
 
 # ==============================================================
 # Verify Job Templates
@@ -1255,6 +1383,70 @@ print(
 EOF
 
 # ==============================================================
+# Subscription_Patching_EL9
+# ==============================================================
+
+awx-manage shell <<'EOF'
+from awx.main.models import (
+    Inventory,
+    Project,
+    JobTemplate,
+    Credential
+)
+
+project = Project.objects.get(name="Inventory-Git-Repo")
+inventory = Inventory.objects.get(name="rocky-9-servers")
+credential = Credential.objects.get(name="Linux Root Credential")
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="Subscription_Patching_EL9",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "subscription_patching/patch-el9.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": False
+    }
+)
+
+jt.project = project
+jt.inventory = inventory
+jt.playbook = "subscription_patching/patch-el9.yml"
+jt.ask_inventory_on_launch = False
+jt.ask_limit_on_launch = False
+
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+survey_spec = {
+    "name": "target_hosts",
+    "description": "Rocky Linux 9 Subscription Patching",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Enter host or host pattern",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-09-*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.survey_enabled = True
+jt.survey_spec = survey_spec
+
+jt.save()
+
+print(
+    f"Subscription_Patching_EL9 "
+    f"{'created' if created else 'updated'}"
+)
+EOF
+
+# ==============================================================
 # CENTOSTOROCKY
 # ==============================================================
 
@@ -1677,6 +1869,125 @@ echo
 echo "Provision_Hosts_el8 completed successfully."
 
 # ==============================================================
+# Provision_Hosts_el9
+# ==============================================================
+
+awx-manage shell <<'EOF'
+from awx.main.models import (
+    Inventory,
+    Project,
+    JobTemplate,
+    Credential
+)
+
+project = Project.objects.get(name="Inventory-Git-Repo")
+inventory = Inventory.objects.get(name="rocky-9-servers")
+credential = Credential.objects.get(name="Linux Root Credential")
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="Provision_Hosts_el9",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "provision_hosts_el9/Foreman_provision_hosts_el9.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": False,
+        "limit": "localhost"
+    }
+)
+
+jt.project = project
+jt.inventory = inventory
+jt.playbook = "provision_hosts_el9/Foreman_provision_hosts_el9.yml"
+
+jt.ask_inventory_on_launch = False
+jt.ask_limit_on_launch = False
+jt.limit = "localhost"
+
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+survey_spec = {
+    "name": "Provision_Hosts_el9",
+    "description": "Provision EL9 Hosts",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Hostname(s) or wildcard (example: rocky-09-01,rocky-09-03 or rocky-09-*)",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-09-*",
+            "min": 1,
+            "max": 1024
+        },
+        {
+            "type": "integer",
+            "question_name": "Foreman Server",
+            "question_description": "1 = Frontend (rocky-08-01), 2 = Backend (cent-07-01)",
+            "variable": "foreman_server",
+            "required": False,
+            "default": 1,
+            "min": 1,
+            "max": 2
+        },
+        {
+            "type": "integer",
+            "question_name": "Host Group",
+            "question_description": "1 = Rocky 9 (Default), 2 = Rocky 8, 3 = CentOS 7",
+            "variable": "hostgroup",
+            "required": False,
+            "default": 1,
+            "min": 1,
+            "max": 3
+        }
+    ]
+}
+
+jt.survey_enabled = True
+jt.survey_spec = survey_spec
+
+jt.save()
+
+print(
+    f"Provision_Hosts_el9 "
+    f"{'created' if created else 'updated'} successfully."
+)
+print(f"Credential assigned: {credential.name}")
+print("Default Limit: localhost")
+print("Survey enabled.")
+EOF
+
+
+# ==============================================================
+# Verify Provision_Hosts_el9
+# ==============================================================
+
+awx-manage shell <<'EOF'
+from awx.main.models import JobTemplate
+
+jt = JobTemplate.objects.get(name="Provision_Hosts_el9")
+
+print()
+print("Template :", jt.name)
+print("Playbook :", jt.playbook)
+print("Inventory:", jt.inventory.name)
+print("Limit    :", jt.limit)
+print("Survey   :", jt.survey_enabled)
+
+print("\nCredentials")
+for c in jt.credentials.all():
+    print(" -", c.name)
+
+print("\nSurvey Variables")
+for q in jt.survey_spec["spec"]:
+    print(f" - {q['variable']} (default={q.get('default')})")
+EOF
+
+echo
+echo "Provision_Hosts_el9 completed successfully."
+
+# ==============================================================
 # Workflow : Provision_Hosts_el7_Subscription_Patching_EL7
 # ==============================================================
 
@@ -1954,6 +2265,145 @@ EOF
 echo
 echo "Provision_Hosts_el8_Subscription_Patching_EL8 workflow completed successfully."
 
+
+# ==============================================================
+# Workflow : Provision_Hosts_el9_Subscription_Patching_EL9
+# ==============================================================
+
+awx-manage shell <<'EOF'
+from awx.main.models import (
+    WorkflowJobTemplate,
+    WorkflowJobTemplateNode,
+    JobTemplate,
+    Credential,
+    Inventory,
+    Organization
+)
+
+ORG_NAME = "Default"
+WORKFLOW_NAME = "Provision_Hosts_el9_Subscription_Patching_EL9"
+
+JT1_NAME = "Provision_Hosts_el9"
+JT2_NAME = "Subscription_Patching_EL9"
+
+CREDENTIAL_NAME = "Linux Root Credential"
+INVENTORY_NAME = "rocky-9-servers"
+
+org = Organization.objects.get(name=ORG_NAME)
+
+jt1 = JobTemplate.objects.get(name=JT1_NAME)
+jt2 = JobTemplate.objects.get(name=JT2_NAME)
+
+cred = Credential.objects.get(name=CREDENTIAL_NAME)
+inv = Inventory.objects.get(name=INVENTORY_NAME)
+
+wf, created = WorkflowJobTemplate.objects.get_or_create(
+    name=WORKFLOW_NAME,
+    organization=org
+)
+
+# --------------------------------------------------------------
+# Remove existing workflow nodes
+# --------------------------------------------------------------
+wf.workflow_job_template_nodes.all().delete()
+
+# --------------------------------------------------------------
+# Workflow Configuration
+# --------------------------------------------------------------
+wf.inventory = inv
+wf.ask_inventory_on_launch = False
+wf.ask_limit_on_launch = False
+wf.ask_credential_on_launch = False
+wf.ask_variables_on_launch = True
+wf.limit = "localhost"
+
+# --------------------------------------------------------------
+# Workflow Survey
+# --------------------------------------------------------------
+wf.survey_enabled = True
+wf.survey_spec = {
+    "name": "target_hosts",
+    "description": "Provision Hosts + Subscription Patching (EL9)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Enter host(s) to provision and patch",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-09-*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+wf.save()
+
+# --------------------------------------------------------------
+# Assign Credential
+# --------------------------------------------------------------
+wf.credentials.clear()
+wf.credentials.add(cred)
+
+# --------------------------------------------------------------
+# Create Workflow Nodes
+# --------------------------------------------------------------
+n1 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt1
+)
+
+n2 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt2
+)
+
+# --------------------------------------------------------------
+# Execution Flow
+# --------------------------------------------------------------
+n1.success_nodes.add(n2)
+
+print(
+    f"Workflow '{wf.name}' "
+    f"{'created' if created else 'updated'} successfully."
+)
+
+print()
+print("Execution Order")
+print("----------------")
+print(jt1.name)
+print("   |")
+print("   v")
+print(jt2.name)
+EOF
+
+
+# ==============================================================
+# Verify Provision_Hosts_el9_Subscription_Patching_EL9
+# ==============================================================
+
+awx-manage shell <<'EOF'
+from awx.main.models import WorkflowJobTemplate
+
+wf = WorkflowJobTemplate.objects.get(
+    name="Provision_Hosts_el9_Subscription_Patching_EL9"
+)
+
+print()
+print("Workflow   :", wf.name)
+print("Inventory  :", wf.inventory.name)
+print("Limit      :", wf.limit)
+print("Ask Limit  :", wf.ask_limit_on_launch)
+print("Survey     :", wf.survey_enabled)
+
+print("\nWorkflow Nodes")
+for node in wf.workflow_job_template_nodes.all():
+    print(" -", node.unified_job_template.name)
+EOF
+
+echo
+echo "Provision_Hosts_el9_Subscription_Patching_EL9 workflow completed successfully."
 
 # ==============================================================
 # Final Verification
