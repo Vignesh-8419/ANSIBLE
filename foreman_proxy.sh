@@ -176,6 +176,20 @@ foreman-installer \
   --foreman-proxy-tftp true \
   --foreman-proxy-tftp-servername "${FOREMAN_PROXY}"
 
+echo "Configuring DHCP default gateway..."
+
+# Add router option only if it doesn't already exist
+if ! grep -q "option routers" /etc/dhcp/dhcpd.conf; then
+    sed -i '/option subnet-mask/a\  option routers 192.168.253.2;' \
+        /etc/dhcp/dhcpd.conf
+fi
+
+# Make DHCP authoritative (recommended)
+sed -i 's/^not authoritative;/authoritative;/' /etc/dhcp/dhcpd.conf
+
+systemctl restart dhcpd
+systemctl enable dhcpd
+
 
 sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@rocky-08-03.vgs.com:/boot/efi/EFI/rocky/shimx64.efi /var/lib/tftpboot/grub2/
 sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@rocky-08-03.vgs.com:/boot/efi/EFI/rocky/grub.cfg /var/lib/tftpboot/grub2/
