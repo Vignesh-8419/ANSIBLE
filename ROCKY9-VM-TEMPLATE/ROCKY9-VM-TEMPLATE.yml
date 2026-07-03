@@ -1,4 +1,4 @@
 ---
 - import_playbook: Local_DNS.yml
 
-- import_playbook: Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_08.yml
+- import_playbook: Netbox-AWX-GOLDENTEMPLATE_ROCKYOS_09.yml
