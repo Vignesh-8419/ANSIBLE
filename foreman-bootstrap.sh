@@ -732,7 +732,7 @@ else
         --domain "vgs.com" \
         --subnet "vgs-subnet-centos" \
         --content-source "cent-07-01.vgs.com" \
-        --content-view "Default Organization View" \
+        --content-view "CentOS7-CV" \
         --lifecycle-environment "Library"
 
     if [ $? -eq 0 ]; then
@@ -773,7 +773,7 @@ else
         --domain "vgs.com" \
         --subnet "vgs-subnet-rockyos" \
         --content-source "cent-07-01.vgs.com" \
-        --content-view "Default Organization View" \
+        --content-view "Rocky8-CV" \
         --lifecycle-environment "Library"
 
     if [ $? -eq 0 ]; then
@@ -814,7 +814,7 @@ else
         --domain "vgs.com" \
         --subnet "vgs-subnet-rockyos" \
         --content-source "cent-07-01.vgs.com" \
-        --content-view "Default Organization View" \
+        --content-view "Rocky9-CV" \
         --lifecycle-environment "Library"
 
     if [ $? -eq 0 ]; then
@@ -1714,7 +1714,20 @@ create_activation_key() {
         --organization "Default Organization" \
         --name "$KEY" >/dev/null 2>&1; then
 
-        skip "Activation Key already exists."
+    info "Activation Key already exists. Updating Content View..."
+    
+    $HAMMER activation-key update \
+        --organization "Default Organization" \
+        --name "$KEY" \
+        --content-view "$CV" \
+        --lifecycle-environment "Library"
+    
+    if [ $? -eq 0 ]; then
+        ok "Activation Key updated."
+    else
+        error "Activation Key update failed."
+        record_failure "Activation Key : $KEY"
+    fi
 
     else
 
