@@ -1002,6 +1002,30 @@ fi
 
 echo
 
+echo
+
+info "Attaching Rocky Linux 9 subscription..."
+
+OUTPUT=$(
+$HAMMER activation-key add-subscription \
+    --organization "Default Organization" \
+    --name "rocky9-prod-key" \
+    --subscription-id "$ROCKY9_SUB_ID" 2>&1
+)
+
+echo "$OUTPUT"
+
+if echo "$OUTPUT" | grep -qi "already"; then
+    skip "Rocky Linux 9 subscription already attached."
+elif echo "$OUTPUT" | grep -qi "added"; then
+    ok "Rocky Linux 9 subscription attached."
+elif [ $? -eq 0 ]; then
+    ok "Rocky Linux 9 subscription attached."
+else
+    error "Rocky Linux 9 subscription attachment failed."
+    record_failure "rocky9-prod-key"
+fi
+
 ###############################################################################
 # Verification
 ###############################################################################
