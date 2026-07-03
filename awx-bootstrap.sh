@@ -529,6 +529,63 @@ jt.save()
 print(f"CENTOS-VM-TEMPLATE {'created' if created else 'updated'}")
 EOF
 
+# ==============================================================
+# ROCKY9-VM-TEMPLATE Job Template
+# ==============================================================
+
+awx-manage shell <<'EOF'
+from awx.main.models import Inventory, Project, JobTemplate
+
+project = Project.objects.get(name="Inventory-Git-Repo")
+inventory = Inventory.objects.get(name="rocky-9-servers")
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="ROCKY9-VM-TEMPLATE",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "ROCKY9-VM-TEMPLATE/ROCKY9-VM-TEMPLATE.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
+    }
+)
+
+jt.project = project
+jt.inventory = inventory
+jt.playbook = "ROCKY9-VM-TEMPLATE/ROCKY9-VM-TEMPLATE.yml"
+
+# No inventory prompt
+jt.ask_inventory_on_launch = False
+
+# Disable Limit prompt
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more Rocky Linux 9 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: rocky-09-01 or rocky-09-01,rocky-09-02 or rocky-09-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-09-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.save()
+
+print(f"ROCKY9-VM-TEMPLATE {'created' if created else 'updated'}")
+EOF
+
 
 # ==============================================================
 # Local_DNS Job Template
@@ -1261,6 +1318,115 @@ EOF
 
 echo
 echo "ROCKY Workflow created successfully."
+
+# ==============================================================
+# Workflow : ROCKY9-VM-TEMPLATE-WF
+# ==============================================================
+
+awx-manage shell <<'EOF'
+from awx.main.models import (
+    WorkflowJobTemplate,
+    WorkflowJobTemplateNode,
+    JobTemplate,
+    Credential,
+    Inventory,
+    Organization
+)
+
+ORG_NAME = "Default"
+WORKFLOW_NAME = "ROCKY9-VM-TEMPLATE-WF"
+
+JT1_NAME = "ROCKY9-VM-TEMPLATE"
+JT2_NAME = "Disable_SELinux_el9"
+JT3_NAME = "Offline_Patching_el9"
+
+CREDENTIAL_NAME = "Linux Root Credential"
+INVENTORY_NAME = "rocky-9-servers"
+
+org = Organization.objects.get(name=ORG_NAME)
+
+jt1 = JobTemplate.objects.get(name=JT1_NAME)
+jt2 = JobTemplate.objects.get(name=JT2_NAME)
+jt3 = JobTemplate.objects.get(name=JT3_NAME)
+
+cred = Credential.objects.get(name=CREDENTIAL_NAME)
+inv = Inventory.objects.get(name=INVENTORY_NAME)
+
+wf, created = WorkflowJobTemplate.objects.get_or_create(
+    name=WORKFLOW_NAME,
+    organization=org
+)
+
+# Remove existing workflow nodes
+wf.workflow_job_template_nodes.all().delete()
+
+# Fixed inventory and credential
+wf.inventory = inv
+
+# Disable launch prompts
+wf.ask_inventory_on_launch = False
+wf.ask_limit_on_launch = False
+wf.ask_credential_on_launch = False
+
+# Enable survey
+wf.survey_enabled = True
+wf.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more Rocky Linux 9 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: rocky-09-01 or rocky-09-01,rocky-09-02 or rocky-09-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-09-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+wf.save()
+
+wf.credentials.clear()
+wf.credentials.add(cred)
+
+# Create workflow nodes
+n1 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt1
+)
+
+n2 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt2
+)
+
+n3 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt3
+)
+
+# Execution order
+n1.success_nodes.add(n2)
+n2.success_nodes.add(n3)
+
+print(f"Workflow '{wf.name}' {'created' if created else 'updated'}")
+print()
+print("Execution Order")
+print("----------------")
+print(jt1.name)
+print("   |")
+print("   v")
+print(jt2.name)
+print("   |")
+print("   v")
+print(jt3.name)
+EOF
+
+echo
+echo "ROCKY 9 Workflow created successfully."
 
 
 # ==============================================================
