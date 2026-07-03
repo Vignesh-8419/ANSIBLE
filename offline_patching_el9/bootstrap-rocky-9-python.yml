@@ -1,0 +1,82 @@
+---
+- name: Bootstrap Python 3.12 on managed hosts
+#  hosts: "{{ target_hosts.split(',') | map('trim') | reject('equalto', '') | map('regex_replace', '$', '.vgs.com') | join(',') }}"
+  hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: Check if Python 3.12 is already installed
+      raw: test -x /usr/bin/python3.12
+      register: python3_12_check
+      changed_when: false
+      failed_when: false
+
+    - name: Backup existing yum repository files
+      raw: |
+        mkdir -p /etc/yum.repos.d/backup
+        if ls /etc/yum.repos.d/*.repo >/dev/null 2>&1; then
+          cp -f /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/
+        fi
+      changed_when: true
+
+    - name: Remove existing repository files
+      raw: |
+        rm -f /etc/yum.repos.d/*.repo
+      changed_when: true
+
+    - name: Create Rocky Linux 8 BaseOS repository
+      raw: |
+        cat > /etc/yum.repos.d/rocky8-baseos.repo <<'EOF'
+        [rocky8-baseos]
+        name=Rocky Linux 8 BaseOS
+        baseurl=http://192.168.253.136/repo/rocky8/BaseOS
+        enabled=1
+        gpgcheck=0
+        EOF
+
+    - name: Create Rocky Linux 8 AppStream repository
+      raw: |
+        cat > /etc/yum.repos.d/rocky8-appstream.repo <<'EOF'
+        [rocky8-appstream]
+        name=Rocky Linux 8 AppStream
+        baseurl=http://192.168.253.136/repo/rocky8/Appstream
+        enabled=1
+        gpgcheck=0
+        EOF
+
+    - name: Create Rocky Linux 8 Installed RHEL repository
+      raw: |
+        cat > /etc/yum.repos.d/rocky8-rhel-installed.repo <<'EOF'
+        [rocky8-rhel-installed]
+        name=Rocky Linux 8 Installed RHEL
+        baseurl=http://192.168.253.136/repo/installed_rhel8
+        enabled=1
+        gpgcheck=0
+        EOF
+
+    - name: Clean DNF cache
+      raw: dnf clean all
+
+    - name: Rebuild DNF cache
+      raw: dnf makecache
+
+    - name: Install Python 3.12
+      raw: |
+        dnf install -y python3.12
+      when: python3_12_check.rc != 0
+
+    - name: Set Python interpreter for subsequent tasks
+      set_fact:
+        ansible_python_interpreter: /usr/bin/python3.12
+
+    - name: Verify Python 3.12 installation
+      raw: /usr/bin/python3.12 --version
+      register: python_version
+
+    - name: Reset SSH connection
+      meta: reset_connection
+
+    - name: Display installed version
+      debug:
+        var: python_version.stdout
