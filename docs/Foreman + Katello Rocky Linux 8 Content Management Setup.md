@@ -362,25 +362,25 @@ dnf update
 mkdir /etc/yum.repos.d/backup
 mv /etc/yum.repos.d/* /etc/yum.repos.d/backup/
 
-cat <<EOF > /etc/yum.repos.d/rocky8-baseos.repo
-[rocky8-baseos]
-name=Rocky Linux 8 BaseOS
-baseurl=http://192.168.253.136/repo/rocky8/BaseOS
+cat <<EOF > /etc/yum.repos.d/rocky9-baseos.repo
+[rocky9-baseos]
+name=Rocky Linux 9 BaseOS
+baseurl=http://192.168.253.136/repo/rocky9/BaseOS
 enabled=1
 EOF
 
-cat <<EOF > /etc/yum.repos.d/rocky8-appstream.repo
-[rocky8-appstream]
-name=Rocky Linux 8 AppStream
-baseurl=http://192.168.253.136/repo/rocky8/Appstream
+cat <<EOF > /etc/yum.repos.d/rocky9-appstream.repo
+[rocky9-appstream]
+name=Rocky Linux 9 AppStream
+baseurl=http://192.168.253.136/repo/rocky9/Appstream
 enabled=1
 gpgcheck=0
 EOF
 
-cat <<EOF > /etc/yum.repos.d/rocky8-rhel-installed.repo
-[rocky8-rhel-installed]
-name=Rocky Linux 8 Installed RHEL
-baseurl=http://192.168.253.136/repo/installed_rhel8
+cat <<EOF > /etc/yum.repos.d/rocky9-rhel-installed.repo
+[rocky9-rhel-installed]
+name=Rocky Linux 9 Installed RHEL
+baseurl=http://192.168.253.136/repo/installed_rhel9
 enabled=1
 gpgcheck=0
 EOF
