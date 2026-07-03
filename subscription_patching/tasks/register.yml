@@ -73,6 +73,14 @@
       /etc/yum.repos.d/rocky8-installed.repo
   failed_when: false
 
+- name: Remove EL8 temporary repositories
+  raw: |
+    rm -f \
+      /etc/yum.repos.d/rocky9-baseos.repo \
+      /etc/yum.repos.d/rocky9-appstream.repo \
+      /etc/yum.repos.d/rocky9-installed.repo
+  failed_when: false
+
 ###########################################################################
 # CLEAN CACHE
 ###########################################################################
