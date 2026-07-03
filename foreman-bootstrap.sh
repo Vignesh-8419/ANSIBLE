@@ -1953,14 +1953,14 @@ echo
 info "CentOS 7"
 
 echo "subscription-manager register \\"
-echo "  --org=\"Default Organization\" \\"
+echo "  --org=\"Default_Organization\" \\"
 echo "  --activationkey=\"centos7-prod-key\""
 
 echo
 info "Rocky Linux 8"
 
 echo "subscription-manager register \\"
-echo "  --org=\"Default Organization\" \\"
+echo "  --org=\"Default_Organization\" \\"
 echo "  --activationkey=\"rocky8-prod-key\""
 
 echo
@@ -1969,7 +1969,7 @@ echo
 info "Rocky Linux 9"
 
 echo "subscription-manager register \\"
-echo "  --org=\"Default Organization\" \\"
+echo "  --org=\"Default_Organization\" \\"
 echo "  --activationkey=\"rocky9-prod-key\""
 
 echo
