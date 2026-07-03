@@ -348,6 +348,73 @@ echo "Part 1 - Chunk 2 completed successfully."
 echo "---------------------------------------------------------"
 
 # ==============================================================
+# Enable_Passwordless_SSH
+# ==============================================================
+
+awx-manage shell <<'EOF'
+from awx.main.models import Project, JobTemplate, Credential
+
+project = Project.objects.get(name="Inventory-Git-Repo")
+credential = Credential.objects.get(name="Linux Root Credential")
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="Enable_Passwordless_SSH",
+    defaults={
+        "project": project,
+        "playbook": "enable_passwordless_ssh/enable_passwordless_ssh.yml",
+        "ask_inventory_on_launch": True,
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
+    }
+)
+
+jt.project = project
+jt.inventory = None                    # No fixed inventory
+jt.playbook = "enable_passwordless_ssh/enable_passwordless_ssh.yml"
+
+# Prompt for Inventory
+jt.ask_inventory_on_launch = True
+
+# Disable Limit
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Select Inventory and enter target hosts",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: cent-07-01, rocky-08-01, rocky-09-01 or *",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.save()
+
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+print(
+    f"Enable_Passwordless_SSH "
+    f"{'created' if created else 'updated'} successfully."
+)
+print("Inventory: Prompt on Launch")
+print(f"Credential assigned: {credential.name}")
+EOF
+
+echo
+echo "Enable_Passwordless_SSH template completed successfully."
+
+# ==============================================================
 # ROCKYOS-VM-TEMPLATE Job Template
 # ==============================================================
 
