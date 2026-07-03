@@ -1,0 +1,191 @@
+---
+- name: Offline Infrastructure Patching Orchestrator
+#  hosts: "{{ target_hosts.split(',') | map('trim') | reject('equalto', '') | map('regex_replace', '$', '.vgs.com') | join(',') }}"
+  hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
+  become: yes
+  gather_facts: no
+  any_errors_fatal: false
+
+  vars:
+    backup_dir_name: "backup_repos_original"
+
+  pre_tasks:
+
+    - name: Load NetBox Context
+      set_fact:
+        nb_ctx: "{{ config_context[0] }}"
+
+    - name: Build Repository Variables
+      set_fact:
+        repo_url: "{{ nb_ctx.httpd_server_url | regex_replace('/$','') }}"
+        rocky9_baseos: "{{ (nb_ctx.repositories | selectattr('id','equalto','rocky9-baseos') | first).folder }}"
+        rocky9_appstream: "{{ (nb_ctx.repositories | selectattr('id','equalto','rocky9-appstream') | first).folder }}"
+        rocky9_installed_rhel: "{{ (nb_ctx.repositories | selectattr('id','equalto','rocky9-rhel-installed') | first).folder }}"
+
+  tasks:
+
+    - name: Display NetBox Context
+      debug:
+        msg:
+          - "Repository URL : {{ repo_url }}"
+          - "BaseOS Repo    : {{ rocky9_baseos }}"
+          - "AppStream Repo : {{ rocky9_appstream }}"
+          - "Installed Repo : {{ rocky9_installed_rhel }}"
+
+    - name: Display Target Environment Info
+      debug:
+        msg: "Processing Agent Node Workflow for {{ inventory_hostname }}"
+
+    - name: Verify DNS Resolution
+      shell: |
+        getent hosts {{ repo_url | regex_replace('^https?://','') | regex_replace('/.*$','') }}
+      register: dns_check
+      changed_when: false
+      failed_when: dns_check.rc != 0
+
+    - name: Verify BaseOS Repository Metadata
+      uri:
+        url: "{{ repo_url }}/{{ rocky9_baseos }}/repodata/repomd.xml"
+        method: GET
+        status_code: 200
+        timeout: 30
+
+    - name: Verify AppStream Repository Metadata
+      uri:
+        url: "{{ repo_url }}/{{ rocky9_appstream }}/repodata/repomd.xml"
+        method: GET
+        status_code: 200
+        timeout: 30
+
+    - name: Verify Installed RHEL Repository Metadata
+      uri:
+        url: "{{ repo_url }}/{{ rocky9_installed_rhel }}/repodata/repomd.xml"
+        method: GET
+        status_code: 200
+        timeout: 30
+
+    - name: Create Repository Backup Directory
+      file:
+        path: "/etc/yum.repos.d/{{ backup_dir_name }}"
+        state: directory
+        mode: "0755"
+
+    - name: Find Existing Repository Files
+      find:
+        paths: /etc/yum.repos.d
+        patterns: "*.repo"
+        file_type: file
+        depth: 1
+      register: found_repos
+
+    - name: Backup Existing Repository Files
+      command:
+        cmd: "mv {{ item.path }} /etc/yum.repos.d/{{ backup_dir_name }}/"
+      loop: "{{ found_repos.files }}"
+      when: found_repos.matched > 0
+
+    - block:
+
+        - name: Create Temporary BaseOS Repository
+          copy:
+            dest: /etc/yum.repos.d/rocky9-baseos.repo
+            mode: "0644"
+            content: |
+              [rocky9-baseos]
+              name=Rocky Linux 9 BaseOS
+              baseurl={{ repo_url }}/{{ rocky9_baseos }}
+              enabled=1
+              gpgcheck=0
+              sslverify=0
+
+        - name: Create Temporary AppStream Repository
+          copy:
+            dest: /etc/yum.repos.d/rocky9-appstream.repo
+            mode: "0644"
+            content: |
+              [rocky9-appstream]
+              name=Rocky Linux 9 AppStream
+              baseurl={{ repo_url }}/{{ rocky9_appstream }}
+              enabled=1
+              gpgcheck=0
+              sslverify=0
+
+        - name: Create Temporary Installed RHEL Repository
+          copy:
+            dest: /etc/yum.repos.d/rocky9-installed-rhel.repo
+            mode: "0644"
+            content: |
+              [rocky9-installed-rhel]
+              name=Rocky Linux 9 Installed RHEL Packages
+              baseurl={{ repo_url }}/{{ rocky9_installed_rhel }}
+              enabled=1
+              gpgcheck=0
+              sslverify=0
+
+        - name: Clean DNF Cache
+          command: dnf clean all
+
+        - name: Build DNF Cache
+          shell: |
+            dnf makecache \
+              --disablerepo='*' \
+              --enablerepo=rocky9-baseos,rocky9-appstream,rocky9-installed-rhel
+
+        - name: Execute Operating System Patching
+          shell: |
+            dnf update -y \
+              --disablerepo='*' \
+              --enablerepo=rocky9-baseos,rocky9-appstream,rocky9-installed-rhel \
+              --allowerasing \
+              --nobest
+          register: dnf_shell_output
+
+        - name: Display Patch Output
+          debug:
+            var: dnf_shell_output.stdout_lines
+
+        - name: Determine Whether Updates Were Installed
+          set_fact:
+            updates_installed: "{{ 'Nothing to do.' not in dnf_shell_output.stdout }}"
+
+        - name: Reboot If Updates Were Installed
+          reboot:
+            reboot_timeout: 900
+            msg: "Offline patching completed. Rebooting host."
+          when: updates_installed
+
+      rescue:
+
+        - name: Restore Original Repositories After Failure
+          shell: |
+            if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
+              mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
+              rmdir /etc/yum.repos.d/{{ backup_dir_name }} 2>/dev/null || true
+            fi
+
+        - name: Fail Playbook
+          fail:
+            msg: "Offline patching failed. Original repositories restored."
+
+      always:
+
+        - name: Remove Temporary Repository Files
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /etc/yum.repos.d/rocky9-baseos.repo
+            - /etc/yum.repos.d/rocky9-appstream.repo
+            - /etc/yum.repos.d/rocky9-installed-rhel.repo
+
+        - name: Restore Original Repository Files
+          shell: |
+            if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
+              mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
+              rmdir /etc/yum.repos.d/{{ backup_dir_name }} 2>/dev/null || true
+            fi
+          changed_when: true
+
+        - name: Final DNF Cleanup
+          command: dnf clean all
+          ignore_errors: true
