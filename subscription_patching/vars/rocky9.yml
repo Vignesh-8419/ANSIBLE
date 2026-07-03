@@ -1,0 +1,30 @@
+organization: "Default_Organization"
+
+activation_key: "rocky9-prod-key"
+
+katello_ca_url: "http://rocky-08-01.vgs.com/pub/katello-ca-consumer-latest.noarch.rpm"
+
+repo_baseos: "http://192.168.253.136/repo/rocky9/BaseOS"
+
+repo_appstream: "http://192.168.253.136/repo/rocky9/AppStream"
+
+repo_patch: "http://192.168.253.136/repo/installed_rhel9"
+
+package_manager: "dnf"
+
+reboot_delay: 60
+
+wait_for_down_timeout: 180
+
+wait_for_up_timeout: 300
+
+post_reboot_wait: 90
+
+subscription_manager_package: "subscription-manager"
+
+repo_backup_dir: "/etc/yum.repos.d/backup"
+
+repo_files:
+  - "/etc/yum.repos.d/rocky9-baseos.repo"
+  - "/etc/yum.repos.d/rocky9-appstream.repo"
+  - "/etc/yum.repos.d/rocky9-installed.repo"
