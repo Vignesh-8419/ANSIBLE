@@ -385,11 +385,12 @@ for inv_name, inv_file in configs:
         name=inv_name,
         inventory=inventory,
         defaults={
-            "source":"scm",
-            "source_project":project,
-            "source_path":inv_file,
-            "overwrite":True,
-            "update_on_launch":False
+            "source": "scm",
+            "source_project": project,
+            "source_path": inv_file,
+            "overwrite": True,
+            "update_on_launch": True,
+            "update_cache_timeout": 300
         }
     )
 
@@ -397,13 +398,16 @@ for inv_name, inv_file in configs:
     source.source_project = project
     source.source_path = inv_file
     source.overwrite = True
-    source.update_on_launch = False
+    source.update_on_launch = True
+    source.update_cache_timeout = 300
     source.save()
 
     print(
         f"Inventory Source '{inv_name}' "
         f"{'created' if created else 'updated'}"
     )
+
+print("\nInventory Sources configured successfully.")
 EOF
 
 # ==============================================================================
