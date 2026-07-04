@@ -92,14 +92,14 @@ echo
 echo "Running AWX Bootstrap..."
 echo
 
-# ==============================================================================
-# Netbox Credential Types
-# ==============================================================================
+# --------------------------------------------------------------
+# NetBox API Token Credential Type
+# --------------------------------------------------------------
 
 echo
-echo "=========================================================="
-echo " Creating Nebox Credential Types"
-echo "=========================================================="
+echo "----------------------------------------------------------"
+echo " Creating NetBox API Token Credential Type"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import CredentialType
@@ -181,9 +181,14 @@ print(
 )
 EOF
 
-# ==============================================================
+# --------------------------------------------------------------
 # Linux Root Credential
-# ==============================================================
+# --------------------------------------------------------------
+
+echo
+echo "----------------------------------------------------------"
+echo " Creating Linux Root Credential"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import (
@@ -259,6 +264,15 @@ echo "=========================================================="
 echo " Creating Projects"
 echo "=========================================================="
 
+# --------------------------------------------------------------
+# Inventory Git Repository
+# --------------------------------------------------------------
+
+echo
+echo "----------------------------------------------------------"
+echo " Creating Inventory Git Repository"
+echo "----------------------------------------------------------"
+
 awx-manage shell <<'EOF'
 from awx.main.models import Project, Organization
 
@@ -288,10 +302,14 @@ print(
 )
 EOF
 
+# --------------------------------------------------------------
+# SCM Inventory Sources
+# --------------------------------------------------------------
 
-# ==============================================================
-# Create SCM Inventory Sources
-# ==============================================================
+echo
+echo "----------------------------------------------------------"
+echo " Creating SCM Inventory Sources"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import (
@@ -368,7 +386,8 @@ from awx.main.models import Inventory, Host
 
 inventories = [
     "centos-07-servers",
-    "rocky-8-servers"
+    "rocky-8-servers",
+    "rocky-9-servers"
 ]
 
 for inv_name in inventories:
@@ -409,9 +428,14 @@ echo "=========================================================="
 echo " Creating Job Templates"
 echo "=========================================================="
 
-# ==============================================================
+# --------------------------------------------------------------
 # Enable_Passwordless_SSH
-# ==============================================================
+# --------------------------------------------------------------
+
+echo
+echo "----------------------------------------------------------"
+echo " Creating Enable_Passwordless_SSH"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import Project, JobTemplate, Credential
@@ -476,9 +500,14 @@ EOF
 echo
 echo "Enable_Passwordless_SSH template completed successfully."
 
-# ==============================================================
-# ROCKYOS-VM-TEMPLATE Job Template
-# ==============================================================
+# --------------------------------------------------------------
+# ROCKYOS-VM-TEMPLATE
+# --------------------------------------------------------------
+
+echo
+echo "----------------------------------------------------------"
+echo " Creating ROCKYOS-VM-TEMPLATE"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import Inventory, Project, JobTemplate
@@ -534,9 +563,14 @@ jt.save()
 print(f"ROCKYOS-VM-TEMPLATE {'created' if created else 'updated'}")
 EOF
 
-# ==============================================================
-# CENTOS-VM-TEMPLATE Job Template
-# ==============================================================
+# --------------------------------------------------------------
+# CENTOS-VM-TEMPLATE
+# --------------------------------------------------------------
+
+echo
+echo "----------------------------------------------------------"
+echo " Creating CENTOS-VM-TEMPLATE"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import Inventory, Project, JobTemplate
@@ -591,9 +625,14 @@ jt.save()
 print(f"CENTOS-VM-TEMPLATE {'created' if created else 'updated'}")
 EOF
 
-# ==============================================================
-# ROCKY9-VM-TEMPLATE Job Template
-# ==============================================================
+# --------------------------------------------------------------
+# ROCKY9-VM-TEMPLATE
+# --------------------------------------------------------------
+
+echo
+echo "----------------------------------------------------------"
+echo " Creating ROCKY9-VM-TEMPLATE"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import Inventory, Project, JobTemplate
@@ -649,9 +688,14 @@ print(f"ROCKY9-VM-TEMPLATE {'created' if created else 'updated'}")
 EOF
 
 
-# ==============================================================
-# Local_DNS Job Template
-# ==============================================================
+# --------------------------------------------------------------
+# Local_DNS
+# --------------------------------------------------------------
+
+echo
+echo "----------------------------------------------------------"
+echo " Creating Local_DNS"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import Project, JobTemplate
@@ -740,12 +784,6 @@ for c in Credential.objects.all():
     print(" -", c.name)
 EOF
 
-
-echo
-echo "=========================================================="
-echo " Part 1 Completed Successfully"
-echo "=========================================================="
-
 echo "Created:"
 echo "  ✓ NetBox Credential Type"
 echo "  ✓ NetBox Production Credential"
@@ -758,9 +796,14 @@ echo "  ✓ ROCKYOS-VM-TEMPLATE"
 echo "  ✓ CENTOS-VM-TEMPLATE"
 echo "  ✓ Local_DNS"
 
-# ==============================================================
+# --------------------------------------------------------------
 # Offline_Patching_el7
-# ==============================================================
+# --------------------------------------------------------------
+
+echo
+echo "----------------------------------------------------------"
+echo " Creating Offline_Patching_el7"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import Inventory, Project, JobTemplate, Credential
@@ -819,9 +862,14 @@ jt.credentials.add(credential)
 print(f"Offline_Patching_el7 {'created' if created else 'updated'}")
 EOF
 
-# ==============================================================
+# --------------------------------------------------------------
 # Offline_Patching_el8
-# ==============================================================
+# --------------------------------------------------------------
+
+echo
+echo "----------------------------------------------------------"
+echo " Creating Offline_Patching_el8"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import Inventory, Project, JobTemplate, Credential
@@ -883,9 +931,14 @@ EOF
 echo
 echo "Offline patching templates completed."
 
-# ==============================================================
+# --------------------------------------------------------------
 # Offline_Patching_el9
-# ==============================================================
+# --------------------------------------------------------------
+
+echo
+echo "----------------------------------------------------------"
+echo " Creating Offline_Patching_el9"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import Inventory, Project, JobTemplate, Credential
@@ -947,9 +1000,14 @@ EOF
 echo
 echo "Offline patching EL9 template completed."
 
-# ==============================================================
+# --------------------------------------------------------------
 # Disable_SELinux_el7
-# ==============================================================
+# --------------------------------------------------------------
+
+echo
+echo "----------------------------------------------------------"
+echo " Creating Disable_SELinux_el7"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import Inventory, Project, JobTemplate, Credential
@@ -1013,9 +1071,14 @@ print(f"Credential assigned: {credential.name}")
 EOF
 
 
-# ==============================================================
+# --------------------------------------------------------------
 # Disable_SELinux_el8
-# ==============================================================
+# --------------------------------------------------------------
+
+echo
+echo "----------------------------------------------------------"
+echo " Creating Disable_SELinux_el8"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import Inventory, Project, JobTemplate, Credential
@@ -1078,9 +1141,14 @@ print(
 print(f"Credential assigned: {credential.name}")
 EOF
 
-# ==============================================================
+# --------------------------------------------------------------
 # Disable_SELinux_el9
-# ==============================================================
+# --------------------------------------------------------------
+
+echo
+echo "----------------------------------------------------------"
+echo " Creating Disable_SELinux_el9"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import Inventory, Project, JobTemplate, Credential
@@ -1153,8 +1221,10 @@ from awx.main.models import JobTemplate
 templates = [
     "Offline_Patching_el7",
     "Offline_Patching_el8",
+    "Offline_Patching_el9",
     "Disable_SELinux_el7",
-    "Disable_SELinux_el8"
+    "Disable_SELinux_el8",
+    "Disable_SELinux_el9"
 ]
 
 print("\nVerification\n")
@@ -1176,9 +1246,14 @@ echo "=========================================================="
 echo " Creating Workflow Templates"
 echo "=========================================================="
 
-# ==============================================================
+# --------------------------------------------------------------
 # Workflow : CENTOS-VM-TEMPLATE-WF
-# ==============================================================
+# --------------------------------------------------------------
+
+echo
+echo "----------------------------------------------------------"
+echo " Creating Workflow: CENTOS-VM-TEMPLATE-WF"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import (
@@ -1281,9 +1356,14 @@ EOF
 echo
 echo "CENTOS Workflow created successfully."
 
-# ==============================================================
+# --------------------------------------------------------------
 # Workflow : ROCKYOS-VM-TEMPLATE-WF
-# ==============================================================
+# --------------------------------------------------------------
+
+echo
+echo "----------------------------------------------------------"
+echo " Creating Workflow: ROCKYOS-VM-TEMPLATE-WF"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import (
@@ -1390,9 +1470,14 @@ EOF
 echo
 echo "ROCKY Workflow created successfully."
 
-# ==============================================================
+# --------------------------------------------------------------
 # Workflow : ROCKY9-VM-TEMPLATE-WF
-# ==============================================================
+# --------------------------------------------------------------
+
+echo
+echo "----------------------------------------------------------"
+echo " Creating Workflow: ROCKY9-VM-TEMPLATE-WF"
+echo "----------------------------------------------------------"
 
 awx-manage shell <<'EOF'
 from awx.main.models import (
@@ -1518,17 +1603,20 @@ EOF
 
 echo
 echo "==========================================================="
-echo " PART 2 COMPLETED SUCCESSFULLY"
+echo " Workflow Templates Completed "
 echo "==========================================================="
 
 echo
 echo "Created:"
-echo "  ✓ Offline_Patching_el7"
-echo "  ✓ Offline_Patching_el8"
-echo "  ✓ Disable_SELinux_el7"
-echo "  ✓ Disable_SELinux_el8"
-echo "  ✓ CENTOS-VM-TEMPLATE-WF"
-echo "  ✓ ROCKYOS-VM-TEMPLATE-WF"
+echo " ✓ Offline_Patching_el7"
+echo " ✓ Offline_Patching_el8 "
+echo " ✓ Offline_Patching_el9 "
+echo " ✓ Disable_SELinux_el7 "
+echo " ✓ Disable_SELinux_el8 "
+echo " ✓ Disable_SELinux_el9 "
+echo " ✓ CENTOS-VM-TEMPLATE-WF "
+echo " ✓ ROCKYOS-VM-TEMPLATE-WF "
+echo " ✓ ROCKY9-VM-TEMPLATE-WF "
 
 # ==============================================================
 # Subscription_Patching_EL7
@@ -1745,6 +1833,23 @@ print(
     f"Subscription_Patching_EL9 "
     f"{'created' if created else 'updated'}"
 )
+EOF
+
+awx-manage shell <<'EOF'
+from awx.main.models import JobTemplate
+
+jt = JobTemplate.objects.get(
+    name="Subscription_Patching_EL9"
+)
+
+print()
+print("Template :", jt.name)
+print("Survey   :", jt.survey_enabled)
+print("Playbook :", jt.playbook)
+print("Inventory:", jt.inventory.name)
+print("Credential(s):")
+for c in jt.credentials.all():
+    print("  -", c.name)
 EOF
 
 # ==============================================================
