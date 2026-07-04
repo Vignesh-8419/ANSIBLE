@@ -789,9 +789,9 @@ EOF
 # ==============================================================================
 
 echo
-echo "=========================================================="
-echo " Verifying AWX Resources"
-echo "=========================================================="
+echo -e "${MAGENTA}==========================================================${NC}"
+echo -e "${WHITE}${BOLD} Verifying AWX Resources${NC}"
+echo -e "${MAGENTA}==========================================================${NC}"
 
 awx-manage shell <<'EOF'
 from awx.main.models import (
@@ -1250,9 +1250,9 @@ EOF
 # ==============================================================================
 
 echo
-echo "=========================================================="
-echo " Verifying Job Templates"
-echo "=========================================================="
+echo -e "${MAGENTA}==========================================================${NC}"
+echo -e "${WHITE}${BOLD} Verifying Job Templates${NC}"
+echo -e "${MAGENTA}==========================================================${NC}"
 
 awx-manage shell <<'EOF'
 from awx.main.models import JobTemplate
@@ -1281,9 +1281,9 @@ EOF
 # ==============================================================================
 
 echo
-echo "=========================================================="
-echo " Creating Workflow Templates"
-echo "=========================================================="
+echo -e "${CYAN}==========================================================${NC}"
+echo -e "${WHITE}${BOLD} Creating Workflow Templates${NC}"
+echo -e "${CYAN}==========================================================${NC}"
 
 # --------------------------------------------------------------
 # Workflow : CENTOS-VM-TEMPLATE-WF
@@ -1629,9 +1629,9 @@ echo "ROCKY 9 Workflow created successfully."
 # ==============================================================================
 
 echo
-echo "=========================================================="
-echo " Verifying Workflow Templates"
-echo "=========================================================="
+echo -e "${MAGENTA}==========================================================${NC}"
+echo -e "${WHITE}${BOLD} Verifying Workflow Templates${NC}"
+echo -e "${MAGENTA}==========================================================${NC}"
 
 awx-manage shell <<'EOF'
 from awx.main.models import WorkflowJobTemplate
@@ -1646,9 +1646,9 @@ EOF
 
 
 echo
-echo "==========================================================="
-echo " Workflow Templates Completed "
-echo "==========================================================="
+echo -e "${GREEN}===========================================================${NC}"
+echo -e "${WHITE}${BOLD} Workflow Templates Completed${NC}"
+echo -e "${GREEN}===========================================================${NC}"
 
 echo
 echo "Created:"
@@ -2916,9 +2916,9 @@ echo "Provision_Hosts_el9_Subscription_Patching_EL9 workflow completed successfu
 # ==============================================================================
 
 echo
-echo "=========================================================="
-echo " Running Final Verification"
-echo "=========================================================="
+echo -e "${MAGENTA}==========================================================${NC}"
+echo -e "${WHITE}${BOLD} Running Final Verification${NC}"
+echo -e "${MAGENTA}==========================================================${NC}"
 
 awx-manage shell <<'EOF'
 from awx.main.models import (
@@ -2961,9 +2961,9 @@ EOF
 # ==============================================================================
 
 echo
-echo "=========================================================="
-echo " Bootstrap Summary"
-echo "=========================================================="
+echo -e "${GREEN}==========================================================${NC}"
+echo -e "${WHITE}${BOLD} Bootstrap Summary${NC}"
+echo -e "${GREEN}==========================================================${NC}"
 
 echo
 echo "Credential Types:"
@@ -3022,9 +3022,9 @@ echo "  ✓ Provision_Hosts_el8_Subscription_Patching_EL8"
 echo "  ✓ Provision_Hosts_el9_Subscription_Patching_EL9"
 
 echo
-echo "=========================================================="
-echo "AWX Bootstrap Completed"
-echo "=========================================================="
+echo -e "${GREEN}==========================================================${NC}"
+echo -e "${WHITE}${BOLD} AWX Bootstrap Completed Successfully${NC}"
+echo -e "${GREEN}==========================================================${NC}"
 CONTAINER
 
 echo
