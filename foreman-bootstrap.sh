@@ -96,9 +96,10 @@ resume_paused_tasks() {
     
     done
     
-    warn "Paused tasks are still present after waiting."
+    warn "Some paused tasks still remain."
+    warn "Continuing because the required repository lock may already be released."
     
-    return 1
+    return 0
 }
 
 header "Foreman PXE Provisioning + Katello Bootstrap"
@@ -1417,16 +1418,18 @@ sync_repository() {
             warn "Recovery attempt $TRY..."
     
             resume_paused_tasks
-    
+            
+            sleep 5
+            
             info "Retrying synchronization..."
-    
+            
             OUTPUT=$(
                 $HAMMER repository synchronize \
                     --organization "Default Organization" \
                     --product "$PRODUCT" \
                     --name "$REPO" 2>&1
             )
-    
+            
             RC=$?
     
             echo "$OUTPUT"
@@ -1633,7 +1636,9 @@ if echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
         warn "Recovery attempt $TRY..."
 
         resume_paused_tasks
-
+        
+        sleep 5
+        
         info "Retrying publish..."
 
         OUTPUT=$(
