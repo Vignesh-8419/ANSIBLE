@@ -1,13 +1,38 @@
 #!/bin/bash
-# ==============================================================
-# AWX Bootstrap Script - Part 1 (Chunk 1)
-# Description:
-#   - Detect AWX Task Pod
-#   - Enter AWX Container
-#   - Create NetBox Credential Type
-#   - Create NetBox Production Credential
-#   - Create Linux Root Credential
-# ==============================================================
+# ==============================================================================
+# AWX Infrastructure Bootstrap
+# ==============================================================================
+#
+# Purpose:
+#   Bootstrap an entire AWX environment from scratch.
+#
+# This script automatically creates:
+#
+#   • Credential Types
+#   • Credentials
+#   • Inventories
+#   • Inventory Sources
+#   • Git Projects
+#   • Job Templates
+#   • Workflow Templates
+#   • Survey Definitions
+#   • Verification Reports
+#
+# Supported Operating Systems
+#   • CentOS 7
+#   • Rocky Linux 8
+#   • Rocky Linux 9
+#
+# Requirements
+#   • kubectl configured
+#   • Running AWX Operator deployment
+#   • awx-server-task pod available
+#   • GitHub repository accessible
+#
+# Idempotent:
+#   Safe to execute multiple times.
+#
+# ==============================================================================
 
 set -euo pipefail
 
@@ -169,8 +194,6 @@ EOF
 
 echo
 echo "Credential configuration completed."
-
-# ----- Chunk 1 Ends Here -----
 
 # ==============================================================
 # Create Inventories
@@ -2684,38 +2707,65 @@ echo "        AWX BOOTSTRAP COMPLETED SUCCESSFULLY"
 echo "=========================================================="
 
 echo
-echo "Resources Created:"
-echo "  ✓ NetBox Credential Type"
+echo "Credential Types:"
+echo "  ✓ NetBox API Token"
+
+echo
+echo "Credentials:"
 echo "  ✓ NetBox Production Credential"
 echo "  ✓ Linux Root Credential"
-echo "  ✓ centos-07-servers Inventory"
-echo "  ✓ rocky-8-servers Inventory"
-echo "  ✓ Inventory-Git-Repo Project"
-echo "  ✓ SCM Inventory Sources"
-echo "  ✓ localhost Host"
-echo "  ✓ ROCKYOS-VM-TEMPLATE"
-echo "  ✓ CENTOS-VM-TEMPLATE"
+
+echo
+echo "Inventories:"
+echo "  ✓ centos-07-servers"
+echo "  ✓ rocky-8-servers"
+echo "  ✓ rocky-9-servers"
+
+echo
+echo "Projects:"
+echo "  ✓ Inventory-Git-Repo"
+
+echo
+echo "Inventory Sources:"
+echo "  ✓ centos-07-servers"
+echo "  ✓ rocky-8-servers"
+echo "  ✓ rocky-9-servers"
+
+echo
+echo "Job Templates:"
+echo "  ✓ Enable_Passwordless_SSH"
 echo "  ✓ Local_DNS"
-echo "  ✓ Offline_Patching_el7"
-echo "  ✓ Offline_Patching_el8"
+echo "  ✓ CENTOS-VM-TEMPLATE"
+echo "  ✓ ROCKYOS-VM-TEMPLATE"
+echo "  ✓ ROCKY9-VM-TEMPLATE"
 echo "  ✓ Disable_SELinux_el7"
 echo "  ✓ Disable_SELinux_el8"
+echo "  ✓ Disable_SELinux_el9"
+echo "  ✓ Offline_Patching_el7"
+echo "  ✓ Offline_Patching_el8"
+echo "  ✓ Offline_Patching_el9"
 echo "  ✓ Subscription_Patching_EL7"
 echo "  ✓ Subscription_Patching_EL8"
+echo "  ✓ Subscription_Patching_EL9"
 echo "  ✓ CENTOSTOROCKY"
-echo "  ✓ CENTOSTOROCKY-WF"
 echo "  ✓ Provision_Hosts_el7"
 echo "  ✓ Provision_Hosts_el8"
-echo "  ✓ Provision_Hosts_el7_Subscription_Patching_EL7"
-echo "  ✓ Provision_Hosts_el8_Subscription_Patching_EL8"
+echo "  ✓ Provision_Hosts_el9"
+
+echo
+echo "Workflow Templates:"
 echo "  ✓ CENTOS-VM-TEMPLATE-WF"
 echo "  ✓ ROCKYOS-VM-TEMPLATE-WF"
+echo "  ✓ ROCKY9-VM-TEMPLATE-WF"
+echo "  ✓ CENTOSTOROCKY-WF"
+echo "  ✓ Provision_Hosts_el7_Subscription_Patching_EL7"
+echo "  ✓ Provision_Hosts_el8_Subscription_Patching_EL8"
+echo "  ✓ Provision_Hosts_el9_Subscription_Patching_EL9"
 
 echo
 echo "=========================================================="
 echo "AWX Bootstrap Completed"
 echo "=========================================================="
-
 CONTAINER
 
 echo
