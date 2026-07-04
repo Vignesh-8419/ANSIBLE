@@ -1652,8 +1652,6 @@ if echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
         
         fi
     
-        fi
-    
         info "Retrying publish..."
     
         OUTPUT=$(
