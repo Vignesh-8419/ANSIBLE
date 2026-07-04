@@ -9,7 +9,7 @@
 
     # Generate with:
     # openssl passwd -6 'YourPassword'
-    admin_password: "$6$REPLACE_WITH_PASSWORD_HASH"
+    admin_password: "Vigneshv12$"
 
   tasks:
 
