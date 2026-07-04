@@ -7,8 +7,8 @@
   vars:
     admin_user: admin
 
-    # Generate with:
-    # openssl passwd -6 'YourPassword'
+    # Replace with the output of:
+    # openssl passwd -6 'Vigneshv12$'
     admin_password: "$6$TDxrkjdWRZRu8eto$Qjtyu8XXyDsNB7jAjIiw9Yr17KT/m58VDLpi.CIXEPjKf9s8kq2oIciKUvq1dG935191IyRs5tHB9ClrnOl53/"
 
   tasks:
@@ -21,12 +21,11 @@
     - name: Create admin user
       user:
         name: "{{ admin_user }}"
-        shell: /bin/bash
         comment: Shared Lab Administrator
-        create_home: yes
-        home: "/home/{{ admin_user }}"
+        shell: /bin/bash
         groups: wheel
         append: yes
+        create_home: yes
         password: "{{ admin_password }}"
         state: present
 
@@ -36,7 +35,7 @@
         state: directory
         owner: "{{ admin_user }}"
         group: "{{ admin_user }}"
-        mode: "0700"
+        mode: '0700'
 
     - name: Copy shared private key
       copy:
@@ -44,7 +43,7 @@
         dest: "/home/{{ admin_user }}/.ssh/id_rsa"
         owner: "{{ admin_user }}"
         group: "{{ admin_user }}"
-        mode: "0600"
+        mode: '0600'
 
     - name: Copy shared public key
       copy:
@@ -52,44 +51,58 @@
         dest: "/home/{{ admin_user }}/.ssh/id_rsa.pub"
         owner: "{{ admin_user }}"
         group: "{{ admin_user }}"
-        mode: "0644"
+        mode: '0644'
 
-    - name: Install authorized_keys
-      copy:
-        src: files/id_rsa.pub
-        dest: "/home/{{ admin_user }}/.ssh/authorized_keys"
-        owner: "{{ admin_user }}"
-        group: "{{ admin_user }}"
-        mode: "0600"
+    - name: Install shared authorized key
+      authorized_key:
+        user: "{{ admin_user }}"
+        state: present
+        key: "{{ lookup('file', 'files/id_rsa.pub') }}"
 
-    - name: Enable passwordless sudo for wheel
-      lineinfile:
-        path: /etc/sudoers
-        regexp: '^%wheel'
-        line: '%wheel ALL=(ALL) NOPASSWD: ALL'
-        validate: '/usr/sbin/visudo -cf %s'
-
-    - name: Disable StrictHostKeyChecking for admin
+    - name: Configure SSH client
       copy:
         dest: "/home/{{ admin_user }}/.ssh/config"
         owner: "{{ admin_user }}"
         group: "{{ admin_user }}"
-        mode: "0600"
+        mode: '0600'
         content: |
           Host *
+              IdentityFile ~/.ssh/id_rsa
               StrictHostKeyChecking no
               UserKnownHostsFile /dev/null
               LogLevel ERROR
 
+    - name: Enable passwordless sudo
+      copy:
+        dest: /etc/sudoers.d/admin
+        owner: root
+        group: root
+        mode: '0440'
+        content: |
+          admin ALL=(ALL) NOPASSWD: ALL
+        validate: '/usr/sbin/visudo -cf %s'
+
+    - name: Restore SELinux context
+      command: restorecon -Rv /home/{{ admin_user }}/.ssh
+      changed_when: false
+      failed_when: false
+
     - name: Verify admin user
       command: id {{ admin_user }}
-      register: admin_result
+      register: verify_admin
+      changed_when: false
+
+    - name: Verify sudo access
+      command: sudo -n whoami
+      become: true
+      become_user: "{{ admin_user }}"
+      register: sudo_test
       changed_when: false
 
     - name: Display verification
       debug:
         msg:
-          - "{{ admin_result.stdout }}"
-          - "Admin user created successfully."
-          - "Shared SSH key installed."
+          - "{{ verify_admin.stdout }}"
+          - "Sudo User : {{ sudo_test.stdout }}"
+          - "Passwordless SSH configured."
           - "Passwordless sudo configured."
