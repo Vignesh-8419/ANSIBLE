@@ -703,145 +703,7 @@ echo
 ok "Subnets Verified."
 echo
 
-header "[6/12] Creating Host Groups"
-
-###############################################################################
-# CentOS 7 Host Group
-###############################################################################
-
-info "Checking CentOS 7 Host Group..."
-
-if $HAMMER hostgroup info \
-    --organization "Default Organization" \
-    --name "VGS HOSTS CENTOS 7" >/dev/null 2>&1; then
-
-    skip "Host Group 'VGS HOSTS CENTOS 7' already exists."
-
-else
-
-    info "Creating CentOS 7 Host Group..."
-
-    $HAMMER hostgroup create \
-        --organization "Default Organization" \
-        --name "VGS HOSTS CENTOS 7" \
-        --architecture x86_64 \
-        --operatingsystem "CentOSLinux 7" \
-        --medium "CentOS 7 Remote" \
-        --partition-table "Kickstart default" \
-        --pxe-loader "Grub2 UEFI" \
-        --domain "vgs.com" \
-        --subnet "vgs-subnet-centos" \
-        --content-source "cent-07-01.vgs.com" \
-        --content-view "CentOS7-CV" \
-        --lifecycle-environment "Library"
-
-    if [ $? -eq 0 ]; then
-        ok "CentOS 7 Host Group created."
-    else
-        error "Host Group creation failed."
-        record_failure "VGS HOSTS CentOS 7"
-    fi
-
-fi
-
-echo
-
-###############################################################################
-# Rocky Linux 8 Host Group
-###############################################################################
-
-info "Checking Rocky Linux 8 Host Group..."
-
-if $HAMMER hostgroup info \
-    --organization "Default Organization" \
-    --name "VGS HOSTS ROCKY 8" >/dev/null 2>&1; then
-
-    skip "Host Group 'VGS HOSTS ROCKY 8' already exists."
-
-else
-
-    info "Creating Rocky Linux 8 Host Group..."
-
-    $HAMMER hostgroup create \
-        --organization "Default Organization" \
-        --name "VGS HOSTS ROCKY 8" \
-        --architecture x86_64 \
-        --operatingsystem "RockyLinux 8.10" \
-        --medium "Rocky 8 Remote" \
-        --partition-table "Kickstart default" \
-        --pxe-loader "Grub2 UEFI" \
-        --domain "vgs.com" \
-        --subnet "vgs-subnet-rockyos" \
-        --content-source "cent-07-01.vgs.com" \
-        --content-view "Rocky8-CV" \
-        --lifecycle-environment "Library"
-
-    if [ $? -eq 0 ]; then
-        ok "Rocky Host Group created."
-    else
-        error "Host Group creation failed."
-        record_failure "VGS HOSTS ROCKY 8"
-    fi
-
-fi
-
-echo
-
-###############################################################################
-# Rocky Linux 9 Host Group
-###############################################################################
-
-info "Checking Rocky Linux 9 Host Group..."
-
-if $HAMMER hostgroup info \
-    --organization "Default Organization" \
-    --name "VGS HOSTS ROCKY 9" >/dev/null 2>&1; then
-
-    skip "Host Group 'VGS HOSTS ROCKY 9' already exists."
-
-else
-
-    info "Creating Rocky Linux 9 Host Group..."
-
-    $HAMMER hostgroup create \
-        --organization "Default Organization" \
-        --name "VGS HOSTS ROCKY 9" \
-        --architecture x86_64 \
-        --operatingsystem "RockyLinux 9.6" \
-        --medium "Rocky 9 Remote" \
-        --partition-table "Kickstart default" \
-        --pxe-loader "Grub2 UEFI" \
-        --domain "vgs.com" \
-        --subnet "vgs-subnet-rockyos" \
-        --content-source "cent-07-01.vgs.com" \
-        --content-view "Rocky9-CV" \
-        --lifecycle-environment "Library"
-
-    if [ $? -eq 0 ]; then
-        ok "Rocky 9 Host Group created."
-    else
-        error "Host Group creation failed."
-        record_failure "VGS HOSTS ROCKY 9"
-    fi
-
-fi
-
-echo
-
-###############################################################################
-# Verification
-###############################################################################
-
-header "Host Groups"
-
-
-$HAMMER hostgroup list
-
-echo
-ok "Host Groups Verified."
-echo
-
-header "[7/12] Setting Default PXE Templates"
+header "[6/12] Setting Default PXE Templates"
 
 info "Current Operating Systems"
 $HAMMER os list
@@ -1037,7 +899,7 @@ header "PXE Provisioning Setup Completed Successfully"
 echo
 
 
-header "[8/12] Creating Katello Products"
+header "[7/12] Creating Katello Products"
 
 
 ###############################################################################
@@ -1464,7 +1326,7 @@ $HAMMER repository list \
 
 echo
 
-header "[9/12] Synchronizing Repositories"
+header "[8/12] Synchronizing Repositories"
 
 sync_repository() {
 
@@ -1554,7 +1416,7 @@ $HAMMER repository list \
 
 echo
 
-header "[10/12] Creating Content Views"
+header "[9/12] Creating Content Views"
 
 
 ###############################################################################
@@ -1698,6 +1560,144 @@ publish_cv() {
 publish_cv "CentOS7-CV"
 publish_cv "Rocky8-CV"
 publish_cv "Rocky9-CV"
+
+header "[10/12] Creating Host Groups"
+
+###############################################################################
+# CentOS 7 Host Group
+###############################################################################
+
+info "Checking CentOS 7 Host Group..."
+
+if $HAMMER hostgroup info \
+    --organization "Default Organization" \
+    --name "VGS HOSTS CENTOS 7" >/dev/null 2>&1; then
+
+    skip "Host Group 'VGS HOSTS CENTOS 7' already exists."
+
+else
+
+    info "Creating CentOS 7 Host Group..."
+
+    $HAMMER hostgroup create \
+        --organization "Default Organization" \
+        --name "VGS HOSTS CENTOS 7" \
+        --architecture x86_64 \
+        --operatingsystem "CentOSLinux 7" \
+        --medium "CentOS 7 Remote" \
+        --partition-table "Kickstart default" \
+        --pxe-loader "Grub2 UEFI" \
+        --domain "vgs.com" \
+        --subnet "vgs-subnet-centos" \
+        --content-source "cent-07-01.vgs.com" \
+        --content-view "CentOS7-CV" \
+        --lifecycle-environment "Library"
+
+    if [ $? -eq 0 ]; then
+        ok "CentOS 7 Host Group created."
+    else
+        error "Host Group creation failed."
+        record_failure "VGS HOSTS CentOS 7"
+    fi
+
+fi
+
+echo
+
+###############################################################################
+# Rocky Linux 8 Host Group
+###############################################################################
+
+info "Checking Rocky Linux 8 Host Group..."
+
+if $HAMMER hostgroup info \
+    --organization "Default Organization" \
+    --name "VGS HOSTS ROCKY 8" >/dev/null 2>&1; then
+
+    skip "Host Group 'VGS HOSTS ROCKY 8' already exists."
+
+else
+
+    info "Creating Rocky Linux 8 Host Group..."
+
+    $HAMMER hostgroup create \
+        --organization "Default Organization" \
+        --name "VGS HOSTS ROCKY 8" \
+        --architecture x86_64 \
+        --operatingsystem "RockyLinux 8.10" \
+        --medium "Rocky 8 Remote" \
+        --partition-table "Kickstart default" \
+        --pxe-loader "Grub2 UEFI" \
+        --domain "vgs.com" \
+        --subnet "vgs-subnet-rockyos" \
+        --content-source "cent-07-01.vgs.com" \
+        --content-view "Rocky8-CV" \
+        --lifecycle-environment "Library"
+
+    if [ $? -eq 0 ]; then
+        ok "Rocky Host Group created."
+    else
+        error "Host Group creation failed."
+        record_failure "VGS HOSTS ROCKY 8"
+    fi
+
+fi
+
+echo
+
+###############################################################################
+# Rocky Linux 9 Host Group
+###############################################################################
+
+info "Checking Rocky Linux 9 Host Group..."
+
+if $HAMMER hostgroup info \
+    --organization "Default Organization" \
+    --name "VGS HOSTS ROCKY 9" >/dev/null 2>&1; then
+
+    skip "Host Group 'VGS HOSTS ROCKY 9' already exists."
+
+else
+
+    info "Creating Rocky Linux 9 Host Group..."
+
+    $HAMMER hostgroup create \
+        --organization "Default Organization" \
+        --name "VGS HOSTS ROCKY 9" \
+        --architecture x86_64 \
+        --operatingsystem "RockyLinux 9.6" \
+        --medium "Rocky 9 Remote" \
+        --partition-table "Kickstart default" \
+        --pxe-loader "Grub2 UEFI" \
+        --domain "vgs.com" \
+        --subnet "vgs-subnet-rockyos" \
+        --content-source "cent-07-01.vgs.com" \
+        --content-view "Rocky9-CV" \
+        --lifecycle-environment "Library"
+
+    if [ $? -eq 0 ]; then
+        ok "Rocky 9 Host Group created."
+    else
+        error "Host Group creation failed."
+        record_failure "VGS HOSTS ROCKY 9"
+    fi
+
+fi
+
+echo
+
+###############################################################################
+# Verification
+###############################################################################
+
+header "Host Groups"
+
+
+$HAMMER hostgroup list
+
+echo
+ok "Host Groups Verified."
+echo
 
 ###############################################################################
 # Function : Create Activation Key
