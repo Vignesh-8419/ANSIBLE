@@ -2081,6 +2081,176 @@ EOF
 echo
 echo "CENTOSTOROCKY Workflow created successfully."
 
+# ==============================================================================
+# ROCKY8TOROCKY9
+# ==============================================================================
+
+echo
+echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
+echo -e "${WHITE} Creating ROCKY8TOROCKY9${NC}"
+echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
+
+awx-manage shell <<'EOF'
+from awx.main.models import Inventory, Project, JobTemplate, Credential
+
+project = Project.objects.get(name="Inventory-Git-Repo")
+inventory = Inventory.objects.get(name="rocky-8-servers")
+credential = Credential.objects.get(name="Linux Root Credential")
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="ROCKY8TOROCKY9",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "ROCKY8TOROCKY9/ROCKY8TOROCKY9.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
+    }
+)
+
+jt.project = project
+jt.inventory = inventory
+jt.playbook = "ROCKY8TOROCKY9/ROCKY8TOROCKY9.yml"
+
+# Fixed inventory
+jt.ask_inventory_on_launch = False
+
+# Disable Limit
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more Rocky Linux 8 hosts (without domain name)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: rocky-08-01 or rocky-08-01,rocky-08-02 or rocky-08-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-08-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.save()
+
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+print(
+    f"Job Template 'ROCKY8TOROCKY9' "
+    f"{'created' if created else 'updated'} successfully."
+)
+print(f"Credential assigned: {credential.name}")
+EOF
+
+# ==============================================================================
+# Workflow : ROCKY8TOROCKY9-WF
+# ==============================================================================
+
+echo
+echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
+echo -e "${WHITE} Creating Workflow: ROCKY8TOROCKY9-WF${NC}"
+echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
+
+awx-manage shell <<'EOF'
+from awx.main.models import (
+    WorkflowJobTemplate,
+    WorkflowJobTemplateNode,
+    JobTemplate,
+    Credential,
+    Inventory,
+    Organization
+)
+
+ORG_NAME = "Default"
+WORKFLOW_NAME = "ROCKY8TOROCKY9-WF"
+
+JT1_NAME = "Offline_Patching_el8"
+JT2_NAME = "ROCKY8TOROCKY9"
+
+CREDENTIAL_NAME = "Linux Root Credential"
+INVENTORY_NAME = "rocky-8-servers"
+
+org = Organization.objects.get(name=ORG_NAME)
+
+jt1 = JobTemplate.objects.get(name=JT1_NAME)
+jt2 = JobTemplate.objects.get(name=JT2_NAME)
+
+cred = Credential.objects.get(name=CREDENTIAL_NAME)
+inv = Inventory.objects.get(name=INVENTORY_NAME)
+
+wf, created = WorkflowJobTemplate.objects.get_or_create(
+    name=WORKFLOW_NAME,
+    organization=org
+)
+
+# Remove existing workflow nodes
+wf.workflow_job_template_nodes.all().delete()
+
+# Fixed inventory
+wf.inventory = inv
+
+# Disable prompts at workflow launch
+wf.ask_inventory_on_launch = False
+wf.ask_limit_on_launch = False
+wf.ask_credential_on_launch = False
+
+# Enable survey so target_hosts is prompted once
+wf.survey_enabled = True
+wf.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more Rocky Linux 8 hosts (without domain name)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: rocky-08-01 or rocky-08-01,rocky-08-02 or rocky-08-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-08-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+wf.save()
+
+wf.credentials.clear()
+wf.credentials.add(cred)
+
+# Create workflow nodes
+n1 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt1
+)
+
+n2 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt2
+)
+
+# Execution order
+n1.success_nodes.add(n2)
+
+print(f"Workflow '{wf.name}' {'created' if created else 'updated'}")
+print("Execution Order:")
+print(f"  {jt1.name}")
+print("      ↓")
+print(f"  {jt2.name}")
+EOF
+
+echo
+echo "ROCKY8TOROCKY9 Workflow created successfully."
+
 
 # ==============================================================
 # Verify EL8 Subscription Template
@@ -3007,6 +3177,7 @@ echo "  ✓ Subscription_Patching_EL7"
 echo "  ✓ Subscription_Patching_EL8"
 echo "  ✓ Subscription_Patching_EL9"
 echo "  ✓ CENTOSTOROCKY"
+echo " ✓ ROCKY8TOROCKY9"
 echo "  ✓ Provision_Hosts_el7"
 echo "  ✓ Provision_Hosts_el8"
 echo "  ✓ Provision_Hosts_el9"
@@ -3017,6 +3188,7 @@ echo "  ✓ CENTOS-VM-TEMPLATE-WF"
 echo "  ✓ ROCKYOS-VM-TEMPLATE-WF"
 echo "  ✓ ROCKY9-VM-TEMPLATE-WF"
 echo "  ✓ CENTOSTOROCKY-WF"
+echo " ✓ ROCKY8TOROCKY9-WF"
 echo "  ✓ Provision_Hosts_el7_Subscription_Patching_EL7"
 echo "  ✓ Provision_Hosts_el8_Subscription_Patching_EL8"
 echo "  ✓ Provision_Hosts_el9_Subscription_Patching_EL9"
