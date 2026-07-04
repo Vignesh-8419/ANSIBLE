@@ -2,8 +2,6 @@
 - name: CentOS 7 to Rocky Linux 8 - ELevate Migration
   hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
   become: yes
-  become_method: sudo
-  become_user: root
   gather_facts: false
 
   vars:
