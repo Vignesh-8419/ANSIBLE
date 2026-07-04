@@ -123,7 +123,7 @@ cred, created = Credential.objects.get_or_create(
         "credential_type":ctype,
         "organization":org,
         "inputs":{
-            "netbox_url":"https://rocky-08-03.vgs.com/",
+            "netbox_url":"https://netbox.vgs.com/",
             "netbox_token":"83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
         }
     }
