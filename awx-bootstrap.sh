@@ -411,6 +411,60 @@ print("\nInventory Sources configured successfully.")
 EOF
 
 # ==============================================================================
+# Inventory Source Schedules
+# ==============================================================================
+
+echo
+echo -e "${CYAN}==========================================================${NC}"
+echo -e "${WHITE}${BOLD} Creating Inventory Source Schedules${NC}"
+echo -e "${CYAN}==========================================================${NC}"
+
+awx-manage shell <<'EOF'
+from awx.main.models import InventorySource
+from awx.main.models.schedules import Schedule
+from awx.main.utils.common import ScheduleWorkflowManager
+
+sources = [
+    "centos-07-servers",
+    "rocky-8-servers",
+    "rocky-9-servers"
+]
+
+# Every 5 minutes
+rrule = (
+    "DTSTART:20260704T000000Z\n"
+    "RRULE:FREQ=MINUTELY;INTERVAL=5"
+)
+
+for name in sources:
+
+    source = InventorySource.objects.get(name=name)
+
+    schedule, created = Schedule.objects.get_or_create(
+        name=f"{name}-5min-sync",
+        unified_job_template=source,
+        defaults={
+            "rrule": rrule,
+            "enabled": True,
+        }
+    )
+
+    schedule.rrule = rrule
+    schedule.enabled = True
+    schedule.save()
+
+    # Update next run
+    ScheduleWorkflowManager.update_next_run(schedule)
+
+    print(
+        f"Schedule '{schedule.name}' "
+        f"{'created' if created else 'updated'}"
+    )
+
+print("\nInventory Source schedules configured successfully.")
+EOF
+
+# ==============================================================================
 # Localhost Configuration
 # ==============================================================================
 
