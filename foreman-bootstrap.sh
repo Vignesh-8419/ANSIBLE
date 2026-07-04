@@ -59,6 +59,48 @@ summary_ok() {
     printf "%-35s ${GREEN}[OK]${NC}\n" "$1"
 }
 
+resume_paused_tasks() {
+
+    header "Recovering Paused Foreman Tasks"
+
+    local COUNT
+
+    COUNT=$($HAMMER task list \
+        --search "state = paused" 2>/dev/null | \
+        grep -c paused || true)
+
+    if [ "$COUNT" -eq 0 ]; then
+        ok "No paused tasks found."
+        return 0
+    fi
+
+    warn "Found $COUNT paused task(s)."
+
+    $HAMMER task resume \
+        --search "state = paused"
+
+    for i in {1..6}; do
+    
+        COUNT=$($HAMMER task list \
+            --search "state = paused" 2>/dev/null | \
+            grep -c paused || true)
+    
+        if [ "$COUNT" -eq 0 ]; then
+            ok "Paused tasks cleared."
+            return 0
+        fi
+    
+        warn "$COUNT paused task(s) still remain. Waiting..."
+    
+        sleep 10
+    
+    done
+    
+    warn "Paused tasks are still present after waiting."
+    
+    return 1
+}
+
 header "Foreman PXE Provisioning + Katello Bootstrap"
 echo
 
@@ -312,16 +354,6 @@ ok "Template file generated."
 echo
 
 cat > /tmp/rocky-9-pxegrub2.erb <<'EOF'
-<%#
-name: PXEGrub2 Rocky9 UEFI Static Kickstart
-kind: PXEGrub2
-oses:
-- RockyLinux
-<%#
-name: PXEGrub2 Rocky9 UEFI Static Kickstart
-kind: PXEGrub2
-oses:
-- RockyLinux
 <%#
 name: PXEGrub2 Rocky9 UEFI Static Kickstart
 kind: PXEGrub2
@@ -1326,6 +1358,14 @@ $HAMMER repository list \
 
 echo
 
+info "Rocky Linux 9"
+
+$HAMMER repository list \
+    --organization "Default Organization" \
+    --product "Rocky Linux 9"
+
+echo
+
 header "[8/12] Synchronizing Repositories"
 
 sync_repository() {
@@ -1334,40 +1374,79 @@ sync_repository() {
     REPO="$2"
 
     echo
-    info  "Checking Repository : $REPO"
+    info "Checking Repository : $REPO"
 
     SYNC_STATUS=$(
         $HAMMER repository info \
             --organization "Default Organization" \
             --product "$PRODUCT" \
-            --name "$REPO" 2>/dev/null | \
+            --name "$REPO" 2>/dev/null |
         awk -F': ' '/Sync State/ {print $2}'
     )
 
-    case "$SYNC_STATUS" in
+    if echo "$SYNC_STATUS" | grep -qi running; then
+        skip "Synchronization already running."
+        return
+    fi
 
-        running|Running)
-            skip "Synchronization already running."
-            ;;
+    info "Starting synchronization..."
 
-        *)
-            info "Starting synchronization..."
+    OUTPUT=$(
+        $HAMMER repository synchronize \
+            --organization "Default Organization" \
+            --product "$PRODUCT" \
+            --name "$REPO" 2>&1
+    )
 
-            $HAMMER repository synchronize \
-                --organization "Default Organization" \
-                --product "$PRODUCT" \
-                --name "$REPO"
-            
-            if [ $? -eq 0 ]; then
+    RC=$?
+
+    echo "$OUTPUT"
+
+    if [ $RC -eq 0 ]; then
+        ok "Synchronization started."
+        return
+    fi
+
+    if echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
+    
+        warn "Repository lock detected."
+    
+        for TRY in 1 2 3
+        do
+    
+            warn "Recovery attempt $TRY..."
+    
+            resume_paused_tasks
+    
+            info "Retrying synchronization..."
+    
+            OUTPUT=$(
+                $HAMMER repository synchronize \
+                    --organization "Default Organization" \
+                    --product "$PRODUCT" \
+                    --name "$REPO" 2>&1
+            )
+    
+            RC=$?
+    
+            echo "$OUTPUT"
+    
+            if [ $RC -eq 0 ]; then
                 ok "Synchronization started."
-            else
-                error "Synchronization failed."
-                record_failure "$PRODUCT -> $REPO"
+                return
             fi
-            ;;
-
-    esac
-
+    
+            if ! echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
+                break
+            fi
+    
+        done
+    
+    fi
+    
+    error "Synchronization failed."
+    
+    record_failure "$PRODUCT -> $REPO"
 }
 
 ###############################################################################
@@ -1528,29 +1607,62 @@ publish_cv() {
 
     info "Checking Content View : $CV"
 
-    if $HAMMER content-view info \
-        --organization "Default Organization" \
-        --name "$CV" | grep -q "Last published"; then
+OUTPUT=$(
+$HAMMER content-view publish \
+    --organization "Default Organization" \
+    --name "$CV" \
+    --description "Bootstrap Publish $(date '+%F %T')" 2>&1
+)
 
-        skip "Content View already published."
+RC=$?
 
-    else
+echo "$OUTPUT"
 
+if [ $RC -eq 0 ]; then
+    ok "Content View published."
+    return
+fi
+
+if echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
+
+    warn "Publish task locked."
+
+    for TRY in 1 2 3
+    do
+
+        warn "Recovery attempt $TRY..."
+
+        resume_paused_tasks
+
+        info "Retrying publish..."
+
+        OUTPUT=$(
         $HAMMER content-view publish \
             --organization "Default Organization" \
             --name "$CV" \
-            --description "Bootstrap Publish $(date '+%Y-%m-%d %H:%M:%S')"
-        
-        if [ $? -eq 0 ]; then
+            --description "Bootstrap Publish $(date '+%F %T')" 2>&1
+        )
+
+        RC=$?
+
+        echo "$OUTPUT"
+
+        if [ $RC -eq 0 ]; then
             ok "Content View published."
-        else
-            error "Content View publish failed."
-            record_failure "Publish : $CV"
+            return
         fi
 
-    fi
+        if ! echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
+            break
+        fi
 
-    echo
+    done
+fi
+
+error "Content View publish failed."
+
+record_failure "Publish : $CV"
+
 }
 
 ###############################################################################
