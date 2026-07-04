@@ -139,7 +139,7 @@
             device_type: vmxnet3
     
       loop: "{{ vm_lookup.results }}"
-      when: item.failed
+      when: item.instance is not defined
       register: vm_create
 
     - name: Power on VM
@@ -151,6 +151,19 @@
         name: "{{ item.name.split('.')[0] }}"
         state: powered-on
       loop: "{{ filtered_devices }}"
+      when: >
+        (
+          vm_lookup.results
+          | selectattr('item.name', 'equalto', item.name)
+          | first
+        ).instance is defined
+        or
+        (
+          vm_create.results
+          | default([])
+          | selectattr('item.item.name', 'equalto', item.name)
+          | first
+        ).changed | default(false)
     
     - name: Wait for ESXi to assign MAC
       pause:
