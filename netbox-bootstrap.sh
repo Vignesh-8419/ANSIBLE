@@ -288,7 +288,11 @@ JSON=$(cat <<'EOF'
 EOF
 )
 
-create_or_update_context "vmware-awx-context" "$JSON"
+echo "$JSON" | jq .
+
+RESPONSE=$(api_post "/api/extras/config-contexts/" "$JSON")
+
+echo "$RESPONSE"
 
 }
 
