@@ -4,7 +4,7 @@ set -euo pipefail
 ############################################################
 # CONFIGURATION
 ############################################################
-FQDN="rocky-08-03.vgs.com"
+FQDN="netbox.vgs.com"
 IPADDRESS="192.168.253.143"
 NETBOX_VERSION="v4.4.9"
 
