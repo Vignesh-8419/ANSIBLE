@@ -1632,35 +1632,66 @@ if echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
 
     for TRY in 1 2 3
     do
-
+    
         warn "Recovery attempt $TRY..."
-
-        resume_paused_tasks
-        
-        sleep 5
-        
+    
+        LOCK_TASK=$(echo "$OUTPUT" | grep -oE '[0-9a-f-]{36}' | head -1)
+    
+        if [ -n "$LOCK_TASK" ]; then
+    
+            TASK_ACTION=$(
+                $HAMMER task info --search "id = $LOCK_TASK" 2>/dev/null |
+                awk -F': *' '/Action/ {print $2}'
+            )
+    
+            if echo "$TASK_ACTION" | grep -qi "Publish"; then
+    
+                warn "Cancelling stale publish task $LOCK_TASK"
+    
+                $HAMMER task cancel \
+                    --search "id = $LOCK_TASK" >/dev/null 2>&1 || true
+    
+                sleep 10
+    
+            else
+    
+                warn "Resuming task $LOCK_TASK"
+    
+                $HAMMER task resume \
+                    --search "id = $LOCK_TASK" >/dev/null 2>&1 || true
+    
+                sleep 10
+    
+            fi
+    
+        else
+    
+            resume_paused_tasks
+    
+        fi
+    
         info "Retrying publish..."
-
+    
         OUTPUT=$(
-        $HAMMER content-view publish \
-            --organization "Default Organization" \
-            --name "$CV" \
-            --description "Bootstrap Publish $(date '+%F %T')" 2>&1
+            $HAMMER content-view publish \
+                --organization "Default Organization" \
+                --name "$CV" \
+                --description "Bootstrap Publish $(date '+%F %T')" 2>&1
         )
-
+    
         RC=$?
-
+    
         echo "$OUTPUT"
-
+    
         if [ $RC -eq 0 ]; then
             ok "Content View published."
             return
         fi
-
+    
         if ! echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
             break
         fi
-
+    
     done
 fi
 
