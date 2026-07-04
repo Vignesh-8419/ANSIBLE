@@ -337,7 +337,7 @@ set timeout=5
 
 menuentry 'Install Rocky 8 via Kickstart' {
 
-    linuxefi /rockyos/vmlinuz \
+    linuxefi /rocky8/vmlinuz \
 inst.stage2=http://192.168.253.136/repo/rocky8/ \
 inst.ks=http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg \
 inst.text \
