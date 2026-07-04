@@ -20,7 +20,7 @@ group_by:
   - tags
 
 query_filters:
-  - cluster_id: 3
+  - cluster_id: 2
   - status: active
   - status: staged
 
