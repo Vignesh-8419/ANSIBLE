@@ -346,7 +346,7 @@ inst.ks.device=bootif \
 BOOTIF=01-${net_default_mac} \
 hostname=<%= @host.name %>
 
-    initrdefi /rockyos/initrd.img
+    initrdefi /rocky8/initrd.img
 
 }
 EOF
