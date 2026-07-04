@@ -649,7 +649,7 @@ jt.credentials.clear()
 jt.credentials.add(credential)
 
 print(
-    f"Enable_Passwordless_SSH "
+    f"create_admin_ssh "
     f"{'created' if created else 'updated'} successfully."
 )
 print("Inventory: Prompt on Launch")
