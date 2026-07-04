@@ -1,0 +1,178 @@
+---
+- name: Rocky Linux 9 Post Migration Cleanup
+  hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+
+    - name: Ensure Python is installed
+      raw: |
+        if ! command -v python3 >/dev/null 2>&1 && ! command -v python >/dev/null 2>&1; then
+          dnf -y install python3
+        fi
+      changed_when: false
+
+    - meta: reset_connection
+
+    - name: Gather facts
+      setup:
+
+    - name: Ensure we are running on Rocky Linux 9
+      fail:
+        msg: "This playbook must be run only on Rocky Linux 9!"
+      when:
+        - ansible_distribution != "Rocky"
+        - ansible_distribution_major_version != "9"
+
+  tasks:
+
+    ################################################################
+    # Basic Repo / RPMDB Cleanup
+    ################################################################
+
+    - name: Ensure backup directory exists
+      file:
+        path: /etc/yum.repos.d/backup
+        state: directory
+        mode: "0755"
+
+    - name: Move repository files to backup
+      shell: |
+        mkdir -p /etc/yum.repos.d/backup
+
+        find /etc/yum.repos.d \
+          -maxdepth 1 \
+          -name "*.repo" \
+          -exec mv {} /etc/yum.repos.d/backup/ \; 2>/dev/null || true
+
+    - name: Create Rocky Linux 9 repositories
+      copy:
+        dest: /etc/yum.repos.d/base.repo
+        mode: "0644"
+        content: |
+          [rocky9-baseos]
+          name=Rocky Linux 9 BaseOS
+          baseurl=http://192.168.253.136/repo/rocky9/BaseOS/
+          enabled=1
+          gpgcheck=0
+
+          [rocky9-appstream]
+          name=Rocky Linux 9 AppStream
+          baseurl=http://192.168.253.136/repo/rocky9/AppStream/
+          enabled=1
+          gpgcheck=0
+
+    ####################################################################
+    # RPM Database Cleanup
+    ####################################################################
+
+    - name: Backup RPM database
+      shell: |
+        if [ -d /var/lib/rpm ] && [ ! -d /var/lib/rpm.bak ]; then
+          mv /var/lib/rpm /var/lib/rpm.bak
+        fi
+
+    - name: Create new RPM database directory
+      file:
+        path: /var/lib/rpm
+        state: directory
+        mode: "0755"
+
+    - name: Initialize RPM database
+      command: rpm --initdb
+
+    - name: Restore Packages file
+      shell: |
+        if [ -f /var/lib/rpm.bak/Packages ]; then
+          cp -av /var/lib/rpm.bak/Packages /var/lib/rpm/
+        fi
+
+    - name: Remove RPM database locks
+      shell: rm -f /var/lib/rpm/__db.*
+      ignore_errors: yes
+
+    - name: Rebuild RPM database
+      command: rpm --rebuilddb
+      ignore_errors: yes
+
+    - name: Clean DNF cache
+      command: dnf clean all
+      ignore_errors: yes
+
+    - name: Verify RPM database
+      command: dnf list installed
+      register: rpmdb_test
+      ignore_errors: yes
+
+    - name: Show RPM database status
+      debug:
+        msg: "{{ rpmdb_test.stdout | default('RPM database verification failed') }}"
+
+    ####################################################################
+    # Kernel Cleanup
+    ####################################################################
+
+    - name: List old EL8 kernel directories
+      shell: ls -d /lib/modules/*.el8* || true
+      register: old_kernels
+      changed_when: false
+
+    - name: Remove weak-modules for old EL8 kernels
+      shell: |
+        for k in $(ls -d /lib/modules/*.el8* 2>/dev/null | xargs -n1 basename); do
+          /usr/sbin/weak-modules --remove-kernel "$k" || true
+        done
+
+    - name: Remove old kernels from kernel-install
+      shell: |
+        for k in $(ls -d /lib/modules/*.el8* 2>/dev/null | xargs -n1 basename); do
+          /bin/kernel-install remove "$k" "/lib/modules/$k/vmlinuz" || true
+        done
+
+    - name: Find old EL8 kernel directories
+      find:
+        paths: /lib/modules
+        patterns: "*.el8*"
+        file_type: directory
+      register: old_kernel_dirs
+
+    - name: Remove old EL8 kernel directories
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ old_kernel_dirs.files }}"
+
+    ####################################################################
+    # EL8 RPM Cleanup
+    ####################################################################
+
+    - name: Find leftover EL8 RPMs
+      shell: |
+        rpm -qa | \
+        grep '\.el8' | \
+        grep -vE '^(gpg-pubkey|libmodulemd|katello-ca-consumer)' | \
+        sort
+      register: el8_rpms
+      changed_when: false
+
+    - name: Save EL8 package list
+      copy:
+        dest: /tmp/rhel8.txt
+        content: "{{ el8_rpms.stdout }}"
+      when: el8_rpms.stdout != ""
+
+    - name: Remove leftover EL8 RPMs
+      command:
+        argv:
+          - rpm
+          - -e
+          - --nodeps
+          - "{{ item }}"
+      loop: "{{ el8_rpms.stdout_lines }}"
+      register: remove_el8
+      ignore_errors: yes
+
+    - name: Show EL8 package removal results
+      debug:
+        var: remove_el8.results
