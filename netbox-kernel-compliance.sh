@@ -230,6 +230,10 @@ elif echo "$OS_RELEASE" | grep -q "release 8"
 then
     EXPECTED_KERNEL="4.18.0-553.134.1.el8_10.x86_64"
 
+elif echo "$OS_RELEASE" | grep -q "release 9"
+then
+    EXPECTED_KERNEL="5.14.0-687.17.1.el9_8.x86_64"
+
 else
     EXPECTED_KERNEL="Unknown"
 fi
