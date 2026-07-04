@@ -969,7 +969,7 @@ from awx.main.models import Inventory, Project, JobTemplate, Credential
 
 project = Project.objects.get(name="Inventory-Git-Repo")
 inventory = Inventory.objects.get(name="centos-07-servers")
-credential = Credential.objects.get(name="Linux Root Credential")
+credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Offline_Patching_el7",
@@ -1035,7 +1035,7 @@ from awx.main.models import Inventory, Project, JobTemplate, Credential
 
 project = Project.objects.get(name="Inventory-Git-Repo")
 inventory = Inventory.objects.get(name="rocky-8-servers")
-credential = Credential.objects.get(name="Linux Root Credential")
+credential = Credential.objects.get(name="Linux Adnin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Offline_Patching_el8",
@@ -1104,7 +1104,7 @@ from awx.main.models import Inventory, Project, JobTemplate, Credential
 
 project = Project.objects.get(name="Inventory-Git-Repo")
 inventory = Inventory.objects.get(name="rocky-9-servers")
-credential = Credential.objects.get(name="Linux Root Credential")
+credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Offline_Patching_el9",
