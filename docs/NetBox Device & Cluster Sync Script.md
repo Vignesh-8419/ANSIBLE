@@ -511,10 +511,10 @@ if [ "$CLUSTER_MODE" == "2" ]; then
     read -p "Enter Cluster Type name: (eg: Physical)" TYPE_NAME
     TYPE_ID=$(get_or_create "virtualization/cluster-types" "$TYPE_NAME")
 
-    read -p "Enter Cluster Group name: (eg: rocky-8-servers / centos-07-servers)" GROUP_NAME
+    read -p "Enter Cluster Group name: (eg: rocky-9-servers / rocky-8-servers / centos-07-servers)" GROUP_NAME
     GROUP_ID=$(get_or_create "virtualization/cluster-groups" "$GROUP_NAME")
 
-    read -p "Enter Cluster name: (eg: rocky-8-servers / centos-07-servers)" CLUSTER_NAME
+    read -p "Enter Cluster name: (eg: rocky-9-servers / rocky-8-servers / centos-07-servers)" CLUSTER_NAME
 
     CLUSTER_ID=$(get_or_create \
         "virtualization/clusters" \
@@ -900,30 +900,40 @@ if [[ "$ADD_TAGS" == "yes" || "$ADD_TAGS" == "y" ]]; then
     TAG_IDS=()
 
     if [[ "$CLUSTER_NAME" == "centos-07-servers" ]]; then
-
+    
         TAGS=(
             "centostorocky-context"
             "patch-context"
             "pxe-centos-context"
             "repo-config-context"
             "vmware-awx-context"
-			"centos-patch-context"
+            "centos-patch-context"
         )
-
+    
     elif [[ "$CLUSTER_NAME" == "rocky-8-servers" ]]; then
-
+    
         TAGS=(
             "patch-el8-context"
             "pxe-rockyos-context"
             "repo-config-context"
             "vmware-awx-context"
-			"rocky-patch-context"
+            "rocky-patch-context"
         )
-
+    
+    elif [[ "$CLUSTER_NAME" == "rocky-9-servers" ]]; then
+    
+        TAGS=(
+            "patch-el9-context"
+            "pxe-rocky9-context"
+            "repo-config-context"
+            "vmware-awx-context"
+            "rocky9-patch-context"
+        )
+    
     else
-
+    
         TAGS=()
-
+    
     fi
 
     for TAG in "${TAGS[@]}"
