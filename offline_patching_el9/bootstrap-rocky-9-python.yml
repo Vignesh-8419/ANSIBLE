@@ -3,6 +3,8 @@
 #  hosts: "{{ target_hosts.split(',') | map('trim') | reject('equalto', '') | map('regex_replace', '$', '.vgs.com') | join(',') }}"
   hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
   gather_facts: false
+  become_method: sudo
+  become_user: root
   become: true
 
   tasks:
