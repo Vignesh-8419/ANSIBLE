@@ -3,6 +3,8 @@
   hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
   become: yes
   gather_facts: no
+  become_method: sudo
+  become_user: root
   any_errors_fatal: false
 
   pre_tasks:
