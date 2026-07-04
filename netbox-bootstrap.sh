@@ -264,9 +264,7 @@ JSON=$(cat <<'EOF'
         "datacenter_name": "Datacenter",
         "datastore": "datastore1",
         "dns_primary": "192.168.253.1",
-        "dns_servers": [
-            "192.168.253.1",
-            ],
+        "dns_servers": ["192.168.253.1"],
         "folder": "vm",
         "gateway": "192.168.253.2",
         "guest_domain": "vgs.com",
