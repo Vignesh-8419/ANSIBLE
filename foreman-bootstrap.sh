@@ -1638,35 +1638,19 @@ if echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
         LOCK_TASK=$(echo "$OUTPUT" | grep -oE '[0-9a-f-]{36}' | head -1)
     
         if [ -n "$LOCK_TASK" ]; then
-    
-            TASK_ACTION=$(
-                $HAMMER task info --search "id = $LOCK_TASK" 2>/dev/null |
-                awk -F': *' '/Action/ {print $2}'
-            )
-    
-            if echo "$TASK_ACTION" | grep -qi "Publish"; then
-    
-                warn "Cancelling stale publish task $LOCK_TASK"
-    
-                $HAMMER task cancel \
-                    --search "id = $LOCK_TASK" >/dev/null 2>&1 || true
-    
-                sleep 10
-    
-            else
-    
-                warn "Resuming task $LOCK_TASK"
-    
-                $HAMMER task resume \
-                    --search "id = $LOCK_TASK" >/dev/null 2>&1 || true
-    
-                sleep 10
-    
-            fi
-    
+        
+            warn "Cancelling conflicting task $LOCK_TASK"
+        
+            $HAMMER task cancel \
+                --search "id = $LOCK_TASK" >/dev/null 2>&1 || true
+        
+            sleep 10
+        
         else
-    
+        
             resume_paused_tasks
+        
+        fi
     
         fi
     
