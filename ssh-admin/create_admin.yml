@@ -1,0 +1,95 @@
+---
+- name: Create Shared Admin User
+  hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
+  gather_facts: yes
+  become: yes
+
+  vars:
+    admin_user: admin
+
+    # Generate with:
+    # openssl passwd -6 'YourPassword'
+    admin_password: "$6$REPLACE_WITH_PASSWORD_HASH"
+
+  tasks:
+
+    - name: Ensure wheel group exists
+      group:
+        name: wheel
+        state: present
+
+    - name: Create admin user
+      user:
+        name: "{{ admin_user }}"
+        shell: /bin/bash
+        comment: Shared Lab Administrator
+        create_home: yes
+        home: "/home/{{ admin_user }}"
+        groups: wheel
+        append: yes
+        password: "{{ admin_password }}"
+        state: present
+
+    - name: Create .ssh directory
+      file:
+        path: "/home/{{ admin_user }}/.ssh"
+        state: directory
+        owner: "{{ admin_user }}"
+        group: "{{ admin_user }}"
+        mode: "0700"
+
+    - name: Copy shared private key
+      copy:
+        src: files/id_rsa
+        dest: "/home/{{ admin_user }}/.ssh/id_rsa"
+        owner: "{{ admin_user }}"
+        group: "{{ admin_user }}"
+        mode: "0600"
+
+    - name: Copy shared public key
+      copy:
+        src: files/id_rsa.pub
+        dest: "/home/{{ admin_user }}/.ssh/id_rsa.pub"
+        owner: "{{ admin_user }}"
+        group: "{{ admin_user }}"
+        mode: "0644"
+
+    - name: Install authorized_keys
+      copy:
+        src: files/id_rsa.pub
+        dest: "/home/{{ admin_user }}/.ssh/authorized_keys"
+        owner: "{{ admin_user }}"
+        group: "{{ admin_user }}"
+        mode: "0600"
+
+    - name: Enable passwordless sudo for wheel
+      lineinfile:
+        path: /etc/sudoers
+        regexp: '^%wheel'
+        line: '%wheel ALL=(ALL) NOPASSWD: ALL'
+        validate: '/usr/sbin/visudo -cf %s'
+
+    - name: Disable StrictHostKeyChecking for admin
+      copy:
+        dest: "/home/{{ admin_user }}/.ssh/config"
+        owner: "{{ admin_user }}"
+        group: "{{ admin_user }}"
+        mode: "0600"
+        content: |
+          Host *
+              StrictHostKeyChecking no
+              UserKnownHostsFile /dev/null
+              LogLevel ERROR
+
+    - name: Verify admin user
+      command: id {{ admin_user }}
+      register: admin_result
+      changed_when: false
+
+    - name: Display verification
+      debug:
+        msg:
+          - "{{ admin_result.stdout }}"
+          - "Admin user created successfully."
+          - "Shared SSH key installed."
+          - "Passwordless sudo configured."
