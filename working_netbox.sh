@@ -131,7 +131,7 @@ dnf config-manager --set-enabled powertools \
 
 dnf remove -y pgdg-redhat-repo 2>/dev/null || true
 
-dnf install -y python3.12
+dnf install -y sshpass python3.12
 
 dnf install -y \
 https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x86_64/pgdg-redhat-repo-latest.noarch.rpm
