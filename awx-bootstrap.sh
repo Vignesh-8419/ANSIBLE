@@ -1154,7 +1154,7 @@ from awx.main.models import Inventory, Project, JobTemplate, Credential
 
 project = Project.objects.get(name="Inventory-Git-Repo")
 inventory = Inventory.objects.get(name="rocky-8-servers")
-credential = Credential.objects.get(name="Linux Adnin Credential")
+credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Offline_Patching_el8",
