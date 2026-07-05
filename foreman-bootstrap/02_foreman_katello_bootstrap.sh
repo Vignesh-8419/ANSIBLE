@@ -1,6 +1,6 @@
 #!/bin/bash
 ###############################################################################
-# Foreman PXE Provisioning + Katello Bootstrap
+# Foreman Katello Bootstrap
 # CentOS 7 & Rocky Linux 8.10
 ###############################################################################
 
