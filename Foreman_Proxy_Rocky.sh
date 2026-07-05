@@ -48,15 +48,14 @@ FOREMAN_IP="192.168.253.133"
 PROXY_SERVER="rocky-08-02.vgs.com"
 PROXY_IP="192.168.253.134"
 
-SSH_PASSWORD="Root@123"
+SSH_PASSWORD="Vigneshv12$"
 
-REPO_MOUNT="//192.168.31.87/ISO"
 MOUNT_POINT="/var/www/html/repo"
 
 ISO_USERNAME="vigne"
 ISO_PASSWORD='Vigneshv12$'
 
-CERT_PATH="/root/${PROXY_SERVER}-certs.tar.gz"
+CERT_PATH="/tmp/${PROXY_SERVER}-certs.tar.gz"
 
 ##############################################
 # Banner
@@ -135,7 +134,6 @@ FOREMAN_IP="192.168.253.133"
 PROXY_SERVER="rocky-08-02.vgs.com"
 PROXY_IP="192.168.253.134"
 
-REPO_MOUNT="//192.168.31.87/ISO"
 MOUNT_POINT="/var/www/html/repo"
 
 ISO_USERNAME="vigne"
@@ -234,23 +232,6 @@ else
 fi
 
 ##############################################
-# Mount ISO
-##############################################
-
-print_header "MOUNTING ISO SHARE"
-
-mkdir -p "${MOUNT_POINT}"
-
-if findmnt -rno TARGET "${MOUNT_POINT}" >/dev/null 2>&1; then
-    print_success "ISO already mounted."
-else
-    mount -t cifs "${REPO_MOUNT}" "${MOUNT_POINT}" \
-      -o username="${ISO_USERNAME}",password="${ISO_PASSWORD}",rw,vers=3.0
-
-    print_success "ISO mounted."
-fi
-
-##############################################
 # Repository Installation
 ##############################################
 
@@ -325,7 +306,7 @@ print_step "Running Foreman installer..."
 
 foreman-installer \
   --scenario foreman-proxy-content \
-  --certs-tar-file "/root/${PROXY_SERVER}-certs.tar.gz" \
+  --certs-tar-file "/home/admin/${PROXY_SERVER}-certs.tar.gz" \
   --foreman-proxy-register-in-foreman true \
   --foreman-proxy-foreman-base-url "https://rocky-08-01.vgs.com" \
   --foreman-proxy-trusted-hosts "rocky-08-01.vgs.com" \
@@ -359,68 +340,50 @@ firewall-cmd --reload
 
 print_success "Firewall configured"
 
-##############################################
-# UEFI Files
-##############################################
+# ======================================================
+# Rocky Linux 8 PXE Boot Files
+# ======================================================
 
-print_header "COPYING UEFI FILES"
-
-mkdir -p /var/lib/tftpboot/grub2
-
-sshpass -p 'Root@123' scp \
+sshpass -p 'Vigneshv12$' scp \
 -o StrictHostKeyChecking=no \
 -o UserKnownHostsFile=/dev/null \
-root@${FOREMAN_SERVER}:/boot/efi/EFI/rocky/shimx64.efi \
+admin@netbox.vgs.com:/boot/efi/EFI/rocky/shimx64.efi \
 /var/lib/tftpboot/grub2/
 
-sshpass -p 'Root@123' scp \
+sshpass -p 'Vigneshv12$' scp \
 -o StrictHostKeyChecking=no \
 -o UserKnownHostsFile=/dev/null \
-root@${FOREMAN_SERVER}:/boot/efi/EFI/rocky/grub.cfg \
+admin@netbox.vgs.com:/boot/efi/EFI/rocky/grub.cfg \
 /var/lib/tftpboot/grub2/
 
-print_success "UEFI files copied"
+mkdir -p /var/lib/tftpboot/rocky8
 
-##############################################
-# PXE Files
-##############################################
+curl -o /var/lib/tftpboot/rocky8/vmlinuz \
+http://http-server-01/repo/rocky8/isolinux/vmlinuz
 
-print_header "CONFIGURING PXE FILES"
+curl -o /var/lib/tftpboot/rocky8/initrd.img \
+http://http-server-01/repo/rocky8/isolinux/initrd.img
 
-mkdir -p /var/lib/tftpboot/rockyos
+chown -R foreman-proxy:root /var/lib/tftpboot/rocky8
+chmod 644 /var/lib/tftpboot/rocky8/*
 
-cp -rp \
-${MOUNT_POINT}/rocky8/isolinux/vmlinuz \
-/var/lib/tftpboot/rockyos/
 
-cp -rp \
-${MOUNT_POINT}/rocky8/isolinux/initrd.img \
-/var/lib/tftpboot/rockyos/
+# ======================================================
+# Rocky Linux 9 PXE Boot Files
+# ======================================================
+mkdir -p /var/lib/tftpboot/rocky9
 
-chown -R foreman-proxy:root /var/lib/tftpboot/rockyos
+curl -o /var/lib/tftpboot/rocky9/vmlinuz \
+http://http-server-01/repo/rocky9/images/pxeboot/vmlinuz
 
-print_success "PXE files configured"
+curl -o /var/lib/tftpboot/rocky9/initrd.img \
+http://http-server-01/repo/rocky9/images/pxeboot/initrd.img
 
-##############################################
-# Cleanup - Unmount ISO Repository
-##############################################
+chown -R foreman-proxy:root /var/lib/tftpboot/rocky9
+chmod 644 /var/lib/tftpboot/rocky9/*
 
-print_header "CLEANUP - UNMOUNTING ISO REPOSITORY"
+echo "✅ Smart Proxy installation completed."
 
-if findmnt -rno TARGET "\${MOUNT_POINT}" >/dev/null 2>&1; then
-    print_step "ISO is currently mounted at \${MOUNT_POINT}. Unmounting..."
-    
-    # Using lazy unmount (-l) ensures the script won't hang if a process is still looking at the directory
-    umount -l "\${MOUNT_POINT}"
-    
-    if ! findmnt -rno TARGET "\${MOUNT_POINT}" >/dev/null 2>&1; then
-        print_success "ISO share unmounted successfully."
-    else
-        print_error "Failed to completely unmount ISO share from \${MOUNT_POINT}."
-    fi
-else
-    print_success "ISO share is already unmounted or wasn't loaded."
-fi
 
 ##############################################
 # Completion
@@ -464,8 +427,8 @@ print_header "REMOVING OLD REMOTE INSTALLER"
 sshpass -p "$SSH_PASSWORD" ssh \
 -o StrictHostKeyChecking=no \
 -o UserKnownHostsFile=/dev/null \
-root@"$PROXY_SERVER" \
-"rm -f /root/proxy_remote.sh"
+admin@"$PROXY_SERVER" \
+"rm -f /home/admin/proxy_remote.sh /home/admin/${PROXY_SERVER}-certs.tar.gz"
 
 print_success "Old remote installer removed"
 
@@ -479,14 +442,13 @@ sshpass -p "$SSH_PASSWORD" scp \
 -o StrictHostKeyChecking=no \
 -o UserKnownHostsFile=/dev/null \
 /tmp/proxy_remote.sh \
-root@"$PROXY_SERVER":/root/
+admin@"$PROXY_SERVER":/home/admin/
 
 sshpass -p "$SSH_PASSWORD" scp \
 -o StrictHostKeyChecking=no \
 -o UserKnownHostsFile=/dev/null \
 "$CERT_PATH" \
-root@"$PROXY_SERVER":/root/
-
+admin@"$PROXY_SERVER":/home/admin/
 print_success "Files copied successfully"
 
 ##############################################
@@ -500,8 +462,10 @@ print_step "Starting installation on ${PROXY_SERVER}..."
 sshpass -p "$SSH_PASSWORD" ssh -tt \
 -o StrictHostKeyChecking=no \
 -o UserKnownHostsFile=/dev/null \
-root@"$PROXY_SERVER" \
-"export TERM=xterm-256color; bash /root/proxy_remote.sh"
+admin@"$PROXY_SERVER" <<EOF
+echo "$SSH_PASSWORD" | sudo -S chmod +x /home/admin/proxy_remote.sh
+echo "$SSH_PASSWORD" | sudo -S env TERM=xterm-256color bash /home/admin/proxy_remote.sh
+EOF
 
 print_success "Remote execution completed"
 
