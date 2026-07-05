@@ -1,0 +1,481 @@
+---
+- name: Enterprise Linux Compliance Audit
+  hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
+  become: yes
+  become_method: sudo
+  become_user: root
+  gather_facts: yes
+
+  vars:
+
+    compliance:
+      ssh_root_login: PASS
+      pubkey_auth: PASS
+      password_auth: PASS
+      x11: PASS
+      gssapi: PASS
+      dns: PASS
+      banner: PASS
+      sudo: PASS
+      selinux: PASS
+      passwd_age: PASS
+
+  tasks:
+
+###########################################################################
+# SSH
+###########################################################################
+
+    - name: Read sshd_config
+      slurp:
+        src: /etc/ssh/sshd_config
+      register: sshd
+
+    - set_fact:
+        ssh_cfg: "{{ sshd.content | b64decode }}"
+
+    - name: Root Login
+      set_fact:
+        compliance: "{{ compliance | combine({'ssh_root_login':'FAIL'}) }}"
+      when: "'PermitRootLogin no' not in ssh_cfg"
+
+    - name: PubkeyAuthentication
+      set_fact:
+        compliance: "{{ compliance | combine({'pubkey_auth':'FAIL'}) }}"
+      when: "'PubkeyAuthentication yes' not in ssh_cfg"
+
+    - name: PasswordAuthentication
+      set_fact:
+        compliance: "{{ compliance | combine({'password_auth':'FAIL'}) }}"
+      when: "'PasswordAuthentication yes' not in ssh_cfg"
+
+    - name: X11 Forwarding
+      set_fact:
+        compliance: "{{ compliance | combine({'x11':'FAIL'}) }}"
+      when: "'X11Forwarding no' not in ssh_cfg"
+
+    - name: GSSAPI
+      set_fact:
+        compliance: "{{ compliance | combine({'gssapi':'FAIL'}) }}"
+      when: "'GSSAPIAuthentication no' not in ssh_cfg"
+
+    - name: DNS Lookup
+      set_fact:
+        compliance: "{{ compliance | combine({'dns':'FAIL'}) }}"
+      when: "'UseDNS no' not in ssh_cfg"
+
+###########################################################################
+# PASSWORD POLICY
+###########################################################################
+
+    - name: Read login.defs
+      slurp:
+        src: /etc/login.defs
+      register: login_defs
+
+    - set_fact:
+        login_cfg: "{{ login_defs.content | b64decode }}"
+
+    - name: PASS_MAX_DAYS
+      set_fact:
+        compliance: "{{ compliance | combine({'passwd_age':'FAIL'}) }}"
+      when: "'PASS_MAX_DAYS   90' not in login_cfg"
+
+###########################################################################
+# SUDO
+###########################################################################
+
+    - name: Verify sudo
+      stat:
+        path: /etc/sudoers.d/admin
+      register: sudo_admin
+
+    - name: Check sudo
+      set_fact:
+        compliance: "{{ compliance | combine({'sudo':'FAIL'}) }}"
+      when: not sudo_admin.stat.exists
+
+###########################################################################
+# LOGIN BANNER
+###########################################################################
+
+    - name: Verify Banner
+      stat:
+        path: /etc/issue.net
+      register: banner
+
+    - name: Banner
+      set_fact:
+        compliance: "{{ compliance | combine({'banner':'FAIL'}) }}"
+      when: not banner.stat.exists
+
+###########################################################################
+# SELINUX
+###########################################################################
+
+    - name: SELinux
+      command: getenforce
+      register: selinux
+      changed_when: false
+      failed_when: false
+
+    - name: SELinux Compliance
+      set_fact:
+        compliance: "{{ compliance | combine({'selinux':'FAIL'}) }}"
+      when: selinux.stdout == "Disabled"
+
+###########################################################################
+# AUDITD
+###########################################################################
+
+    - name: Verify auditd package
+      package_facts:
+
+    - name: Audit Package
+      set_fact:
+        compliance: "{{ compliance | combine({'auditd':'FAIL'}) }}"
+      when: "'audit' not in ansible_facts.packages"
+
+    - name: Verify auditd service
+      service_facts:
+
+    - name: Audit Service
+      set_fact:
+        compliance: "{{ compliance | combine({'auditd_service':'FAIL'}) }}"
+      when: >
+        'auditd.service' not in ansible_facts.services or
+        ansible_facts.services['auditd.service'].state != 'running'
+
+###########################################################################
+# FIREWALL
+###########################################################################
+
+    - name: Firewalld Service
+      set_fact:
+        compliance: "{{ compliance | combine({'firewalld':'FAIL'}) }}"
+      when: >
+        'firewalld.service' not in ansible_facts.services or
+        ansible_facts.services['firewalld.service'].state != 'running'
+
+###########################################################################
+# PASSWORD QUALITY
+###########################################################################
+
+    - name: Read pwquality
+      slurp:
+        src: /etc/security/pwquality.conf
+      register: pwquality
+      ignore_errors: yes
+
+    - set_fact:
+        pw_cfg: "{{ pwquality.content | default('') | b64decode }}"
+
+    - name: Password Minimum Length
+      set_fact:
+        compliance: "{{ compliance | combine({'pw_minlen':'FAIL'}) }}"
+      when:
+        - pw_cfg != ""
+        - "'minlen = 12' not in pw_cfg"
+
+###########################################################################
+# FAILLOCK
+###########################################################################
+
+    - name: Check faillock
+      stat:
+        path: /etc/security/faillock.conf
+      register: faillock
+
+    - name: Faillock
+      set_fact:
+        compliance: "{{ compliance | combine({'faillock':'FAIL'}) }}"
+      when:
+        - ansible_distribution_major_version in ['8','9']
+        - not faillock.stat.exists
+
+###########################################################################
+# SYSCTL
+###########################################################################
+
+    - name: Verify IP Forwarding
+      command: sysctl net.ipv4.ip_forward
+      register: ipforward
+      changed_when: false
+
+    - name: IP Forwarding
+      set_fact:
+        compliance: "{{ compliance | combine({'ip_forward':'FAIL'}) }}"
+      when: "'= 0' not in ipforward.stdout"
+
+    - name: Verify Syncookies
+      command: sysctl net.ipv4.tcp_syncookies
+      register: syncookies
+      changed_when: false
+
+    - name: Syncookies
+      set_fact:
+        compliance: "{{ compliance | combine({'syncookies':'FAIL'}) }}"
+      when: "'= 1' not in syncookies.stdout"
+
+    - name: Verify ASLR
+      command: sysctl kernel.randomize_va_space
+      register: aslr
+      changed_when: false
+
+    - name: ASLR
+      set_fact:
+        compliance: "{{ compliance | combine({'aslr':'FAIL'}) }}"
+      when: "'= 2' not in aslr.stdout"
+
+###########################################################################
+# CORE DUMPS
+###########################################################################
+
+    - name: Verify Core Dump
+      stat:
+        path: /etc/security/limits.d/99-hardening.conf
+      register: coredump
+
+    - name: Core Dumps
+      set_fact:
+        compliance: "{{ compliance | combine({'core_dump':'FAIL'}) }}"
+      when: not coredump.stat.exists
+
+###########################################################################
+# CRON
+###########################################################################
+
+    - name: Verify cron.allow
+      stat:
+        path: /etc/cron.allow
+      register: cronallow
+
+    - name: Cron Allow
+      set_fact:
+        compliance: "{{ compliance | combine({'cron':'FAIL'}) }}"
+      when: not cronallow.stat.exists
+
+###########################################################################
+# HOME DIRECTORY
+###########################################################################
+
+    - name: Check admin home
+      stat:
+        path: /home/admin
+      register: adminhome
+
+    - name: Admin Home
+      set_fact:
+        compliance: "{{ compliance | combine({'admin_home':'FAIL'}) }}"
+      when: not adminhome.stat.exists
+
+###########################################################################
+# SSH DIRECTORY
+###########################################################################
+
+    - name: Check admin ssh
+      stat:
+        path: /home/admin/.ssh
+      register: sshdir
+
+    - name: SSH Directory
+      set_fact:
+        compliance: "{{ compliance | combine({'ssh_directory':'FAIL'}) }}"
+      when: not sshdir.stat.exists
+
+###########################################################################
+# ROOT SSH
+###########################################################################
+
+    - name: Check root ssh
+      stat:
+        path: /root/.ssh
+      register: rootssh
+
+    - name: Root SSH
+      set_fact:
+        compliance: "{{ compliance | combine({'root_ssh':'FAIL'}) }}"
+      when: not rootssh.stat.exists
+
+###########################################################################
+# WORLD WRITABLE FILES
+###########################################################################
+
+    - name: Find world writable files
+      shell: find / -xdev -type f -perm -0002 2>/dev/null
+      register: world_files
+      changed_when: false
+
+    - name: World writable compliance
+      set_fact:
+        compliance: "{{ compliance | combine({'world_writable':'FAIL'}) }}"
+      when: world_files.stdout_lines | length > 0
+
+###########################################################################
+# STICKY BIT
+###########################################################################
+
+    - name: Find world writable directories without sticky bit
+      shell: |
+        find / -xdev -type d -perm -0002 ! -perm -1000 2>/dev/null
+      register: sticky_dirs
+      changed_when: false
+
+    - name: Sticky Bit Compliance
+      set_fact:
+        compliance: "{{ compliance | combine({'sticky_bit':'FAIL'}) }}"
+      when: sticky_dirs.stdout_lines | length > 0
+
+###########################################################################
+# TMP
+###########################################################################
+
+    - name: Check /tmp permissions
+      stat:
+        path: /tmp
+      register: tmpdir
+
+    - name: Verify /tmp mode
+      set_fact:
+        compliance: "{{ compliance | combine({'tmp_permissions':'FAIL'}) }}"
+      when: tmpdir.stat.mode != "1777"
+
+###########################################################################
+# INSECURE SERVICES
+###########################################################################
+
+    - name: Collect services
+      service_facts:
+
+    - name: Initialize insecure service list
+      set_fact:
+        insecure_running: []
+
+    - name: Check insecure services
+      set_fact:
+        insecure_running: "{{ insecure_running + [ item ] }}"
+      loop:
+        - telnet.socket
+        - xinetd.service
+        - rexec.socket
+        - rsh.socket
+        - ypbind.service
+        - cups.service
+        - avahi-daemon.service
+      when:
+        - item in ansible_facts.services
+        - ansible_facts.services[item].state == "running"
+
+    - name: Insecure Services Compliance
+      set_fact:
+        compliance: "{{ compliance | combine({'services':'FAIL'}) }}"
+      when: insecure_running | length > 0
+
+###########################################################################
+# SUDO
+###########################################################################
+
+    - name: Verify sudoers file
+      stat:
+        path: /etc/sudoers.d/admin
+      register: sudoers
+
+    - name: Verify sudo file mode
+      set_fact:
+        compliance: "{{ compliance | combine({'sudo_permissions':'FAIL'}) }}"
+      when:
+        - sudoers.stat.exists
+        - sudoers.stat.mode != "0440"
+
+###########################################################################
+# SSH KEYS
+###########################################################################
+
+    - name: Check admin authorized_keys
+      stat:
+        path: /home/admin/.ssh/authorized_keys
+      register: admin_keys
+
+    - name: Authorized Keys
+      set_fact:
+        compliance: "{{ compliance | combine({'authorized_keys':'FAIL'}) }}"
+      when: not admin_keys.stat.exists
+
+###########################################################################
+# PASSWORD EXPIRY
+###########################################################################
+
+    - name: Get password expiry
+      shell: chage -l admin
+      register: chage_output
+      changed_when: false
+
+###########################################################################
+# COMPLIANCE SCORE
+###########################################################################
+
+    - name: Initialize counters
+      set_fact:
+        pass_count: 0
+        fail_count: 0
+
+    - name: Count PASS
+      set_fact:
+        pass_count: "{{ pass_count + 1 }}"
+      loop: "{{ compliance | dict2items }}"
+      when: item.value == "PASS"
+
+    - name: Count FAIL
+      set_fact:
+        fail_count: "{{ fail_count + 1 }}"
+      loop: "{{ compliance | dict2items }}"
+      when: item.value == "FAIL"
+
+    - name: Calculate Compliance Percentage
+      set_fact:
+        compliance_percent: "{{ ((pass_count | float) / (pass_count + fail_count) * 100) | round(1) }}"
+
+###########################################################################
+# REPORT
+###########################################################################
+
+    - name: Compliance Report
+      debug:
+        msg:
+          - "============================================================"
+          - "           Enterprise Linux Compliance Report"
+          - "============================================================"
+          - "Host                : {{ inventory_hostname }}"
+          - "Operating System    : {{ ansible_distribution }} {{ ansible_distribution_major_version }}"
+          - ""
+          - "SSH Root Login      : {{ compliance.ssh_root_login | default('PASS') }}"
+          - "Pubkey Auth         : {{ compliance.pubkey_auth | default('PASS') }}"
+          - "Password Auth       : {{ compliance.password_auth | default('PASS') }}"
+          - "Password Aging      : {{ compliance.passwd_age | default('PASS') }}"
+          - "Password Quality    : {{ compliance.pw_minlen | default('PASS') }}"
+          - "Faillock            : {{ compliance.faillock | default('PASS') }}"
+          - "Auditd              : {{ compliance.auditd | default('PASS') }}"
+          - "Firewalld           : {{ compliance.firewalld | default('PASS') }}"
+          - "Kernel Hardening    : {{ compliance.aslr | default('PASS') }}"
+          - "IP Forwarding       : {{ compliance.ip_forward | default('PASS') }}"
+          - "Sudo                : {{ compliance.sudo | default('PASS') }}"
+          - "Banner              : {{ compliance.banner | default('PASS') }}"
+          - "SELinux             : {{ compliance.selinux | default('PASS') }}"
+          - "Cron                : {{ compliance.cron | default('PASS') }}"
+          - "Sticky Bit          : {{ compliance.sticky_bit | default('PASS') }}"
+          - "World Writable      : {{ compliance.world_writable | default('PASS') }}"
+          - "Services            : {{ compliance.services | default('PASS') }}"
+          - ""
+          - "PASS                : {{ pass_count }}"
+          - "FAIL                : {{ fail_count }}"
+          - "Compliance Score    : {{ compliance_percent }} %"
+          - "============================================================"
+
+###########################################################################
+# OPTIONAL FAILURE
+###########################################################################
+
+    - name: Fail if compliance is below 90%
+      fail:
+        msg: "Compliance score is below 90% ({{ compliance_percent }}%)."
+      when: compliance_percent | float < 90
