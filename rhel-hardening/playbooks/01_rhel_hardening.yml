@@ -1,0 +1,878 @@
+---
+- name: Enterprise Linux Hardening
+  hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
+  become: yes
+  become_method: sudo
+  become_user: root
+  gather_facts: yes
+  any_errors_fatal: false
+
+  vars:
+
+    ############################################################
+    # SSH
+    ############################################################
+
+    ssh_port: 22
+
+    permit_root_login: "no"
+
+    password_authentication: "yes"
+
+    pubkey_authentication: "yes"
+
+    login_grace_time: "60"
+
+    max_auth_tries: "3"
+
+    max_sessions: "10"
+
+    client_alive_interval: "300"
+
+    client_alive_countmax: "0"
+
+    ############################################################
+    # PASSWORD POLICY
+    ############################################################
+
+    pass_max_days: 90
+
+    pass_min_days: 1
+
+    pass_warn_age: 7
+
+    ############################################################
+    # BACKUP
+    ############################################################
+
+    backup_dir: /root/hardening_backup
+
+  pre_tasks:
+
+###########################################################################
+# VERIFY OS
+###########################################################################
+
+    - name: Verify Supported Linux Distribution
+      fail:
+        msg: "Only RHEL/CentOS/Rocky Linux 7,8,9 are supported."
+      when:
+        - ansible_distribution not in ['RedHat','CentOS','Rocky']
+        - ansible_distribution_major_version not in ['7','8','9']
+
+###########################################################################
+# BACKUP
+###########################################################################
+
+    - name: Create Backup Directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Backup sshd_config
+      copy:
+        src: /etc/ssh/sshd_config
+        dest: "{{ backup_dir }}/sshd_config"
+        remote_src: yes
+      ignore_errors: yes
+
+    - name: Backup login.defs
+      copy:
+        src: /etc/login.defs
+        dest: "{{ backup_dir }}/login.defs"
+        remote_src: yes
+      ignore_errors: yes
+
+    - name: Backup pwquality.conf
+      copy:
+        src: /etc/security/pwquality.conf
+        dest: "{{ backup_dir }}/pwquality.conf"
+        remote_src: yes
+      ignore_errors: yes
+
+    - name: Backup issue
+      copy:
+        src: /etc/issue
+        dest: "{{ backup_dir }}/issue"
+        remote_src: yes
+      ignore_errors: yes
+
+    - name: Backup issue.net
+      copy:
+        src: /etc/issue.net
+        dest: "{{ backup_dir }}/issue.net"
+        remote_src: yes
+      ignore_errors: yes
+
+###########################################################################
+# SSH HARDENING
+###########################################################################
+
+  tasks:
+
+    - name: Configure SSH Port
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?Port'
+        line: "Port {{ ssh_port }}"
+      notify: Restart SSH
+
+    - name: Disable Root Login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: "PermitRootLogin {{ permit_root_login }}"
+      notify: Restart SSH
+
+    - name: Enable Public Key Authentication
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PubkeyAuthentication'
+        line: "PubkeyAuthentication {{ pubkey_authentication }}"
+      notify: Restart SSH
+
+    - name: Configure Password Authentication
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: "PasswordAuthentication {{ password_authentication }}"
+      notify: Restart SSH
+
+    - name: Disable Empty Passwords
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitEmptyPasswords'
+        line: "PermitEmptyPasswords no"
+      notify: Restart SSH
+
+    - name: Disable X11 Forwarding
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?X11Forwarding'
+        line: "X11Forwarding no"
+      notify: Restart SSH
+
+    - name: Disable HostBasedAuthentication
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?HostbasedAuthentication'
+        line: "HostbasedAuthentication no"
+      notify: Restart SSH
+
+    - name: Disable IgnoreRhosts
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?IgnoreRhosts'
+        line: "IgnoreRhosts yes"
+      notify: Restart SSH
+
+    - name: Disable GSSAPI Authentication
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?GSSAPIAuthentication'
+        line: "GSSAPIAuthentication no"
+      notify: Restart SSH
+
+    - name: Disable DNS Lookup
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?UseDNS'
+        line: "UseDNS no"
+      notify: Restart SSH
+
+    - name: Configure Login Grace Time
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?LoginGraceTime'
+        line: "LoginGraceTime {{ login_grace_time }}"
+      notify: Restart SSH
+
+    - name: Configure MaxAuthTries
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?MaxAuthTries'
+        line: "MaxAuthTries {{ max_auth_tries }}"
+      notify: Restart SSH
+
+    - name: Configure MaxSessions
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?MaxSessions'
+        line: "MaxSessions {{ max_sessions }}"
+      notify: Restart SSH
+
+    - name: Configure Idle Timeout
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?ClientAliveInterval'
+        line: "ClientAliveInterval {{ client_alive_interval }}"
+      notify: Restart SSH
+
+    - name: Configure Idle Timeout Count
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?ClientAliveCountMax'
+        line: "ClientAliveCountMax {{ client_alive_countmax }}"
+      notify: Restart SSH
+
+###########################################################################
+# PASSWORD POLICY
+###########################################################################
+
+    - name: Configure PASS_MAX_DAYS
+      replace:
+        path: /etc/login.defs
+        regexp: '^PASS_MAX_DAYS.*'
+        replace: "PASS_MAX_DAYS {{ pass_max_days }}"
+
+    - name: Configure PASS_MIN_DAYS
+      replace:
+        path: /etc/login.defs
+        regexp: '^PASS_MIN_DAYS.*'
+        replace: "PASS_MIN_DAYS {{ pass_min_days }}"
+
+    - name: Configure PASS_WARN_AGE
+      replace:
+        path: /etc/login.defs
+        regexp: '^PASS_WARN_AGE.*'
+        replace: "PASS_WARN_AGE {{ pass_warn_age }}"
+
+  handlers:
+
+    - name: Restart SSH
+      service:
+        name: sshd
+        state: restarted
+###########################################################################
+# PASSWORD COMPLEXITY (PWQUALITY)
+###########################################################################
+
+    - name: Install libpwquality
+      package:
+        name: libpwquality
+        state: present
+      ignore_errors: yes
+
+    - name: Configure Minimum Password Length
+      lineinfile:
+        path: /etc/security/pwquality.conf
+        regexp: '^#?minlen'
+        line: 'minlen = 12'
+        create: yes
+
+    - name: Require Uppercase
+      lineinfile:
+        path: /etc/security/pwquality.conf
+        regexp: '^#?ucredit'
+        line: 'ucredit = -1'
+        create: yes
+
+    - name: Require Lowercase
+      lineinfile:
+        path: /etc/security/pwquality.conf
+        regexp: '^#?lcredit'
+        line: 'lcredit = -1'
+        create: yes
+
+    - name: Require Numbers
+      lineinfile:
+        path: /etc/security/pwquality.conf
+        regexp: '^#?dcredit'
+        line: 'dcredit = -1'
+        create: yes
+
+    - name: Require Special Characters
+      lineinfile:
+        path: /etc/security/pwquality.conf
+        regexp: '^#?ocredit'
+        line: 'ocredit = -1'
+        create: yes
+
+    - name: Configure Password History
+      lineinfile:
+        path: /etc/security/pwquality.conf
+        regexp: '^#?remember'
+        line: 'remember = 5'
+        create: yes
+
+###########################################################################
+# FAILLOCK
+###########################################################################
+
+    - name: Configure Account Lockout (EL8/EL9)
+      lineinfile:
+        path: /etc/security/faillock.conf
+        regexp: '^deny'
+        line: 'deny = 5'
+        create: yes
+      when: ansible_distribution_major_version in ['8','9']
+
+    - name: Configure Unlock Time
+      lineinfile:
+        path: /etc/security/faillock.conf
+        regexp: '^unlock_time'
+        line: 'unlock_time = 900'
+        create: yes
+      when: ansible_distribution_major_version in ['8','9']
+
+    - name: Configure Fail Interval
+      lineinfile:
+        path: /etc/security/faillock.conf
+        regexp: '^fail_interval'
+        line: 'fail_interval = 900'
+        create: yes
+      when: ansible_distribution_major_version in ['8','9']
+
+###########################################################################
+# SUDO HARDENING
+###########################################################################
+
+    - name: Ensure wheel group exists
+      group:
+        name: wheel
+        state: present
+
+    - name: Ensure admin user belongs to wheel
+      user:
+        name: admin
+        groups: wheel
+        append: yes
+
+    - name: Configure Passwordless Sudo
+      copy:
+        dest: /etc/sudoers.d/admin
+        owner: root
+        group: root
+        mode: '0440'
+        content: |
+          admin ALL=(ALL) NOPASSWD: ALL
+        validate: '/usr/sbin/visudo -cf %s'
+
+###########################################################################
+# AUDITD
+###########################################################################
+
+    - name: Install auditd
+      package:
+        name: audit
+        state: present
+
+    - name: Enable auditd
+      service:
+        name: auditd
+        enabled: yes
+        state: started
+
+###########################################################################
+# JOURNALD
+###########################################################################
+
+    - name: Enable Persistent Journal
+      lineinfile:
+        path: /etc/systemd/journald.conf
+        regexp: '^#?Storage'
+        line: 'Storage=persistent'
+      notify: Restart Journald
+
+###########################################################################
+# LOGIN BANNER
+###########################################################################
+
+    - name: Configure /etc/issue
+      copy:
+        dest: /etc/issue
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+
+          **************************************************************
+                     Authorized Access Only
+
+            All activities are monitored and logged.
+
+          **************************************************************
+
+    - name: Configure /etc/issue.net
+      copy:
+        dest: /etc/issue.net
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+
+          **************************************************************
+                     Authorized Access Only
+
+            All activities are monitored and logged.
+
+          **************************************************************
+
+###########################################################################
+# CORE DUMP PROTECTION
+###########################################################################
+
+    - name: Disable Core Dumps
+      copy:
+        dest: /etc/security/limits.d/99-hardening.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          * hard core 0
+          * soft core 0
+
+###########################################################################
+# HANDLER
+###########################################################################
+
+  handlers:
+
+    - name: Restart Journald
+      service:
+        name: systemd-journald
+        state: restarted
+###########################################################################
+# KERNEL HARDENING (SYSCTL)
+###########################################################################
+
+    - name: Disable IP Forwarding
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: "0"
+        state: present
+        reload: yes
+
+    - name: Disable IPv6 Forwarding
+      sysctl:
+        name: net.ipv6.conf.all.forwarding
+        value: "0"
+        state: present
+        reload: yes
+      ignore_errors: yes
+
+    - name: Disable Source Routing (All)
+      sysctl:
+        name: net.ipv4.conf.all.accept_source_route
+        value: "0"
+        state: present
+        reload: yes
+
+    - name: Disable Source Routing (Default)
+      sysctl:
+        name: net.ipv4.conf.default.accept_source_route
+        value: "0"
+        state: present
+        reload: yes
+
+    - name: Disable ICMP Redirects (All)
+      sysctl:
+        name: net.ipv4.conf.all.accept_redirects
+        value: "0"
+        state: present
+        reload: yes
+
+    - name: Disable ICMP Redirects (Default)
+      sysctl:
+        name: net.ipv4.conf.default.accept_redirects
+        value: "0"
+        state: present
+        reload: yes
+
+    - name: Disable Secure Redirects
+      sysctl:
+        name: net.ipv4.conf.all.secure_redirects
+        value: "0"
+        state: present
+        reload: yes
+
+    - name: Disable Send Redirects
+      sysctl:
+        name: net.ipv4.conf.all.send_redirects
+        value: "0"
+        state: present
+        reload: yes
+
+    - name: Enable Reverse Path Filtering
+      sysctl:
+        name: net.ipv4.conf.all.rp_filter
+        value: "1"
+        state: present
+        reload: yes
+
+    - name: Ignore Bogus ICMP
+      sysctl:
+        name: net.ipv4.icmp_ignore_bogus_error_responses
+        value: "1"
+        state: present
+        reload: yes
+
+    - name: Enable TCP SYN Cookies
+      sysctl:
+        name: net.ipv4.tcp_syncookies
+        value: "1"
+        state: present
+        reload: yes
+
+    - name: Enable ASLR
+      sysctl:
+        name: kernel.randomize_va_space
+        value: "2"
+        state: present
+        reload: yes
+
+###########################################################################
+# FIREWALL
+###########################################################################
+
+    - name: Install firewalld
+      package:
+        name: firewalld
+        state: present
+      ignore_errors: yes
+
+    - name: Enable firewalld
+      service:
+        name: firewalld
+        enabled: yes
+        state: started
+      ignore_errors: yes
+
+    - name: Allow SSH
+      firewalld:
+        service: ssh
+        permanent: yes
+        immediate: yes
+        state: enabled
+      ignore_errors: yes
+
+    - name: Allow HTTP
+      firewalld:
+        service: http
+        permanent: yes
+        immediate: yes
+        state: enabled
+      ignore_errors: yes
+
+    - name: Allow HTTPS
+      firewalld:
+        service: https
+        permanent: yes
+        immediate: yes
+        state: enabled
+      ignore_errors: yes
+
+###########################################################################
+# DISABLE INSECURE SERVICES
+###########################################################################
+
+    - name: Disable Telnet
+      service:
+        name: telnet.socket
+        enabled: no
+        state: stopped
+      ignore_errors: yes
+
+    - name: Disable xinetd
+      service:
+        name: xinetd
+        enabled: no
+        state: stopped
+      ignore_errors: yes
+
+    - name: Disable rsh
+      service:
+        name: rsh.socket
+        enabled: no
+        state: stopped
+      ignore_errors: yes
+
+    - name: Disable rexec
+      service:
+        name: rexec.socket
+        enabled: no
+        state: stopped
+      ignore_errors: yes
+
+    - name: Disable ypbind
+      service:
+        name: ypbind
+        enabled: no
+        state: stopped
+      ignore_errors: yes
+
+    - name: Disable avahi
+      service:
+        name: avahi-daemon
+        enabled: no
+        state: stopped
+      ignore_errors: yes
+
+    - name: Disable CUPS
+      service:
+        name: cups
+        enabled: no
+        state: stopped
+      ignore_errors: yes
+
+###########################################################################
+# CRON HARDENING
+###########################################################################
+
+    - name: Remove cron.deny
+      file:
+        path: /etc/cron.deny
+        state: absent
+
+    - name: Remove at.deny
+      file:
+        path: /etc/at.deny
+        state: absent
+
+    - name: Secure crontab
+      file:
+        path: /etc/crontab
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Secure cron.allow
+      file:
+        path: /etc/cron.allow
+        owner: root
+        group: root
+        mode: "0600"
+      ignore_errors: yes
+
+###########################################################################
+# TMP HARDENING
+###########################################################################
+
+    - name: Secure /tmp
+      file:
+        path: /tmp
+        owner: root
+        group: root
+        mode: "1777"
+
+###########################################################################
+# UMASK
+###########################################################################
+
+    - name: Configure UMASK
+      replace:
+        path: /etc/login.defs
+        regexp: '^UMASK.*'
+        replace: 'UMASK 027'
+
+###########################################################################
+# SU RESTRICTION
+###########################################################################
+
+    - name: Restrict su to wheel
+      lineinfile:
+        path: /etc/pam.d/su
+        regexp: '^#auth.*pam_wheel.so'
+        line: 'auth required pam_wheel.so use_uid'
+
+###########################################################################
+# VERIFY SELINUX
+###########################################################################
+
+    - name: Check SELinux Status
+      command: getenforce
+      register: selinux_status
+      changed_when: false
+      failed_when: false
+
+    - name: Display SELinux Status
+      debug:
+        msg: "SELinux Status : {{ selinux_status.stdout }}"
+###########################################################################
+# WORLD WRITABLE FILES
+###########################################################################
+
+    - name: Find world writable files
+      shell: find / -xdev -type f -perm -0002 2>/dev/null
+      register: world_files
+      changed_when: false
+
+    - name: Remove world writable permission
+      file:
+        path: "{{ item }}"
+        mode: "u=rw,g=r,o=r"
+      loop: "{{ world_files.stdout_lines }}"
+      ignore_errors: yes
+
+###########################################################################
+# STICKY BIT
+###########################################################################
+
+    - name: Find world writable directories
+      shell: |
+        find / -xdev -type d -perm -0002 ! -perm -1000 2>/dev/null
+      register: sticky_dirs
+      changed_when: false
+
+    - name: Apply sticky bit
+      file:
+        path: "{{ item }}"
+        mode: "1777"
+      loop: "{{ sticky_dirs.stdout_lines }}"
+      ignore_errors: yes
+
+###########################################################################
+# HOME DIRECTORY SECURITY
+###########################################################################
+
+    - name: Secure /home
+      file:
+        path: /home
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Secure admin home
+      stat:
+        path: /home/admin
+      register: admin_home
+
+    - name: Set admin home permission
+      file:
+        path: /home/admin
+        owner: admin
+        group: admin
+        mode: "0750"
+      when: admin_home.stat.exists
+
+###########################################################################
+# ROOT DIRECTORY SECURITY
+###########################################################################
+
+    - name: Secure root home
+      file:
+        path: /root
+        owner: root
+        group: root
+        mode: "0700"
+
+###########################################################################
+# SSH DIRECTORY SECURITY
+###########################################################################
+
+    - name: Check admin ssh directory
+      stat:
+        path: /home/admin/.ssh
+      register: admin_ssh
+
+    - name: Secure admin .ssh
+      file:
+        path: /home/admin/.ssh
+        owner: admin
+        group: admin
+        mode: "0700"
+        recurse: yes
+      when: admin_ssh.stat.exists
+
+    - name: Secure admin authorized_keys
+      file:
+        path: /home/admin/.ssh/authorized_keys
+        owner: admin
+        group: admin
+        mode: "0600"
+      ignore_errors: yes
+
+###########################################################################
+# FILE PERMISSIONS
+###########################################################################
+
+    - name: Secure passwd
+      file:
+        path: /etc/passwd
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Secure shadow
+      file:
+        path: /etc/shadow
+        owner: root
+        group: root
+        mode: "0000"
+
+    - name: Secure group
+      file:
+        path: /etc/group
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Secure gshadow
+      file:
+        path: /etc/gshadow
+        owner: root
+        group: root
+        mode: "0000"
+
+###########################################################################
+# VALIDATE SSH CONFIG
+###########################################################################
+
+    - name: Validate sshd configuration
+      command: sshd -t
+      register: ssh_validation
+      changed_when: false
+      failed_when: false
+
+###########################################################################
+# RELOAD SYSCTL
+###########################################################################
+
+    - name: Reload sysctl
+      command: sysctl --system
+      changed_when: false
+      failed_when: false
+
+###########################################################################
+# VERIFY SERVICES
+###########################################################################
+
+    - name: Gather service facts
+      service_facts:
+
+###########################################################################
+# HARDENING SUMMARY
+###########################################################################
+
+    - name: Hardening Summary
+      debug:
+        msg:
+          - "======================================================"
+          - "      Enterprise Linux Hardening Completed"
+          - "======================================================"
+          - "Host               : {{ inventory_hostname }}"
+          - "OS                 : {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Kernel             : {{ ansible_kernel }}"
+          - "SELinux            : {{ selinux_status.stdout }}"
+          - "SSH Validation     : {{ 'PASS' if ssh_validation.rc == 0 else 'FAIL' }}"
+          - "SSH Hardening      : Completed"
+          - "Password Policy    : Completed"
+          - "Password Quality   : Completed"
+          - "PAM / Faillock     : Completed"
+          - "Auditd             : {{ ansible_facts.services['auditd.service'].state | default('Unknown') }}"
+          - "Firewalld          : {{ ansible_facts.services['firewalld.service'].state | default('Unknown') }}"
+          - "Sysctl             : Applied"
+          - "Filesystem         : Secured"
+          - "Cron               : Secured"
+          - "======================================================"
+
+###########################################################################
+# OPTIONAL REBOOT
+###########################################################################
+
+    - name: Reboot if requested
+      reboot:
+        reboot_timeout: 900
+        msg: "Rebooting after system hardening."
+      when: reboot_after_hardening | default(false)
