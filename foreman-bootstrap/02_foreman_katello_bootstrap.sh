@@ -102,6 +102,15 @@ resume_paused_tasks() {
     return 0
 }
 
+###############################################################################
+# Variables
+###############################################################################
+
+FOREMAN_USER="${FOREMAN_USER:-admin}"
+FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
+
+HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
+
 
 header "[1/6] Creating Katello Products"
 
