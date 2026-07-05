@@ -148,3 +148,15 @@ curl -L -o kernel_tuning_awx.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/kernel_tuning_awx.sh?$(date +%s)" && \
 chmod +x kernel_tuning_awx.sh
 ```
+
+```text
+curl -L -o 01_foreman_pxe_bootstrap.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap/01_foreman_pxe_bootstrap.sh?$(date +%s)" && \
+curl -L -o 02_foreman_katello_bootstrap.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap/02_foreman_katello_bootstrap.sh?$(date +%s)" && \
+curl -L -o 03_foreman_hostgroup_bootstrap.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap/03_foreman_hostgroup_bootstrap.sh?$(date +%s)" && \
+chmod +x 01_foreman_pxe_bootstrap.sh \
+         02_foreman_katello_bootstrap.sh \
+         03_foreman_hostgroup_bootstrap.sh
+```
