@@ -659,6 +659,84 @@ EOF
 echo
 echo "create_admin_ssh template completed successfully."
 
+echo
+echo -e "${YELLOW}----------------------------------------------------------${NC}"
+echo -e "${WHITE} Creating RHEL_Hardening${NC}"
+echo -e "${YELLOW}----------------------------------------------------------${NC}"
+
+awx-manage shell <<'EOF'
+from awx.main.models import Project, JobTemplate, Credential
+
+project = Project.objects.get(name="Inventory-Git-Repo")
+credential = Credential.objects.get(name="Linux Admin Credential")
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="RHEL_Hardening",
+    defaults={
+        "project": project,
+        "playbook": "rhel-hardening/playbooks/01_rhel_hardening.yml",
+        "ask_inventory_on_launch": True,
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
+    }
+)
+
+jt.project = project
+jt.inventory = None
+jt.playbook = "rhel-hardening/playbooks/01_rhel_hardening.yml"
+
+# Prompt for Inventory
+jt.ask_inventory_on_launch = True
+
+# Disable Limit
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "RHEL Hardening",
+    "description": "Select Inventory and Target Hosts",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: cent-07-01, rocky-08-01, rocky-09-01 or *",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "*",
+            "min": 1,
+            "max": 1024
+        },
+        {
+            "type": "multiplechoice",
+            "question_name": "Reboot After Hardening",
+            "question_description": "Reboot the server after applying hardening?",
+            "variable": "reboot_after_hardening",
+            "required": True,
+            "default": "No",
+            "choices": "Yes\nNo"
+        }
+    ]
+}
+
+jt.save()
+
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+print(
+    f"RHEL_Hardening "
+    f"{'created' if created else 'updated'} successfully."
+)
+print("Inventory: Prompt on Launch")
+print(f"Credential assigned: {credential.name}")
+
+EOF
+
+echo
+echo "RHEL_Hardening template completed successfully."
+
 # --------------------------------------------------------------
 # ROCKYOS-VM-TEMPLATE
 # --------------------------------------------------------------
@@ -3290,6 +3368,7 @@ echo
 echo "Job Templates:"
 echo "  ✓ Enable_Passwordless_SSH"
 echo "  ✓ create_admin_ssh"
+echo "  ✓ RHEL_Hardening"
 echo "  ✓ Local_DNS"
 echo "  ✓ CENTOS-VM-TEMPLATE"
 echo "  ✓ ROCKYOS-VM-TEMPLATE"
