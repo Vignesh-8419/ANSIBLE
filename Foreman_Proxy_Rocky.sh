@@ -50,11 +50,6 @@ PROXY_IP="192.168.253.134"
 
 SSH_PASSWORD="Vigneshv12$"
 
-MOUNT_POINT="/var/www/html/repo"
-
-ISO_USERNAME="vigne"
-ISO_PASSWORD='Vigneshv12$'
-
 CERT_PATH="/tmp/${PROXY_SERVER}-certs.tar.gz"
 
 ##############################################
@@ -133,11 +128,6 @@ FOREMAN_IP="192.168.253.133"
 
 PROXY_SERVER="rocky-08-02.vgs.com"
 PROXY_IP="192.168.253.134"
-
-MOUNT_POINT="/var/www/html/repo"
-
-ISO_USERNAME="vigne"
-ISO_PASSWORD='Vigneshv12$'
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -302,6 +292,33 @@ cat >> /tmp/proxy_remote.sh <<'EOF'
 
 print_header "CONFIGURING SMART PROXY"
 
+##############################################
+# Detect Active Network Interface
+##############################################
+
+print_header "DETECTING NETWORK INTERFACE"
+
+INTERFACE=$(ip -o route show default | awk '{print $5; exit}')
+
+if [[ -z "$INTERFACE" ]]; then
+    INTERFACE=$(ip -o -4 addr show | awk '$2 != "lo" {print $2; exit}')
+fi
+
+if [[ -z "$INTERFACE" ]]; then
+    print_error "Unable to detect active network interface."
+    ip route
+    ip -o -4 addr show
+    exit 1
+fi
+
+if ! ip link show "$INTERFACE" >/dev/null 2>&1; then
+    print_error "Detected interface '$INTERFACE' does not exist."
+    ip link show
+    exit 1
+fi
+
+print_success "Detected interface: $INTERFACE"
+
 print_step "Running Foreman installer..."
 
 foreman-installer \
@@ -314,9 +331,9 @@ foreman-installer \
   --foreman-proxy-oauth-consumer-key "${OAUTH_KEY}" \
   --foreman-proxy-oauth-consumer-secret "${OAUTH_SECRET}" \
   --foreman-proxy-dhcp true \
-  --foreman-proxy-dhcp-interface "ens192" \
+  --foreman-proxy-dhcp-interface "$INTERFACE" \
   --foreman-proxy-dns true \
-  --foreman-proxy-dns-interface "ens192" \
+  --foreman-proxy-dns-interface "$INTERFACE" \
   --foreman-proxy-tftp true \
   --foreman-proxy-tftp-managed true \
   --foreman-proxy-tftp-root "/var/lib/tftpboot" \
