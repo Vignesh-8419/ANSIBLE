@@ -253,7 +253,7 @@ print(
 EOF
 
 echo
-echo "Credential configuration completed."
+echo "Linux Root Credential configuration completed."
 
 
 # Linux Root Credential
@@ -276,7 +276,7 @@ org = Organization.objects.get(name="Default")
 ctype = CredentialType.objects.get(kind="ssh")
 
 cred, created = Credential.objects.get_or_create(
-    name="Linux Root Credential",
+    name="Linux Admin Credential",
     organization=org,
     credential_type=ctype,
     defaults={
@@ -293,7 +293,7 @@ print(
 EOF
 
 echo
-echo "Credential configuration completed."
+echo "Linux Admin Credential configuration completed."
 
 # ==============================================================================
 # Inventories
