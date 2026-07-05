@@ -170,9 +170,9 @@ foreman-installer \
   --foreman-proxy-oauth-consumer-key "${OAUTH_KEY}" \
   --foreman-proxy-oauth-consumer-secret "${OAUTH_SECRET}" \
   --foreman-proxy-dhcp true \
-  --foreman-proxy-dhcp-interface "ens33" \
+  --foreman-proxy-dhcp-interface "ens32" \
   --foreman-proxy-dns true \
-  --foreman-proxy-dns-interface "ens33" \
+  --foreman-proxy-dns-interface "ens32" \
   --foreman-proxy-tftp true \
   --foreman-proxy-tftp-servername "${FOREMAN_PROXY}"
 
