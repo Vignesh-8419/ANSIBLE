@@ -67,5 +67,5 @@
             sudo nmcli connection up "ens192"
           vars:
             ansible_user: "{{ nb_ctx.vm_admin_user }}"
-            ansible_admin_pass: "{{ nb_ctx.vm_admin_password }}"
+            ansible_password: "{{ nb_ctx.vm_admin_password }}"
           when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
