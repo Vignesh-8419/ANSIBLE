@@ -538,6 +538,44 @@ log_info "Activating Nginx HTTP service frames..."
 systemctl enable --now nginx
 
 ############################################################
+# CREATE NETBOX API TOKEN
+############################################################
+print_header "CREATING NETBOX API TOKEN"
+
+API_TOKEN="83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
+
+cd "${NETBOX_ROOT}"
+source venv/bin/activate
+
+python netbox/manage.py shell <<EOF
+from django.contrib.auth import get_user_model
+from users.models import Token
+
+User = get_user_model()
+user = User.objects.get(username="${ADMIN_USER}")
+
+# Remove any existing token with the same key
+Token.objects.filter(key="${API_TOKEN}").delete()
+
+# Remove any existing token for this user
+Token.objects.filter(user=user).delete()
+
+Token.objects.create(
+    user=user,
+    key="${API_TOKEN}",
+    write_enabled=True
+)
+
+print("======================================")
+print("NetBox API Token Created Successfully")
+print("User :", user.username)
+print("Token:", "${API_TOKEN}")
+print("======================================")
+EOF
+
+log_info "NetBox API token created successfully."
+
+############################################################
 # FINAL VALIDATION & REPORT
 ############################################################
 print_header "VERIFYING ALL SYSTEM COMPONENT STATUSES"
