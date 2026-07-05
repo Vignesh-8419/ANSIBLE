@@ -56,9 +56,10 @@
     - name: Verify Supported Linux Distribution
       fail:
         msg: "Only RHEL/CentOS/Rocky Linux 7,8,9 are supported."
-      when:
-        - ansible_distribution not in ['RedHat','CentOS','Rocky']
-        - ansible_distribution_major_version not in ['7','8','9']
+      when: >
+        ansible_distribution not in ['RedHat','CentOS','Rocky']
+        or
+        ansible_distribution_major_version not in ['7','8','9']
 
 ###########################################################################
 # BACKUP
@@ -102,6 +103,34 @@
       copy:
         src: /etc/issue.net
         dest: "{{ backup_dir }}/issue.net"
+        remote_src: yes
+      ignore_errors: yes
+
+    - name: Backup journald.conf
+      copy:
+        src: /etc/systemd/journald.conf
+        dest: "{{ backup_dir }}/journald.conf"
+        remote_src: yes
+      ignore_errors: yes
+    
+    - name: Backup faillock.conf
+      copy:
+        src: /etc/security/faillock.conf
+        dest: "{{ backup_dir }}/faillock.conf"
+        remote_src: yes
+      ignore_errors: yes
+    
+    - name: Backup sysctl.conf
+      copy:
+        src: /etc/sysctl.conf
+        dest: "{{ backup_dir }}/sysctl.conf"
+        remote_src: yes
+      ignore_errors: yes
+    
+    - name: Backup pam su
+      copy:
+        src: /etc/pam.d/su
+        dest: "{{ backup_dir }}/su"
         remote_src: yes
       ignore_errors: yes
 
@@ -238,12 +267,6 @@
         regexp: '^PASS_WARN_AGE.*'
         replace: "PASS_WARN_AGE {{ pass_warn_age }}"
 
-  handlers:
-
-    - name: Restart SSH
-      service:
-        name: sshd
-        state: restarted
 ###########################################################################
 # PASSWORD COMPLEXITY (PWQUALITY)
 ###########################################################################
@@ -701,7 +724,7 @@
     - name: Remove world writable permission
       file:
         path: "{{ item }}"
-        mode: "u=rw,g=r,o=r"
+        mode: "o-w"
       loop: "{{ world_files.stdout_lines }}"
       ignore_errors: yes
 
@@ -715,10 +738,9 @@
       register: sticky_dirs
       changed_when: false
 
-    - name: Apply sticky bit
-      file:
-        path: "{{ item }}"
-        mode: "1777"
+    - name: Report directories missing sticky bit
+      debug:
+        msg: "{{ item }}"
       loop: "{{ sticky_dirs.stdout_lines }}"
       ignore_errors: yes
 
@@ -820,7 +842,7 @@
 ###########################################################################
 
     - name: Validate sshd configuration
-      command: sshd -t
+      command: sshd -t -f /etc/ssh/sshd_config
       register: ssh_validation
       changed_when: false
       failed_when: false
@@ -876,3 +898,14 @@
         reboot_timeout: 900
         msg: "Rebooting after system hardening."
       when: reboot_after_hardening | default(false)
+  handlers:
+  
+    - name: Restart SSH
+      service:
+        name: sshd
+        state: restarted
+  
+    - name: Restart Journald
+      service:
+        name: systemd-journald
+        state: restarted
