@@ -889,15 +889,23 @@
           - "Cron               : Secured"
           - "======================================================"
 
-###########################################################################
-# OPTIONAL REBOOT
-###########################################################################
-
+  ###########################################################################
+  # OPTIONAL REBOOT
+  ###########################################################################
+  
     - name: Reboot if requested
       reboot:
-        reboot_timeout: 900
         msg: "Rebooting after system hardening."
-      when: reboot_after_hardening | default(false)
+        reboot_timeout: 900
+        connect_timeout: 30
+        pre_reboot_delay: 5
+        post_reboot_delay: 20
+      when: reboot_after_hardening | default(false) | bool
+  
+  ###########################################################################
+  # HANDLERS
+  ###########################################################################
+  
   handlers:
   
     - name: Restart SSH
