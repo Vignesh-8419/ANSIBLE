@@ -6,8 +6,8 @@ NETBOX_URL="https://192.168.253.143/api"
 NETBOX_TOKEN="83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
 HDR="Content-Type: application/json"
 
-SSH_USER="root"
-SSH_PASS="Root@123"
+SSH_USER="admin"
+SSH_PASS="Vigneshv12$"
 
 SITE_ID=1
 DEVICETYPE_ID=1
