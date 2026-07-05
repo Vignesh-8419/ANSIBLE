@@ -123,11 +123,26 @@ mkdir -p /etc/foreman-proxy
 tar -xf /root/${FOREMAN_PROXY}-certs.tar -C /etc/foreman-proxy
 
 echo "🌐 Detecting active network interface..."
-INTERFACE=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
+
+# Try to get the interface used for the default route
+INTERFACE=$(ip -o route show default | awk '{print $5; exit}')
+
+# Fallback to the first active ethernet interface
 if [[ -z "$INTERFACE" ]]; then
-  INTERFACE=$(ip -o -4 addr show | awk '{print $2}' | head -1)
+    INTERFACE=$(nmcli -t -f DEVICE,STATE device status | awk -F: '$2=="connected"{print $1; exit}')
 fi
-echo "🌐 Using network interface: $INTERFACE"
+
+# Final fallback
+if [[ -z "$INTERFACE" ]]; then
+    INTERFACE=$(ip -o -4 addr show up | awk '$2 != "lo" {print $2; exit}')
+fi
+
+if [[ -z "$INTERFACE" ]]; then
+    echo "❌ Unable to detect the active network interface."
+    exit 1
+fi
+
+echo "✅ Using network interface: $INTERFACE"
 
 # Firewall setup
 firewall-cmd --add-service=dhcp --permanent
@@ -170,9 +185,9 @@ foreman-installer \
   --foreman-proxy-oauth-consumer-key "${OAUTH_KEY}" \
   --foreman-proxy-oauth-consumer-secret "${OAUTH_SECRET}" \
   --foreman-proxy-dhcp true \
-  --foreman-proxy-dhcp-interface "ens32" \
+  --foreman-proxy-dhcp-interface "${INTERFACE}" \
   --foreman-proxy-dns true \
-  --foreman-proxy-dns-interface "ens32" \
+  --foreman-proxy-dns-interface "${INTERFACE}" \
   --foreman-proxy-tftp true \
   --foreman-proxy-tftp-servername "${FOREMAN_PROXY}"
 
