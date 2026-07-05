@@ -2947,7 +2947,8 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "Provision_Hosts_el7_Subscription_Patching_EL7"
 
 JT1_NAME = "Provision_Hosts_el7"
-JT2_NAME = "Subscription_Patching_EL7"
+JT2_NAME = "RHEL_Hardening"
+JT3_NAME = "Subscription_Patching_EL7"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "centos-07-servers"
@@ -2956,6 +2957,7 @@ org = Organization.objects.get(name=ORG_NAME)
 
 jt1 = JobTemplate.objects.get(name=JT1_NAME)
 jt2 = JobTemplate.objects.get(name=JT2_NAME)
+jt3 = JobTemplate.objects.get(name=JT3_NAME)
 
 cred = Credential.objects.get(name=CREDENTIAL_NAME)
 inv = Inventory.objects.get(name=INVENTORY_NAME)
@@ -2986,12 +2988,12 @@ wf.limit = "localhost"
 wf.survey_enabled = True
 wf.survey_spec = {
     "name": "target_hosts",
-    "description": "Provision Hosts + Subscription Patching (EL7)",
+    "description": "Provision Hosts + Hardening + Subscription Patching (EL7)",
     "spec": [
         {
             "type": "text",
             "question_name": "Target Hosts",
-            "question_description": "Enter host(s) to provision and patch",
+            "question_description": "Enter host(s) to provision, harden and patch",
             "variable": "target_hosts",
             "required": True,
             "default": "cent-07-*",
@@ -3022,10 +3024,16 @@ n2 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt2
 )
 
+n3 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt3
+)
+
 # --------------------------------------------------------------
 # Execution Flow
 # --------------------------------------------------------------
 n1.success_nodes.add(n2)
+n2.success_nodes.add(n3)
 
 print(
     f"Workflow '{wf.name}' "
@@ -3039,8 +3047,10 @@ print(jt1.name)
 print("   |")
 print("   v")
 print(jt2.name)
+print("   |")
+print("   v")
+print(jt3.name)
 EOF
-
 
 # ==============================================================
 # Verify Provision_Hosts_el7_Subscription_Patching_EL7
@@ -3091,7 +3101,8 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "Provision_Hosts_el8_Subscription_Patching_EL8"
 
 JT1_NAME = "Provision_Hosts_el8"
-JT2_NAME = "Subscription_Patching_EL8"
+JT2_NAME = "RHEL_Hardening"
+JT3_NAME = "Subscription_Patching_EL8"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "rocky-8-servers"
@@ -3100,6 +3111,7 @@ org = Organization.objects.get(name=ORG_NAME)
 
 jt1 = JobTemplate.objects.get(name=JT1_NAME)
 jt2 = JobTemplate.objects.get(name=JT2_NAME)
+jt3 = JobTemplate.objects.get(name=JT3_NAME)
 
 cred = Credential.objects.get(name=CREDENTIAL_NAME)
 inv = Inventory.objects.get(name=INVENTORY_NAME)
@@ -3130,12 +3142,12 @@ wf.limit = "localhost"
 wf.survey_enabled = True
 wf.survey_spec = {
     "name": "target_hosts",
-    "description": "Provision Hosts + Subscription Patching (EL8)",
+    "description": "Provision Hosts + Hardening + Subscription Patching (EL8)",
     "spec": [
         {
             "type": "text",
             "question_name": "Target Hosts",
-            "question_description": "Enter host(s) to provision and patch",
+            "question_description": "Enter host(s) to provision, harden and patch",
             "variable": "target_hosts",
             "required": True,
             "default": "rocky-08-*",
@@ -3166,10 +3178,16 @@ n2 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt2
 )
 
+n3 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt3
+)
+
 # --------------------------------------------------------------
 # Execution Flow
 # --------------------------------------------------------------
 n1.success_nodes.add(n2)
+n2.success_nodes.add(n3)
 
 print(
     f"Workflow '{wf.name}' "
@@ -3183,6 +3201,9 @@ print(jt1.name)
 print("   |")
 print("   v")
 print(jt2.name)
+print("   |")
+print("   v")
+print(jt3.name)
 EOF
 
 
@@ -3212,7 +3233,6 @@ EOF
 echo
 echo "Provision_Hosts_el8_Subscription_Patching_EL8 workflow completed successfully."
 
-
 # ==============================================================================
 # Workflow : Provision_Hosts_el9_Subscription_Patching_EL9
 # ==============================================================================
@@ -3236,7 +3256,8 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "Provision_Hosts_el9_Subscription_Patching_EL9"
 
 JT1_NAME = "Provision_Hosts_el9"
-JT2_NAME = "Subscription_Patching_EL9"
+JT2_NAME = "RHEL_Hardening"
+JT3_NAME = "Subscription_Patching_EL9"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "rocky-9-servers"
@@ -3245,6 +3266,7 @@ org = Organization.objects.get(name=ORG_NAME)
 
 jt1 = JobTemplate.objects.get(name=JT1_NAME)
 jt2 = JobTemplate.objects.get(name=JT2_NAME)
+jt3 = JobTemplate.objects.get(name=JT3_NAME)
 
 cred = Credential.objects.get(name=CREDENTIAL_NAME)
 inv = Inventory.objects.get(name=INVENTORY_NAME)
@@ -3275,12 +3297,12 @@ wf.limit = "localhost"
 wf.survey_enabled = True
 wf.survey_spec = {
     "name": "target_hosts",
-    "description": "Provision Hosts + Subscription Patching (EL9)",
+    "description": "Provision Hosts + Hardening + Subscription Patching (EL9)",
     "spec": [
         {
             "type": "text",
             "question_name": "Target Hosts",
-            "question_description": "Enter host(s) to provision and patch",
+            "question_description": "Enter host(s) to provision, harden and patch",
             "variable": "target_hosts",
             "required": True,
             "default": "rocky-09-*",
@@ -3311,10 +3333,16 @@ n2 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt2
 )
 
+n3 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt3
+)
+
 # --------------------------------------------------------------
 # Execution Flow
 # --------------------------------------------------------------
 n1.success_nodes.add(n2)
+n2.success_nodes.add(n3)
 
 print(
     f"Workflow '{wf.name}' "
@@ -3328,6 +3356,9 @@ print(jt1.name)
 print("   |")
 print("   v")
 print(jt2.name)
+print("   |")
+print("   v")
+print(jt3.name)
 EOF
 
 
