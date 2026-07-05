@@ -64,6 +64,6 @@
             sudo nmcli connection modify "ens192" ipv4.ignore-auto-dns yes
             sudo nmcli connection up "ens192"
           vars:
-            ansible_user: "{{ nb_ctx.vm_root_user }}"
-            ansible_ssh_pass: "{{ nb_ctx.vm_root_password }}"
+            ansible_user: "{{ nb_ctx.vm_admin_user }}"
+            ansible_admin_pass: "{{ nb_ctx.vm_admin_password }}"
           when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
