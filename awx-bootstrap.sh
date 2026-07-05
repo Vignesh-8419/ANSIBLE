@@ -1552,8 +1552,9 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "CENTOS-VM-TEMPLATE-WF"
 
 JT1_NAME = "CENTOS-VM-TEMPLATE"
-JT2_NAME = "Disable_SELinux_el7"
-JT3_NAME = "Offline_Patching_el7"
+JT2_NAME = "RHEL_Hardening"
+JT3_NAME = "Disable_SELinux_el7"
+JT4_NAME = "Offline_Patching_el7"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "centos-07-servers"
@@ -1563,6 +1564,7 @@ org = Organization.objects.get(name=ORG_NAME)
 jt1 = JobTemplate.objects.get(name=JT1_NAME)
 jt2 = JobTemplate.objects.get(name=JT2_NAME)
 jt3 = JobTemplate.objects.get(name=JT3_NAME)
+jt4 = JobTemplate.objects.get(name=JT4_NAME)
 
 cred = Credential.objects.get(name=CREDENTIAL_NAME)
 inv = Inventory.objects.get(name=INVENTORY_NAME)
@@ -1623,9 +1625,15 @@ n3 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt3
 )
 
+n4 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt4
+)
+
 # Execution order
 n1.success_nodes.add(n2)
 n2.success_nodes.add(n3)
+n3.success_nodes.add(n4)
 
 print(f"Workflow '{wf.name}' {'created' if created else 'updated'}")
 print("Execution Order:")
@@ -1634,6 +1642,8 @@ print("      ↓")
 print(f"  {jt2.name}")
 print("      ↓")
 print(f"  {jt3.name}")
+print("      ↓")
+print(f"  {jt4.name}")
 EOF
 
 echo
@@ -1662,8 +1672,9 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "ROCKYOS-VM-TEMPLATE-WF"
 
 JT1_NAME = "ROCKYOS-VM-TEMPLATE"
-JT2_NAME = "Disable_SELinux_el8"
-JT3_NAME = "Offline_Patching_el8"
+JT2_NAME = "RHEL_Hardening"
+JT3_NAME = "Disable_SELinux_el8"
+JT4_NAME = "Offline_Patching_el8"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "rocky-8-servers"
@@ -1673,6 +1684,7 @@ org = Organization.objects.get(name=ORG_NAME)
 jt1 = JobTemplate.objects.get(name=JT1_NAME)
 jt2 = JobTemplate.objects.get(name=JT2_NAME)
 jt3 = JobTemplate.objects.get(name=JT3_NAME)
+jt4 = JobTemplate.objects.get(name=JT4_NAME)
 
 cred = Credential.objects.get(name=CREDENTIAL_NAME)
 inv = Inventory.objects.get(name=INVENTORY_NAME)
@@ -1733,9 +1745,15 @@ n3 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt3
 )
 
+n4 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt4
+)
+
 # Execution order
 n1.success_nodes.add(n2)
 n2.success_nodes.add(n3)
+n3.success_nodes.add(n4)
 
 print(f"Workflow '{wf.name}' {'created' if created else 'updated'}")
 print()
@@ -1748,6 +1766,9 @@ print(jt2.name)
 print("   |")
 print("   v")
 print(jt3.name)
+print("   |")
+print("   v")
+print(jt4.name)
 EOF
 
 echo
@@ -1776,8 +1797,9 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "ROCKY9-VM-TEMPLATE-WF"
 
 JT1_NAME = "ROCKY9-VM-TEMPLATE"
-JT2_NAME = "Disable_SELinux_el9"
-JT3_NAME = "Offline_Patching_el9"
+JT2_NAME = "RHEL_Hardening"
+JT3_NAME = "Disable_SELinux_el9"
+JT4_NAME = "Offline_Patching_el9"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "rocky-9-servers"
@@ -1787,6 +1809,7 @@ org = Organization.objects.get(name=ORG_NAME)
 jt1 = JobTemplate.objects.get(name=JT1_NAME)
 jt2 = JobTemplate.objects.get(name=JT2_NAME)
 jt3 = JobTemplate.objects.get(name=JT3_NAME)
+jt4 = JobTemplate.objects.get(name=JT4_NAME)
 
 cred = Credential.objects.get(name=CREDENTIAL_NAME)
 inv = Inventory.objects.get(name=INVENTORY_NAME)
@@ -1847,9 +1870,15 @@ n3 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt3
 )
 
+n4 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt4
+)
+
 # Execution order
 n1.success_nodes.add(n2)
 n2.success_nodes.add(n3)
+n3.success_nodes.add(n4)
 
 print(f"Workflow '{wf.name}' {'created' if created else 'updated'}")
 print()
@@ -1862,6 +1891,9 @@ print(jt2.name)
 print("   |")
 print("   v")
 print(jt3.name)
+print("   |")
+print("   v")
+print(jt4.name)
 EOF
 
 echo
