@@ -2,6 +2,8 @@
 - name: Rocky Linux 8 Post Migration Cleanup
   hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
   become: true
+  become_method: sudo
+  become_user: root
   gather_facts: false
 
   pre_tasks:
