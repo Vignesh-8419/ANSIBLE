@@ -255,6 +255,46 @@ EOF
 echo
 echo "Credential configuration completed."
 
+
+# Linux Root Credential
+# --------------------------------------------------------------
+
+echo
+echo -e "${YELLOW}----------------------------------------------------------${NC}"
+echo -e "${WHITE} Creating Linux Admin Credential${NC}"
+echo -e "${YELLOW}----------------------------------------------------------${NC}"
+
+awx-manage shell <<'EOF'
+from awx.main.models import (
+    Credential,
+    CredentialType,
+    Organization
+)
+
+org = Organization.objects.get(name="Default")
+
+ctype = CredentialType.objects.get(kind="ssh")
+
+cred, created = Credential.objects.get_or_create(
+    name="Linux Root Credential",
+    organization=org,
+    credential_type=ctype,
+    defaults={
+        "inputs":{
+            "username":"admin",
+            "password":"Vigneshv12$"
+        }
+    }
+)
+
+print(
+    f"Linux Credential {'created' if created else 'already exists'}"
+)
+EOF
+
+echo
+echo "Credential configuration completed."
+
 # ==============================================================================
 # Inventories
 # ==============================================================================
