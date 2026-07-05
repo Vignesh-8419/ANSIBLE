@@ -1,8 +1,8 @@
 ```text
-nmcli con up ens192 && \
+nmcli con up ens33 && \
 curl -L -o Server_Setup.sh "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Server_Setup.sh?$(date +%s)" && \
 chmod +x Server_Setup.sh && \
-nmcli con down ens192
+nmcli con down ens33
 ```
 
 ```text
