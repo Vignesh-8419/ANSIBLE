@@ -191,8 +191,8 @@ systemctl restart dhcpd
 systemctl enable dhcpd
 
 
-sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@netbox.vgs.com:/boot/efi/EFI/rocky/shimx64.efi /var/lib/tftpboot/grub2/
-sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@netbox.vgs.com:/boot/efi/EFI/rocky/grub.cfg /var/lib/tftpboot/grub2/
+sshpass -p 'Vigneshv12$' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@netbox.vgs.com:/boot/efi/EFI/rocky/shimx64.efi /var/lib/tftpboot/grub2/
+sshpass -p 'Vigneshv12$' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@netbox.vgs.com:/boot/efi/EFI/rocky/grub.cfg /var/lib/tftpboot/grub2/
 
 
 # ======================================================
@@ -232,12 +232,12 @@ REMOTE_SCRIPT
 # STEP 3: Transfer Remote Script and Certificates
 # -------------------------------
 echo "🚀 Transferring installer script and certificates to $FOREMAN_PROXY..."
-sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no /tmp/remote_installer.sh root@$FOREMAN_PROXY:/root/
-sshpass -p 'Root@123' scp -o StrictHostKeyChecking=no "$CERT_PATH" root@$FOREMAN_PROXY:/root/
+sshpass -p 'Vigneshv12$' scp -o StrictHostKeyChecking=no /tmp/remote_installer.sh admin@$FOREMAN_PROXY:/root/
+sshpass -p 'Vigneshv12$' scp -o StrictHostKeyChecking=no "$CERT_PATH" admin@$FOREMAN_PROXY:/root/
 
 
 # -------------------------------
 # STEP 4: Execute Remote Script
 # -------------------------------
 echo "🚀 Executing remote installer on $FOREMAN_PROXY..."
-sshpass -p 'Root@123' ssh -o StrictHostKeyChecking=no root@$FOREMAN_PROXY "bash /root/remote_installer.sh"
+sshpass -p 'Vigneshv12$' ssh -o StrictHostKeyChecking=no admin@$FOREMAN_PROXY "bash /root/remote_installer.sh"
