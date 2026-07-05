@@ -528,7 +528,7 @@ awx-manage shell <<'EOF'
 from awx.main.models import Project, JobTemplate, Credential
 
 project = Project.objects.get(name="Inventory-Git-Repo")
-credential = Credential.objects.get(name="Linux Root Credential")
+credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Enable_Passwordless_SSH",
@@ -600,7 +600,7 @@ awx-manage shell <<'EOF'
 from awx.main.models import Project, JobTemplate, Credential
 
 project = Project.objects.get(name="Inventory-Git-Repo")
-credential = Credential.objects.get(name="Linux Root Credential")
+credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="CREATE-ADMIN-SSH",
@@ -947,6 +947,7 @@ echo "Created:"
 echo "  ✓ NetBox Credential Type"
 echo "  ✓ NetBox Production Credential"
 echo "  ✓ Linux Root Credential"
+echo "  ✓ Linux Admin Credential"
 echo "  ✓ Inventories"
 echo "  ✓ Inventory Git Project"
 echo "  ✓ SCM Inventory Sources"
@@ -1173,7 +1174,7 @@ from awx.main.models import Inventory, Project, JobTemplate, Credential
 
 project = Project.objects.get(name="Inventory-Git-Repo")
 inventory = Inventory.objects.get(name="centos-07-servers")
-credential = Credential.objects.get(name="Linux Root Credential")
+credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Disable_SELinux_el7",
@@ -1244,7 +1245,7 @@ from awx.main.models import Inventory, Project, JobTemplate, Credential
 
 project = Project.objects.get(name="Inventory-Git-Repo")
 inventory = Inventory.objects.get(name="rocky-8-servers")
-credential = Credential.objects.get(name="Linux Root Credential")
+credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Disable_SELinux_el8",
@@ -1314,7 +1315,7 @@ from awx.main.models import Inventory, Project, JobTemplate, Credential
 
 project = Project.objects.get(name="Inventory-Git-Repo")
 inventory = Inventory.objects.get(name="rocky-9-servers")
-credential = Credential.objects.get(name="Linux Root Credential")
+credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Disable_SELinux_el9",
@@ -1436,7 +1437,7 @@ JT1_NAME = "CENTOS-VM-TEMPLATE"
 JT2_NAME = "Disable_SELinux_el7"
 JT3_NAME = "Offline_Patching_el7"
 
-CREDENTIAL_NAME = "Linux Root Credential"
+CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "centos-07-servers"
 
 org = Organization.objects.get(name=ORG_NAME)
@@ -1546,7 +1547,7 @@ JT1_NAME = "ROCKYOS-VM-TEMPLATE"
 JT2_NAME = "Disable_SELinux_el8"
 JT3_NAME = "Offline_Patching_el8"
 
-CREDENTIAL_NAME = "Linux Root Credential"
+CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "rocky-8-servers"
 
 org = Organization.objects.get(name=ORG_NAME)
@@ -1660,7 +1661,7 @@ JT1_NAME = "ROCKY9-VM-TEMPLATE"
 JT2_NAME = "Disable_SELinux_el9"
 JT3_NAME = "Offline_Patching_el9"
 
-CREDENTIAL_NAME = "Linux Root Credential"
+CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "rocky-9-servers"
 
 org = Organization.objects.get(name=ORG_NAME)
@@ -1806,7 +1807,7 @@ from awx.main.models import (
 
 project = Project.objects.get(name="Inventory-Git-Repo")
 inventory = Inventory.objects.get(name="centos-07-servers")
-credential = Credential.objects.get(name="Linux Root Credential")
+credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Subscription_Patching_EL7",
@@ -1900,7 +1901,7 @@ from awx.main.models import (
 
 project = Project.objects.get(name="Inventory-Git-Repo")
 inventory = Inventory.objects.get(name="rocky-8-servers")
-credential = Credential.objects.get(name="Linux Root Credential")
+credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Subscription_Patching_EL8",
@@ -1969,7 +1970,7 @@ from awx.main.models import (
 
 project = Project.objects.get(name="Inventory-Git-Repo")
 inventory = Inventory.objects.get(name="rocky-9-servers")
-credential = Credential.objects.get(name="Linux Root Credential")
+credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Subscription_Patching_EL9",
@@ -2050,7 +2051,7 @@ from awx.main.models import Inventory, Project, JobTemplate, Credential
 
 project = Project.objects.get(name="Inventory-Git-Repo")
 inventory = Inventory.objects.get(name="centos-07-servers")
-credential = Credential.objects.get(name="Linux Root Credential")
+credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="CENTOSTOROCKY",
@@ -2131,7 +2132,7 @@ WORKFLOW_NAME = "CENTOSTOROCKY-WF"
 JT1_NAME = "Offline_Patching_el7"
 JT2_NAME = "CENTOSTOROCKY"
 
-CREDENTIAL_NAME = "Linux Root Credential"
+CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "centos-07-servers"
 
 org = Organization.objects.get(name=ORG_NAME)
@@ -2220,7 +2221,7 @@ from awx.main.models import Inventory, Project, JobTemplate, Credential
 
 project = Project.objects.get(name="Inventory-Git-Repo")
 inventory = Inventory.objects.get(name="rocky-8-servers")
-credential = Credential.objects.get(name="Linux Root Credential")
+credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="ROCKY8TOROCKY9",
@@ -2301,7 +2302,7 @@ WORKFLOW_NAME = "ROCKY8TOROCKY9-WF"
 JT1_NAME = "Offline_Patching_el8"
 JT2_NAME = "ROCKY8TOROCKY9"
 
-CREDENTIAL_NAME = "Linux Root Credential"
+CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "rocky-8-servers"
 
 org = Organization.objects.get(name=ORG_NAME)
@@ -2420,7 +2421,7 @@ from awx.main.models import (
 
 project = Project.objects.get(name="Inventory-Git-Repo")
 inventory = Inventory.objects.get(name="centos-07-servers")
-credential = Credential.objects.get(name="Linux Root Credential")
+credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Provision_Hosts_el7",
@@ -2544,7 +2545,7 @@ from awx.main.models import (
 
 project = Project.objects.get(name="Inventory-Git-Repo")
 inventory = Inventory.objects.get(name="rocky-8-servers")
-credential = Credential.objects.get(name="Linux Root Credential")
+credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Provision_Hosts_el8",
@@ -2668,7 +2669,7 @@ from awx.main.models import (
 
 project = Project.objects.get(name="Inventory-Git-Repo")
 inventory = Inventory.objects.get(name="rocky-9-servers")
-credential = Credential.objects.get(name="Linux Root Credential")
+credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Provision_Hosts_el9",
@@ -2798,7 +2799,7 @@ WORKFLOW_NAME = "Provision_Hosts_el7_Subscription_Patching_EL7"
 JT1_NAME = "Provision_Hosts_el7"
 JT2_NAME = "Subscription_Patching_EL7"
 
-CREDENTIAL_NAME = "Linux Root Credential"
+CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "centos-07-servers"
 
 org = Organization.objects.get(name=ORG_NAME)
@@ -2942,7 +2943,7 @@ WORKFLOW_NAME = "Provision_Hosts_el8_Subscription_Patching_EL8"
 JT1_NAME = "Provision_Hosts_el8"
 JT2_NAME = "Subscription_Patching_EL8"
 
-CREDENTIAL_NAME = "Linux Root Credential"
+CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "rocky-8-servers"
 
 org = Organization.objects.get(name=ORG_NAME)
@@ -3087,7 +3088,7 @@ WORKFLOW_NAME = "Provision_Hosts_el9_Subscription_Patching_EL9"
 JT1_NAME = "Provision_Hosts_el9"
 JT2_NAME = "Subscription_Patching_EL9"
 
-CREDENTIAL_NAME = "Linux Root Credential"
+CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "rocky-9-servers"
 
 org = Organization.objects.get(name=ORG_NAME)
