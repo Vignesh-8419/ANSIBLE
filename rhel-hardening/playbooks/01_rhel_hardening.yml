@@ -210,6 +210,13 @@
         line: "UseDNS no"
       notify: Restart SSH
 
+    - name: Configure SSH Login Banner
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?Banner'
+        line: "Banner /etc/issue.net"
+      notify: Restart SSH
+
     - name: Configure Login Grace Time
       lineinfile:
         path: /etc/ssh/sshd_config
@@ -446,6 +453,16 @@
           * hard core 0
           * soft core 0
 
+###########################################################################
+# HANDLER
+###########################################################################
+
+  handlers:
+
+    - name: Restart Journald
+      service:
+        name: systemd-journald
+        state: restarted
 ###########################################################################
 # KERNEL HARDENING (SYSCTL)
 ###########################################################################
