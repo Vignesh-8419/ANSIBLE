@@ -279,8 +279,10 @@ JSON=$(cat <<'EOF'
         "esxi_password": "Root@123",
         "esxi_username": "root",
         "vm_root_password": "Root@123",
+        "vm_admin_password": "Vigneshv12$",
         "ansible_password": "Root@123",
-        "vm_root_user": "root"
+        "vm_root_user": "root",
+        "vm_admin_user": "admin"
     }
 }
 EOF
@@ -315,7 +317,9 @@ JSON=$(cat <<'EOF'
         "http_server": "192.168.253.136",
         "pxe_folder": "/var/lib/tftpboot",
         "vm_root_password": "Root@123",
-        "vm_root_user": "root"
+        "vm_root_user": "root",
+        "vm_admin_password": "Vigneshv12$",
+        "vm_admin_user": "admin"
     }
 }
 EOF
@@ -346,7 +350,9 @@ JSON=$(cat <<'EOF'
         "pxe_folder": "/var/lib/tftpboot",
         "rockyos_template_name": "GOLDENTEMPLATE_ROCKYOS_08",
         "vm_root_password": "Root@123",
-        "vm_root_user": "root"
+        "vm_root_user": "root",
+        "vm_admin_password": "Vigneshv12$",
+        "vm_admin_user": "admin"
     }
 }
 EOF
@@ -374,7 +380,9 @@ JSON=$(cat <<'EOF'
         "pxe_folder": "/var/lib/tftpboot",
         "rocky9_template_name": "GOLDENTEMPLATE_ROCKYOS_09",
         "vm_root_password": "Root@123",
-        "vm_root_user": "root"
+        "vm_root_user": "root",
+        "vm_admin_password": "Vigneshv12$",
+        "vm_admin_user": "admin"
     }
 }
 EOF
