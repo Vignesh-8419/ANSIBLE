@@ -191,8 +191,8 @@ systemctl restart dhcpd
 systemctl enable dhcpd
 
 
-sshpass -p 'Vigneshv12$' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@netbox.vgs.com:/boot/efi/EFI/rocky/shimx64.efi /var/lib/tftpboot/grub2/
-sshpass -p 'Vigneshv12$' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@netbox.vgs.com:/boot/efi/EFI/rocky/grub.cfg /var/lib/tftpboot/grub2/
+sshpass -p 'Vigneshv12$' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null admin@netbox.vgs.com:/boot/efi/EFI/rocky/shimx64.efi /var/lib/tftpboot/grub2/
+sshpass -p 'Vigneshv12$' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null admin@netbox.vgs.com:/boot/efi/EFI/rocky/grub.cfg /var/lib/tftpboot/grub2/
 
 
 # ======================================================
