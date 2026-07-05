@@ -233,6 +233,22 @@
       when: "'i' not in repo_attr.stdout"
 
     ####################################################################
+    # Enable Root SSH Login
+    ####################################################################
+
+    - name: Enable PermitRootLogin in sshd_config
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^[#[:space:]]*PermitRootLogin'
+        line: 'PermitRootLogin yes'
+        backup: yes
+
+    - name: Restart SSH service
+      service:
+        name: sshd
+        state: restarted
+
+    ####################################################################
     # Leapp Preupgrade
     ####################################################################
 
