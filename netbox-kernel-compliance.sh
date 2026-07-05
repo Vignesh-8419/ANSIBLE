@@ -150,7 +150,7 @@ then
 fi
 
 echo ""
-echo "Collecting inventory from $HOSTNAME ..."
+echo "Collecting inventory from $HOSTNAME ($HOST)..."
 
 # Remove stale SSH host keys (VMs may have been rebuilt)
 [ -n "$HOST" ] && ssh-keygen -R "$HOST" >/dev/null 2>&1
@@ -191,10 +191,9 @@ ${SSH_USER}@${HOST} \
 
 [ -z "$VM_TYPE" ] && VM_TYPE="Physical"
 
-
 IFACE_DATA=$(sshpass -p "$SSH_PASS" ssh $SSH_OPTS \
 ${SSH_USER}@${HOST} \
-"ip -o -4 addr show scope global | head -1")
+'PATH=$PATH:/usr/sbin:/sbin; /usr/sbin/ip -o -4 addr show scope global | head -1')
 
 IFACE=$(echo "$IFACE_DATA" | awk '{print $2}')
 
