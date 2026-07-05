@@ -344,17 +344,19 @@ print_success "Firewall configured"
 # Rocky Linux 8 PXE Boot Files
 # ======================================================
 
-sshpass -p 'Vigneshv12$' scp \
--o StrictHostKeyChecking=no \
--o UserKnownHostsFile=/dev/null \
-admin@netbox.vgs.com:/boot/efi/EFI/rocky/shimx64.efi \
-/var/lib/tftpboot/grub2/
+sshpass -p 'Vigneshv12$' ssh \
+  -o StrictHostKeyChecking=no \
+  -o UserKnownHostsFile=/dev/null \
+  admin@netbox.vgs.com \
+  "echo 'Vigneshv12$' | sudo -S cat /boot/efi/EFI/rocky/shimx64.efi" \
+  > /var/lib/tftpboot/grub2/shimx64.efi
 
-sshpass -p 'Vigneshv12$' scp \
--o StrictHostKeyChecking=no \
--o UserKnownHostsFile=/dev/null \
-admin@netbox.vgs.com:/boot/efi/EFI/rocky/grub.cfg \
-/var/lib/tftpboot/grub2/
+sshpass -p 'Vigneshv12$' ssh \
+  -o StrictHostKeyChecking=no \
+  -o UserKnownHostsFile=/dev/null \
+  admin@netbox.vgs.com \
+  "echo 'Vigneshv12$' | sudo -S cat /boot/efi/EFI/rocky/grub.cfg" \
+  > /var/lib/tftpboot/grub2/grub.cfg
 
 mkdir -p /var/lib/tftpboot/rocky8
 
