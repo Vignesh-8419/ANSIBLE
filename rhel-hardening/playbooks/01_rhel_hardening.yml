@@ -409,6 +409,10 @@
 # LOGIN BANNER
 ###########################################################################
 
+###########################################################################
+# LOGIN BANNER
+###########################################################################
+
     - name: Configure /etc/issue
       copy:
         dest: /etc/issue
@@ -427,6 +431,21 @@
     - name: Configure /etc/issue.net
       copy:
         dest: /etc/issue.net
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+
+          **************************************************************
+                     Authorized Access Only
+
+            All activities are monitored and logged.
+
+          **************************************************************
+
+    - name: Configure /etc/motd
+      copy:
+        dest: /etc/motd
         owner: root
         group: root
         mode: '0644'
