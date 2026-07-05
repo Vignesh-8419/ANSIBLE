@@ -73,5 +73,5 @@
         
             sudo nmcli connection up "$ACTIVE_UUID"
           vars:
-            ansible_user: "{{ nb_ctx.vm_root_user }}"
-            ansible_ssh_pass: "{{ nb_ctx.vm_root_password }}"
+            ansible_user: "{{ nb_ctx.vm_admin_user }}"
+            ansible_admin_pass: "{{ nb_ctx.vm_admin_password }}"
