@@ -232,12 +232,26 @@ REMOTE_SCRIPT
 # STEP 3: Transfer Remote Script and Certificates
 # -------------------------------
 echo "🚀 Transferring installer script and certificates to $FOREMAN_PROXY..."
-sshpass -p 'Vigneshv12$' scp -o StrictHostKeyChecking=no /tmp/remote_installer.sh admin@$FOREMAN_PROXY:/root/
-sshpass -p 'Vigneshv12$' scp -o StrictHostKeyChecking=no "$CERT_PATH" admin@$FOREMAN_PROXY:/root/
+sshpass -p 'Vigneshv12$' scp \
+  -o StrictHostKeyChecking=no \
+  /tmp/remote_installer.sh \
+  admin@$FOREMAN_PROXY:/home/admin/
+
+sshpass -p 'Vigneshv12$' scp \
+  -o StrictHostKeyChecking=no \
+  "$CERT_PATH" \
+  admin@$FOREMAN_PROXY:/home/admin/
 
 
 # -------------------------------
 # STEP 4: Execute Remote Script
 # -------------------------------
 echo "🚀 Executing remote installer on $FOREMAN_PROXY..."
-sshpass -p 'Vigneshv12$' ssh -o StrictHostKeyChecking=no admin@$FOREMAN_PROXY "bash /root/remote_installer.sh"
+sshpass -p 'Vigneshv12$' ssh \
+  -o StrictHostKeyChecking=no \
+  admin@$FOREMAN_PROXY <<'EOF'
+echo 'Vigneshv12$' | sudo -S mv /home/admin/remote_installer.sh /root/
+echo 'Vigneshv12$' | sudo -S mv /home/admin/cent-07-02.vgs.com-certs.tar /root/
+echo 'Vigneshv12$' | sudo -S chmod +x /root/remote_installer.sh
+echo 'Vigneshv12$' | sudo -S bash /root/remote_installer.sh
+EOF
