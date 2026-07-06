@@ -153,7 +153,7 @@
     - name: Find remaining EL8 packages
       shell: |
         rpm -qa | grep '\.el8' | \
-          grep -vE '^(gpg-pubkey|kernel|kernel-core|kernel-modules|kernel-modules-extra|leapp|leapp-data)'
+          grep -vE '^(gpg-pubkey|kernel|kernel-core|kernel-modules|kernel-modules-extra|kernel-tools|kernel-tools-libs|leapp|leapp-data)' || true
       register: el8_packages
       changed_when: false
 
@@ -285,15 +285,19 @@
       when: not efi.stat.exists
 
     - name: Locate UEFI grub.cfg
-      shell: find /boot/efi/EFI -name grub.cfg | head -1
+      command: find /boot/efi/EFI -name grub.cfg
       register: grub_cfg
       changed_when: false
     
     - name: Regenerate UEFI GRUB
-      command: grub2-mkconfig -o {{ grub_cfg.stdout }}
+      command:
+        argv:
+          - grub2-mkconfig
+          - -o
+          - "{{ grub_cfg.stdout_lines[0] }}"
       when:
         - efi.stat.exists
-        - grub_cfg.stdout != ""
+        - grub_cfg.stdout_lines | length > 0
 
     ####################################################################
     # Rebuild Initramfs
