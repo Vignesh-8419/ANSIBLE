@@ -1,20 +1,33 @@
 ---
 - name: Rocky Linux 8 to Rocky Linux 9 - ELevate Migration
   hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
-  become: yes
+  gather_facts: false
+  become: true
   become_method: sudo
   become_user: root
-  gather_facts: false
+  serial: 1
 
   vars:
+
+    elevate_repo_url: "http://192.168.253.136/repo/el8toel9"
+    rocky8_baseos: "http://192.168.253.136/repo/rocky8/BaseOS"
+    rocky8_appstream: "http://192.168.253.136/repo/rocky8/AppStream"
+
+    rocky9_baseos: "http://192.168.253.136/repo/rocky9/BaseOS"
+    rocky9_appstream: "http://192.168.253.136/repo/rocky9/AppStream"
+
     elevate_repo_file: /etc/yum.repos.d/el8toel9.repo
-    rocky_repo_file: /etc/leapp/files/leapp_upgrade_repositories.repo
+    leapp_repo_file: /etc/leapp/files/leapp_upgrade_repositories.repo
+
+  ####################################################################
+  # Bootstrap
+  ####################################################################
 
   pre_tasks:
 
     - name: Ensure Python is installed
       raw: |
-        if ! command -v python3 >/dev/null 2>&1 && ! command -v python >/dev/null 2>&1; then
+        if ! command -v python3 >/dev/null 2>&1; then
           dnf -y install python3
         fi
       changed_when: false
@@ -24,355 +37,442 @@
     - name: Gather facts
       setup:
 
-    - name: Skip migration if already Rocky Linux 9
-      debug:
-        msg: "Host is already running Rocky Linux {{ ansible_distribution_version }}. Skipping ELevate migration."
-      when:
-        - ansible_distribution == "Rocky"
-        - ansible_distribution_major_version == "9"
+    ##################################################################
+    # Validate Operating System
+    ##################################################################
 
-    - name: End play when already Rocky Linux 9
+    - name: Fail when OS is not Rocky Linux
+      fail:
+        msg: "This playbook supports only Rocky Linux."
+      when: ansible_distribution != "Rocky"
+
+    - name: End play if already Rocky Linux 9
       meta: end_play
       when:
         - ansible_distribution == "Rocky"
         - ansible_distribution_major_version == "9"
 
-    - name: Validate source operating system
+    - name: Validate Rocky Linux version
       fail:
-        msg: "This playbook supports only Rocky Linux 8."
-      when:
-        - ansible_distribution != "Rocky"
-        - ansible_distribution_major_version != "8"
+        msg: "Only Rocky Linux 8.x can be migrated."
+      when: ansible_distribution_major_version != "8"
+
+    ##################################################################
+    # Connectivity Checks
+    ##################################################################
+
+    - name: Verify repository server is reachable
+      uri:
+        url: "{{ elevate_repo_url }}"
+        method: HEAD
+        status_code:
+          - 200
+          - 301
+          - 302
+      register: repo_check
+      retries: 5
+      delay: 5
+      until: repo_check.status in [200,301,302]
+
+    - name: Display repository status
+      debug:
+        msg: "Repository server is reachable."
+
+  ####################################################################
+  # Configure Repositories
+  ####################################################################
 
   tasks:
 
-    ####################################################################
-    # Configure ELevate Repository
-    ####################################################################
-
-    - name: Backup existing repository files
+    - name: Backup existing repositories
       shell: |
         mkdir -p /etc/yum.repos.d/backup
-        mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/ 2>/dev/null || true
+        find /etc/yum.repos.d -maxdepth 1 -name "*.repo" \
+        -exec mv {} /etc/yum.repos.d/backup/ \;
+      args:
+        executable: /bin/bash
 
-    - name: Create el8toel9 repository
+    - name: Configure Rocky Linux 8 repositories
       copy:
         dest: "{{ elevate_repo_file }}"
         mode: "0644"
         content: |
           [el8toel9]
-          name=ELevate EL8 to EL9 Repository
-          baseurl=http://192.168.253.136/repo/el8toel9/
+          name=ELevate Repository
+          baseurl={{ elevate_repo_url }}
           enabled=1
           gpgcheck=0
 
           [rocky8-baseos]
           name=Rocky Linux 8 BaseOS
-          baseurl=http://192.168.253.136/repo/rocky8/BaseOS/
+          baseurl={{ rocky8_baseos }}
           enabled=1
           gpgcheck=0
 
           [rocky8-appstream]
           name=Rocky Linux 8 AppStream
-          baseurl=http://192.168.253.136/repo/rocky8/AppStream/
+          baseurl={{ rocky8_appstream }}
           enabled=1
           gpgcheck=0
 
     ####################################################################
-    # Complete pending DNF transaction
+    # Refresh DNF
     ####################################################################
 
-    - name: Check if dnf-complete-transaction exists
-      stat:
-        path: /usr/bin/dnf-complete-transaction
-      register: dnf_complete
+    - name: Remove DNF cache
+      file:
+        path: /var/cache/dnf
+        state: absent
 
-    - name: Check pending DNF transaction
-      shell: |
-        dnf-complete-transaction --cleanup-only --quiet --skip-broken
-        echo $?
-      register: dnf_pending
-      changed_when: false
-      when: dnf_complete.stat.exists
+    - name: Clean DNF metadata
+      command: dnf clean all
 
-    - name: Complete pending DNF transaction
+    - name: Rebuild metadata
+      command: dnf makecache
+
+    ####################################################################
+    # Resolve Pending Transactions
+    ####################################################################
+
+    - name: Install dnf-utils
+      dnf:
+        name: dnf-utils
+        state: present
+
+    - name: Complete pending transaction
       command: dnf-complete-transaction -y
-      when:
-        - dnf_complete.stat.exists
-        - dnf_pending.stdout != "0"
-
-    - name: Skip pending transaction cleanup
-      debug:
-        msg: "dnf-complete-transaction is not installed. Skipping transaction cleanup."
-      when: not dnf_complete.stat.exists
-
-    ####################################################################
-    # Install Leapp
-    ####################################################################
-
-    - name: Check if leapp command exists
-      command: which leapp
-      register: leapp_installed
-      changed_when: false
+      register: transaction
       failed_when: false
+      changed_when: transaction.rc == 0
 
-    - name: Install Leapp packages
+    ####################################################################
+    # Update Rocky Linux 8
+    ####################################################################
+
+    - name: Upgrade all packages
+      dnf:
+        name: "*"
+        state: latest
+        update_cache: yes
+        allowerasing: true
+      register: update_result
+
+    - name: Reboot after package update
+      reboot:
+        reboot_timeout: 1800
+      when: update_result.changed
+
+    - meta: reset_connection
+
+    - name: Gather facts after update
+      setup:
+
+    ####################################################################
+    # Install ELevate
+    ####################################################################
+
+    - name: Install ELevate packages
       dnf:
         name:
-          - leapp-upgrade
+          - leapp
           - leapp-data-rocky
+          - leapp-upgrade-el8toel9
         state: present
-      when: leapp_installed.rc != 0
 
-    - name: Verify Leapp installation
+    - name: Verify installed packages
       shell: |
-        leapp --version
         rpm -qa | grep '^leapp' | sort
-      register: leapp_verify
+      register: leapp_packages
       changed_when: false
 
-    - name: Display Leapp installation status
+    - name: Display installed Leapp packages
       debug:
-        var: leapp_verify.stdout_lines
+        var: leapp_packages.stdout_lines
 
     ####################################################################
-    # Configure Rocky 9 repositories
+    # Verify Leapp
     ####################################################################
 
-    - name: Ensure Leapp repository directory exists
+    - name: Verify leapp command
+      command: leapp --version
+      register: leapp_version
+      changed_when: false
+
+    - name: Display leapp version
+      debug:
+        var: leapp_version.stdout_lines
+    ####################################################################
+    # Configure Leapp Repository
+    ####################################################################
+
+    - name: Ensure Leapp files directory exists
       file:
         path: /etc/leapp/files
         state: directory
         mode: "0755"
 
-    - name: Check if Leapp repository file exists
-      stat:
-        path: "{{ rocky_repo_file }}"
-      register: leapp_repo
-
-    - name: Backup existing Leapp repository
+    - name: Configure Rocky Linux 9 repositories for Leapp
       copy:
-        src: "{{ rocky_repo_file }}"
-        dest: "{{ rocky_repo_file }}.bak"
-        remote_src: yes
-        backup: yes
-      when: leapp_repo.stat.exists
-
-    - name: Configure Rocky Linux 9 repositories
-      copy:
-        dest: "{{ rocky_repo_file }}"
+        dest: "{{ leapp_repo_file }}"
         mode: "0644"
         content: |
           [rocky9-baseos]
           name=Rocky Linux 9 BaseOS
-          baseurl=http://192.168.253.136/repo/rocky9/BaseOS/
+          baseurl={{ rocky9_baseos }}
           enabled=1
           gpgcheck=0
 
           [rocky9-appstream]
           name=Rocky Linux 9 AppStream
-          baseurl=http://192.168.253.136/repo/rocky9/AppStream/
+          baseurl={{ rocky9_appstream }}
           enabled=1
           gpgcheck=0
 
-    - name: Check immutable attribute
-      command: lsattr "{{ rocky_repo_file }}"
-      register: repo_attr
-      changed_when: false
-      failed_when: false
-
-    - name: Lock Leapp repository file
-      command:
-        argv:
-          - chattr
-          - +i
-          - "{{ rocky_repo_file }}"
-      when: "'i' not in repo_attr.stdout"
-
     ####################################################################
-    # Enable Root SSH Login
+    # Validate Repositories
     ####################################################################
 
-    - name: Enable PermitRootLogin in sshd_config
+    - name: Verify Rocky 9 BaseOS repository
+      uri:
+        url: "{{ rocky9_baseos }}/repodata/repomd.xml"
+        method: HEAD
+        status_code: 200
+
+    - name: Verify Rocky 9 AppStream repository
+      uri:
+        url: "{{ rocky9_appstream }}/repodata/repomd.xml"
+        method: HEAD
+        status_code: 200
+
+    - name: Verify ELevate repository
+      uri:
+        url: "{{ elevate_repo_url }}/repodata/repomd.xml"
+        method: HEAD
+        status_code: 200
+
+    ####################################################################
+    # Remove Previous Leapp Data
+    ####################################################################
+
+    - name: Remove previous Leapp logs
+      file:
+        path: /var/log/leapp
+        state: absent
+
+    - name: Remove previous Leapp cache
+      file:
+        path: /var/lib/leapp
+        state: absent
+
+    - name: Create fresh Leapp log directory
+      file:
+        path: /var/log/leapp
+        state: directory
+        mode: "0755"
+
+    ####################################################################
+    # Prepare System
+    ####################################################################
+
+    - name: Set SELinux to permissive
+      command: setenforce 0
+      when:
+        - ansible_selinux is defined
+        - ansible_selinux.status == "enabled"
+      ignore_errors: yes
+
+    - name: Enable root login
       lineinfile:
         path: /etc/ssh/sshd_config
-        regexp: '^[#[:space:]]*PermitRootLogin'
-        line: 'PermitRootLogin yes'
-        backup: yes
+        regexp: '^#?PermitRootLogin'
+        line: PermitRootLogin yes
 
-    - name: Restart SSH service
+    - name: Restart sshd
       service:
         name: sshd
         state: restarted
 
     ####################################################################
-    # Leapp Preupgrade
+    # Remove Loaded Modules
     ####################################################################
 
-    - name: Check if Leapp report already exists
-      stat:
-        path: /var/log/leapp/leapp-report.txt
-      register: leapp_report
-
-    - name: Run Leapp preupgrade
-      command:
-        argv:
-          - leapp
-          - preupgrade
-      register: preupgrade_result
-      when: not leapp_report.stat.exists
-      ignore_errors: yes
-
-    - name: Display preupgrade output
-      debug:
-        var: preupgrade_result.stdout_lines
-      when: preupgrade_result is defined
-
-    - name: Display preupgrade report location
-      debug:
-        msg: "/var/log/leapp/leapp-report.txt"
-
-    ####################################################################
-    # Prepare Upgrade
-    ####################################################################
-
-    - name: Set SELinux to permissive
-      command:
-        argv:
-          - setenforce
-          - "0"
-      ignore_errors: yes
-
-    - name: Remove floppy kernel module
-      command:
-        argv:
-          - modprobe
-          - -r
-          - floppy
-      ignore_errors: yes
-
-    - name: Remove pata_acpi kernel module
-      command:
-        argv:
-          - modprobe
-          - -r
-          - pata_acpi
-      ignore_errors: yes
-
-    - name: Answer authselect confirmation
-      command:
-        argv:
-          - leapp
-          - answer
-          - --section
-          - authselect_check.confirm=True
-      ignore_errors: yes
-
-    - name: Answer PAM PKCS11 confirmation
-      command:
-        argv:
-          - leapp
-          - answer
-          - --section
-          - remove_pam_pkcs11_module_check.confirm=True
-      ignore_errors: yes
-
-    - name: Check immutable attribute
-      command:
-        argv:
-          - lsattr
-          - "{{ rocky_repo_file }}"
-      register: repo_attr
+    - name: Unload floppy module
+      shell: |
+        lsmod | grep -q '^floppy' && modprobe -r floppy || true
       changed_when: false
+
+    - name: Unload pata_acpi module
+      shell: |
+        lsmod | grep -q '^pata_acpi' && modprobe -r pata_acpi || true
+      changed_when: false
+
+    ####################################################################
+    # Generate Initial Answerfile
+    ####################################################################
+
+    - name: Check for EL7 packages
+      shell: rpm -qa | grep '\.el7' || true
+      register: el7_packages
+      changed_when: false
+    
+    - name: Fail if EL7 packages exist
+      fail:
+        msg: |
+          EL7 packages detected:
+    
+          {{ el7_packages.stdout }}
+    
+          Remove these packages before running ELevate.
+      when: el7_packages.stdout != ""
+
+    - name: Run initial Leapp preupgrade
+      command: leapp preupgrade
+      register: preupgrade_initial
+      failed_when: false
+      changed_when: true
+
+    - name: Display initial preupgrade output
+      debug:
+        var: preupgrade_initial.stdout_lines
+
+    - name: Verify answerfile exists
+      stat:
+        path: /var/log/leapp/answerfile
+      register: answerfile
+
+    - name: Fail if initial preupgrade failed unexpectedly
+      fail:
+        msg: |
+          Initial Leapp preupgrade failed.
+
+          stdout:
+          {{ preupgrade_initial.stdout }}
+
+          stderr:
+          {{ preupgrade_initial.stderr }}
+      when:
+        - preupgrade_initial.rc != 0
+        - not answerfile.stat.exists
+
+    - name: Fail when answerfile is missing
+      fail:
+        msg: "Leapp answerfile was not generated."
+      when: not answerfile.stat.exists
+
+    ####################################################################
+    # Answer Leapp Questions
+    ####################################################################
+
+    - name: Answer authselect question
+      command: >
+        leapp answer
+        --section authselect_check.confirm=True
       failed_when: false
 
-    - name: Unlock Leapp repository file
-      command:
-        argv:
-          - chattr
-          - -i
-          - "{{ rocky_repo_file }}"
-      when: "'i' in repo_attr.stdout"
+    - name: Answer pam_pkcs11 question
+      command: >
+        leapp answer
+        --section remove_pam_pkcs11_module_check.confirm=True
+      failed_when: false
 
     ####################################################################
-    # Run Upgrade
+    # Execute Final Preupgrade
+    ####################################################################
+
+    - name: Run Leapp preupgrade
+      command: leapp preupgrade
+      register: preupgrade
+      changed_when: true
+
+    - name: Read Leapp report
+      slurp:
+        src: /var/log/leapp/leapp-report.txt
+      register: leapp_report
+
+    - name: Save report text
+      set_fact:
+        leapp_report_text: "{{ leapp_report.content | b64decode }}"
+
+    ####################################################################
+    # Detect Inhibitors
+    ####################################################################
+
+    - name: Detect inhibitors
+      set_fact:
+        inhibitors_found: "{{ 'Risk Factor: high (inhibitor)' in leapp_report_text }}"
+
+    - name: Display inhibitor status
+      debug:
+        msg: >-
+          {{
+            'No inhibitors detected.'
+            if not inhibitors_found
+            else
+            'Leapp inhibitors detected.'
+          }}
+
+    - name: Stop migration when inhibitors exist
+      fail:
+        msg: |
+          Leapp inhibitors detected.
+
+          Review:
+
+          /var/log/leapp/leapp-report.txt
+
+          Resolve all inhibitors before rerunning this playbook.
+      when: inhibitors_found
+
+    ####################################################################
+    # Execute Upgrade
     ####################################################################
 
     - name: Run Leapp upgrade
-      command:
-        argv:
-          - leapp
-          - upgrade
-      register: upgrade_result
-      ignore_errors: yes
+      command: leapp upgrade
+      register: leapp_upgrade
+      changed_when: true
+      failed_when: leapp_upgrade.rc != 0
 
-    - name: Display upgrade output
+    - name: Display Leapp upgrade output
       debug:
-        var: upgrade_result.stdout_lines
-      when: upgrade_result is defined
+        var: leapp_upgrade.stdout_lines
 
     ####################################################################
-    # Reboot
+    # Verify Upgrade Environment
     ####################################################################
 
-    - name: Reboot into Rocky Linux 9
+    - name: Verify Leapp upgrade initramfs exists
+      stat:
+        path: "/boot/initramfs-{{ ansible_kernel }}.img"
+      register: initramfs_check
+
+    - name: Show initramfs status
+      debug:
+        msg: "Leapp upgrade initramfs generated successfully."
+      when: initramfs_check.stat.exists
+
+    ####################################################################
+    # Final Reboot
+    ####################################################################
+
+    - name: Reboot to start Rocky Linux 9 migration
       reboot:
-        reboot_timeout: 1800
-      when:
-        - upgrade_result is defined
-        - upgrade_result.rc == 0
+        msg: "Starting Rocky Linux 9 ELevate migration"
+        connect_timeout: 5
+        reboot_timeout: 7200
+        pre_reboot_delay: 10
+        post_reboot_delay: 0
 
     ####################################################################
-    # Python 3
+    # End Play
     ####################################################################
 
-    - name: Ensure Python 3 is installed
-      raw: |
-        if ! command -v python3 >/dev/null 2>&1; then
-          dnf -y install python3
-        fi
-      changed_when: false
-
-    - meta: reset_connection
-
-    - name: Switch to Python 3
-      set_fact:
-        ansible_python_interpreter: /usr/bin/python3
-
-    - name: Gather facts after upgrade
-      setup:
-
-    ####################################################################
-    # Verify Upgrade
-    ####################################################################
-
-    - name: Verify Rocky Linux installation
-      command:
-        argv:
-          - cat
-          - /etc/os-release
-      register: os_release
-      changed_when: false
-
-    - name: Display operating system information
-      debug:
-        var: os_release.stdout_lines
-
-    - name: Display running kernel
-      command:
-        argv:
-          - uname
-          - -r
-      register: kernel_version
-      changed_when: false
-
-    - name: Show running kernel
-      debug:
-        var: kernel_version.stdout
-
-    - name: Display migration status
+    - name: Display migration message
       debug:
         msg:
-          - "Migration completed successfully."
-          - "Operating System : {{ ansible_distribution }} {{ ansible_distribution_version }}"
-          - "Kernel           : {{ ansible_kernel }}"
+          - "The system has rebooted into the Leapp upgrade environment."
+          - "Leapp will perform the migration automatically."
+          - "The host will reboot again when the migration completes."
+          - "Run Rocky9_Post_Migration_Cleanup.yml after the host is back online."
+
+    - meta: end_play
