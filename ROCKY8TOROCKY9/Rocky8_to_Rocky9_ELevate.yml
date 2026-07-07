@@ -411,6 +411,47 @@
       when: inhibitors_found
 
     ####################################################################
+    # Prepare Final Upgrade
+    ####################################################################
+
+    - name: Check if rocky-logos is installed
+      shell: rpm -q rocky-logos
+      register: rocky_logos
+      failed_when: false
+      changed_when: false
+
+    - name: Remove Rocky 8 logos package to avoid EL9 file conflict
+      command: rpm -e --nodeps rocky-logos
+      when: rocky_logos.rc == 0
+
+    - name: Verify rocky-logos has been removed
+      shell: rpm -q rocky-logos
+      register: rocky_logos_removed
+      failed_when: false
+      changed_when: false
+
+    - name: Display rocky-logos status
+      debug:
+        msg: >-
+          {{
+            'rocky-logos removed successfully.'
+            if rocky_logos_removed.rc != 0
+            else
+            'rocky-logos is still installed.'
+          }}
+
+    - name: Disable network naming scheme check for Leapp
+      lineinfile:
+        path: /etc/environment
+        regexp: '^LEAPP_DISABLE_NET_NAMING_SCHEMES='
+        line: 'LEAPP_DISABLE_NET_NAMING_SCHEMES=1'
+        create: yes
+
+    - name: Export LEAPP_DISABLE_NET_NAMING_SCHEMES for current session
+      shell: export LEAPP_DISABLE_NET_NAMING_SCHEMES=1
+      changed_when: false
+
+    ####################################################################
     # Execute Upgrade
     ####################################################################
 
