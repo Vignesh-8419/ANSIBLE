@@ -343,29 +343,23 @@
     ####################################################################
     # Fix Firewalld AllowZoneDrifting
     ####################################################################
-
-    - name: Disable unsupported AllowZoneDrifting option
-      lineinfile:
-        path: /etc/firewalld/firewalld.conf
-        regexp: '^AllowZoneDrifting='
-        line: 'AllowZoneDrifting=no'
-        backup: yes
-      register: firewalld_conf
     
-    - name: Add AllowZoneDrifting if missing
+    - name: Ensure AllowZoneDrifting is disabled
       lineinfile:
         path: /etc/firewalld/firewalld.conf
+        regexp: '^#?AllowZoneDrifting='
+        line: 'AllowZoneDrifting=no'
         insertafter: EOF
-        line: 'AllowZoneDrifting=no'
-      when: "'AllowZoneDrifting=no' not in lookup('file', '/etc/firewalld/firewalld.conf')"
+        create: yes
+        backup: yes
+      ignore_errors: yes
     
-    - name: Reload firewalld configuration
-      service:
-        name: firewalld
-        state: reloaded
-      when:
-        - firewalld_conf.changed
-        - ansible_facts.services['firewalld.service'] is defined
+    - name: Reload firewalld if running
+      shell: |
+        if systemctl is-active --quiet firewalld; then
+          firewall-cmd --reload
+        fi
+      changed_when: false
       ignore_errors: yes
 
     ####################################################################
