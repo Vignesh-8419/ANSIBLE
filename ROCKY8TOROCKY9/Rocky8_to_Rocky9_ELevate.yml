@@ -13,8 +13,8 @@
     rocky8_baseos: "http://192.168.253.136/repo/rocky8/BaseOS"
     rocky8_appstream: "http://192.168.253.136/repo/rocky8/AppStream"
 
-    rocky9_baseos: "http://192.168.253.136/repo/rocky9/BaseOS"
-    rocky9_appstream: "http://192.168.253.136/repo/rocky9/AppStream"
+    rocky9_baseos: "http://192.168.253.136/repo/rocky9.2/BaseOS"
+    rocky9_appstream: "http://192.168.253.136/repo/rocky9.2/AppStream"
 
     elevate_repo_file: /etc/yum.repos.d/el8toel9.repo
     leapp_repo_file: /etc/leapp/files/leapp_upgrade_repositories.repo
@@ -131,43 +131,6 @@
       command: dnf makecache
 
     ####################################################################
-    # Resolve Pending Transactions
-    ####################################################################
-
-    - name: Install dnf-utils
-      dnf:
-        name: dnf-utils
-        state: present
-
-    - name: Complete pending transaction
-      command: dnf-complete-transaction -y
-      register: transaction
-      failed_when: false
-      changed_when: transaction.rc == 0
-
-    ####################################################################
-    # Update Rocky Linux 8
-    ####################################################################
-
-    - name: Upgrade all packages
-      dnf:
-        name: "*"
-        state: latest
-        update_cache: yes
-        allowerasing: true
-      register: update_result
-
-    - name: Reboot after package update
-      reboot:
-        reboot_timeout: 1800
-      when: update_result.changed
-
-    - meta: reset_connection
-
-    - name: Gather facts after update
-      setup:
-
-    ####################################################################
     # Install ELevate
     ####################################################################
 
@@ -175,13 +138,17 @@
       dnf:
         name:
           - leapp
+          - python3-leapp
+          - leapp-deps
+          - snactor
           - leapp-data-rocky
           - leapp-upgrade-el8toel9
+          - leapp-upgrade-el8toel9-deps
         state: present
 
-    - name: Verify installed packages
+    - name: Verify installed Leapp packages
       shell: |
-        rpm -qa | grep '^leapp' | sort
+        rpm -qa | egrep '^(leapp|python3-leapp|snactor)' | sort
       register: leapp_packages
       changed_when: false
 
@@ -281,16 +248,13 @@
         - ansible_selinux.status == "enabled"
       ignore_errors: yes
 
-    - name: Enable root login
+    - name: Disable direct root SSH login
       lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^#?PermitRootLogin'
-        line: PermitRootLogin yes
-
-    - name: Restart sshd
-      service:
-        name: sshd
-        state: restarted
+        line: 'PermitRootLogin no'
+        create: yes
+        backup: yes
 
     ####################################################################
     # Remove Loaded Modules
