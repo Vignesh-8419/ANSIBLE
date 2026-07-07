@@ -168,6 +168,7 @@
     - name: Display leapp version
       debug:
         var: leapp_version.stdout_lines
+
     ####################################################################
     # Configure Leapp Repository
     ####################################################################
@@ -338,6 +339,34 @@
         leapp answer
         --section remove_pam_pkcs11_module_check.confirm=True
       failed_when: false
+
+    ####################################################################
+    # Fix Firewalld AllowZoneDrifting
+    ####################################################################
+
+    - name: Disable unsupported AllowZoneDrifting option
+      lineinfile:
+        path: /etc/firewalld/firewalld.conf
+        regexp: '^AllowZoneDrifting='
+        line: 'AllowZoneDrifting=no'
+        backup: yes
+      register: firewalld_conf
+    
+    - name: Add AllowZoneDrifting if missing
+      lineinfile:
+        path: /etc/firewalld/firewalld.conf
+        insertafter: EOF
+        line: 'AllowZoneDrifting=no'
+      when: "'AllowZoneDrifting=no' not in lookup('file', '/etc/firewalld/firewalld.conf')"
+    
+    - name: Reload firewalld configuration
+      service:
+        name: firewalld
+        state: reloaded
+      when:
+        - firewalld_conf.changed
+        - ansible_facts.services['firewalld.service'] is defined
+      ignore_errors: yes
 
     ####################################################################
     # Execute Final Preupgrade
