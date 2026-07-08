@@ -249,124 +249,81 @@
         state: restarted
 
     ####################################################################
-    # Remove perl-libs (Leapp workaround)
+    # Leapp Preupgrade - Pass 1
     ####################################################################
-
-    - name: Check if perl-libs is installed
-      shell: rpm -q perl-libs
-      register: perl_libs_check
-      changed_when: false
-      failed_when: false
-
-    - name: Remove perl-libs package
+    
+    - name: Run first Leapp preupgrade
+      command: leapp preupgrade
+      register: preupgrade_pass1
+      ignore_errors: yes
+    
+    - name: Display first preupgrade output
+      debug:
+        var: preupgrade_pass1.stdout_lines
+    
+    ####################################################################
+    # Apply Preupgrade Fixes
+    ####################################################################
+    
+    - name: Remove perl-libs
       yum:
         name: perl-libs
         state: absent
-      when: perl_libs_check.rc == 0
-
-    - name: Verify perl-libs removal
-      shell: rpm -q perl-libs
-      register: perl_libs_verify
-      changed_when: false
-      failed_when: false
-
-    - name: Display perl-libs status
-      debug:
-        msg: >-
-          {{
-            'perl-libs removed successfully.'
-            if perl_libs_verify.rc != 0
-            else 'perl-libs is still installed.'
-          }}
-
-    ####################################################################
-    # Leapp Preupgrade
-    ####################################################################
-
-    - name: Check if Leapp report already exists
-      stat:
-        path: /var/log/leapp/leapp-report.txt
-      register: leapp_report
-
-    - name: Run Leapp preupgrade
-      command:
-        argv:
-          - leapp
-          - preupgrade
-      register: preupgrade_result
-      when: not leapp_report.stat.exists
-      ignore_errors: yes
-
-    - name: Display preupgrade output
-      debug:
-        var: preupgrade_result.stdout_lines
-      when: preupgrade_result is defined
-
-    - name: Display preupgrade report location
-      debug:
-        msg: "/var/log/leapp/leapp-report.txt"
-
-    ####################################################################
-    # Prepare Upgrade
-    ####################################################################
-
+    
     - name: Set SELinux to permissive
-      command:
-        argv:
-          - setenforce
-          - "0"
+      command: setenforce 0
       ignore_errors: yes
-
-    - name: Remove floppy kernel module
-      command:
-        argv:
-          - modprobe
-          - -r
-          - floppy
+    
+    - name: Remove floppy module
+      command: modprobe -r floppy
       ignore_errors: yes
-
-    - name: Remove pata_acpi kernel module
-      command:
-        argv:
-          - modprobe
-          - -r
-          - pata_acpi
+    
+    - name: Remove pata_acpi module
+      command: modprobe -r pata_acpi
       ignore_errors: yes
-
+    
     - name: Answer authselect confirmation
-      command:
-        argv:
-          - leapp
-          - answer
-          - --section
-          - authselect_check.confirm=True
+      command: >
+        leapp answer
+        --section authselect_check.confirm=True
       ignore_errors: yes
-
+    
     - name: Answer PAM PKCS11 confirmation
-      command:
-        argv:
-          - leapp
-          - answer
-          - --section
-          - remove_pam_pkcs11_module_check.confirm=True
+      command: >
+        leapp answer
+        --section remove_pam_pkcs11_module_check.confirm=True
       ignore_errors: yes
-
+    
     - name: Check immutable attribute
-      command:
-        argv:
-          - lsattr
-          - "{{ rocky_repo_file }}"
+      command: lsattr {{ rocky_repo_file }}
       register: repo_attr
       changed_when: false
       failed_when: false
-
+    
     - name: Unlock Leapp repository file
-      command:
-        argv:
-          - chattr
-          - -i
-          - "{{ rocky_repo_file }}"
+      command: chattr -i {{ rocky_repo_file }}
       when: "'i' in repo_attr.stdout"
+    
+    ####################################################################
+    # Leapp Preupgrade - Pass 2
+    ####################################################################
+    
+    - name: Run second Leapp preupgrade
+      command: leapp preupgrade
+      register: preupgrade_pass2
+      ignore_errors: yes
+    
+    - name: Display second preupgrade output
+      debug:
+        var: preupgrade_pass2.stdout_lines
+
+    - name: Fail if second preupgrade still has errors
+      fail:
+        msg: |
+          Leapp preupgrade still failed.
+          Review /var/log/leapp/leapp-report.txt before continuing.
+      when: preupgrade_pass2.rc != 0
+
 
     ####################################################################
     # Upgrade
