@@ -249,6 +249,37 @@
         state: restarted
 
     ####################################################################
+    # Remove perl-libs (Leapp workaround)
+    ####################################################################
+
+    - name: Check if perl-libs is installed
+      shell: rpm -q perl-libs
+      register: perl_libs_check
+      changed_when: false
+      failed_when: false
+
+    - name: Remove perl-libs package
+      yum:
+        name: perl-libs
+        state: absent
+      when: perl_libs_check.rc == 0
+
+    - name: Verify perl-libs removal
+      shell: rpm -q perl-libs
+      register: perl_libs_verify
+      changed_when: false
+      failed_when: false
+
+    - name: Display perl-libs status
+      debug:
+        msg: >-
+          {{
+            'perl-libs removed successfully.'
+            if perl_libs_verify.rc != 0
+            else 'perl-libs is still installed.'
+          }}
+
+    ####################################################################
     # Leapp Preupgrade
     ####################################################################
 
