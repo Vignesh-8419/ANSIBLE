@@ -725,13 +725,8 @@ jt.project = project
 jt.inventory = None
 jt.playbook = "rhel-hardening/playbooks/01_rhel_hardening.yml"
 
-# Prompt for Inventory
 jt.ask_inventory_on_launch = True
-
-# Disable Limit
 jt.ask_limit_on_launch = False
-
-# Enable Survey
 jt.survey_enabled = True
 
 jt.survey_spec = {
@@ -746,7 +741,8 @@ jt.survey_spec = {
             "required": True,
             "default": "*",
             "min": 1,
-            "max": 1024
+            "max": 1024,
+            "new_question": True
         },
         {
             "type": "multiplechoice",
@@ -755,7 +751,8 @@ jt.survey_spec = {
             "variable": "reboot_after_hardening",
             "required": True,
             "default": "No",
-            "choices": "Yes\nNo"
+            "choices": "Yes\nNo",
+            "new_question": True
         }
     ]
 }
@@ -766,8 +763,7 @@ jt.credentials.clear()
 jt.credentials.add(credential)
 
 print(
-    f"RHEL_Hardening "
-    f"{'created' if created else 'updated'} successfully."
+    f"RHEL_Hardening {'created' if created else 'updated'} successfully."
 )
 print("Inventory: Prompt on Launch")
 print(f"Credential assigned: {credential.name}")
