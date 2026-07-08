@@ -190,53 +190,31 @@
         state: absent
       when: el8_kernels.stdout != ""
 
+    - name: Read current machine-id
+      command: cat /etc/machine-id
+      register: machine_id
+      changed_when: false
 
-    ####################################################################
-    # Remove Stale EL8 Boot Entries
-    ####################################################################
+####################################################################
+# Remove Stale Boot Loader Entries
+####################################################################
 
-    - name: Find stale EL8 BLS entries
-      find:
-        paths: /boot/loader/entries
-        patterns:
-          - "*.el8*.conf"
-      register: el8_bls
+    - name: Remove stale boot loader entries
+      shell: |
+        find /boot/loader/entries -maxdepth 1 -name "*.conf" \
+          ! -name "{{ machine_id.stdout }}*" \
+          -delete
+      args:
+        executable: /bin/bash
 
-    - name: Display stale EL8 BLS entries
-      debug:
-        var: el8_bls.files | map(attribute='path') | list
-      when: el8_bls.matched > 0
-
-    - name: Remove stale EL8 BLS entries
-      file:
-        path: "{{ item.path }}"
-        state: absent
-      loop: "{{ el8_bls.files }}"
-      when: el8_bls.matched > 0
-
-    - name: Find old rescue kernel files
-      find:
-        paths: /boot
-        patterns:
-          - "vmlinuz-0-rescue-*"
-          - "initramfs-0-rescue-*.img"
-      register: rescue_files
-
-    - name: Remove obsolete rescue images
-      file:
-        path: "{{ item.path }}"
-        state: absent
-      loop: "{{ rescue_files.files }}"
-      when:
-        - running_kernel.stdout is search("el9")
-        - item.path is search(ansible_machine_id) == false
-
-    - name: Recreate EL9 rescue image
-      command: >
-        /usr/lib/kernel/install.d/51-dracut-rescue.install
-        add {{ running_kernel.stdout }}
-        /lib/modules/{{ running_kernel.stdout }}/vmlinuz
-      failed_when: false
+    - name: Remove stale rescue kernel files
+      shell: |
+        find /boot -maxdepth 1 \
+          \( -name "vmlinuz-0-rescue-*" -o -name "initramfs-0-rescue-*.img" \) \
+          ! -name "*{{ machine_id.stdout }}*" \
+          -delete
+      args:
+        executable: /bin/bash
 
     ####################################################################
     # Remove ELevate Packages
@@ -415,13 +393,6 @@
         name: dracut-config-rescue
         state: present
 
-    - name: Regenerate rescue kernel
-      command: >
-        /usr/lib/kernel/install.d/51-dracut-rescue.install
-        add "{{ running_kernel.stdout }}"
-        "/lib/modules/{{ running_kernel.stdout }}/vmlinuz"
-      ignore_errors: yes
-
     ####################################################################
     # Clean Temporary Files
     ####################################################################
@@ -449,6 +420,14 @@
     - name: Clean package cache
       command: dnf clean packages
       changed_when: false
+
+    - name: Display remaining boot loader entries
+      command: ls -1 /boot/loader/entries
+      register: boot_entries
+      changed_when: false
+
+    - debug:
+        var: boot_entries.stdout_lines
 
     ####################################################################
     # Final Reboot
