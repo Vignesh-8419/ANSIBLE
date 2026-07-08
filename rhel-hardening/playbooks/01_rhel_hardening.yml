@@ -926,7 +926,9 @@
         connect_timeout: 30
         pre_reboot_delay: 5
         post_reboot_delay: 20
-      when: reboot_after_hardening | default(false) | bool
+      when:
+        - reboot_after_hardening is defined
+        - reboot_after_hardening | lower == "yes"
   
   ###########################################################################
   # HANDLERS
