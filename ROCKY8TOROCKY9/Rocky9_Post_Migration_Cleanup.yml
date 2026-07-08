@@ -190,6 +190,54 @@
         state: absent
       when: el8_kernels.stdout != ""
 
+
+    ####################################################################
+    # Remove Stale EL8 Boot Entries
+    ####################################################################
+
+    - name: Find stale EL8 BLS entries
+      find:
+        paths: /boot/loader/entries
+        patterns:
+          - "*.el8*.conf"
+      register: el8_bls
+
+    - name: Display stale EL8 BLS entries
+      debug:
+        var: el8_bls.files | map(attribute='path') | list
+      when: el8_bls.matched > 0
+
+    - name: Remove stale EL8 BLS entries
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ el8_bls.files }}"
+      when: el8_bls.matched > 0
+
+    - name: Find old rescue kernel files
+      find:
+        paths: /boot
+        patterns:
+          - "vmlinuz-0-rescue-*"
+          - "initramfs-0-rescue-*.img"
+      register: rescue_files
+
+    - name: Remove obsolete rescue images
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ rescue_files.files }}"
+      when:
+        - running_kernel.stdout is search("el9")
+        - item.path is search(ansible_machine_id) == false
+
+    - name: Recreate EL9 rescue image
+      command: >
+        /usr/lib/kernel/install.d/51-dracut-rescue.install
+        add {{ running_kernel.stdout }}
+        /lib/modules/{{ running_kernel.stdout }}/vmlinuz
+      failed_when: false
+
     ####################################################################
     # Remove ELevate Packages
     ####################################################################
