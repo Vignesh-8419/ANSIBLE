@@ -159,3 +159,33 @@
           - "Running Kernel : {{ running_kernel.stdout }}"
           - "Rescue Entries : {{ final_rescue.matched }}"
           - "======================================"
+
+    ####################################################################
+    # Final Reboot
+    ####################################################################
+
+    - name: Reboot system
+      reboot:
+        msg: "Rebooting after rescue repair"
+        connect_timeout: 5
+        reboot_timeout: 1800
+        pre_reboot_delay: 5
+        post_reboot_delay: 30
+
+    - meta: reset_connection
+
+    - name: Wait for SSH
+      wait_for_connection:
+        timeout: 1800
+        delay: 20
+        sleep: 10
+
+    - name: Gather facts
+      setup:
+
+    - name: Verify system after reboot
+      debug:
+        msg:
+          - "Operating System : {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Kernel           : {{ ansible_kernel }}"
+          - "Rescue repair completed successfully."
