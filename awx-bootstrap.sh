@@ -962,6 +962,73 @@ EOF
 
 
 # --------------------------------------------------------------
+# REPAIR-RESCUE
+# --------------------------------------------------------------
+
+echo
+echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
+echo -e "${WHITE} Creating REPAIR-RESCUE${NC}"
+echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
+
+awx-manage shell <<'EOF'
+from awx.main.models import Inventory, Project, JobTemplate, Credential
+
+project = Project.objects.get(name="Inventory-Git-Repo")
+inventory = Inventory.objects.get(name="rocky-8-servers")
+credential = Credential.objects.get(name="Linux Admin Credential")
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="REPAIR-RESCUE",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "03_repair_rescue.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
+    }
+)
+
+jt.project = project
+jt.inventory = inventory
+jt.playbook = "03_repair_rescue.yml"
+
+# Inventory
+jt.ask_inventory_on_launch = False
+
+# Disable Limit prompt
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more Rocky Linux 8 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: rocky-08-01 or rocky-08-01,rocky-08-02 or rocky-08-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-08-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.save()
+
+# Attach Linux Admin Credential
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+print(f"REPAIR-RESCUE {'created' if created else 'updated'}")
+EOF
+
+# --------------------------------------------------------------
 # Local_DNS
 # --------------------------------------------------------------
 
@@ -2445,8 +2512,8 @@ from awx.main.models import (
 ORG_NAME = "Default"
 WORKFLOW_NAME = "ROCKY8TOROCKY9-WF"
 
-JT1_NAME = "Offline_Patching_el8"
-JT2_NAME = "ROCKY8TOROCKY9"
+JT1_NAME = "ROCKY8TOROCKY9"
+JT2_NAME = "REPAIR-RESCUE"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "rocky-8-servers"
@@ -2496,6 +2563,7 @@ wf.survey_spec = {
 
 wf.save()
 
+# Assign credential to workflow
 wf.credentials.clear()
 wf.credentials.add(cred)
 
