@@ -356,68 +356,7 @@
     ####################################################################
 
     - name: Rebuild initramfs
-      command: dracut -f /boot/initramfs-{{ running_kernel.stdout }}.img {{ running_kernel.stdout }}
-
-    ####################################################################
-    # Ensure Only EL9 Rescue Exists
-    ####################################################################
-    
-    - name: Install dracut rescue package
-      dnf:
-        name: dracut-config-rescue
-        state: present
-    
-    - name: Remove existing rescue entry
-      file:
-        path: "{{ item }}"
-        state: absent
-      with_fileglob:
-        - /boot/loader/entries/*rescue*.conf
-    
-    - name: Regenerate rescue entry
-      command:
-        argv:
-          - kernel-install
-          - add
-          - "{{ running_kernel.stdout }}"
-          - "/boot/vmlinuz-{{ running_kernel.stdout }}"
-    
-    - name: Find rescue entries
-      find:
-        paths: /boot/loader/entries
-        patterns: "*rescue*.conf"
-      register: final_rescue_entries
-    
-    - name: Fail if no rescue entry exists
-      fail:
-        msg: No rescue boot entry was created.
-      when: final_rescue_entries.matched == 0
-    
-    - name: Fail if more than one rescue entry exists
-      fail:
-        msg: |
-          Expected exactly one rescue entry.
-          Found {{ final_rescue_entries.matched }}.
-      when: final_rescue_entries.matched != 1
-    
-    - name: Read final rescue entry
-      command: cat {{ final_rescue_entries.files[0].path }}
-      register: final_rescue
-      changed_when: false
-    
-    - name: Fail if rescue entry is not for the running kernel
-      fail:
-        msg: |
-          Rescue entry does not match the running kernel.
-    
-          Running kernel:
-          {{ running_kernel.stdout }}
-    
-          Rescue entry:
-          {{ final_rescue.stdout }}
-      when: >
-        ('linux /vmlinuz-' ~ running_kernel.stdout) not in final_rescue.stdout
-    
+      command: dracut -f /boot/initramfs-{{ running_kernel.stdout }}.img {{ running_kernel.stdout }}  
 
     ####################################################################
     # Clean Temporary Files
