@@ -131,6 +131,27 @@
       command: dnf makecache
 
     ####################################################################
+    # Remove Leapp Exclusions
+    ####################################################################
+    
+    - name: Remove DNF exclude for Leapp packages
+      lineinfile:
+        path: /etc/dnf/dnf.conf
+        regexp: '^exclude='
+        state: absent
+    
+    - name: Clean DNF metadata after removing excludes
+      command: dnf clean all
+    
+    - name: Remove DNF cache again
+      file:
+        path: /var/cache/dnf
+        state: absent
+    
+    - name: Rebuild DNF metadata
+      command: dnf makecache
+
+    ####################################################################
     # Install ELevate
     ####################################################################
 
