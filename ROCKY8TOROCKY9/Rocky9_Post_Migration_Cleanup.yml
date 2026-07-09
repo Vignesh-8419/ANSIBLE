@@ -377,14 +377,12 @@
         msg: dracut-config-rescue did not install the rescue generator.
       when: not rescue_generator.stat.exists
     
-    - name: Remove all existing rescue entries
-      shell: |
-        rm -f /boot/loader/entries/*rescue*.conf
-        rm -f /boot/vmlinuz-0-rescue-*
-        rm -f /boot/initramfs-0-rescue-*.img
-      args:
-        warn: false
-    
+    - name: Remove rescue loader entries
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ lookup('fileglob', '/boot/loader/entries/*rescue*.conf', wantlist=True) }}"
+
     - name: Check kernel image path
       stat:
         path: "/boot/vmlinuz-{{ running_kernel.stdout }}"
