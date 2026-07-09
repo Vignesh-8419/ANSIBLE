@@ -362,42 +362,25 @@
     # Ensure Only EL9 Rescue Exists
     ####################################################################
     
-    - name: Install dracut-config-rescue
+    - name: Install dracut rescue package
       dnf:
         name: dracut-config-rescue
         state: present
     
-    - name: Verify rescue generator exists
-      stat:
-        path: /usr/lib/kernel/install.d/51-dracut-rescue.install
-      register: rescue_generator
-    
-    - name: Fail if rescue generator is missing
-      fail:
-        msg: dracut-config-rescue did not install the rescue generator.
-      when: not rescue_generator.stat.exists
-    
-    - name: Remove rescue loader entries
+    - name: Remove existing rescue entry
       file:
         path: "{{ item }}"
         state: absent
-      loop: "{{ lookup('fileglob', '/boot/loader/entries/*rescue*.conf', wantlist=True) }}"
-
-    - name: Check kernel image path
-      stat:
-        path: "/boot/vmlinuz-{{ running_kernel.stdout }}"
-      register: boot_kernel
+      with_fileglob:
+        - /boot/loader/entries/*rescue*.conf
     
-    - name: Generate rescue image
-      command: >
-        /usr/lib/kernel/install.d/51-dracut-rescue.install
-        add
-        {{ running_kernel.stdout }}
-        {{
-          '/boot/vmlinuz-' ~ running_kernel.stdout
-          if boot_kernel.stat.exists
-          else '/lib/modules/' ~ running_kernel.stdout ~ '/vmlinuz'
-        }}
+    - name: Regenerate rescue entry
+      command:
+        argv:
+          - kernel-install
+          - add
+          - "{{ running_kernel.stdout }}"
+          - "/boot/vmlinuz-{{ running_kernel.stdout }}"
     
     - name: Find rescue entries
       find:
