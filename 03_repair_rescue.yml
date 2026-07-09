@@ -1,0 +1,159 @@
+---
+- name: Repair Rocky Linux 9 Rescue Image
+  hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
+  gather_facts: true
+  become: true
+  serial: 1
+
+  tasks:
+
+    ####################################################################
+    # Verify OS
+    ####################################################################
+
+    - name: Verify Rocky Linux 9
+      fail:
+        msg: This playbook only supports Rocky Linux 9.
+      when:
+        - ansible_distribution != "Rocky"
+        - ansible_distribution_major_version != "9"
+
+    - name: Get running kernel
+      command: uname -r
+      register: running_kernel
+      changed_when: false
+
+    - debug:
+        msg:
+          - "OS      : {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Kernel  : {{ running_kernel.stdout }}"
+
+    ####################################################################
+    # Install rescue package
+    ####################################################################
+
+    - name: Install dracut-config-rescue
+      dnf:
+        name: dracut-config-rescue
+        state: present
+
+    ####################################################################
+    # Show existing rescue entry
+    ####################################################################
+
+    - name: Find existing rescue entries
+      find:
+        paths: /boot/loader/entries
+        patterns: "*rescue*.conf"
+      register: rescue_entries
+
+    - debug:
+        var: rescue_entries.files
+
+    ####################################################################
+    # Remove old rescue files
+    ####################################################################
+
+    - name: Remove rescue loader entries
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ rescue_entries.files }}"
+      when: rescue_entries.matched > 0
+
+    - name: Find rescue kernels
+      find:
+        paths: /boot
+        patterns: "vmlinuz-0-rescue-*"
+      register: rescue_kernels
+
+    - name: Remove rescue kernels
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ rescue_kernels.files }}"
+
+    - name: Find rescue initramfs
+      find:
+        paths: /boot
+        patterns: "initramfs-0-rescue-*.img"
+      register: rescue_initramfs
+
+    - name: Remove rescue initramfs
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ rescue_initramfs.files }}"
+
+    ####################################################################
+    # Rebuild boot files
+    ####################################################################
+
+    - name: Rebuild initramfs
+      command: >
+        dracut -f
+        /boot/initramfs-{{ running_kernel.stdout }}.img
+        {{ running_kernel.stdout }}
+
+    - name: Regenerate rescue entry
+      command:
+        argv:
+          - kernel-install
+          - add
+          - "{{ running_kernel.stdout }}"
+          - "/boot/vmlinuz-{{ running_kernel.stdout }}"
+
+    ####################################################################
+    # Validate
+    ####################################################################
+
+    - name: Find new rescue entry
+      find:
+        paths: /boot/loader/entries
+        patterns: "*rescue*.conf"
+      register: final_rescue
+
+    - name: Fail if rescue entry was not created
+      fail:
+        msg: Rescue entry was not created.
+      when: final_rescue.matched == 0
+
+    - name: Display rescue entry
+      command: cat {{ final_rescue.files[0].path }}
+      register: rescue_content
+      changed_when: false
+
+    - debug:
+        var: rescue_content.stdout_lines
+
+    - name: Display rescue kernel
+      command: ls -l /boot/vmlinuz-0-rescue-*
+      register: rescue_kernel
+      changed_when: false
+      failed_when: false
+
+    - debug:
+        var: rescue_kernel.stdout_lines
+
+    - name: Display rescue initramfs
+      command: ls -lh /boot/initramfs-0-rescue-*
+      register: rescue_initrd
+      changed_when: false
+      failed_when: false
+
+    - debug:
+        var: rescue_initrd.stdout_lines
+
+    ####################################################################
+    # Summary
+    ####################################################################
+
+    - name: Summary
+      debug:
+        msg:
+          - "======================================"
+          - " Rescue Repair Completed"
+          - "======================================"
+          - "Running Kernel : {{ running_kernel.stdout }}"
+          - "Rescue Entries : {{ final_rescue.matched }}"
+          - "======================================"
