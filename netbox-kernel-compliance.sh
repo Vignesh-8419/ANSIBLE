@@ -279,6 +279,18 @@ elif echo "$OS_RELEASE" | grep -qi "release 8"; then
         "rocky-patch-context"
     )
 
+elif echo "$OS_RELEASE" | grep -qi "release 9"; then
+
+    TARGET_CLUSTER="rocky-9-servers"
+
+    TAGS=(
+        "patch-el9-context"
+        "pxe-rockyos-context"
+        "repo-config-context"
+        "vmware-awx-context"
+        "rocky-patch-context"
+    )
+
 else
 
     TARGET_CLUSTER=""
@@ -325,8 +337,8 @@ if [ -n "$TARGET_CLUSTER" ]; then
     do
         ID=$(curl -sk \
             -H "Authorization: Token $NETBOX_TOKEN" \
-            "$NETBOX_URL/extras/tags/" |
-            jq -r --arg TAG "$TAG" '.results[] | select(.name==$TAG) | .id')
+            "$NETBOX_URL/extras/tags/?name=$TAG" |
+            jq -r '.results[0].id // empty')
 
         if [ -n "$ID" ]; then
             TAG_IDS+=("$ID")
@@ -334,20 +346,14 @@ if [ -n "$TARGET_CLUSTER" ]; then
         fi
     done
 
-    if [ ${#TAG_IDS[@]} -gt 0 ]; then
-
-        JSON_TAGS=$(printf '%s\n' "${TAG_IDS[@]}" | jq -R . | jq -s .)
-
+        JSON_TAGS=$(printf '%s\n' "${TAG_IDS[@]}" | jq -R 'tonumber' | jq -s .)
+        
         curl -sk -X PATCH \
-            "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
-            -H "Authorization: Token $NETBOX_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"tags\":$JSON_TAGS}" >/dev/null
-
+        "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
+        -H "Authorization: Token $NETBOX_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{\"tags\":$JSON_TAGS}" >/dev/null
         echo "Tags Updated"
-
-    fi
-
 fi
 
 # ----------------------------------------------------------
