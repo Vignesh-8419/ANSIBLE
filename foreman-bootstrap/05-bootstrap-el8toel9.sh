@@ -635,20 +635,6 @@ add_repository_to_cv \
     "Rocky-08-EL8toEL9"
 
 ###############################################################################
-# Add Rocky Linux 9 Repositories
-###############################################################################
-
-add_repository_to_cv \
-    "EL8toEL9-CV" \
-    "Rocky Linux 9" \
-    "Rocky-09-BaseOS"
-
-add_repository_to_cv \
-    "EL8toEL9-CV" \
-    "Rocky Linux 9" \
-    "Rocky-09-AppStream"
-
-###############################################################################
 # Function : Publish Content View
 ###############################################################################
 
