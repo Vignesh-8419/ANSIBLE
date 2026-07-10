@@ -106,6 +106,36 @@
           - "/boot/vmlinuz-{{ running_kernel.stdout }}"
 
     ####################################################################
+    # Remove stale boot loader entries
+    ####################################################################
+
+    - name: Find boot loader entries
+      find:
+        paths: /boot/loader/entries
+        patterns: "*.conf"
+      register: boot_entries
+
+    - name: Remove obsolete boot loader entries
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ boot_entries.files }}"
+      when:
+        - "'0-rescue' not in item.path"
+        - running_kernel.stdout not in item.path
+
+    - name: Regenerate GRUB configuration
+      command: grub2-mkconfig -o /boot/grub2/grub.cfg
+
+    - name: Display remaining boot loader entries
+      command: ls -1 /boot/loader/entries
+      register: remaining_entries
+      changed_when: false
+
+    - debug:
+        var: remaining_entries.stdout_lines
+
+    ####################################################################
     # Validate
     ####################################################################
 
