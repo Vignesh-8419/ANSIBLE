@@ -634,20 +634,6 @@ add_repository_to_cv \
     "CentOS-07-ELevate"
 
 ###############################################################################
-# Add EL8 Target Repositories
-###############################################################################
-
-add_repository_to_cv \
-    "EL7toEL8-CV" \
-    "Rocky Linux 8" \
-    "Rocky-08-BaseOS"
-
-add_repository_to_cv \
-    "EL7toEL8-CV" \
-    "Rocky Linux 8" \
-    "Rocky-08-AppStream"
-
-###############################################################################
 # Function : Publish Content View
 ###############################################################################
 
