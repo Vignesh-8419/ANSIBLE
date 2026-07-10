@@ -1,0 +1,756 @@
+#!/bin/bash
+###############################################################################
+# Foreman Katello Bootstrap
+# EL7 -> EL8 Upgrade Bootstrap
+###############################################################################
+
+set +e
+
+FAILED_STEPS=()
+
+record_failure() {
+    FAILED_STEPS+=("$1")
+}
+
+###############################################################################
+# Colors
+###############################################################################
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[1;34m'
+CYAN='\033[1;36m'
+WHITE='\033[1;37m'
+NC='\033[0m'
+
+###############################################################################
+# Logging Functions
+###############################################################################
+
+info() {
+    echo -e "${CYAN}$1${NC}"
+}
+
+ok() {
+    echo -e "${GREEN}[OK]${NC} $1"
+}
+
+skip() {
+    echo -e "${YELLOW}[SKIP]${NC} $1"
+}
+
+warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+header() {
+    echo
+    echo -e "${BLUE}============================================================${NC}"
+    echo -e "${WHITE}$1${NC}"
+    echo -e "${BLUE}============================================================${NC}"
+}
+
+summary_ok() {
+    printf "%-35s ${GREEN}[OK]${NC}\n" "$1"
+}
+
+###############################################################################
+# Resume Paused Tasks
+###############################################################################
+
+resume_paused_tasks() {
+
+    header "Recovering Paused Foreman Tasks"
+
+    local COUNT
+
+    COUNT=$($HAMMER task list \
+        --search "state = paused" 2>/dev/null | \
+        grep -c paused || true)
+
+    if [ "$COUNT" -eq 0 ]; then
+        ok "No paused tasks found."
+        return 0
+    fi
+
+    warn "Found $COUNT paused task(s)."
+
+    $HAMMER task resume \
+        --search "state = paused"
+
+    for i in {1..6}; do
+
+        COUNT=$($HAMMER task list \
+            --search "state = paused" 2>/dev/null | \
+            grep -c paused || true)
+
+        if [ "$COUNT" -eq 0 ]; then
+            ok "Paused tasks cleared."
+            return 0
+        fi
+
+        warn "$COUNT paused task(s) still remain. Waiting..."
+
+        sleep 10
+
+    done
+
+    warn "Some paused tasks still remain."
+    warn "Continuing because the repository lock may already be released."
+
+    return 0
+}
+
+###############################################################################
+# Variables
+###############################################################################
+
+FOREMAN_USER="${FOREMAN_USER:-admin}"
+FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
+
+HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
+
+###############################################################################
+# Create Products
+###############################################################################
+
+header "[1/6] Verifying Products"
+
+###############################################################################
+# CentOS 7 Product
+###############################################################################
+
+info "Checking Product : CentOS 7"
+
+if $HAMMER product info \
+    --organization "Default Organization" \
+    --name "CentOS 7" >/dev/null 2>&1; then
+
+    skip "Product already exists."
+
+else
+
+    info "Creating Product..."
+
+    $HAMMER product create \
+        --organization "Default Organization" \
+        --name "CentOS 7"
+
+    if [ $? -eq 0 ]; then
+        ok "Product created."
+    else
+        error "Product creation failed."
+        record_failure "CentOS 7 Product"
+    fi
+
+fi
+
+echo
+
+###############################################################################
+# Rocky Linux 8 Product
+###############################################################################
+
+info "Checking Product : Rocky Linux 8"
+
+if $HAMMER product info \
+    --organization "Default Organization" \
+    --name "Rocky Linux 8" >/dev/null 2>&1; then
+
+    skip "Product already exists."
+
+else
+
+    info "Creating Product..."
+
+    $HAMMER product create \
+        --organization "Default Organization" \
+        --name "Rocky Linux 8"
+
+    if [ $? -eq 0 ]; then
+        ok "Product created."
+    else
+        error "Product creation failed."
+        record_failure "Rocky Linux 8 Product"
+    fi
+
+fi
+
+echo
+
+###############################################################################
+# Verification
+###############################################################################
+
+header "Products"
+
+$HAMMER product list \
+    --organization "Default Organization"
+
+echo
+
+###############################################################################
+# Repository Creation
+###############################################################################
+
+header "[2/6] Creating Upgrade Repositories"
+###############################################################################
+# CentOS-07-BaseOS
+###############################################################################
+
+info "Checking Repository : CentOS-07-BaseOS"
+
+if $HAMMER repository info \
+    --organization "Default Organization" \
+    --product "CentOS 7" \
+    --name "CentOS-07-BaseOS" >/dev/null 2>&1; then
+
+    skip "Repository already exists."
+
+else
+
+    info "Creating Repository..."
+
+    $HAMMER repository create \
+        --organization "Default Organization" \
+        --product "CentOS 7" \
+        --name "CentOS-07-BaseOS" \
+        --content-type yum \
+        --url "http://192.168.253.136/repo/centos"
+
+    if [ $? -eq 0 ]; then
+        ok "Repository created."
+    else
+        error "Repository creation failed."
+        record_failure "CentOS 7 -> CentOS-07-BaseOS"
+    fi
+
+fi
+
+echo
+
+###############################################################################
+# CentOS-07-Updates
+###############################################################################
+
+info "Checking Repository : CentOS-07-Updates"
+
+if $HAMMER repository info \
+    --organization "Default Organization" \
+    --product "CentOS 7" \
+    --name "CentOS-07-Updates" >/dev/null 2>&1; then
+
+    skip "Repository already exists."
+
+else
+
+    info "Creating Repository..."
+
+    $HAMMER repository create \
+        --organization "Default Organization" \
+        --product "CentOS 7" \
+        --name "CentOS-07-Updates" \
+        --content-type yum \
+        --url "http://192.168.253.136/repo/installed_rhel7"
+
+    if [ $? -eq 0 ]; then
+        ok "Repository created."
+    else
+        error "Repository creation failed."
+        record_failure "CentOS 7 -> CentOS-07-Updates"
+    fi
+
+fi
+
+echo
+
+###############################################################################
+# CentOS-07-ELevate
+###############################################################################
+
+info "Checking Repository : CentOS-07-ELevate"
+
+if $HAMMER repository info \
+    --organization "Default Organization" \
+    --product "CentOS 7" \
+    --name "CentOS-07-ELevate" >/dev/null 2>&1; then
+
+    skip "Repository already exists."
+
+else
+
+    info "Creating Repository..."
+
+    $HAMMER repository create \
+        --organization "Default Organization" \
+        --product "CentOS 7" \
+        --name "CentOS-07-ELevate" \
+        --content-type yum \
+        --url "http://192.168.253.136/repo/elevate/el7"
+
+    if [ $? -eq 0 ]; then
+        ok "Repository created."
+    else
+        error "Repository creation failed."
+        record_failure "CentOS 7 -> CentOS-07-ELevate"
+    fi
+
+fi
+
+echo
+
+###############################################################################
+# Rocky-08-BaseOS
+###############################################################################
+
+info "Checking Repository : Rocky-08-BaseOS"
+
+if $HAMMER repository info \
+    --organization "Default Organization" \
+    --product "Rocky Linux 8" \
+    --name "Rocky-08-BaseOS" >/dev/null 2>&1; then
+
+    skip "Repository already exists."
+
+else
+
+    info "Creating Repository..."
+
+    $HAMMER repository create \
+        --organization "Default Organization" \
+        --product "Rocky Linux 8" \
+        --name "Rocky-08-BaseOS" \
+        --content-type yum \
+        --url "http://192.168.253.136/repo/rocky8/BaseOS"
+
+    if [ $? -eq 0 ]; then
+        ok "Repository created."
+    else
+        error "Repository creation failed."
+        record_failure "Rocky Linux 8 -> Rocky-08-BaseOS"
+    fi
+
+fi
+
+echo
+
+###############################################################################
+# Rocky-08-AppStream
+###############################################################################
+
+info "Checking Repository : Rocky-08-AppStream"
+
+if $HAMMER repository info \
+    --organization "Default Organization" \
+    --product "Rocky Linux 8" \
+    --name "Rocky-08-AppStream" >/dev/null 2>&1; then
+
+    skip "Repository already exists."
+
+else
+
+    info "Creating Repository..."
+
+    $HAMMER repository create \
+        --organization "Default Organization" \
+        --product "Rocky Linux 8" \
+        --name "Rocky-08-AppStream" \
+        --content-type yum \
+        --url "http://192.168.253.136/repo/rocky8/AppStream"
+
+    if [ $? -eq 0 ]; then
+        ok "Repository created."
+    else
+        error "Repository creation failed."
+        record_failure "Rocky Linux 8 -> Rocky-08-AppStream"
+    fi
+
+fi
+
+echo
+
+###############################################################################
+# Repository Verification
+###############################################################################
+
+header "Repositories"
+
+echo
+info "CentOS 7"
+
+$HAMMER repository list \
+    --organization "Default Organization" \
+    --product "CentOS 7"
+
+echo
+
+info "Rocky Linux 8"
+
+$HAMMER repository list \
+    --organization "Default Organization" \
+    --product "Rocky Linux 8"
+
+echo
+
+###############################################################################
+# Repository Synchronization
+###############################################################################
+
+header "[3/6] Synchronizing Repositories"
+
+sync_repository() {
+
+    PRODUCT="$1"
+    REPO="$2"
+
+    echo
+    info "Checking Repository : $REPO"
+
+    SYNC_STATUS=$(
+        $HAMMER repository info \
+            --organization "Default Organization" \
+            --product "$PRODUCT" \
+            --name "$REPO" 2>/dev/null |
+        awk -F': ' '/Sync State/ {print $2}'
+    )
+
+    if echo "$SYNC_STATUS" | grep -qi running; then
+        skip "Synchronization already running."
+        return
+    fi
+
+    info "Starting synchronization..."
+
+    OUTPUT=$(
+        $HAMMER repository synchronize \
+            --organization "Default Organization" \
+            --product "$PRODUCT" \
+            --name "$REPO" 2>&1
+    )
+
+    RC=$?
+
+    echo "$OUTPUT"
+
+    if [ $RC -eq 0 ]; then
+        ok "Synchronization started."
+        return
+    fi
+
+    if echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
+
+        warn "Repository lock detected."
+
+        for TRY in 1 2 3
+        do
+
+            warn "Recovery attempt $TRY..."
+
+            resume_paused_tasks
+
+            sleep 5
+
+            info "Retrying synchronization..."
+
+            OUTPUT=$(
+                $HAMMER repository synchronize \
+                    --organization "Default Organization" \
+                    --product "$PRODUCT" \
+                    --name "$REPO" 2>&1
+            )
+
+            RC=$?
+
+            echo "$OUTPUT"
+
+            if [ $RC -eq 0 ]; then
+                ok "Synchronization started."
+                return
+            fi
+
+            if ! echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
+                break
+            fi
+
+        done
+
+    fi
+
+    error "Synchronization failed."
+
+    record_failure "$PRODUCT -> $REPO"
+}
+
+###############################################################################
+# Synchronize EL7 Repositories
+###############################################################################
+
+sync_repository "CentOS 7" "CentOS-07-BaseOS"
+sync_repository "CentOS 7" "CentOS-07-Updates"
+sync_repository "CentOS 7" "CentOS-07-ELevate"
+
+###############################################################################
+# Synchronize EL8 Repositories
+###############################################################################
+
+sync_repository "Rocky Linux 8" "Rocky-08-BaseOS"
+sync_repository "Rocky Linux 8" "Rocky-08-AppStream"
+
+###############################################################################
+# Verification
+###############################################################################
+
+echo
+
+header "Repository Synchronization"
+
+echo
+info "CentOS 7"
+
+$HAMMER repository list \
+    --organization "Default Organization" \
+    --product "CentOS 7"
+
+echo
+
+info "Rocky Linux 8"
+
+$HAMMER repository list \
+    --organization "Default Organization" \
+    --product "Rocky Linux 8"
+
+echo
+
+###############################################################################
+# Create Content View
+###############################################################################
+
+header "[4/6] Creating EL7 -> EL8 Content View"
+
+###############################################################################
+# Function : Create Content View
+###############################################################################
+
+create_content_view() {
+
+    CV_NAME="$1"
+
+    info "Checking Content View : $CV_NAME"
+
+    if $HAMMER content-view info \
+        --organization "Default Organization" \
+        --name "$CV_NAME" >/dev/null 2>&1; then
+
+        skip "Content View '$CV_NAME' already exists."
+
+    else
+
+        info "Creating Content View..."
+
+        $HAMMER content-view create \
+            --organization "Default Organization" \
+            --name "$CV_NAME"
+
+        if [ $? -eq 0 ]; then
+            ok "Content View created."
+        else
+            error "Content View creation failed."
+            record_failure "Content View : $CV_NAME"
+        fi
+
+    fi
+
+    echo
+}
+
+###############################################################################
+# Create EL7toEL8 Content View
+###############################################################################
+
+create_content_view "EL7toEL8-CV"
+
+###############################################################################
+# Function : Add Repository to Content View
+###############################################################################
+
+add_repository_to_cv() {
+
+    CV="$1"
+    PRODUCT="$2"
+    REPO="$3"
+
+    info "Checking Repository '$REPO' in '$CV'..."
+
+    if $HAMMER content-view info \
+        --organization "Default Organization" \
+        --name "$CV" | grep -q "$REPO"; then
+
+        skip "Repository already assigned."
+
+    else
+
+        info "Adding Repository..."
+
+        $HAMMER content-view add-repository \
+            --organization "Default Organization" \
+            --name "$CV" \
+            --product "$PRODUCT" \
+            --repository "$REPO"
+
+        if [ $? -eq 0 ]; then
+            ok "Repository added."
+        else
+            error "Failed to add repository."
+            record_failure "$REPO -> $CV"
+        fi
+
+    fi
+
+    echo
+}
+
+###############################################################################
+# Add EL7 Repositories
+###############################################################################
+
+add_repository_to_cv \
+    "EL7toEL8-CV" \
+    "CentOS 7" \
+    "CentOS-07-BaseOS"
+
+add_repository_to_cv \
+    "EL7toEL8-CV" \
+    "CentOS 7" \
+    "CentOS-07-Updates"
+
+add_repository_to_cv \
+    "EL7toEL8-CV" \
+    "CentOS 7" \
+    "CentOS-07-ELevate"
+
+###############################################################################
+# Add EL8 Target Repositories
+###############################################################################
+
+add_repository_to_cv \
+    "EL7toEL8-CV" \
+    "Rocky Linux 8" \
+    "Rocky-08-BaseOS"
+
+add_repository_to_cv \
+    "EL7toEL8-CV" \
+    "Rocky Linux 8" \
+    "Rocky-08-AppStream"
+
+###############################################################################
+# Function : Publish Content View
+###############################################################################
+
+publish_cv() {
+
+    CV="$1"
+
+    info "Checking Content View : $CV"
+
+    OUTPUT=$(
+    $HAMMER content-view publish \
+        --organization "Default Organization" \
+        --name "$CV" \
+        --description "Bootstrap Publish $(date '+%F %T')" 2>&1
+    )
+
+    RC=$?
+
+    echo "$OUTPUT"
+
+    if [ $RC -eq 0 ]; then
+        ok "Content View published."
+        return
+    fi
+
+    if echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
+
+        warn "Publish task locked."
+
+        for TRY in 1 2 3
+        do
+
+            warn "Recovery attempt $TRY..."
+
+            LOCK_TASK=$(echo "$OUTPUT" | grep -oE '[0-9a-f-]{36}' | head -1)
+
+            if [ -n "$LOCK_TASK" ]; then
+
+                warn "Cancelling conflicting task $LOCK_TASK"
+
+                $HAMMER task cancel \
+                    --search "id = $LOCK_TASK" >/dev/null 2>&1 || true
+
+                sleep 10
+
+            else
+
+                resume_paused_tasks
+
+            fi
+
+            info "Retrying publish..."
+
+            OUTPUT=$(
+                $HAMMER content-view publish \
+                    --organization "Default Organization" \
+                    --name "$CV" \
+                    --description "Bootstrap Publish $(date '+%F %T')" 2>&1
+            )
+
+            RC=$?
+
+            echo "$OUTPUT"
+
+            if [ $RC -eq 0 ]; then
+                ok "Content View published."
+                return
+            fi
+
+            if ! echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
+                break
+            fi
+
+        done
+
+    fi
+
+    error "Content View publish failed."
+
+    record_failure "Publish : $CV"
+
+}
+
+###############################################################################
+# Publish EL7toEL8 Content View
+###############################################################################
+
+publish_cv "EL7toEL8-CV"
+
+###############################################################################
+# Verification
+###############################################################################
+
+header "EL7toEL8 Content View"
+
+$HAMMER content-view info \
+    --organization "Default Organization" \
+    --name "EL7toEL8-CV"
+
+echo
+
+$HAMMER content-view version list \
+    --organization "Default Organization" \
+    --content-view "EL7toEL8-CV"
+
+echo
