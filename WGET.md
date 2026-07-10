@@ -156,7 +156,13 @@ curl -L -o 02_foreman_katello_bootstrap.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap/02_foreman_katello_bootstrap.sh?$(date +%s)" && \
 curl -L -o 03_foreman_hostgroup_bootstrap.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap/03_foreman_hostgroup_bootstrap.sh?$(date +%s)" && \
+curl -L -o 04-bootstrap-el7toel8.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap/04-bootstrap-el7toel8.sh?$(date +%s)" && \
+curl -L -o 05-bootstrap-el8toel9.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap/05-bootstrap-el8toel9.sh?$(date +%s)" && \
 chmod +x 01_foreman_pxe_bootstrap.sh \
          02_foreman_katello_bootstrap.sh \
-         03_foreman_hostgroup_bootstrap.sh
+         03_foreman_hostgroup_bootstrap.sh \
+         04-bootstrap-el7toel8.sh \
+         05-bootstrap-el8toel9.sh
 ```
