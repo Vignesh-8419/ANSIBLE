@@ -13,7 +13,7 @@
     rocky8_baseos: "http://192.168.253.136/repo/rocky8/BaseOS"
     rocky8_appstream: "http://192.168.253.136/repo/rocky8/AppStream"
     repo_server: "http://192.168.253.136"
-    rocky9_repo: "{{ target_os | default('rocky9') }}"
+    rocky9_repo: "{{ 'rocky9.2' if (target_os | default('9')) == '9.2' else 'rocky9' }}"
     rocky9_baseos: "{{ repo_server }}/repo/{{ rocky9_repo }}/BaseOS"
     rocky9_appstream: "{{ repo_server }}/repo/{{ rocky9_repo }}/AppStream"
     elevate_repo_file: /etc/yum.repos.d/el8toel9.repo
