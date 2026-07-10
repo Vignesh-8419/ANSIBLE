@@ -850,11 +850,15 @@ $HAMMER activation-key add-subscription \
     --subscription-id "$CENTOS_SUB_ID" 2>&1
 )
 
+RC=$?
+
 echo "$OUTPUT"
 
 if echo "$OUTPUT" | grep -qi "already"; then
     skip "CentOS 7 subscription already attached."
-elif [ $? -eq 0 ]; then
+elif echo "$OUTPUT" | grep -qi "Subscription added"; then
+    ok "CentOS 7 subscription attached."
+elif [ $RC -eq 0 ]; then
     ok "CentOS 7 subscription attached."
 else
     error "Subscription attachment failed."
@@ -876,11 +880,15 @@ $HAMMER activation-key add-subscription \
     --subscription-id "$ROCKY8_SUB_ID" 2>&1
 )
 
+RC=$?
+
 echo "$OUTPUT"
 
 if echo "$OUTPUT" | grep -qi "already"; then
     skip "Rocky Linux 8 subscription already attached."
-elif [ $? -eq 0 ]; then
+elif echo "$OUTPUT" | grep -qi "Subscription added"; then
+    ok "Rocky Linux 8 subscription attached."
+elif [ $RC -eq 0 ]; then
     ok "Rocky Linux 8 subscription attached."
 else
     error "Subscription attachment failed."
