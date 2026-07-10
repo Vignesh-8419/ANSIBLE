@@ -2662,7 +2662,7 @@ wf.ask_credential_on_launch = False
 wf.survey_enabled = True
 wf.survey_spec = {
     "name": "Rocky Linux 8 to Rocky Linux 9 Migration",
-    "description": "Select target hosts and Rocky Linux target repository.",
+    "description": "Select target hosts and target Rocky Linux repository.",
     "spec": [
 
         {
@@ -2679,11 +2679,11 @@ wf.survey_spec = {
         {
             "type": "multiplechoice",
             "question_name": "Target Rocky Linux Repository",
-            "question_description": "Select the Rocky Linux offline repository.",
+            "question_description": "Select the target Rocky Linux repository.",
             "variable": "target_os",
             "required": True,
-            "default": "rocky9",
-            "choices": "rocky9\nrocky9.2"
+            "default": "9",
+            "choices": "9\n9.2"
         }
 
     ]
@@ -2802,7 +2802,7 @@ wf.ask_credential_on_launch = False
 wf.survey_enabled = True
 wf.survey_spec = {
     "name": "Rocky Linux 8 to Rocky Linux 9 Migration",
-    "description": "Select target hosts and Rocky Linux target repository.",
+    "description": "Select target hosts and target Rocky Linux repository.",
     "spec": [
 
         {
@@ -2819,11 +2819,11 @@ wf.survey_spec = {
         {
             "type": "multiplechoice",
             "question_name": "Target Rocky Linux Repository",
-            "question_description": "Select the offline Rocky Linux repository.",
+            "question_description": "Select the target Rocky Linux repository.",
             "variable": "target_os",
             "required": True,
-            "default": "rocky9",
-            "choices": "rocky9\nrocky9.2"
+            "default": "9",
+            "choices": "9\n9.2"
         }
 
     ]
