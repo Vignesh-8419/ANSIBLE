@@ -754,3 +754,194 @@ $HAMMER content-view version list \
     --content-view "EL7toEL8-CV"
 
 echo
+
+###############################################################################
+# Create Activation Key
+###############################################################################
+
+header "[5/6] Creating Activation Key"
+
+create_activation_key() {
+
+    KEY="$1"
+    CV="$2"
+
+    info "Checking Activation Key : $KEY"
+
+    if $HAMMER activation-key info \
+        --organization "Default Organization" \
+        --name "$KEY" >/dev/null 2>&1; then
+
+        info "Activation Key already exists. Updating Content View..."
+
+        $HAMMER activation-key update \
+            --organization "Default Organization" \
+            --name "$KEY" \
+            --content-view "$CV" \
+            --lifecycle-environment "Library"
+
+        if [ $? -eq 0 ]; then
+            ok "Activation Key updated."
+        else
+            error "Activation Key update failed."
+            record_failure "Activation Key : $KEY"
+        fi
+
+    else
+
+        info "Creating Activation Key..."
+
+        $HAMMER activation-key create \
+            --organization "Default Organization" \
+            --name "$KEY" \
+            --lifecycle-environment "Library" \
+            --content-view "$CV"
+
+        if [ $? -eq 0 ]; then
+            ok "Activation Key created."
+        else
+            error "Activation Key creation failed."
+            record_failure "Activation Key : $KEY"
+        fi
+
+    fi
+
+    echo
+}
+
+###############################################################################
+# Create EL7->EL8 Activation Key
+###############################################################################
+
+create_activation_key "el7toel8-key" "EL7toEL8-CV"
+
+###############################################################################
+# Attach Subscriptions
+###############################################################################
+
+header "Attaching Subscriptions"
+
+CENTOS_SUB_ID=$(
+$HAMMER subscription list \
+    --organization "Default Organization" |
+awk -F'|' '$3 ~ /CentOS 7/ {gsub(/ /,"",$1); print $1}'
+)
+
+ROCKY8_SUB_ID=$(
+$HAMMER subscription list \
+    --organization "Default Organization" |
+awk -F'|' '$3 ~ /Rocky Linux 8/ {gsub(/ /,"",$1); print $1}'
+)
+
+echo "CENTOS_SUB_ID=$CENTOS_SUB_ID"
+echo "ROCKY8_SUB_ID=$ROCKY8_SUB_ID"
+echo
+
+###############################################################################
+# Attach CentOS 7 Subscription
+###############################################################################
+
+info "Attaching CentOS 7 subscription..."
+
+OUTPUT=$(
+$HAMMER activation-key add-subscription \
+    --organization "Default Organization" \
+    --name "el7toel8-key" \
+    --subscription-id "$CENTOS_SUB_ID" 2>&1
+)
+
+echo "$OUTPUT"
+
+if echo "$OUTPUT" | grep -qi "already"; then
+    skip "CentOS 7 subscription already attached."
+elif [ $? -eq 0 ]; then
+    ok "CentOS 7 subscription attached."
+else
+    error "Subscription attachment failed."
+    record_failure "el7toel8-key -> CentOS 7"
+fi
+
+echo
+
+###############################################################################
+# Attach Rocky Linux 8 Subscription
+###############################################################################
+
+info "Attaching Rocky Linux 8 subscription..."
+
+OUTPUT=$(
+$HAMMER activation-key add-subscription \
+    --organization "Default Organization" \
+    --name "el7toel8-key" \
+    --subscription-id "$ROCKY8_SUB_ID" 2>&1
+)
+
+echo "$OUTPUT"
+
+if echo "$OUTPUT" | grep -qi "already"; then
+    skip "Rocky Linux 8 subscription already attached."
+elif [ $? -eq 0 ]; then
+    ok "Rocky Linux 8 subscription attached."
+else
+    error "Subscription attachment failed."
+    record_failure "el7toel8-key -> Rocky Linux 8"
+fi
+
+###############################################################################
+# Verification
+###############################################################################
+
+header "[6/6] Verification"
+
+echo
+header "Activation Keys"
+
+$HAMMER activation-key list \
+    --organization "Default Organization"
+
+echo
+header "EL7toEL8-CV"
+
+$HAMMER content-view info \
+    --organization "Default Organization" \
+    --name "EL7toEL8-CV"
+
+echo
+header "Activation Key Details"
+
+$HAMMER activation-key info \
+    --organization "Default Organization" \
+    --name "el7toel8-key"
+
+###############################################################################
+# Registration Command
+###############################################################################
+
+echo
+header "Registration Command"
+
+echo
+
+echo "subscription-manager register \\"
+echo "  --org=\"Default_Organization\" \\"
+echo "  --activationkey=\"el7toel8-key\""
+
+echo
+
+###############################################################################
+# Summary
+###############################################################################
+
+header "EL7 -> EL8 Bootstrap Completed"
+
+if [ ${#FAILED_STEPS[@]} -eq 0 ]; then
+    ok "EL7 -> EL8 Upgrade Bootstrap completed successfully."
+else
+    warn "Bootstrap completed with ${#FAILED_STEPS[@]} failure(s)."
+
+    for step in "${FAILED_STEPS[@]}"; do
+        error "$step"
+    done
+fi
+
+echo
