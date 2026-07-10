@@ -291,7 +291,7 @@ else
         --product "CentOS 7" \
         --name "CentOS-07-ELevate" \
         --content-type yum \
-        --url "http://192.168.253.136/repo/elevate/el7"
+        --url "http://192.168.253.136/repo/elevate/"
 
     if [ $? -eq 0 ]; then
         ok "Repository created."
