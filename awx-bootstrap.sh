@@ -2618,8 +2618,8 @@ from awx.main.models import (
 ORG_NAME = "Default"
 WORKFLOW_NAME = "ROCKY8TOROCKY9-PATCHING-WF"
 
-JT1_NAME = "ROCKY8TOROCKY9-PATCHING"
-JT2_NAME = "ROCKY9-POST-MIGRATION-CLEANUP"
+JT1_NAME = "offline_patching_el8"
+JT2_NAME = "ROCKY8TOROCKY9"
 JT3_NAME = "REPAIR-RESCUE"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
@@ -2761,8 +2761,7 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "ROCKY8TOROCKY9-WF"
 
 JT1_NAME = "ROCKY8TOROCKY9"
-JT2_NAME = "ROCKY9-POST-MIGRATION-CLEANUP"
-JT3_NAME = "REPAIR-RESCUE"
+JT2_NAME = "REPAIR-RESCUE"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "rocky-8-servers"
@@ -2771,7 +2770,6 @@ org = Organization.objects.get(name=ORG_NAME)
 
 jt1 = JobTemplate.objects.get(name=JT1_NAME)
 jt2 = JobTemplate.objects.get(name=JT2_NAME)
-jt3 = JobTemplate.objects.get(name=JT3_NAME)
 
 cred = Credential.objects.get(name=CREDENTIAL_NAME)
 inv = Inventory.objects.get(name=INVENTORY_NAME)
@@ -2810,7 +2808,7 @@ wf.survey_spec = {
         {
             "type": "text",
             "question_name": "Target Hosts",
-            "question_description": "Examples: rocky-08-01 or rocky-08-01,rocky-08-01,rocky-08-02 or rocky-08-0*",
+            "question_description": "Examples: rocky-08-01 or rocky-08-01,rocky-08-02 or rocky-08-0*",
             "variable": "target_hosts",
             "required": True,
             "default": "rocky-08-0*",
@@ -2854,17 +2852,11 @@ n2 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt2
 )
 
-n3 = WorkflowJobTemplateNode.objects.create(
-    workflow_job_template=wf,
-    unified_job_template=jt3
-)
-
 # --------------------------------------------------------------------------
-# Execution order
+# Workflow execution order
 # --------------------------------------------------------------------------
 
 n1.success_nodes.add(n2)
-n2.success_nodes.add(n3)
 
 print(f"Workflow '{wf.name}' {'created' if created else 'updated'} successfully.")
 print("")
@@ -2872,14 +2864,11 @@ print("Execution Order:")
 print(f"  {jt1.name}")
 print("      ↓")
 print(f"  {jt2.name}")
-print("      ↓")
-print(f"  {jt3.name}")
 
 EOF
 
 echo
 echo -e "${GREEN}ROCKY8TOROCKY9-WF created successfully.${NC}"
-
 
 # ==============================================================
 # Verify EL8 Subscription Template
