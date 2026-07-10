@@ -8,8 +8,7 @@
   serial: 1
 
   vars:
-  
-    rocky9_repo: "{{ target_os | default('rocky9') }}"
+    rocky9_repo: "{{ 'rocky9.2' if (target_os | default('9')) == '9.2' else 'rocky9' }}"
     elevate_repo_file: /etc/yum.repos.d/el8toel9.repo
     leapp_repo_file: /etc/leapp/files/leapp_upgrade_repositories.repo
 
