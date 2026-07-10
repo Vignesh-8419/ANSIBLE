@@ -292,7 +292,7 @@ else
         --product "Rocky Linux 8" \
         --name "Rocky-08-EL8toEL9" \
         --content-type yum \
-        --url "http://192.168.253.136/repo/leapp/el8toel9"
+        --url "http://192.168.253.136/repo/el8toel9"
 
     if [ $? -eq 0 ]; then
         ok "Repository created."
@@ -851,11 +851,15 @@ $HAMMER activation-key add-subscription \
     --subscription-id "$ROCKY8_SUB_ID" 2>&1
 )
 
+RC=$?
+
 echo "$OUTPUT"
 
 if echo "$OUTPUT" | grep -qi "already"; then
     skip "Rocky Linux 8 subscription already attached."
-elif [ $? -eq 0 ]; then
+elif echo "$OUTPUT" | grep -qi "Subscription added"; then
+    ok "Rocky Linux 8 subscription attached."
+elif [ $RC -eq 0 ]; then
     ok "Rocky Linux 8 subscription attached."
 else
     error "Subscription attachment failed."
@@ -877,11 +881,15 @@ $HAMMER activation-key add-subscription \
     --subscription-id "$ROCKY9_SUB_ID" 2>&1
 )
 
+RC=$?
+
 echo "$OUTPUT"
 
 if echo "$OUTPUT" | grep -qi "already"; then
     skip "Rocky Linux 9 subscription already attached."
-elif [ $? -eq 0 ]; then
+elif echo "$OUTPUT" | grep -qi "Subscription added"; then
+    ok "Rocky Linux 9 subscription attached."
+elif [ $RC -eq 0 ]; then
     ok "Rocky Linux 9 subscription attached."
 else
     error "Subscription attachment failed."
