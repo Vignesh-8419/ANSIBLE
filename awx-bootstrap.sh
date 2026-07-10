@@ -2618,7 +2618,7 @@ from awx.main.models import (
 ORG_NAME = "Default"
 WORKFLOW_NAME = "ROCKY8TOROCKY9-PATCHING-WF"
 
-JT1_NAME = "offline_patching_el8"
+JT1_NAME = "Offline_Patching_el8"
 JT2_NAME = "ROCKY8TOROCKY9"
 JT3_NAME = "REPAIR-RESCUE"
 
