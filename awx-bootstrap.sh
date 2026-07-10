@@ -1709,12 +1709,12 @@ EOF
 echo
 echo "CENTOS Workflow created successfully."
 # --------------------------------------------------------------
-# Workflow : ROCKYOS-VM-TEMPLATE-WF
+# Workflow : ROCKYOS-VM-TEMPLATE (WITH PATCHING)
 # --------------------------------------------------------------
 
 echo
 echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
-echo -e "${WHITE} Creating Workflow: ROCKYOS-VM-TEMPLATE-WF${NC}"
+echo -e "${WHITE} Creating Workflow: ROCKYOS-VM-TEMPLATE (WITH PATCHING)${NC}"
 echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
 
 awx-manage shell <<'EOF'
@@ -1728,12 +1728,11 @@ from awx.main.models import (
 )
 
 ORG_NAME = "Default"
-WORKFLOW_NAME = "ROCKYOS-VM-TEMPLATE-WF"
+WORKFLOW_NAME = "ROCKYOS-VM-TEMPLATE (WITH PATCHING)"
 
 JT1_NAME = "ROCKYOS-VM-TEMPLATE"
 JT2_NAME = "RHEL_Hardening"
-JT3_NAME = "Disable_SELinux_el8"
-JT4_NAME = "Offline_Patching_el8"
+JT3_NAME = "Offline_Patching_el8"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "rocky-8-servers"
@@ -1743,7 +1742,6 @@ org = Organization.objects.get(name=ORG_NAME)
 jt1 = JobTemplate.objects.get(name=JT1_NAME)
 jt2 = JobTemplate.objects.get(name=JT2_NAME)
 jt3 = JobTemplate.objects.get(name=JT3_NAME)
-jt4 = JobTemplate.objects.get(name=JT4_NAME)
 
 cred = Credential.objects.get(name=CREDENTIAL_NAME)
 inv = Inventory.objects.get(name=INVENTORY_NAME)
@@ -1785,10 +1783,14 @@ wf.survey_spec = {
 
 wf.save()
 
+# Attach credential
 wf.credentials.clear()
 wf.credentials.add(cred)
 
-# Create workflow nodes
+# ------------------------------------------------------------------
+# Create Workflow Nodes
+# ------------------------------------------------------------------
+
 n1 = WorkflowJobTemplateNode.objects.create(
     workflow_job_template=wf,
     unified_job_template=jt1
@@ -1804,15 +1806,12 @@ n3 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt3
 )
 
-n4 = WorkflowJobTemplateNode.objects.create(
-    workflow_job_template=wf,
-    unified_job_template=jt4
-)
+# ------------------------------------------------------------------
+# Workflow Order
+# ------------------------------------------------------------------
 
-# Execution order
 n1.success_nodes.add(n2)
 n2.success_nodes.add(n3)
-n3.success_nodes.add(n4)
 
 print(f"Workflow '{wf.name}' {'created' if created else 'updated'}")
 print()
@@ -1825,9 +1824,112 @@ print(jt2.name)
 print("   |")
 print("   v")
 print(jt3.name)
+
+EOF
+
+echo
+echo "ROCKY Workflow created successfully."
+
+# --------------------------------------------------------------
+# Workflow : ROCKYOS-VM-TEMPLATE (WITHOUT PATCHING)
+# --------------------------------------------------------------
+
+echo
+echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
+echo -e "${WHITE} Creating Workflow: ROCKYOS-VM-TEMPLATE (WITHOUT PATCHING)${NC}"
+echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
+
+awx-manage shell <<'EOF'
+from awx.main.models import (
+    WorkflowJobTemplate,
+    WorkflowJobTemplateNode,
+    JobTemplate,
+    Credential,
+    Inventory,
+    Organization
+)
+
+ORG_NAME = "Default"
+WORKFLOW_NAME = "ROCKYOS-VM-TEMPLATE (WITHOUT PATCHING)"
+
+JT1_NAME = "ROCKYOS-VM-TEMPLATE"
+JT2_NAME = "RHEL_Hardening"
+
+CREDENTIAL_NAME = "Linux Admin Credential"
+INVENTORY_NAME = "rocky-8-servers"
+
+org = Organization.objects.get(name=ORG_NAME)
+
+jt1 = JobTemplate.objects.get(name=JT1_NAME)
+jt2 = JobTemplate.objects.get(name=JT2_NAME)
+
+cred = Credential.objects.get(name=CREDENTIAL_NAME)
+inv = Inventory.objects.get(name=INVENTORY_NAME)
+
+wf, created = WorkflowJobTemplate.objects.get_or_create(
+    name=WORKFLOW_NAME,
+    organization=org
+)
+
+# Remove existing workflow nodes
+wf.workflow_job_template_nodes.all().delete()
+
+# Fixed inventory and credential
+wf.inventory = inv
+
+# Disable launch prompts
+wf.ask_inventory_on_launch = False
+wf.ask_limit_on_launch = False
+wf.ask_credential_on_launch = False
+
+# Enable survey
+wf.survey_enabled = True
+wf.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more Rocky Linux 8 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: rocky-08-01 or rocky-08-01,rocky-08-02 or rocky-08-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-08-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+wf.save()
+
+# Attach credential
+wf.credentials.clear()
+wf.credentials.add(cred)
+
+# Create workflow nodes
+n1 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt1
+)
+
+n2 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt2
+)
+
+# Execution order
+n1.success_nodes.add(n2)
+
+print(f"Workflow '{wf.name}' {'created' if created else 'updated'}")
+print()
+print("Execution Order")
+print("----------------")
+print(jt1.name)
 print("   |")
 print("   v")
-print(jt4.name)
+print(jt2.name)
+
 EOF
 
 echo
