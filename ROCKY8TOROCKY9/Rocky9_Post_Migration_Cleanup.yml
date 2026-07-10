@@ -326,30 +326,14 @@
     ####################################################################
     # Rebuild Boot Configuration
     ####################################################################
-
+    
     - name: Determine BIOS or UEFI
       stat:
         path: /sys/firmware/efi
       register: efi
-
-    - name: Regenerate GRUB (BIOS)
-      command: grub2-mkconfig -o /boot/grub2/grub.cfg
-      when: not efi.stat.exists
-
-    - name: Locate UEFI grub.cfg
-      command: find /boot/efi/EFI -name grub.cfg
-      register: grub_cfg
-      changed_when: false
     
-    - name: Regenerate UEFI GRUB
-      command:
-        argv:
-          - grub2-mkconfig
-          - -o
-          - "{{ grub_cfg.stdout_lines[0] }}"
-      when:
-        - efi.stat.exists
-        - grub_cfg.stdout_lines | length > 0
+    - name: Regenerate GRUB configuration
+      command: grub2-mkconfig -o /boot/grub2/grub.cfg
 
     ####################################################################
     # Rebuild Initramfs
