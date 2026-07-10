@@ -8,7 +8,8 @@
   serial: 1
 
   vars:
-
+  
+    rocky9_repo: "{{ target_os | default('rocky9') }}"
     elevate_repo_file: /etc/yum.repos.d/el8toel9.repo
     leapp_repo_file: /etc/leapp/files/leapp_upgrade_repositories.repo
 
@@ -255,13 +256,13 @@
         content: |
           [rocky9-baseos]
           name=Rocky Linux 9 BaseOS
-          baseurl=http://http-server-01/repo/rocky9.2/BaseOS/
+          baseurl=http://http-server-01/repo/{{ rocky9_repo }}/BaseOS/
           enabled=1
           gpgcheck=0
     
           [rocky9-appstream]
           name=Rocky Linux 9 AppStream
-          baseurl=http://http-server-01/repo/rocky9.2/AppStream/
+          baseurl=http://http-server-01/repo/{{ rocky9_repo }}/AppStream/
           enabled=1
           gpgcheck=0
     
