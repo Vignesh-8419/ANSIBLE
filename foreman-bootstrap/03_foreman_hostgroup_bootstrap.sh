@@ -175,7 +175,7 @@ else
         --organization "Default Organization" \
         --name "VGS HOSTS ROCKY 9" \
         --architecture x86_64 \
-        --operatingsystem "RockyLinux 9.6" \
+        --operatingsystem "RockyLinux 9.8" \
         --medium "Rocky 9 Remote" \
         --partition-table "Kickstart default" \
         --pxe-loader "Grub2 UEFI" \
