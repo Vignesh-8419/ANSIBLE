@@ -22,8 +22,8 @@
     rocky8_baseos: "{{ repo_server }}/repo/rocky8/BaseOS"
     rocky8_appstream: "{{ repo_server }}/repo/rocky8/AppStream"
     
-    rocky9_baseos: "{{ repo_server }}/repo/{{ rocky9_repo }}/BaseOS"
-    rocky9_appstream: "{{ repo_server }}/repo/{{ rocky9_repo }}/AppStream"
+#    rocky9_baseos: "{{ repo_server }}/repo/{{ rocky9_repo }}/BaseOS"
+#    rocky9_appstream: "{{ repo_server }}/repo/{{ rocky9_repo }}/AppStream"
     
     elevate_repo_file: /etc/yum.repos.d/el8toel9.repo
     leapp_repo_file: /etc/leapp/files/leapp_upgrade_repositories.repo
@@ -208,22 +208,22 @@
         state: directory
         mode: "0755"
 
-    - name: Configure Rocky Linux 9 repositories for Leapp
-      copy:
-        dest: "{{ leapp_repo_file }}"
-        mode: "0644"
-        content: |
-          [rocky9-baseos]
-          name=Rocky Linux 9 BaseOS
-          baseurl={{ rocky9_baseos }}
-          enabled=1
-          gpgcheck=0
-
-          [rocky9-appstream]
-          name=Rocky Linux 9 AppStream
-          baseurl={{ rocky9_appstream }}
-          enabled=1
-          gpgcheck=0
+#    - name: Configure Rocky Linux 9 repositories for Leapp
+#      copy:
+#        dest: "{{ leapp_repo_file }}"
+#        mode: "0644"
+#        content: |
+#          [rocky9-baseos]
+#          name=Rocky Linux 9 BaseOS
+#          baseurl={{ rocky9_baseos }}
+#          enabled=1
+#          gpgcheck=0
+#
+#          [rocky9-appstream]
+#          name=Rocky Linux 9 AppStream
+#          baseurl={{ rocky9_appstream }}
+#          enabled=1
+#          gpgcheck=0
 
     ####################################################################
     # Validate Repositories
