@@ -121,15 +121,24 @@ HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
 
 TARGET_VERSION="${TARGET_VERSION:-9.8}"
 
-if [[ "$TARGET_VERSION" == "9.2" ]]; then
-    EL8TOEL9_REPO="http://192.168.253.136/repo/leapp/9.2/el8toel9"
-    CONTENT_VIEW="EL8toEL9-9.2-CV"
-    ACTIVATION_KEY="el8toel9-9.2-key"
-else
-    EL8TOEL9_REPO="http://192.168.253.136/repo/leapp/9/el8toel9"
-    CONTENT_VIEW="EL8toEL9-9.8-CV"
-    ACTIVATION_KEY="el8toel9-9.8-key"
-fi
+case "$TARGET_VERSION" in
+    9.2)
+        EL8TOEL9_REPO_NAME="$EL8TOEL9_REPO_NAME-9.2"
+        EL8TOEL9_REPO_URL="http://192.168.253.136/repo/leapp/9.2/el8toel9"
+        CONTENT_VIEW="EL8toEL9-9.2-CV"
+        ACTIVATION_KEY="el8toel9-9.2-key"
+        ;;
+    9.8)
+        EL8TOEL9_REPO_NAME="$EL8TOEL9_REPO_NAME-9.8"
+        EL8TOEL9_REPO_URL="http://192.168.253.136/repo/leapp/9/el8toel9"
+        CONTENT_VIEW="EL8toEL9-9.8-CV"
+        ACTIVATION_KEY="el8toel9-9.8-key"
+        ;;
+    *)
+        error "Unsupported TARGET_VERSION: $TARGET_VERSION"
+        exit 1
+        ;;
+esac
 
 ###############################################################################
 # Create Products
@@ -257,15 +266,15 @@ fi
 echo
 
 ###############################################################################
-# Rocky-08-EL8toEL9
+# $EL8TOEL9_REPO_NAME
 ###############################################################################
 
-info "Checking Repository : Rocky-08-EL8toEL9"
+info "Checking Repository : $EL8TOEL9_REPO_NAME"
 
 if $HAMMER repository info \
     --organization "Default Organization" \
     --product "Rocky Linux 8" \
-    --name "Rocky-08-EL8toEL9" >/dev/null 2>&1; then
+    --name "$EL8TOEL9_REPO_NAME" >/dev/null 2>&1; then
 
     skip "Repository already exists."
 
@@ -276,15 +285,15 @@ else
     $HAMMER repository create \
         --organization "Default Organization" \
         --product "Rocky Linux 8" \
-        --name "Rocky-08-EL8toEL9" \
+        --name "$EL8TOEL9_REPO_NAME" \
         --content-type yum \
-        --url "$EL8TOEL9_REPO"
+        --url "$EL8TOEL9_REPO_URL"
 
     if [ $? -eq 0 ]; then
         ok "Repository created."
     else
         error "Repository creation failed."
-        record_failure "Rocky Linux 8 -> Rocky-08-EL8toEL9"
+        record_failure "Rocky Linux 8 -> $EL8TOEL9_REPO_NAME"
     fi
 
 fi
@@ -401,7 +410,7 @@ sync_repository() {
 
 sync_repository "Rocky Linux 8" "Rocky-08-BaseOS"
 sync_repository "Rocky Linux 8" "Rocky-08-AppStream"
-sync_repository "Rocky Linux 8" "Rocky-08-EL8toEL9"
+sync_repository "Rocky Linux 8" "$EL8TOEL9_REPO_NAME"
 
 ###############################################################################
 # Verification
@@ -525,7 +534,7 @@ add_repository_to_cv \
 add_repository_to_cv \
     "$CONTENT_VIEW" \
     "Rocky Linux 8" \
-    "Rocky-08-EL8toEL9"
+    "$EL8TOEL9_REPO_NAME"
 
 
 ###############################################################################
