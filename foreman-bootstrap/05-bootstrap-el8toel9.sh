@@ -122,14 +122,10 @@ HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
 TARGET_VERSION="${TARGET_VERSION:-9.8}"
 
 if [[ "$TARGET_VERSION" == "9.2" ]]; then
-    PRODUCT9="Rocky Linux 9.2"
-    EL9_REPO="rocky9.2"
     EL8TOEL9_REPO="http://192.168.253.136/repo/leapp/9.2/el8toel9"
     CONTENT_VIEW="EL8toEL9-9.2-CV"
     ACTIVATION_KEY="el8toel9-9.2-key"
 else
-    PRODUCT9="Rocky Linux 9"
-    EL9_REPO="rocky9"
     EL8TOEL9_REPO="http://192.168.253.136/repo/leapp/9/el8toel9"
     CONTENT_VIEW="EL8toEL9-9.8-CV"
     ACTIVATION_KEY="el8toel9-9.8-key"
@@ -172,67 +168,6 @@ fi
 
 echo
 
-###############################################################################
-# Rocky Linux 9 Product
-###############################################################################
-
-info "Checking Product : Rocky Linux 9"
-
-if $HAMMER product info \
-    --organization "Default Organization" \
-    --name "Rocky Linux 9" >/dev/null 2>&1; then
-
-    skip "Product already exists."
-
-else
-
-    info "Creating Product..."
-
-    $HAMMER product create \
-        --organization "Default Organization" \
-        --name "Rocky Linux 9"
-
-    if [ $? -eq 0 ]; then
-        ok "Product created."
-    else
-        error "Product creation failed."
-        record_failure "Rocky Linux 9 Product"
-    fi
-
-fi
-
-echo
-
-###############################################################################
-# Rocky Linux 9.2 Product
-###############################################################################
-
-info "Checking Product : Rocky Linux 9.2"
-
-if $HAMMER product info \
-    --organization "Default Organization" \
-    --name "Rocky Linux 9.2" >/dev/null 2>&1; then
-
-    skip "Product already exists."
-
-else
-
-    info "Creating Product..."
-
-    $HAMMER product create \
-        --organization "Default Organization" \
-        --name "Rocky Linux 9.2"
-
-    if [ $? -eq 0 ]; then
-        ok "Product created."
-    else
-        error "Product creation failed."
-        record_failure "Rocky Linux 9.2 Product"
-    fi
-
-fi
-
-echo
 
 ###############################################################################
 # Verification
@@ -357,76 +292,6 @@ fi
 echo
 
 ###############################################################################
-# Rocky-09-BaseOS
-###############################################################################
-
-info "Checking Repository : Rocky-09-BaseOS"
-
-if $HAMMER repository info \
-    --organization "Default Organization" \
-    --product "$PRODUCT9" \
-    --name "Rocky-09-BaseOS" >/dev/null 2>&1; then
-
-    skip "Repository already exists."
-
-else
-
-    info "Creating Repository..."
-
-    $HAMMER repository create \
-        --organization "Default Organization" \
-        --product "$PRODUCT9" \
-        --name "Rocky-09-BaseOS" \
-        --content-type yum \
-        --url "http://192.168.253.136/repo/${EL9_REPO}/BaseOS"
-
-    if [ $? -eq 0 ]; then
-        ok "Repository created."
-    else
-        error "Repository creation failed."
-        record_failure "${PRODUCT9} -> Rocky-09-BaseOS"
-    fi
-
-fi
-
-echo
-
-###############################################################################
-# Rocky-09-AppStream
-###############################################################################
-
-info "Checking Repository : Rocky-09-AppStream"
-
-if $HAMMER repository info \
-    --organization "Default Organization" \
-    --product "$PRODUCT9" \
-    --name "Rocky-09-AppStream" >/dev/null 2>&1; then
-
-    skip "Repository already exists."
-
-else
-
-    info "Creating Repository..."
-
-    $HAMMER repository create \
-        --organization "Default Organization" \
-        --product "$PRODUCT9" \
-        --name "Rocky-09-AppStream" \
-        --content-type yum \
-        --url "http://192.168.253.136/repo/${EL9_REPO}/AppStream"
-
-    if [ $? -eq 0 ]; then
-        ok "Repository created."
-    else
-        error "Repository creation failed."
-        record_failure "${PRODUCT9} -> Rocky-09-AppStream"
-    fi
-
-fi
-
-echo
-
-###############################################################################
 # Repository Verification
 ###############################################################################
 
@@ -438,14 +303,6 @@ info "Rocky Linux 8"
 $HAMMER repository list \
     --organization "Default Organization" \
     --product "Rocky Linux 8"
-
-echo
-
-info "Rocky Linux 9"
-
-$HAMMER repository list \
-    --organization "Default Organization" \
-    --product "$PRODUCT9"
 
 echo
 
@@ -547,13 +404,6 @@ sync_repository "Rocky Linux 8" "Rocky-08-AppStream"
 sync_repository "Rocky Linux 8" "Rocky-08-EL8toEL9"
 
 ###############################################################################
-# Synchronize Rocky Linux 9 Repositories
-###############################################################################
-
-sync_repository "$PRODUCT9" "Rocky-09-BaseOS"
-sync_repository "$PRODUCT9" "Rocky-09-AppStream"
-
-###############################################################################
 # Verification
 ###############################################################################
 
@@ -567,14 +417,6 @@ info "Rocky Linux 8"
 $HAMMER repository list \
     --organization "Default Organization" \
     --product "Rocky Linux 8"
-
-echo
-
-info "Rocky Linux 9"
-
-$HAMMER repository list \
-    --organization "Default Organization" \
-    --product "$PRODUCT9"
 
 echo
 
@@ -685,23 +527,6 @@ add_repository_to_cv \
     "Rocky Linux 8" \
     "Rocky-08-EL8toEL9"
 
-###############################################################################
-# Add Rocky Linux 9 BaseOS
-###############################################################################
-
-add_repository_to_cv \
-    "$CONTENT_VIEW" \
-    "$PRODUCT9" \
-    "Rocky-09-BaseOS"
-
-###############################################################################
-# Add Rocky Linux 9 AppStream
-###############################################################################
-
-add_repository_to_cv \
-    "$CONTENT_VIEW" \
-    "$PRODUCT9" \
-    "Rocky-09-AppStream"
 
 ###############################################################################
 # Function : Publish Content View
@@ -883,21 +708,7 @@ $HAMMER subscription list \
 awk -F'|' '$3 ~ /Rocky Linux 8/ {gsub(/ /,"",$1); print $1}'
 )
 
-ROCKY9_SUB_ID=$(
-$HAMMER subscription list \
-    --organization "Default Organization" |
-awk -F'|' -v product="$PRODUCT9" '
-{
-    gsub(/^ +| +$/, "", $3)
-    if ($3 == product) {
-        gsub(/ /,"",$1)
-        print $1
-    }
-}'
-)
-
 echo "ROCKY8_SUB_ID=$ROCKY8_SUB_ID"
-echo "ROCKY9_SUB_ID=$ROCKY9_SUB_ID"
 echo
 
 ###############################################################################
@@ -930,33 +741,6 @@ fi
 
 echo
 
-###############################################################################
-# Attach Rocky Linux 9 Subscription
-###############################################################################
-
-info "Attaching Rocky Linux 9 subscription..."
-
-OUTPUT=$(
-$HAMMER activation-key add-subscription \
-    --organization "Default Organization" \
-    --name "$ACTIVATION_KEY" \
-    --subscription-id "$ROCKY9_SUB_ID" 2>&1
-)
-
-RC=$?
-
-echo "$OUTPUT"
-
-if echo "$OUTPUT" | grep -qi "already"; then
-    skip "Rocky Linux 9 subscription already attached."
-elif echo "$OUTPUT" | grep -qi "Subscription added"; then
-    ok "Rocky Linux 9 subscription attached."
-elif [ $RC -eq 0 ]; then
-    ok "Rocky Linux 9 subscription attached."
-else
-    error "Subscription attachment failed."
-    record_failure "${ACTIVATION_KEY} -> ${PRODUCT9}"
-fi
 
 ###############################################################################
 # Verification
@@ -989,13 +773,11 @@ $HAMMER activation-key info \
 ###############################################################################
 
 echo
-header "Registration Command"
+header "Registration Command (${TARGET_VERSION})"
 
 echo "subscription-manager register \\"
 echo "  --org=\"Default_Organization\" \\"
 echo "  --activationkey=\"${ACTIVATION_KEY}\""
-
-echo
 
 ###############################################################################
 # Summary
