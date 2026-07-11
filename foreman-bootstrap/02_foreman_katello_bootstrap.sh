@@ -1,7 +1,7 @@
 #!/bin/bash
 ###############################################################################
 # Foreman Katello Bootstrap
-# CentOS 7 & Rocky Linux 8.10 & Rocky Linux 9
+# Supports CentOS 7, Rocky Linux 8.10, Rocky Linux 9.2 and Rocky Linux 9.8
 ###############################################################################
 
 set +e
@@ -115,6 +115,27 @@ HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
 header "[1/6] Creating Katello Products"
 
 
+TARGET_VERSION="${TARGET_VERSION:-9.8}"
+
+case "$TARGET_VERSION" in
+    9.2)
+        PRODUCT_NAME="Rocky Linux 9.2"
+        REPO_PATH="rocky9.2"
+        CONTENT_VIEW="Rocky9.2-CV"
+        ACTIVATION_KEY="rocky9.2-prod-key"
+        ;;
+    9.8)
+        PRODUCT_NAME="Rocky Linux 9.8"
+        REPO_PATH="rocky9"
+        CONTENT_VIEW="Rocky9.8-CV"
+        ACTIVATION_KEY="rocky9.8-prod-key"
+        ;;
+    *)
+        echo "Unsupported TARGET_VERSION: $TARGET_VERSION"
+        exit 1
+        ;;
+esac
+
 ###############################################################################
 # Rocky Linux 8 Product
 ###############################################################################
@@ -181,27 +202,27 @@ echo
 # Rocky 9 Product
 ###############################################################################
 
-info "Checking Product : Rocky Linux 9"
+info "Checking Product : $PRODUCT_NAME"
 
 if $HAMMER product info \
     --organization "Default Organization" \
-    --name "Rocky Linux 9" >/dev/null 2>&1; then
+    --name "$PRODUCT_NAME" >/dev/null 2>&1; then
 
-    skip "Product 'Rocky Linux 9' already exists."
+    skip "Product '$PRODUCT_NAME' already exists."
 
 else
 
-    info "Creating Product : Rocky Linux 9"
+    info "Creating Product : $PRODUCT_NAME"
 
         $HAMMER product create \
             --organization "Default Organization" \
-            --name "Rocky Linux 9"
+            --name "$PRODUCT_NAME"
         
         if [ $? -eq 0 ]; then
             ok "Product created."
         else
             error "Product creation failed."
-            record_failure "Rocky Linux 9 Product"
+            record_failure "$PRODUCT_NAME Product"
         fi
         
 
@@ -424,7 +445,7 @@ info "Checking Repository : Rocky-09-BaseOS"
 
 if $HAMMER repository info \
     --organization "Default Organization" \
-    --product "Rocky Linux 9" \
+    --product "$PRODUCT_NAME" \
     --name "Rocky-09-BaseOS" >/dev/null 2>&1; then
 
     skip "Repository already exists."
@@ -436,17 +457,17 @@ else
 
     $HAMMER repository create \
         --organization "Default Organization" \
-        --product "Rocky Linux 9" \
+        --product "$PRODUCT_NAME" \
         --name "Rocky-09-BaseOS" \
         --content-type yum \
-        --url "http://192.168.253.136/repo/rocky9/BaseOS"
+        --url "http://192.168.253.136/repo/${REPO_PATH}/BaseOS"
 
     
     if [ $? -eq 0 ]; then
         ok "Repository created."
     else
         error "Repository creation failed."
-        record_failure "Rocky Linux 9 -> Rocky-09-BaseOS"
+        record_failure "$PRODUCT_NAME -> Rocky-09-BaseOS"
     fi
 fi
 
@@ -460,7 +481,7 @@ info "Checking Repository : Rocky-09-AppStream"
 
 if $HAMMER repository info \
     --organization "Default Organization" \
-    --product "Rocky Linux 9" \
+    --product "$PRODUCT_NAME" \
     --name "Rocky-09-AppStream" >/dev/null 2>&1; then
 
     skip "Repository already exists."
@@ -471,17 +492,17 @@ else
 
     $HAMMER repository create \
         --organization "Default Organization" \
-        --product "Rocky Linux 9" \
+        --product "$PRODUCT_NAME" \
         --name "Rocky-09-AppStream" \
         --content-type yum \
-        --url "http://192.168.253.136/repo/rocky9/AppStream"
+        --url "http://192.168.253.136/repo/${REPO_PATH}/AppStream"
 
     
     if [ $? -eq 0 ]; then
         ok "Repository created."
     else
         error "Repository creation failed."
-        record_failure "Rocky Linux 9 -> Rocky-09-AppStream"
+        record_failure "$PRODUCT_NAME -> Rocky-09-AppStream"
     fi
 
 fi
@@ -496,7 +517,7 @@ info "Checking Repository : Rocky-09-RHEL-Installed"
 
 if $HAMMER repository info \
     --organization "Default Organization" \
-    --product "Rocky Linux 9" \
+    --product "$PRODUCT_NAME" \
     --name "Rocky-09-RHEL-Installed" >/dev/null 2>&1; then
 
     skip "Repository already exists."
@@ -507,7 +528,7 @@ else
 
     $HAMMER repository create \
         --organization "Default Organization" \
-        --product "Rocky Linux 9" \
+        --product "$PRODUCT_NAME" \
         --name "Rocky-09-RHEL-Installed" \
         --content-type yum \
         --url "http://192.168.253.136/repo/installed_rhel9"
@@ -517,7 +538,7 @@ else
         ok "Repository created."
     else
         error "Repository creation failed."
-        record_failure "Rocky Linux 9 -> Rocky-09-RHEL-Installed"
+        record_failure "$PRODUCT_NAME -> Rocky-09-RHEL-Installed"
     fi
 fi
 
@@ -545,11 +566,11 @@ $HAMMER repository list \
 
 echo
 
-info "Rocky Linux 9"
+info "$PRODUCT_NAME"
 
 $HAMMER repository list \
     --organization "Default Organization" \
-    --product "Rocky Linux 9"
+    --product "$PRODUCT_NAME"
 
 echo
 
@@ -654,12 +675,12 @@ sync_repository "Rocky Linux 8" "Rocky-08-AppStream"
 sync_repository "Rocky Linux 8" "Rocky-08-RHEL-Installed"
 
 ###############################################################################
-# Rocky Linux 9
+# --name "$PRODUCT_NAME"
 ###############################################################################
 
-sync_repository "Rocky Linux 9" "Rocky-09-BaseOS"
-sync_repository "Rocky Linux 9" "Rocky-09-AppStream"
-sync_repository "Rocky Linux 9" "Rocky-09-RHEL-Installed"
+sync_repository "$PRODUCT_NAME" "Rocky-09-BaseOS"
+sync_repository "$PRODUCT_NAME" "Rocky-09-AppStream"
+sync_repository "$PRODUCT_NAME" "Rocky-09-RHEL-Installed"
 
 ###############################################################################
 # Verification
@@ -685,12 +706,11 @@ $HAMMER repository list \
 echo
 
 echo
-info "Rocky Linux 9"
+info "$PRODUCT_NAME"
 
 $HAMMER repository list \
     --organization "Default Organization" \
-    --product "Rocky Linux 9"
-
+    --product "$PRODUCT_NAME"
 echo
 
 header "[4/6] Creating Content Views & Activation Keys"
@@ -738,7 +758,7 @@ create_content_view() {
 
 create_content_view "CentOS7-CV"
 create_content_view "Rocky8-CV"
-create_content_view "Rocky9-CV"
+create_content_view "$CONTENT_VIEW"
 
 ###############################################################################
 # Function : Add Repository to Content View
@@ -791,9 +811,9 @@ add_repository_to_cv "Rocky8-CV" "Rocky Linux 8" "Rocky-08-BaseOS"
 add_repository_to_cv "Rocky8-CV" "Rocky Linux 8" "Rocky-08-AppStream"
 add_repository_to_cv "Rocky8-CV" "Rocky Linux 8" "Rocky-08-RHEL-Installed"
 
-add_repository_to_cv "Rocky9-CV" "Rocky Linux 9" "Rocky-09-BaseOS"
-add_repository_to_cv "Rocky9-CV" "Rocky Linux 9" "Rocky-09-AppStream"
-add_repository_to_cv "Rocky9-CV" "Rocky Linux 9" "Rocky-09-RHEL-Installed"
+add_repository_to_cv "$CONTENT_VIEW" "$PRODUCT_NAME" "Rocky-09-BaseOS"
+add_repository_to_cv "$CONTENT_VIEW" "$PRODUCT_NAME" "Rocky-09-AppStream"
+add_repository_to_cv "$CONTENT_VIEW" "$PRODUCT_NAME" "Rocky-09-RHEL-Installed"
 
 ###############################################################################
 # Function : Publish Content View
@@ -884,7 +904,7 @@ record_failure "Publish : $CV"
 
 publish_cv "CentOS7-CV"
 publish_cv "Rocky8-CV"
-publish_cv "Rocky9-CV"
+publish_cv "$CONTENT_VIEW"
 
 ###############################################################################
 # Create Activation Keys
@@ -942,7 +962,7 @@ create_activation_key() {
 
 create_activation_key "centos7-prod-key" "CentOS7-CV"
 create_activation_key "rocky8-prod-key" "Rocky8-CV"
-create_activation_key "rocky9-prod-key" "Rocky9-CV"
+create_activation_key "$ACTIVATION_KEY" "$CONTENT_VIEW"
 
 ###############################################################################
 # Attach Subscriptions to Activation Keys
@@ -964,14 +984,16 @@ awk -F'|' '$3 ~ /Rocky Linux 8/ {gsub(/ /,"",$1); print $1}'
 
 ROCKY9_SUB_ID=$(
 $HAMMER subscription list \
-  --organization "Default Organization" |
-awk -F'|' '$3 ~ /Rocky Linux 9/ {gsub(/ /,"",$1); print $1}'
+    --organization "Default Organization" |
+awk -F'|' -v product="$PRODUCT_NAME" '
+{
+    gsub(/^ +| +$/, "", $3)
+    if ($3 == product) {
+        gsub(/ /,"",$1)
+        print $1
+    }
+}'
 )
-
-echo "CENTOS_SUB_ID=$CENTOS_SUB_ID"
-echo "ROCKY_SUB_ID=$ROCKY_SUB_ID"
-echo "ROCKY9_SUB_ID=$ROCKY9_SUB_ID"
-echo
 
 info "Attaching CentOS 7 subscription..."
 
@@ -982,13 +1004,15 @@ $HAMMER activation-key add-subscription \
     --subscription-id "$CENTOS_SUB_ID" 2>&1
 )
 
+RC=$?
+
 echo "$OUTPUT"
 
-if echo "$OUTPUT" | grep -qi "already been registered"; then
+if echo "$OUTPUT" | grep -qi "already"; then
     skip "CentOS 7 subscription already attached."
 elif echo "$OUTPUT" | grep -qi "added"; then
     ok "CentOS 7 subscription attached."
-elif [ $? -eq 0 ]; then
+elif [ $RC -eq 0 ]; then
     ok "CentOS 7 subscription attached."
 else
     error "Subscription attachment failed."
@@ -1019,26 +1043,28 @@ else
     record_failure "rocky8-prod-key"
 fi
 
-info "Attaching Rocky Linux 9 subscription..."
+info "Attaching $PRODUCT_NAME subscription..."
 
 OUTPUT=$(
 $HAMMER activation-key add-subscription \
     --organization "Default Organization" \
-    --name "rocky9-prod-key" \
-    --subscription-id "$ROCKY9_SUB_ID" 2>&1
+    --name "rocky8-prod-key" \
+    --subscription-id "$ROCKY_SUB_ID" 2>&1
 )
+
+RC=$?
 
 echo "$OUTPUT"
 
 if echo "$OUTPUT" | grep -qi "already"; then
-    skip "Rocky Linux 9 subscription already attached."
+    skip "Rocky Linux 8 subscription already attached."
 elif echo "$OUTPUT" | grep -qi "added"; then
-    ok "Rocky Linux 9 subscription attached."
-elif [ $? -eq 0 ]; then
-    ok "Rocky Linux 9 subscription attached."
+    ok "Rocky Linux 8 subscription attached."
+elif [ $RC -eq 0 ]; then
+    ok "Rocky Linux 8 subscription attached."
 else
-    error "Rocky Linux 9 subscription attachment failed."
-    record_failure "rocky9-prod-key"
+    error "Subscription attachment failed."
+    record_failure "rocky8-prod-key"
 fi
 
 ###############################################################################
@@ -1106,18 +1132,17 @@ $HAMMER repository list \
 ###############################################################################
 
 echo
-header "Rocky9-CV"
+header "$CONTENT_VIEW"
 
 $HAMMER content-view info \
     --organization "Default Organization" \
-    --name "Rocky9-CV"
-
+    --name "$CONTENT_VIEW"
 echo
-header "Rocky Linux 9 Repositories"
+header "$PRODUCT_NAME Repositories"
 
 $HAMMER repository list \
     --organization "Default Organization" \
-    --product "Rocky Linux 9" || true
+    --product "$PRODUCT_NAME"
 
 ###############################################################################
 # Rocky Repositories
@@ -1153,11 +1178,11 @@ echo "  --activationkey=\"rocky8-prod-key\""
 echo
 
 echo
-info "Rocky Linux 9"
+info "$PRODUCT_NAME"
 
 echo "subscription-manager register \\"
 echo "  --org=\"Default_Organization\" \\"
-echo "  --activationkey=\"rocky9-prod-key\""
+echo "  --activationkey=\"${ACTIVATION_KEY}\""
 
 echo
 ###############################################################################
