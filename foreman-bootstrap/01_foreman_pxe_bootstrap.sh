@@ -234,10 +234,10 @@ echo
 
 info "Checking Rocky Linux 9..."
 
-if $HAMMER os info --title "RockyLinux 9.6" >/dev/null 2>&1; then
-    skip "RockyLinux 9.6 already exists."
+if $HAMMER os info --title "RockyLinux 9.8" >/dev/null 2>&1; then
+    skip "RockyLinux 9.8 already exists."
 else
-    info "Creating RockyLinux 9.6..."
+    info "Creating RockyLinux 9.8..."
 
     $HAMMER os create \
         --name "RockyLinux" \
@@ -249,10 +249,10 @@ else
         --media "Rocky 9 Remote"
 
     if [ $? -eq 0 ]; then
-        ok "RockyLinux 9.6 created."
+        ok "RockyLinux 9.8 created."
     else
-        error "RockyLinux 9.6 creation failed."
-        record_failure "RockyLinux 9.6"
+        error "RockyLinux 9.8 creation failed."
+        record_failure "RockyLinux 9.8"
     fi
 fi
 
@@ -437,7 +437,7 @@ echo
 info "Checking Rocky Linux 9 template assignment..."
 
 if $HAMMER os info \
-    --title "RockyLinux 9.6" | \
+    --title "RockyLinux 9.8" | \
     grep -q "PXEGrub2 Rocky9 UEFI Static Kickstart"; then
 
     skip "Rocky 9 template already assigned."
@@ -447,14 +447,14 @@ else
     info "Assigning Rocky 9 template..."
 
     $HAMMER os add-provisioning-template \
-        --title "RockyLinux 9.6" \
+        --title "RockyLinux 9.8" \
         --provisioning-template "PXEGrub2 Rocky9 UEFI Static Kickstart"
 
     if [ $? -eq 0 ]; then
         ok "Template assigned."
     else
         error "Template assignment failed."
-        record_failure "RockyLinux 9.6 Template Assignment"
+        record_failure "RockyLinux 9.8 Template Assignment"
     fi
 
 fi
@@ -728,7 +728,7 @@ awk -F'|' '/PXEGrub2 RockyOS UEFI Static Kickstart/ {gsub(/ /,"",$1); print $1}'
 
 ROCKY9_OS_ID=$(
 $HAMMER os list | \
-awk -F'|' '/RockyLinux 9.6/ {gsub(/ /,"",$1); print $1}'
+awk -F'|' '/RockyLinux 9.8/ {gsub(/ /,"",$1); print $1}'
 )
 
 ROCKY9_TEMPLATE_ID=$(
@@ -872,7 +872,7 @@ $HAMMER os info --title "RockyLinux 8.10" | \
 
 echo
 
-$HAMMER os info --title "RockyLinux 9.6" | \
+$HAMMER os info --title "RockyLinux 9.8" | \
     awk '/Default templates:/,/Architectures:/'
 
 echo
