@@ -123,13 +123,13 @@ TARGET_VERSION="${TARGET_VERSION:-9.8}"
 
 case "$TARGET_VERSION" in
     9.2)
-        EL8TOEL9_REPO_NAME="$EL8TOEL9_REPO_NAME-9.2"
+        EL8TOEL9_REPO_NAME="Rocky-08-EL8toEL9-9.2"
         EL8TOEL9_REPO_URL="http://192.168.253.136/repo/leapp/9.2/el8toel9"
         CONTENT_VIEW="EL8toEL9-9.2-CV"
         ACTIVATION_KEY="el8toel9-9.2-key"
         ;;
     9.8)
-        EL8TOEL9_REPO_NAME="$EL8TOEL9_REPO_NAME-9.8"
+        EL8TOEL9_REPO_NAME="Rocky-08-EL8toEL9-9.8"
         EL8TOEL9_REPO_URL="http://192.168.253.136/repo/leapp/9/el8toel9"
         CONTENT_VIEW="EL8toEL9-9.8-CV"
         ACTIVATION_KEY="el8toel9-9.8-key"
