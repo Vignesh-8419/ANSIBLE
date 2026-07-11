@@ -750,7 +750,7 @@ jt.survey_spec = {
             "question_description": "Reboot the server after applying hardening?",
             "variable": "reboot_after_hardening",
             "required": True,
-            "default": "No",
+            "default": "Yes",
             "choices": "Yes\nNo",
             "new_question": True
         }
