@@ -218,19 +218,19 @@
           enabled=1
           gpgcheck=0
 
-    - name: Check immutable attribute
-      command: lsattr "{{ rocky_repo_file }}"
-      register: repo_attr
-      changed_when: false
-      failed_when: false
+#    - name: Check immutable attribute
+#      command: lsattr "{{ rocky_repo_file }}"
+#      register: repo_attr
+#      changed_when: false
+#      failed_when: false
 
-    - name: Lock Leapp repository file
-      command:
-        argv:
-          - chattr
-          - +i
-          - "{{ rocky_repo_file }}"
-      when: "'i' not in repo_attr.stdout"
+#    - name: Lock Leapp repository file
+#      command:
+#        argv:
+#          - chattr
+#          - +i
+#          - "{{ rocky_repo_file }}"
+#      when: "'i' not in repo_attr.stdout"
 
     ####################################################################
     # Enable Root SSH Login
@@ -294,15 +294,15 @@
         --section remove_pam_pkcs11_module_check.confirm=True
       ignore_errors: yes
     
-    - name: Check immutable attribute
-      command: lsattr {{ rocky_repo_file }}
-      register: repo_attr
-      changed_when: false
-      failed_when: false
+#    - name: Check immutable attribute
+#      command: lsattr {{ rocky_repo_file }}
+#      register: repo_attr
+#      changed_when: false
+#      failed_when: false
     
-    - name: Unlock Leapp repository file
-      command: chattr -i {{ rocky_repo_file }}
-      when: "'i' in repo_attr.stdout"
+#    - name: Unlock Leapp repository file
+#      command: chattr -i {{ rocky_repo_file }}
+#      when: "'i' in repo_attr.stdout"
     
     ####################################################################
     # Leapp Preupgrade - Pass 2
