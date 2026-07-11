@@ -153,37 +153,6 @@ fi
 echo
 
 ###############################################################################
-# Rocky Linux 8 Product
-###############################################################################
-
-info "Checking Product : Rocky Linux 8"
-
-if $HAMMER product info \
-    --organization "Default Organization" \
-    --name "Rocky Linux 8" >/dev/null 2>&1; then
-
-    skip "Product already exists."
-
-else
-
-    info "Creating Product..."
-
-    $HAMMER product create \
-        --organization "Default Organization" \
-        --name "Rocky Linux 8"
-
-    if [ $? -eq 0 ]; then
-        ok "Product created."
-    else
-        error "Product creation failed."
-        record_failure "Rocky Linux 8 Product"
-    fi
-
-fi
-
-echo
-
-###############################################################################
 # Verification
 ###############################################################################
 
@@ -305,76 +274,6 @@ fi
 echo
 
 ###############################################################################
-# Rocky-08-BaseOS
-###############################################################################
-
-info "Checking Repository : Rocky-08-BaseOS"
-
-if $HAMMER repository info \
-    --organization "Default Organization" \
-    --product "Rocky Linux 8" \
-    --name "Rocky-08-BaseOS" >/dev/null 2>&1; then
-
-    skip "Repository already exists."
-
-else
-
-    info "Creating Repository..."
-
-    $HAMMER repository create \
-        --organization "Default Organization" \
-        --product "Rocky Linux 8" \
-        --name "Rocky-08-BaseOS" \
-        --content-type yum \
-        --url "http://192.168.253.136/repo/rocky8/BaseOS"
-
-    if [ $? -eq 0 ]; then
-        ok "Repository created."
-    else
-        error "Repository creation failed."
-        record_failure "Rocky Linux 8 -> Rocky-08-BaseOS"
-    fi
-
-fi
-
-echo
-
-###############################################################################
-# Rocky-08-AppStream
-###############################################################################
-
-info "Checking Repository : Rocky-08-AppStream"
-
-if $HAMMER repository info \
-    --organization "Default Organization" \
-    --product "Rocky Linux 8" \
-    --name "Rocky-08-AppStream" >/dev/null 2>&1; then
-
-    skip "Repository already exists."
-
-else
-
-    info "Creating Repository..."
-
-    $HAMMER repository create \
-        --organization "Default Organization" \
-        --product "Rocky Linux 8" \
-        --name "Rocky-08-AppStream" \
-        --content-type yum \
-        --url "http://192.168.253.136/repo/rocky8/AppStream"
-
-    if [ $? -eq 0 ]; then
-        ok "Repository created."
-    else
-        error "Repository creation failed."
-        record_failure "Rocky Linux 8 -> Rocky-08-AppStream"
-    fi
-
-fi
-
-echo
-
-###############################################################################
 # Repository Verification
 ###############################################################################
 
@@ -386,14 +285,6 @@ info "CentOS 7"
 $HAMMER repository list \
     --organization "Default Organization" \
     --product "CentOS 7"
-
-echo
-
-info "Rocky Linux 8"
-
-$HAMMER repository list \
-    --organization "Default Organization" \
-    --product "Rocky Linux 8"
 
 echo
 
@@ -494,12 +385,6 @@ sync_repository "CentOS 7" "CentOS-07-BaseOS"
 sync_repository "CentOS 7" "CentOS-07-Updates"
 sync_repository "CentOS 7" "CentOS-07-ELevate"
 
-###############################################################################
-# Synchronize EL8 Repositories
-###############################################################################
-
-sync_repository "Rocky Linux 8" "Rocky-08-BaseOS"
-sync_repository "Rocky Linux 8" "Rocky-08-AppStream"
 
 ###############################################################################
 # Verification
@@ -515,14 +400,6 @@ info "CentOS 7"
 $HAMMER repository list \
     --organization "Default Organization" \
     --product "CentOS 7"
-
-echo
-
-info "Rocky Linux 8"
-
-$HAMMER repository list \
-    --organization "Default Organization" \
-    --product "Rocky Linux 8"
 
 echo
 
@@ -813,14 +690,7 @@ $HAMMER subscription list \
 awk -F'|' '$3 ~ /CentOS 7/ {gsub(/ /,"",$1); print $1}'
 )
 
-ROCKY8_SUB_ID=$(
-$HAMMER subscription list \
-    --organization "Default Organization" |
-awk -F'|' '$3 ~ /Rocky Linux 8/ {gsub(/ /,"",$1); print $1}'
-)
-
 echo "CENTOS_SUB_ID=$CENTOS_SUB_ID"
-echo "ROCKY8_SUB_ID=$ROCKY8_SUB_ID"
 echo
 
 ###############################################################################
@@ -852,34 +722,6 @@ else
 fi
 
 echo
-
-###############################################################################
-# Attach Rocky Linux 8 Subscription
-###############################################################################
-
-info "Attaching Rocky Linux 8 subscription..."
-
-OUTPUT=$(
-$HAMMER activation-key add-subscription \
-    --organization "Default Organization" \
-    --name "el7toel8-key" \
-    --subscription-id "$ROCKY8_SUB_ID" 2>&1
-)
-
-RC=$?
-
-echo "$OUTPUT"
-
-if echo "$OUTPUT" | grep -qi "already"; then
-    skip "Rocky Linux 8 subscription already attached."
-elif echo "$OUTPUT" | grep -qi "Subscription added"; then
-    ok "Rocky Linux 8 subscription attached."
-elif [ $RC -eq 0 ]; then
-    ok "Rocky Linux 8 subscription attached."
-else
-    error "Subscription attachment failed."
-    record_failure "el7toel8-key -> Rocky Linux 8"
-fi
 
 ###############################################################################
 # Verification
