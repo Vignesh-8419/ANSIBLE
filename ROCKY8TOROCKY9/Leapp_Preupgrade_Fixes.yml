@@ -15,6 +15,13 @@
   gather_facts: false
   serial: 1
 
+  handlers:
+
+    - name: Restart NetworkManager
+      service:
+        name: NetworkManager
+        state: restarted
+
   tasks:
 
     ###########################################################################
@@ -51,83 +58,67 @@
         label: "{{ item.path }}"
 
     ###########################################################################
-    # Discover network configuration files
+    # Detect active interface
     ###########################################################################
 
-    - name: Find network configuration files
-      find:
-        paths: /etc/sysconfig/network-scripts
-        patterns: "ifcfg-*"
-        file_type: file
-      register: ifcfg_files
+    - name: Detect active network interface
+      shell: |
+        ip route | awk '/^default/ {print $5; exit}'
+      register: active_if
+      changed_when: false
+
+    - name: Show detected interface
+      debug:
+        msg: "Active interface: {{ active_if.stdout }}"
+
+    - name: Check if ifcfg file exists
+      stat:
+        path: "/etc/sysconfig/network-scripts/ifcfg-{{ active_if.stdout }}"
+      register: ifcfg_file
 
     ###########################################################################
-    # Process Ethernet interfaces only
+    # Update ifcfg file
     ###########################################################################
 
-    - name: Configure supported Ethernet interfaces
-      block:
+    - name: Ensure TYPE=Ethernet
+      lineinfile:
+        path: "/etc/sysconfig/network-scripts/ifcfg-{{ active_if.stdout }}"
+        regexp: '^TYPE='
+        line: "TYPE=Ethernet"
+        insertafter: EOF
+        backup: yes
+      when: ifcfg_file.stat.exists
+      notify: Restart NetworkManager
 
-        - name: Read interface configuration
-          slurp:
-            src: "{{ item.path }}"
-          register: ifcfg_content
+    - name: Ensure DEVICE
+      lineinfile:
+        path: "/etc/sysconfig/network-scripts/ifcfg-{{ active_if.stdout }}"
+        regexp: '^DEVICE='
+        line: "DEVICE={{ active_if.stdout }}"
+        insertafter: EOF
+      when: ifcfg_file.stat.exists
+      notify: Restart NetworkManager
 
-        - name: Determine interface name
-          set_fact:
-            interface_name: >-
-              {{
-                (
-                  ifcfg_content.content
-                  | b64decode
-                  | regex_search('^DEVICE="?([^"\n]+)', '\1', multiline=True)
-                  | default([item.path | basename | regex_replace('^ifcfg-', '')], true)
-                ) | first
-              }}
+    - name: Ensure NAME
+      lineinfile:
+        path: "/etc/sysconfig/network-scripts/ifcfg-{{ active_if.stdout }}"
+        regexp: '^NAME='
+        line: "NAME={{ active_if.stdout }}"
+        insertafter: EOF
+      when: ifcfg_file.stat.exists
+      notify: Restart NetworkManager
 
-        - name: Ensure TYPE=Ethernet
-          lineinfile:
-            path: "{{ item.path }}"
-            regexp: '^TYPE='
-            line: "TYPE=Ethernet"
-            insertafter: EOF
-            backup: yes
-          notify: Restart NetworkManager
-
-        - name: Ensure DEVICE
-          lineinfile:
-            path: "{{ item.path }}"
-            regexp: '^DEVICE='
-            line: "DEVICE={{ interface_name }}"
-            insertafter: EOF
-          notify: Restart NetworkManager
-
-        - name: Ensure NAME
-          lineinfile:
-            path: "{{ item.path }}"
-            regexp: '^NAME='
-            line: "NAME={{ interface_name }}"
-            insertafter: EOF
-          notify: Restart NetworkManager
-
-        - name: Ensure ONBOOT=yes
-          lineinfile:
-            path: "{{ item.path }}"
-            regexp: '^ONBOOT='
-            line: "ONBOOT=yes"
-            insertafter: EOF
-          notify: Restart NetworkManager
-
-      loop: "{{ ifcfg_files.files }}"
-      loop_control:
-        label: "{{ item.path }}"
-
-      when:
-        - item.path | basename != "ifcfg-lo"
-        - item.path | basename is not match('ifcfg-(bond|br|bridge|team|team-port|vlan|virbr|docker|veth).*')
+    - name: Ensure ONBOOT=yes
+      lineinfile:
+        path: "/etc/sysconfig/network-scripts/ifcfg-{{ active_if.stdout }}"
+        regexp: '^ONBOOT='
+        line: "ONBOOT=yes"
+        insertafter: EOF
+      when: ifcfg_file.stat.exists
+      notify: Restart NetworkManager
 
     ###########################################################################
-    # Clean DNF Cache
+    # Clean DNF cache
     ###########################################################################
 
     - name: Clean DNF cache
@@ -139,23 +130,18 @@
       changed_when: false
 
     ###########################################################################
-    # Display summary
+    # Summary
     ###########################################################################
 
     - name: Display completion message
       debug:
         msg:
-          - "==============================================="
-          - "Leapp preupgrade fixes completed successfully."
-          - "Removed DNF/YUM exclude filters."
-          - "Validated Ethernet ifcfg files."
+          - "===================================================="
+          - "Leapp Preupgrade Fixes completed successfully."
+          - "Active Interface : {{ active_if.stdout }}"
+          - "DNF exclude filters removed."
+          - "Network configuration updated."
           - "DNF cache rebuilt."
-          - "Run: leapp preupgrade"
-          - "==============================================="
-
-  handlers:
-
-    - name: Restart NetworkManager
-      service:
-        name: NetworkManager
-        state: restarted
+          - "Next Step:"
+          - "  leapp preupgrade"
+          - "===================================================="
