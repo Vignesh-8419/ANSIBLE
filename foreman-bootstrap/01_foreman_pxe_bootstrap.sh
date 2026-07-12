@@ -135,21 +135,21 @@ echo
 
 info "Checking Rocky Linux 9 Installation Media..."
 
-if $HAMMER medium info --name "Rocky 9 Remote" >/dev/null 2>&1; then
-    skip "Rocky 9 Remote already exists."
+if $HAMMER medium info --name "Rocky 9.8 Remote" >/dev/null 2>&1; then
+    skip "Rocky 9.8 Remote already exists."
 else
-    info "Creating Rocky 9 Remote..."
+    info "Creating Rocky 9.8 Remote..."
 
     $HAMMER medium create \
-        --name "Rocky 9 Remote" \
+        --name "Rocky 9.8 Remote" \
         --path "http://192.168.253.136/repo/rocky9/" \
         --os-family "Redhat"
     
     if [ $? -eq 0 ]; then
-        ok "Rocky 9 Remote created."
+        ok "Rocky 9.8 Remote created."
     else
-        error "Failed to create Rocky 9 Remote."
-        record_failure "Rocky 9 Remote"
+        error "Failed to create Rocky 9.8 Remote."
+        record_failure "Rocky 9.8 Remote"
     fi
 fi
 
@@ -266,7 +266,7 @@ else
         --family Redhat \
         --architectures x86_64 \
         --partition-tables "Kickstart default" \
-        --media "Rocky 9 Remote"
+        --media "Rocky 9.8 Remote"
 
     if [ $? -eq 0 ]; then
         ok "RockyLinux 9.8 created."
