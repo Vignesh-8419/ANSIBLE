@@ -86,7 +86,6 @@
         regexp: '^TYPE='
         line: "TYPE=Ethernet"
         insertafter: EOF
-        backup: yes
       when: ifcfg_file.stat.exists
       notify: Restart NetworkManager
 
@@ -116,6 +115,26 @@
         insertafter: EOF
       when: ifcfg_file.stat.exists
       notify: Restart NetworkManager
+
+    ###########################################################################
+    # Remove backup ifcfg files
+    ###########################################################################
+
+    - name: Find backup ifcfg files
+      find:
+        paths: /etc/sysconfig/network-scripts
+        file_type: file
+        use_regex: true
+        patterns:
+          - '^ifcfg-.*(~|\.bak|\.orig|\.rpmnew|\.rpmsave|(\.[0-9].*))$'
+      register: backup_ifcfg_files
+
+    - name: Delete backup ifcfg files
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ backup_ifcfg_files.files }}"
+      when: backup_ifcfg_files.matched | int > 0
 
     ###########################################################################
     # Clean DNF cache
