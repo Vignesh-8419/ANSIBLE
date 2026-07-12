@@ -1,4 +1,6 @@
 ---
+- import_playbook: Leapp_Preupgrade_Fixes.yml
+
 - import_playbook: Rocky8_to_Rocky9_ELevate.yml
 
 - import_playbook: Rocky9_Post_Migration_Cleanup.yml
