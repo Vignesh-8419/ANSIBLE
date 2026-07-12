@@ -145,7 +145,7 @@ else
         --lifecycle-environment "Library"
 
     if [ $? -eq 0 ]; then
-        ok "Rocky Host Group created."
+        ok "Rocky 8 Host Group created."
     else
         error "Host Group creation failed."
         record_failure "VGS HOSTS ROCKY 8"
@@ -156,24 +156,24 @@ fi
 echo
 
 ###############################################################################
-# Rocky Linux 9 Host Group
+# Rocky Linux 9.8 Host Group
 ###############################################################################
 
-info "Checking Rocky Linux 9 Host Group..."
+info "Checking Rocky Linux 9.8 Host Group..."
 
 if $HAMMER hostgroup info \
     --organization "Default Organization" \
-    --name "VGS HOSTS ROCKY 9" >/dev/null 2>&1; then
+    --name "VGS HOSTS ROCKY 9.8" >/dev/null 2>&1; then
 
-    skip "Host Group 'VGS HOSTS ROCKY 9' already exists."
+    skip "Host Group 'VGS HOSTS ROCKY 9.8' already exists."
 
 else
 
-    info "Creating Rocky Linux 9 Host Group..."
+    info "Creating Rocky Linux 9.8 Host Group..."
 
     $HAMMER hostgroup create \
         --organization "Default Organization" \
-        --name "VGS HOSTS ROCKY 9" \
+        --name "VGS HOSTS ROCKY 9.8" \
         --architecture x86_64 \
         --operatingsystem "RockyLinux 9.8" \
         --medium "Rocky 9 Remote" \
@@ -182,19 +182,62 @@ else
         --domain "vgs.com" \
         --subnet "vgs-subnet-rockyos" \
         --content-source "cent-07-01.vgs.com" \
-        --content-view "Rocky9-CV" \
+        --content-view "Rocky9.8-CV" \
         --lifecycle-environment "Library"
 
     if [ $? -eq 0 ]; then
-        ok "Rocky 9 Host Group created."
+        ok "Rocky 9.8 Host Group created."
     else
         error "Host Group creation failed."
-        record_failure "VGS HOSTS ROCKY 9"
+        record_failure "VGS HOSTS ROCKY 9.8"
     fi
 
 fi
 
 echo
+
+
+###############################################################################
+# Rocky Linux 9.2 Host Group
+###############################################################################
+
+info "Checking Rocky Linux 9.2 Host Group..."
+
+if $HAMMER hostgroup info \
+    --organization "Default Organization" \
+    --name "VGS HOSTS ROCKY 9.2" >/dev/null 2>&1; then
+
+    skip "Host Group 'VGS HOSTS ROCKY 9.2' already exists."
+
+else
+
+    info "Creating Rocky Linux 9.2 Host Group..."
+
+    $HAMMER hostgroup create \
+        --organization "Default Organization" \
+        --name "VGS HOSTS ROCKY 9.2" \
+        --architecture x86_64 \
+        --operatingsystem "RockyLinux 9.2" \
+        --medium "Rocky 9.2 Remote" \
+        --partition-table "Kickstart default" \
+        --pxe-loader "Grub2 UEFI" \
+        --domain "vgs.com" \
+        --subnet "vgs-subnet-rockyos" \
+        --content-source "cent-07-01.vgs.com" \
+        --content-view "Rocky9.2-CV" \
+        --lifecycle-environment "Library"
+
+    if [ $? -eq 0 ]; then
+        ok "Rocky 9.2 Host Group created."
+    else
+        error "Host Group creation failed."
+        record_failure "VGS HOSTS ROCKY 9.2"
+    fi
+
+fi
+
+echo
+
 
 ###############################################################################
 # Verification
@@ -220,10 +263,18 @@ $HAMMER hostgroup info \
   --name "VGS HOSTS ROCKY 8"
 
 echo
-info "Rocky 9 Host Group"
+info "Rocky 9.8 Host Group"
+
 $HAMMER hostgroup info \
   --organization "Default Organization" \
-  --name "VGS HOSTS ROCKY 9"
+  --name "VGS HOSTS ROCKY 9.8"
+
+echo
+info "Rocky 9.2 Host Group"
+
+$HAMMER hostgroup info \
+  --organization "Default Organization" \
+  --name "VGS HOSTS ROCKY 9.2"
 
 
 header "03 - Foreman HostGroup Bootstrap Completed"
