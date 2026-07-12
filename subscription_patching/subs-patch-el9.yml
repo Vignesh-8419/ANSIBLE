@@ -170,8 +170,7 @@
     #######################################################################
     
     - name: Apply updates
-      raw: |
-        dnf -y update --allowerasing
+      raw: dnf -y update --allowerasing --skip-broken
       register: yum_update
     
     - name: Display yum update output
