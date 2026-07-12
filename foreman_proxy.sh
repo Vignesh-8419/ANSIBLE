@@ -246,18 +246,31 @@ chmod 644 /var/lib/tftpboot/rocky8/*
 
 
 # ======================================================
-# Rocky Linux 9 PXE Boot Files
+# Rocky Linux 9 / 9.2 PXE Boot Files
 # ======================================================
-mkdir -p /var/lib/tftpboot/rocky9
 
-curl -o /var/lib/tftpboot/rocky9/vmlinuz \
+mkdir -p /var/lib/tftpboot/rocky9
+mkdir -p /var/lib/tftpboot/rocky92
+
+# Rocky Linux 9.8
+curl -L -o /var/lib/tftpboot/rocky9/vmlinuz \
 http://http-server-01/repo/rocky9/images/pxeboot/vmlinuz
 
-curl -o /var/lib/tftpboot/rocky9/initrd.img \
+curl -L -o /var/lib/tftpboot/rocky9/initrd.img \
 http://http-server-01/repo/rocky9/images/pxeboot/initrd.img
 
+# Rocky Linux 9.2
+curl -L -o /var/lib/tftpboot/rocky92/vmlinuz \
+http://http-server-01/repo/rocky9.2/images/pxeboot/vmlinuz
+
+curl -L -o /var/lib/tftpboot/rocky92/initrd.img \
+http://http-server-01/repo/rocky9.2/images/pxeboot/initrd.img
+
 chown -R foreman-proxy:root /var/lib/tftpboot/rocky9
+chown -R foreman-proxy:root /var/lib/tftpboot/rocky92
+
 chmod 644 /var/lib/tftpboot/rocky9/*
+chmod 644 /var/lib/tftpboot/rocky92/*
 
 echo "✅ Smart Proxy installation completed."
 REMOTE_SCRIPT
