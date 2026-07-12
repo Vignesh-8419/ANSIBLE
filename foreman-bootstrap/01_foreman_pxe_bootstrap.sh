@@ -399,16 +399,19 @@ oses:
 set default=0
 set timeout=5
 
-menuentry 'Install Rocky Linux 9.8 via Kickstart (UEFI)' {
+menuentry 'Install Rocky Linux 9.2 (UEFI)' {
 
     linuxefi /rocky92/vmlinuz \
-    ip=dhcp \
-    inst.repo=http://192.168.253.136/repo/rocky9.2/ \
-    inst.ks=http://192.168.253.136/repo/rocky9.2/kickstart/rocky92.cfg \
-    inst.text \
-    hostname=<%= @host.name %>
+        ip=dhcp \
+        BOOTIF=01-${net_default_mac} \
+        inst.repo=http://192.168.253.136/repo/rocky9.2/ \
+        inst.ks=http://192.168.253.136/repo/rocky9.2/kickstart/rocky92.cfg \
+        inst.text \
+        inst.ks.device=bootif \
+        hostname=<%= @host.name %>
 
     initrdefi /rocky92/initrd.img
+
 }
 EOF
 
