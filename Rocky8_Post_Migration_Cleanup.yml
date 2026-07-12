@@ -1,0 +1,406 @@
+---
+- name: Rocky Linux 8 Post Migration Cleanup
+  hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
+  become: true
+  become_method: sudo
+  become_user: root
+  gather_facts: false
+
+  pre_tasks:
+
+    - name: Ensure Python is installed
+      raw: |
+        if ! command -v python3 >/dev/null 2>&1 && ! command -v python >/dev/null 2>&1; then
+          dnf -y install python3
+        fi
+      changed_when: false
+
+    - meta: reset_connection
+
+    - name: Gather facts
+      setup:
+
+    - name: Ensure we are running on Rocky Linux 8
+      fail:
+        msg: "This playbook must be run only on Rocky Linux 8!"
+      when:
+        - ansible_distribution != "Rocky"
+        - ansible_distribution_major_version != "8"
+
+  tasks:
+
+    ################################################################
+    # Basic repo/RPMDB cleanup
+    ################################################################
+
+    - name: Ensure backup directory exists
+      file:
+        path: /etc/yum.repos.d/backup
+        state: directory
+        mode: "0755"
+
+    - name: Move repository files to backup
+      shell: |
+        mkdir -p /etc/yum.repos.d/backup
+    
+        find /etc/yum.repos.d \
+          -maxdepth 1 \
+          -name "*.repo" \
+          -exec mv {} /etc/yum.repos.d/backup/ \; 2>/dev/null || true
+
+    - name: Create Rocky Linux repositories
+      copy:
+        dest: /etc/yum.repos.d/base.repo
+        mode: "0644"
+        content: |
+          [rocky8-baseos]
+          name=Rocky Linux 8 BaseOS
+          baseurl=http://192.168.253.136/repo/rocky8/BaseOS/
+          enabled=1
+          gpgcheck=0
+
+          [rocky8-appstream]
+          name=Rocky Linux 8 AppStream
+          baseurl=http://192.168.253.136/repo/rocky8/AppStream/
+          enabled=1
+          gpgcheck=0
+
+    - name: Backup RPM database
+      shell: |
+        if [ -d /var/lib/rpm ] && [ ! -d /var/lib/rpm.bak ]; then
+          mv /var/lib/rpm /var/lib/rpm.bak
+        fi
+    
+    - name: Create new RPM database directory
+      file:
+        path: /var/lib/rpm
+        state: directory
+        mode: "0755"
+    
+    - name: Initialize RPM database
+      command: rpm --initdb
+    
+    - name: Restore Packages file
+      shell: |
+        if [ -f /var/lib/rpm.bak/Packages ]; then
+          cp -av /var/lib/rpm.bak/Packages /var/lib/rpm/
+        fi
+
+    - name: Remove RPM database locks
+      shell: rm -f /var/lib/rpm/__db.*
+      ignore_errors: yes
+
+    - name: Rebuild RPM database
+      command: rpm --rebuilddb
+      ignore_errors: yes
+
+    - name: Clean DNF cache
+      command: dnf clean all
+      ignore_errors: yes
+
+    - name: Verify RPM database
+      command: dnf list installed
+      register: rpmdb_test
+      ignore_errors: yes
+
+    - name: Show RPM database status
+      debug:
+        msg: "{{ rpmdb_test.stdout | default('RPM database verification failed') }}"
+
+    ####################################################################
+    # Kernel Cleanup
+    ####################################################################
+
+    - name: List old EL7 kernel directories
+      shell: ls -d /lib/modules/*.el7* || true
+      register: old_kernels
+      changed_when: false
+
+    - name: Remove weak-modules for old EL7 kernels
+      shell: |
+        for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
+          /usr/sbin/weak-modules --remove-kernel "$k" || true
+        done
+
+    - name: Remove old kernels from kernel-install
+      shell: |
+        for k in $(ls -d /lib/modules/*.el7* 2>/dev/null | xargs -n1 basename); do
+          /bin/kernel-install remove "$k" "/lib/modules/$k/vmlinuz" || true
+        done
+
+    - name: Find old EL7 kernel directories
+      find:
+        paths: /lib/modules
+        patterns: "*.el7*"
+        file_type: directory
+      register: old_kernel_dirs
+
+    - name: Remove old EL7 kernel directories
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ old_kernel_dirs.files }}"
+
+    ####################################################################
+    # EL7 RPM Cleanup
+    ####################################################################
+
+    - name: Find leftover EL7 RPMs
+      shell: |
+        rpm -qa | \
+        grep '\.el7' | \
+        grep -vE '^(gpg-pubkey|libmoduled|katello-ca-consumer)' | \
+        sort
+      register: el7_rpms
+      changed_when: false
+
+    - name: Save EL7 package list
+      copy:
+        dest: /tmp/rhel7.txt
+        content: "{{ el7_rpms.stdout }}"
+      when: el7_rpms.stdout != ""
+
+    - name: Remove leftover EL7 RPMs
+      command:
+        argv:
+          - rpm
+          - -e
+          - --nodeps
+          - "{{ item }}"
+      loop: "{{ el7_rpms.stdout_lines }}"
+      register: remove_el7
+      ignore_errors: yes
+    
+    - name: Show EL7 package removal results
+      debug:
+        var: remove_el7.results
+
+    ####################################################################
+    # Remove Leapp packages
+    ####################################################################
+
+    - name: Remove Leapp packages
+      dnf:
+        name:
+          - leapp-pp
+          - leapp-deps-el8
+          - leapp-repository-deps-el8
+        state: absent
+
+    - name: Remove Leapp logs and temporary directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/log/leapp
+        - /root/tmp_leapp_py3
+        - /var/lib/leapp
+
+    ####################################################################
+    # Kernel Verification
+    ####################################################################
+
+    - name: Reinstall current kernel-core
+      command:
+        argv:
+          - dnf
+          - -y
+          - reinstall
+          - "kernel-core-{{ ansible_kernel }}"
+
+    - name: Verify EL7 kernels are removed from grub
+      shell: |
+        grubby --info=ALL | grep '\.el7' || echo "Old EL7 kernels are not present in bootloader."
+      register: grub_check
+      changed_when: false
+
+    - name: Display grub verification
+      debug:
+        var: grub_check.stdout_lines
+
+    ####################################################################
+    # Rescue Image Cleanup
+    ####################################################################
+
+    - name: Remove old rescue images
+      shell: |
+        rm -f /boot/vmlinuz-*rescue* /boot/initramfs-*rescue*
+
+    ####################################################################
+    # Rescue Image Regeneration
+    ####################################################################
+
+    - name: Regenerate rescue image
+      command:
+        argv:
+          - /usr/lib/kernel/install.d/51-dracut-rescue.install
+          - add
+          - "{{ ansible_kernel }}"
+          - /boot
+          - "/boot/vmlinuz-{{ ansible_kernel }}"
+
+    - name: List regenerated rescue images
+      shell: |
+        ls -1 /boot/vmlinuz-*rescue* /boot/initramfs-*rescue* 2>/dev/null || true
+      register: rescue_files
+      changed_when: false
+
+    - name: Display rescue images
+      debug:
+        var: rescue_files.stdout_lines
+
+    - name: Validate rescue initramfs
+      shell: |
+        lsinitrd /boot/initramfs-*rescue*.img | \
+        grep -qm1 "{{ ansible_kernel }}/kernel/" && echo OK || echo FAIL
+      register: rescue_validation
+      changed_when: false
+
+    - name: Display rescue validation
+      debug:
+        var: rescue_validation.stdout_lines
+
+    - name: Display rescue grub entry
+      shell: |
+        RESCUE=$(ls /boot/vmlinuz-*rescue* 2>/dev/null | head -1)
+    
+        if [ -n "$RESCUE" ]; then
+          grubby --info "$RESCUE"
+        else
+          echo "No rescue kernel found."
+        fi
+      register: grub_rescue
+      changed_when: false
+
+    - name: Show rescue grub information
+      debug:
+        var: grub_rescue.stdout_lines
+
+    ####################################################################
+    # Final Cleanup
+    ####################################################################
+
+    - name: Clean DNF cache
+      command: dnf clean all
+      changed_when: false
+
+    - name: Remove temporary EL7 package list
+      file:
+        path: /tmp/rhel7.txt
+        state: absent
+
+
+    ####################################################################
+    # Final Reboot
+    ####################################################################
+
+    - name: Final reboot after Rocky Linux cleanup
+      reboot:
+        msg: "Final reboot after Rocky Linux 8 post-migration cleanup"
+        connect_timeout: 5
+        reboot_timeout: 600
+        pre_reboot_delay: 10
+        post_reboot_delay: 30
+
+    - meta: reset_connection
+    
+    - name: Gather facts after reboot
+      setup:
+
+
+    ####################################################################
+    # Final Validation
+    ####################################################################
+    
+    - name: Verify operating system
+      command:
+        argv:
+          - cat
+          - /etc/os-release
+      register: os_release
+      changed_when: false
+    
+    - name: Display operating system information
+      debug:
+        var: os_release.stdout_lines
+    
+    - name: Verify running kernel
+      command:
+        argv:
+          - uname
+          - -r
+      register: kernel_version
+      changed_when: false
+    
+    - name: Display running kernel
+      debug:
+        var: kernel_version.stdout
+    
+    - name: Verify remaining EL7 packages
+      shell: |
+        rpm -qa | \
+        grep '\.el7' | \
+        grep -vE '^(gpg-pubkey|katello-ca-consumer|libmoduled)' || true
+      register: remaining_el7
+      changed_when: false
+    
+    - name: Display remaining EL7 packages
+      debug:
+        var: remaining_el7.stdout_lines
+    
+    - name: Verify remaining EL7 kernel directories
+      shell: |
+        ls -d /lib/modules/*.el7* 2>/dev/null || true
+      register: remaining_kernel_dirs
+      changed_when: false
+    
+    - name: Display remaining EL7 kernel directories
+      debug:
+        var: remaining_kernel_dirs.stdout_lines
+    
+    - name: Verify grub entries
+      shell: |
+        grubby --info=ALL | grep '\.el7' || true
+      register: grub_verify
+      changed_when: false
+    
+    - name: Display grub verification
+      debug:
+        var: grub_verify.stdout_lines
+    
+    - name: Verify rescue image
+      shell: |
+        ls /boot/*rescue* 2>/dev/null || true
+      register: rescue_verify
+      changed_when: false
+    
+    - name: Display rescue image
+      debug:
+        var: rescue_verify.stdout_lines
+    
+    - name: Display cleanup summary
+      debug:
+        msg:
+          - "Operating System : {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Kernel           : {{ ansible_kernel }}"
+          - "EL7 Packages     : {{ remaining_el7.stdout_lines | length }}"
+          - "EL7 Kernels      : {{ remaining_kernel_dirs.stdout_lines | length }}"
+          - "EL7 Grub Entries : {{ grub_verify.stdout_lines | length }}"
+
+    - name: Fail if EL7 artifacts still exist
+      fail:
+        msg: |
+          Post-migration cleanup is incomplete.
+    
+          Remaining EL7 packages:
+          {{ remaining_el7.stdout | default('None') }}
+    
+          Remaining EL7 kernel directories:
+          {{ remaining_kernel_dirs.stdout | default('None') }}
+    
+          Remaining EL7 grub entries:
+          {{ grub_verify.stdout | default('None') }}
+      when: >
+        remaining_el7.stdout != "" or
+        remaining_kernel_dirs.stdout != "" or
+        grub_verify.stdout != ""
