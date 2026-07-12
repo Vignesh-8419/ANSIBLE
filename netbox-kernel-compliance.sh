@@ -288,7 +288,7 @@ elif echo "$OS_RELEASE" | grep -qi "release 9"; then
         "pxe-rockyos-context"
         "repo-config-context"
         "vmware-awx-context"
-        "rocky-patch-context"
+        "rocky9-patch-context"
     )
 
 else
