@@ -1,0 +1,161 @@
+---
+- name: Leapp Preupgrade Fixes
+  hosts: >-
+    {{
+      target_hosts
+      | split(',')
+      | map('trim')
+      | reject('equalto', '')
+      | map('regex_replace', '$', '.vgs.com')
+      | join(',')
+    }}
+  become: yes
+  become_method: sudo
+  become_user: root
+  gather_facts: false
+  serial: 1
+
+  tasks:
+
+    ###########################################################################
+    # Remove exclude from dnf.conf
+    ###########################################################################
+
+    - name: Remove exclude entries from /etc/dnf/dnf.conf
+      lineinfile:
+        path: /etc/dnf/dnf.conf
+        regexp: '^exclude='
+        state: absent
+        backup: yes
+      ignore_errors: yes
+
+    ###########################################################################
+    # Find repository files
+    ###########################################################################
+
+    - name: Find yum repository files
+      find:
+        paths: /etc/yum.repos.d
+        patterns: "*.repo"
+        file_type: file
+      register: repo_files
+
+    - name: Remove exclude entries from repository files
+      lineinfile:
+        path: "{{ item.path }}"
+        regexp: '^exclude='
+        state: absent
+        backup: yes
+      loop: "{{ repo_files.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    ###########################################################################
+    # Discover network configuration files
+    ###########################################################################
+
+    - name: Find network configuration files
+      find:
+        paths: /etc/sysconfig/network-scripts
+        patterns: "ifcfg-*"
+        file_type: file
+      register: ifcfg_files
+
+    ###########################################################################
+    # Process Ethernet interfaces only
+    ###########################################################################
+
+    - name: Configure supported Ethernet interfaces
+      block:
+
+        - name: Read interface configuration
+          slurp:
+            src: "{{ item.path }}"
+          register: ifcfg_content
+
+        - name: Determine interface name
+          set_fact:
+            interface_name: >-
+              {{
+                (
+                  ifcfg_content.content
+                  | b64decode
+                  | regex_search('^DEVICE="?([^"\n]+)', '\1', multiline=True)
+                  | default([item.path | basename | regex_replace('^ifcfg-', '')], true)
+                ) | first
+              }}
+
+        - name: Ensure TYPE=Ethernet
+          lineinfile:
+            path: "{{ item.path }}"
+            regexp: '^TYPE='
+            line: "TYPE=Ethernet"
+            insertafter: EOF
+            backup: yes
+          notify: Restart NetworkManager
+
+        - name: Ensure DEVICE
+          lineinfile:
+            path: "{{ item.path }}"
+            regexp: '^DEVICE='
+            line: "DEVICE={{ interface_name }}"
+            insertafter: EOF
+          notify: Restart NetworkManager
+
+        - name: Ensure NAME
+          lineinfile:
+            path: "{{ item.path }}"
+            regexp: '^NAME='
+            line: "NAME={{ interface_name }}"
+            insertafter: EOF
+          notify: Restart NetworkManager
+
+        - name: Ensure ONBOOT=yes
+          lineinfile:
+            path: "{{ item.path }}"
+            regexp: '^ONBOOT='
+            line: "ONBOOT=yes"
+            insertafter: EOF
+          notify: Restart NetworkManager
+
+      loop: "{{ ifcfg_files.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+      when:
+        - item.path | basename != "ifcfg-lo"
+        - item.path | basename is not match('ifcfg-(bond|br|bridge|team|team-port|vlan|virbr|docker|veth).*')
+
+    ###########################################################################
+    # Clean DNF Cache
+    ###########################################################################
+
+    - name: Clean DNF cache
+      command: dnf clean all
+      changed_when: false
+
+    - name: Rebuild DNF cache
+      command: dnf makecache
+      changed_when: false
+
+    ###########################################################################
+    # Display summary
+    ###########################################################################
+
+    - name: Display completion message
+      debug:
+        msg:
+          - "==============================================="
+          - "Leapp preupgrade fixes completed successfully."
+          - "Removed DNF/YUM exclude filters."
+          - "Validated Ethernet ifcfg files."
+          - "DNF cache rebuilt."
+          - "Run: leapp preupgrade"
+          - "==============================================="
+
+  handlers:
+
+    - name: Restart NetworkManager
+      service:
+        name: NetworkManager
+        state: restarted
