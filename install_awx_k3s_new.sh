@@ -50,6 +50,7 @@ echo -e "${GREEN}✅ Background:${NC} Verified host is running cgroup v2, requir
 
 echo 'export PATH=$PATH:/usr/local/bin' > /etc/profile.d/localbin.sh
 chmod +x /etc/profile.d/localbin.sh
+source /etc/profile.d/localbin.sh
 
 # -----------------------------
 # 2. Install prerequisites
