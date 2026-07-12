@@ -153,6 +153,26 @@ else
     fi
 fi
 
+info "Checking Rocky Linux 9.2 Installation Media..."
+
+if $HAMMER medium info --name "Rocky 9.2 Remote" >/dev/null 2>&1; then
+    skip "Rocky 9.2 Remote already exists."
+else
+    info "Creating Rocky 9.2 Remote..."
+
+    $HAMMER medium create \
+        --name "Rocky 9.2 Remote" \
+        --path "http://192.168.253.136/repo/rocky9.2/" \
+        --os-family "Redhat"
+
+    if [ $? -eq 0 ]; then
+        ok "Rocky 9.2 Remote created."
+    else
+        error "Failed to create Rocky 9.2 Remote."
+        record_failure "Rocky 9.2 Remote"
+    fi
+fi
+
 ###############################################################################
 # Verification
 ###############################################################################
@@ -242,7 +262,7 @@ else
     $HAMMER os create \
         --name "RockyLinux" \
         --major 9 \
-        --minor 6 \
+        --minor 8 \
         --family Redhat \
         --architectures x86_64 \
         --partition-tables "Kickstart default" \
@@ -253,6 +273,36 @@ else
     else
         error "RockyLinux 9.8 creation failed."
         record_failure "RockyLinux 9.8"
+    fi
+fi
+
+
+
+###############################################################################
+# Rocky Linux 9.2
+###############################################################################
+
+info "Checking Rocky Linux 9.2..."
+
+if $HAMMER os info --title "RockyLinux 9.2" >/dev/null 2>&1; then
+    skip "RockyLinux 9.2 already exists."
+else
+    info "Creating RockyLinux 9.2..."
+
+    $HAMMER os create \
+        --name "RockyLinux" \
+        --major 9 \
+        --minor 2 \
+        --family Redhat \
+        --architectures x86_64 \
+        --partition-tables "Kickstart default" \
+        --media "Rocky 9.2 Remote"
+
+    if [ $? -eq 0 ]; then
+        ok "RockyLinux 9.2 created."
+    else
+        error "RockyLinux 9.2 creation failed."
+        record_failure "RockyLinux 9.2"
     fi
 fi
 
@@ -267,6 +317,7 @@ $HAMMER os list
 echo
 ok "Operating Systems configured successfully."
 echo
+
 
 ###############################################################################
 # 3. Create PXEGrub2 Provisioning Template - Rocky Linux 8.10
@@ -311,7 +362,7 @@ echo
 
 cat > /tmp/rocky-9-pxegrub2.erb <<'EOF'
 <%#
-name: PXEGrub2 Rocky9 UEFI Static Kickstart
+name: PXEGrub2 Rocky9.8 UEFI Static Kickstart
 kind: PXEGrub2
 oses:
 - RockyLinux
@@ -320,7 +371,7 @@ oses:
 set default=0
 set timeout=5
 
-menuentry 'Install Rocky Linux 9 via Kickstart' {
+menuentry 'Install Rocky Linux 9.8 (UEFI)' {
 
     linuxefi /rocky9/vmlinuz \
     ip=dhcp \
@@ -336,6 +387,33 @@ EOF
 ok "Template file generated."
 echo
 
+
+cat > /tmp/rocky92-pxegrub2.erb <<'EOF'
+<%#
+name: PXEGrub2 Rocky9.2 UEFI Static Kickstart
+kind: PXEGrub2
+oses:
+- RockyLinux
+%>
+
+set default=0
+set timeout=5
+
+menuentry 'Install Rocky Linux 9.8 via Kickstart (UEFI)' {
+
+    linuxefi /rocky92/vmlinuz \
+    ip=dhcp \
+    inst.repo=http://192.168.253.136/repo/rocky9.2/ \
+    inst.ks=http://192.168.253.136/repo/rocky9.2/kickstart/rocky92.cfg \
+    inst.text \
+    hostname=<%= @host.name %>
+
+    initrdefi /rocky92/initrd.img
+}
+EOF
+
+ok "Template file generated."
+echo
 
 ###############################################################################
 # Import Template
@@ -372,19 +450,19 @@ echo
 # Import Rocky Linux 9 PXE Template
 ###############################################################################
 
-info "Checking Rocky 9 PXE Template..."
+info "Checking Rocky 9.8 PXE Template..."
 
 if $HAMMER template info \
-    --name "PXEGrub2 Rocky9 UEFI Static Kickstart" >/dev/null 2>&1; then
+    --name "PXEGrub2 Rocky9.8 UEFI Static Kickstart" >/dev/null 2>&1; then
 
-    skip "Rocky 9 Template already exists."
+    skip "Rocky 9.8 Template already exists."
 
 else
 
-    info "Importing Rocky 9 template..."
+    info "Importing Rocky 9.8 template..."
 
     $HAMMER template create \
-        --name "PXEGrub2 Rocky9 UEFI Static Kickstart" \
+        --name "PXEGrub2 Rocky9.8 UEFI Static Kickstart" \
         --type PXEGrub2 \
         --file /tmp/rocky-9-pxegrub2.erb
 
@@ -392,7 +470,39 @@ else
         ok "Template imported."
     else
         error "Template import failed."
-        record_failure "PXEGrub2 Rocky9 UEFI Static Kickstart"
+        record_failure "PXEGrub2 Rocky9.8 UEFI Static Kickstart"
+    fi
+
+fi
+
+echo
+
+
+###############################################################################
+# Import Rocky Linux 9.2 PXE Template
+###############################################################################
+
+info "Checking Rocky 9.2 PXE Template..."
+
+if $HAMMER template info \
+    --name "PXEGrub2 Rocky9.2 UEFI Static Kickstart" >/dev/null 2>&1; then
+
+    skip "Rocky 9.2 Template already exists."
+
+else
+
+    info "Importing Rocky 9.2 template..."
+
+    $HAMMER template create \
+        --name "PXEGrub2 Rocky9.2 UEFI Static Kickstart" \
+        --type PXEGrub2 \
+        --file /tmp/rocky92-pxegrub2.erb
+
+    if [ $? -eq 0 ]; then
+        ok "Template imported."
+    else
+        error "Template import failed."
+        record_failure "PXEGrub2 Rocky9.2 UEFI Static Kickstart"
     fi
 
 fi
@@ -434,21 +544,21 @@ echo
 # Assign Rocky Linux 9 Template
 ###############################################################################
 
-info "Checking Rocky Linux 9 template assignment..."
+info "Checking Rocky Linux 9.8 template assignment..."
 
 if $HAMMER os info \
     --title "RockyLinux 9.8" | \
-    grep -q "PXEGrub2 Rocky9 UEFI Static Kickstart"; then
+    grep -q "PXEGrub2 Rocky9.8 UEFI Static Kickstart"; then
 
-    skip "Rocky 9 template already assigned."
+    skip "Rocky 9.8 template already assigned."
 
 else
 
-    info "Assigning Rocky 9 template..."
+    info "Assigning Rocky 9.8 template..."
 
     $HAMMER os add-provisioning-template \
         --title "RockyLinux 9.8" \
-        --provisioning-template "PXEGrub2 Rocky9 UEFI Static Kickstart"
+        --provisioning-template "PXEGrub2 Rocky9.8 UEFI Static Kickstart"
 
     if [ $? -eq 0 ]; then
         ok "Template assigned."
@@ -570,6 +680,37 @@ else
     else
         error "Template assignment failed."
         record_failure "CentOSLinux 7 Template Assignment"
+    fi
+
+fi
+
+echo
+
+###############################################################################
+# Assign Rocky Linux 9.2 Template
+###############################################################################
+
+info "Checking Rocky Linux 9.2 template assignment..."
+
+if $HAMMER os info \
+    --title "RockyLinux 9.2" | \
+    grep -q "PXEGrub2 Rocky9.2 UEFI Static Kickstart"; then
+
+    skip "Rocky 9.2 template already assigned."
+
+else
+
+    info "Assigning Rocky 9.2 template..."
+
+    $HAMMER os add-provisioning-template \
+        --title "RockyLinux 9.2" \
+        --provisioning-template "PXEGrub2 Rocky9.2 UEFI Static Kickstart"
+
+    if [ $? -eq 0 ]; then
+        ok "Rocky 9.2 template assigned."
+    else
+        error "Template assignment failed."
+        record_failure "RockyLinux 9.2 Template Assignment"
     fi
 
 fi
@@ -733,7 +874,17 @@ awk -F'|' '/RockyLinux 9.8/ {gsub(/ /,"",$1); print $1}'
 
 ROCKY9_TEMPLATE_ID=$(
 $HAMMER template list | \
-awk -F'|' '/PXEGrub2 Rocky9 UEFI Static Kickstart/ {gsub(/ /,"",$1); print $1}'
+awk -F'|' '/PXEGrub2 Rocky9.8 UEFI Static Kickstart/ {gsub(/ /,"",$1); print $1}'
+)
+
+ROCKY92_OS_ID=$(
+$HAMMER os list | \
+awk -F'|' '/RockyLinux 9.2/ {gsub(/ /,"",$1); print $1}'
+)
+
+ROCKY92_TEMPLATE_ID=$(
+$HAMMER template list | \
+awk -F'|' '/PXEGrub2 Rocky9.2 UEFI Static Kickstart/ {gsub(/ /,"",$1); print $1}'
 )
 
 ###############################################################################
@@ -753,6 +904,11 @@ fi
 if [[ -z "$ROCKY9_OS_ID" || -z "$ROCKY9_TEMPLATE_ID" ]]; then
     error "Unable to locate Rocky 9 OS or Template."
     record_failure "Rocky 9 OS or Template Missing"
+fi
+
+if [[ -z "$ROCKY92_OS_ID" || -z "$ROCKY92_TEMPLATE_ID" ]]; then
+    error "Unable to locate Rocky 9.2 OS or Template."
+    record_failure "Rocky 9.2 OS or Template Missing"
 fi
 
 ###############################################################################
@@ -828,7 +984,7 @@ info "Checking Rocky Linux 9 default template..."
 
 if $HAMMER os info --id "$ROCKY9_OS_ID" | \
     awk '/Default templates:/,/Architectures:/' | \
-    grep -q "PXEGrub2 Rocky9 UEFI Static Kickstart"; then
+    grep -q "PXEGrub2 Rocky9.8 UEFI Static Kickstart"; then
 
     skip "Rocky 9 default template already configured."
 
@@ -857,6 +1013,39 @@ echo
 echo
 
 ###############################################################################
+# Rocky Linux 9.2 Default Template
+###############################################################################
+
+info "Checking Rocky Linux 9.2 default template..."
+
+if $HAMMER os info --id "$ROCKY92_OS_ID" | \
+    awk '/Default templates:/,/Architectures:/' | \
+    grep -q "PXEGrub2 Rocky9.2 UEFI Static Kickstart"; then
+
+    skip "Rocky 9.2 default template already configured."
+
+else
+
+    info "Setting Rocky 9.2 default template..."
+
+    $HAMMER os set-default-template \
+        --id "$ROCKY92_OS_ID" \
+        --provisioning-template-id "$ROCKY92_TEMPLATE_ID" \
+        >/dev/null 2>&1
+
+    if [ $? -eq 0 ]; then
+        ok "Rocky 9.2 default template configured."
+    else
+        error "Failed to configure Rocky 9.2 default template."
+        record_failure "Rocky 9.2 Default Template"
+    fi
+
+fi
+
+echo
+
+
+###############################################################################
 # Verify Default Templates
 ###############################################################################
 
@@ -876,6 +1065,12 @@ $HAMMER os info --title "RockyLinux 9.8" | \
     awk '/Default templates:/,/Architectures:/'
 
 echo
+
+$HAMMER os info --title "RockyLinux 9.2" | \
+    awk '/Default templates:/,/Architectures:/'
+
+echo
+
 
 ###############################################################################
 # Verification
