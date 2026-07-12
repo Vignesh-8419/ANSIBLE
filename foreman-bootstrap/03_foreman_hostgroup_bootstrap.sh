@@ -176,7 +176,7 @@ else
         --name "VGS HOSTS ROCKY 9.8" \
         --architecture x86_64 \
         --operatingsystem "RockyLinux 9.8" \
-        --medium "Rocky 9 Remote" \
+        --medium "Rocky 9.8 Remote" \
         --partition-table "Kickstart default" \
         --pxe-loader "Grub2 UEFI" \
         --domain "vgs.com" \
