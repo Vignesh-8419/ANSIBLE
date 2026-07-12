@@ -961,207 +961,6 @@ print(f"ROCKY9-VM-TEMPLATE {'created' if created else 'updated'}")
 EOF
 
 # --------------------------------------------------------------
-# Rocky-8 Post Migration
-# --------------------------------------------------------------
-
-echo
-echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
-echo -e "${WHITE} Creating Rocky-8 Post Migration${NC}"
-echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
-
-awx-manage shell <<'EOF'
-from awx.main.models import Inventory, Project, JobTemplate, Credential
-
-project = Project.objects.get(name="Inventory-Git-Repo")
-inventory = Inventory.objects.get(name="centos-07-servers")
-credential = Credential.objects.get(name="Linux Admin Credential")
-
-jt, created = JobTemplate.objects.get_or_create(
-    name="Rocky-8 Post Migration",
-    defaults={
-        "project": project,
-        "inventory": inventory,
-        "playbook": "Rocky8_Post_Migration_Cleanup.yml",
-        "ask_inventory_on_launch": False,
-        "ask_limit_on_launch": False,
-        "survey_enabled": True,
-    }
-)
-
-jt.project = project
-jt.inventory = inventory
-jt.playbook = "Rocky8_Post_Migration_Cleanup.yml"
-
-# Inventory is fixed
-jt.ask_inventory_on_launch = False
-
-# Do not use Limit
-jt.ask_limit_on_launch = False
-
-# Enable Survey
-jt.survey_enabled = True
-
-jt.survey_spec = {
-    "name": "Target Host Selection",
-    "description": "Enter one or more CentOS 7 hosts (without .vgs.com)",
-    "spec": [
-        {
-            "type": "text",
-            "question_name": "Target Hosts",
-            "question_description": "Examples: cent-07-01 or cent-07-01,cent-07-02 or cent-07-0*",
-            "variable": "target_hosts",
-            "required": True,
-            "default": "cent-07-0*",
-            "min": 1,
-            "max": 1024
-        }
-    ]
-}
-
-jt.save()
-
-# Attach Linux Admin Credential
-jt.credentials.clear()
-jt.credentials.add(credential)
-
-print(f"Rocky-8 Post Migration {'created' if created else 'updated'}")
-EOF
-
-# --------------------------------------------------------------
-# Leapp Preupgrade Fixes
-# --------------------------------------------------------------
-
-echo
-echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
-echo -e "${WHITE} Creating Leapp Preupgrade Fixes${NC}"
-echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
-
-awx-manage shell <<'EOF'
-from awx.main.models import Inventory, Project, JobTemplate, Credential
-
-project = Project.objects.get(name="Inventory-Git-Repo")
-inventory = Inventory.objects.get(name="centos-07-servers")
-credential = Credential.objects.get(name="Linux Admin Credential")
-
-jt, created = JobTemplate.objects.get_or_create(
-    name="Leapp Preupgrade Fixes",
-    defaults={
-        "project": project,
-        "inventory": inventory,
-        "playbook": "ROCKY8TOROCKY9/Leapp_Preupgrade_Fixes.yml",
-        "ask_inventory_on_launch": False,
-        "ask_limit_on_launch": False,
-        "survey_enabled": True,
-    }
-)
-
-jt.project = project
-jt.inventory = inventory
-jt.playbook = "ROCKY8TOROCKY9/Leapp_Preupgrade_Fixes.yml"
-
-# Inventory is fixed
-jt.ask_inventory_on_launch = False
-
-# Do not use Limit
-jt.ask_limit_on_launch = False
-
-# Enable Survey
-jt.survey_enabled = True
-
-jt.survey_spec = {
-    "name": "Target Host Selection",
-    "description": "Enter one or more Rocky Linux 8 hosts (without .vgs.com)",
-    "spec": [
-        {
-            "type": "text",
-            "question_name": "Target Hosts",
-            "question_description": "Examples: rocky-08-01 or rocky-08-01,rocky-08-02 or rocky-08-*",
-            "variable": "target_hosts",
-            "required": True,
-            "default": "rocky-08-*",
-            "min": 1,
-            "max": 1024
-        }
-    ]
-}
-
-jt.save()
-
-# Attach Linux Admin Credential
-jt.credentials.clear()
-jt.credentials.add(credential)
-
-print(f"Leapp Preupgrade Fixes {'created' if created else 'updated'}")
-EOF
-
-# --------------------------------------------------------------
-# REPAIR-RESCUE
-# --------------------------------------------------------------
-
-echo
-echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
-echo -e "${WHITE} Creating REPAIR-RESCUE${NC}"
-echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
-
-awx-manage shell <<'EOF'
-from awx.main.models import Inventory, Project, JobTemplate, Credential
-
-project = Project.objects.get(name="Inventory-Git-Repo")
-inventory = Inventory.objects.get(name="rocky-8-servers")
-credential = Credential.objects.get(name="Linux Admin Credential")
-
-jt, created = JobTemplate.objects.get_or_create(
-    name="REPAIR-RESCUE",
-    defaults={
-        "project": project,
-        "inventory": inventory,
-        "playbook": "03_repair_rescue.yml",
-        "ask_inventory_on_launch": False,
-        "ask_limit_on_launch": False,
-        "survey_enabled": True,
-    }
-)
-
-jt.project = project
-jt.inventory = inventory
-jt.playbook = "03_repair_rescue.yml"
-
-# Inventory
-jt.ask_inventory_on_launch = False
-
-# Disable Limit prompt
-jt.ask_limit_on_launch = False
-
-# Enable Survey
-jt.survey_enabled = True
-
-jt.survey_spec = {
-    "name": "Target Host Selection",
-    "description": "Enter one or more Rocky Linux 8 hosts (without .vgs.com)",
-    "spec": [
-        {
-            "type": "text",
-            "question_name": "Target Hosts",
-            "question_description": "Examples: rocky-08-01 or rocky-08-01,rocky-08-02 or rocky-08-0*",
-            "variable": "target_hosts",
-            "required": True,
-            "default": "rocky-08-0*",
-            "min": 1,
-            "max": 1024
-        }
-    ]
-}
-
-jt.save()
-
-# Attach Linux Admin Credential
-jt.credentials.clear()
-jt.credentials.add(credential)
-
-print(f"REPAIR-RESCUE {'created' if created else 'updated'}")
-EOF
-
-# --------------------------------------------------------------
 # Local_DNS
 # --------------------------------------------------------------
 
@@ -1716,6 +1515,207 @@ for name in templates:
         print(f"✗ {name} NOT FOUND")
 EOF
 
+# --------------------------------------------------------------
+# Rocky-8 Post Migration
+# --------------------------------------------------------------
+
+echo
+echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
+echo -e "${WHITE} Creating Rocky-8 Post Migration${NC}"
+echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
+
+awx-manage shell <<'EOF'
+from awx.main.models import Inventory, Project, JobTemplate, Credential
+
+project = Project.objects.get(name="Inventory-Git-Repo")
+inventory = Inventory.objects.get(name="centos-07-servers")
+credential = Credential.objects.get(name="Linux Admin Credential")
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="Rocky-8 Post Migration",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "Rocky8_Post_Migration_Cleanup.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
+    }
+)
+
+jt.project = project
+jt.inventory = inventory
+jt.playbook = "Rocky8_Post_Migration_Cleanup.yml"
+
+# Inventory is fixed
+jt.ask_inventory_on_launch = False
+
+# Do not use Limit
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more CentOS 7 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: cent-07-01 or cent-07-01,cent-07-02 or cent-07-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "cent-07-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.save()
+
+# Attach Linux Admin Credential
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+print(f"Rocky-8 Post Migration {'created' if created else 'updated'}")
+EOF
+
+# --------------------------------------------------------------
+# Leapp Preupgrade Fixes
+# --------------------------------------------------------------
+
+echo
+echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
+echo -e "${WHITE} Creating Leapp Preupgrade Fixes${NC}"
+echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
+
+awx-manage shell <<'EOF'
+from awx.main.models import Inventory, Project, JobTemplate, Credential
+
+project = Project.objects.get(name="Inventory-Git-Repo")
+inventory = Inventory.objects.get(name="centos-07-servers")
+credential = Credential.objects.get(name="Linux Admin Credential")
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="Leapp Preupgrade Fixes",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "ROCKY8TOROCKY9/Leapp_Preupgrade_Fixes.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
+    }
+)
+
+jt.project = project
+jt.inventory = inventory
+jt.playbook = "ROCKY8TOROCKY9/Leapp_Preupgrade_Fixes.yml"
+
+# Inventory is fixed
+jt.ask_inventory_on_launch = False
+
+# Do not use Limit
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more Rocky Linux 8 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: rocky-08-01 or rocky-08-01,rocky-08-02 or rocky-08-*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-08-*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.save()
+
+# Attach Linux Admin Credential
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+print(f"Leapp Preupgrade Fixes {'created' if created else 'updated'}")
+EOF
+
+# --------------------------------------------------------------
+# REPAIR-RESCUE
+# --------------------------------------------------------------
+
+echo
+echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
+echo -e "${WHITE} Creating REPAIR-RESCUE${NC}"
+echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
+
+awx-manage shell <<'EOF'
+from awx.main.models import Inventory, Project, JobTemplate, Credential
+
+project = Project.objects.get(name="Inventory-Git-Repo")
+inventory = Inventory.objects.get(name="rocky-8-servers")
+credential = Credential.objects.get(name="Linux Admin Credential")
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="REPAIR-RESCUE",
+    defaults={
+        "project": project,
+        "inventory": inventory,
+        "playbook": "03_repair_rescue.yml",
+        "ask_inventory_on_launch": False,
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
+    }
+)
+
+jt.project = project
+jt.inventory = inventory
+jt.playbook = "03_repair_rescue.yml"
+
+# Inventory
+jt.ask_inventory_on_launch = False
+
+# Disable Limit prompt
+jt.ask_limit_on_launch = False
+
+# Enable Survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more Rocky Linux 8 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: rocky-08-01 or rocky-08-01,rocky-08-02 or rocky-08-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-08-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.save()
+
+# Attach Linux Admin Credential
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+print(f"REPAIR-RESCUE {'created' if created else 'updated'}")
+EOF
+
 # ==============================================================================
 # Workflow Templates
 # ==============================================================================
@@ -2228,6 +2228,9 @@ echo " ✓ Offline_Patching_el9 "
 echo " ✓ Disable_SELinux_el7 "
 echo " ✓ Disable_SELinux_el8 "
 echo " ✓ Disable_SELinux_el9 "
+echo " ✓ Rocky-8 Post Migration "
+echo " ✓ Leapp Preupgrade Fixes "
+echo " ✓ REPAIR-RESCUE "
 echo " ✓ CENTOS-VM-TEMPLATE-WF "
 echo " ✓ ROCKYOS-VM-TEMPLATE-WF "
 echo " ✓ ROCKY9-VM-TEMPLATE-WF "
