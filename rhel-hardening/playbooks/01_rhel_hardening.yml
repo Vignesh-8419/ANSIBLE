@@ -62,6 +62,17 @@
         ansible_distribution_major_version not in ['7','8','9']
 
 ###########################################################################
+# DETECT KUBERNETES / K3S
+###########################################################################
+
+    - name: Detect k3s installation
+      stat:
+        path: /etc/rancher/k3s/k3s.yaml
+      register: k3s_detected
+
+
+
+###########################################################################
 # BACKUP
 ###########################################################################
 
@@ -472,94 +483,92 @@
           * hard core 0
           * soft core 0
 
-    ###########################################################################
-    # KERNEL HARDENING (SYSCTL)
-    ###########################################################################
+###########################################################################
+# NETWORK HARDENING (NON-KUBERNETES)
+###########################################################################
 
-    - name: Disable IP Forwarding
-      sysctl:
-        name: net.ipv4.ip_forward
-        value: "0"
-        state: present
-        reload: yes
+    - block:
 
-    - name: Disable IPv6 Forwarding
-      sysctl:
-        name: net.ipv6.conf.all.forwarding
-        value: "0"
-        state: present
-        reload: yes
-      ignore_errors: yes
+        - name: Disable IP Forwarding
+          sysctl:
+            name: net.ipv4.ip_forward
+            value: "0"
+            state: present
+            reload: yes
 
-    - name: Disable Source Routing (All)
-      sysctl:
-        name: net.ipv4.conf.all.accept_source_route
-        value: "0"
-        state: present
-        reload: yes
+        - name: Disable IPv6 Forwarding
+          sysctl:
+            name: net.ipv6.conf.all.forwarding
+            value: "0"
+            state: present
+            reload: yes
+          ignore_errors: yes
 
-    - name: Disable Source Routing (Default)
-      sysctl:
-        name: net.ipv4.conf.default.accept_source_route
-        value: "0"
-        state: present
-        reload: yes
+        - name: Disable Source Routing (All)
+          sysctl:
+            name: net.ipv4.conf.all.accept_source_route
+            value: "0"
+            state: present
+            reload: yes
 
-    - name: Disable ICMP Redirects (All)
-      sysctl:
-        name: net.ipv4.conf.all.accept_redirects
-        value: "0"
-        state: present
-        reload: yes
+        - name: Disable Source Routing (Default)
+          sysctl:
+            name: net.ipv4.conf.default.accept_source_route
+            value: "0"
+            state: present
+            reload: yes
 
-    - name: Disable ICMP Redirects (Default)
-      sysctl:
-        name: net.ipv4.conf.default.accept_redirects
-        value: "0"
-        state: present
-        reload: yes
+        - name: Disable ICMP Redirects (All)
+          sysctl:
+            name: net.ipv4.conf.all.accept_redirects
+            value: "0"
+            state: present
+            reload: yes
 
-    - name: Disable Secure Redirects
-      sysctl:
-        name: net.ipv4.conf.all.secure_redirects
-        value: "0"
-        state: present
-        reload: yes
+        - name: Disable ICMP Redirects (Default)
+          sysctl:
+            name: net.ipv4.conf.default.accept_redirects
+            value: "0"
+            state: present
+            reload: yes
 
-    - name: Disable Send Redirects
-      sysctl:
-        name: net.ipv4.conf.all.send_redirects
-        value: "0"
-        state: present
-        reload: yes
+        - name: Disable Secure Redirects
+          sysctl:
+            name: net.ipv4.conf.all.secure_redirects
+            value: "0"
+            state: present
+            reload: yes
 
-    - name: Enable Reverse Path Filtering
-      sysctl:
-        name: net.ipv4.conf.all.rp_filter
-        value: "1"
-        state: present
-        reload: yes
+        - name: Disable Send Redirects
+          sysctl:
+            name: net.ipv4.conf.all.send_redirects
+            value: "0"
+            state: present
+            reload: yes
 
-    - name: Ignore Bogus ICMP
-      sysctl:
-        name: net.ipv4.icmp_ignore_bogus_error_responses
-        value: "1"
-        state: present
-        reload: yes
+        - name: Enable Reverse Path Filtering
+          sysctl:
+            name: net.ipv4.conf.all.rp_filter
+            value: "1"
+            state: present
+            reload: yes
 
-    - name: Enable TCP SYN Cookies
-      sysctl:
-        name: net.ipv4.tcp_syncookies
-        value: "1"
-        state: present
-        reload: yes
+      when: not k3s_detected.stat.exists
 
-    - name: Enable ASLR
-      sysctl:
-        name: kernel.randomize_va_space
-        value: "2"
-        state: present
-        reload: yes
+###########################################################################
+# KUBERNETES NETWORKING
+###########################################################################
+
+    - block:
+
+        - name: Enable IP Forwarding
+          sysctl:
+            name: net.ipv4.ip_forward
+            value: "1"
+            state: present
+            reload: yes
+
+      when: k3s_detected.stat.exists  
 
 ###########################################################################
 # FIREWALL
@@ -570,6 +579,7 @@
         name: firewalld
         state: present
       ignore_errors: yes
+      when: not k3s_detected.stat.exists
 
     - name: Enable firewalld
       service:
@@ -577,6 +587,7 @@
         enabled: yes
         state: started
       ignore_errors: yes
+      when: not k3s_detected.stat.exists
 
     - name: Allow SSH
       firewalld:
@@ -871,6 +882,7 @@
       command: sysctl --system
       changed_when: false
       failed_when: false
+      when: not k3s_detected.stat.exists
 
 ###########################################################################
 # VERIFY SERVICES
