@@ -1,6 +1,6 @@
 organization: "Default_Organization"
 
-activation_key: "rocky9-prod-key"
+activation_key: "rocky9.8-prod-key"
 
 katello_ca_url: "http://rocky-08-01.vgs.com/pub/katello-ca-consumer-latest.noarch.rpm"
 
