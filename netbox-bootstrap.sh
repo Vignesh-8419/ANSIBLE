@@ -683,7 +683,7 @@ JSON=$(cat <<'EOF'
     "tags": ["rocky9-patch-context"],
     "data": {
         "organization": "Default_Organization",
-        "activation_key": "rocky9-prod-key",
+        "activation_key": "rocky9.8-prod-key",
         "katello_ca_url": "http://cent-07-01.vgs.com/pub/katello-ca-consumer-latest.noarch.rpm",
         "repo_baseos": "http://192.168.253.136/repo/rocky9/BaseOS",
         "repo_appstream": "http://192.168.253.136/repo/rocky9/AppStream",
