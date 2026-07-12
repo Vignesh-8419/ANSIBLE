@@ -1595,7 +1595,7 @@ awx-manage shell <<'EOF'
 from awx.main.models import Inventory, Project, JobTemplate, Credential
 
 project = Project.objects.get(name="Inventory-Git-Repo")
-inventory = Inventory.objects.get(name="centos-07-servers")
+inventory = Inventory.objects.get(name="rocky-8-servers")
 credential = Credential.objects.get(name="Linux Admin Credential")
 
 jt, created = JobTemplate.objects.get_or_create(
