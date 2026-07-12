@@ -48,6 +48,9 @@ if [ "$(stat -fc %T /sys/fs/cgroup/)" != "cgroup2fs" ]; then
 fi
 echo -e "${GREEN}✅ Background:${NC} Verified host is running cgroup v2, required for K3s."
 
+echo 'export PATH=$PATH:/usr/local/bin' > /etc/profile.d/localbin.sh
+chmod +x /etc/profile.d/localbin.sh
+
 # -----------------------------
 # 2. Install prerequisites
 # -----------------------------
