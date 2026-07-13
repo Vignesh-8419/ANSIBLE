@@ -166,3 +166,9 @@ chmod +x 01_foreman_pxe_bootstrap.sh \
          04-bootstrap-el7toel8.sh \
          05-bootstrap-el8toel9.sh
 ```
+
+```text
+curl -L -o get_foreman_ids.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/get_foreman_ids.sh?$(date +%s)" && \
+chmod +x get_foreman_ids.sh
+```
