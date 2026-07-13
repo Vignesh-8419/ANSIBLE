@@ -4,6 +4,9 @@
 # Supports CentOS 7, Rocky Linux 8.10, Rocky Linux 9.2 and Rocky Linux 9.8
 ###############################################################################
 
+#TARGET_VERSION=9.8 ./05-bootstrap-el8toel9.sh
+#TARGET_VERSION=9.2 ./05-bootstrap-el8toel9.sh
+
 set +e
 
 FAILED_STEPS=()
