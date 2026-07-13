@@ -46,44 +46,46 @@
     # 3 = Rocky Linux 9
     ###########################################################################
     
-    hostgroup: "{{ hostgroup | default('1', true) }}"
-    
     subnet_id: >-
       {{
         {
           '1': 1,
           '2': 2,
-          '3': 2
+          '3': 2,
+          '4': 2
         }[hostgroup | string]
       }}
-    
+
     hostgroup_id: >-
       {{
         {
           '1': 1,
           '2': 2,
-          '3': 3
+          '3': 5,
+          '4': 4
         }[hostgroup | string]
       }}
-    
+
     operatingsystem_id: >-
       {{
         {
           '1': 2,
           '2': 3,
-          '3': 5
+          '3': 7,
+          '4': 8
         }[hostgroup | string]
       }}
-    
+
     medium_id: >-
       {{
         {
           '1': 15,
           '2': 16,
-          '3': 17
+          '3': 18,
+          '4': 19
         }[hostgroup | string]
       }}
-  
+
     ptable_id: 126
   tasks:
 
