@@ -973,16 +973,26 @@ create_activation_key "$ACTIVATION_KEY" "$CONTENT_VIEW"
 
 header "Attaching Subscriptions"
 
+###############################################################################
+# Get Subscription IDs
+###############################################################################
+
 CENTOS_SUB_ID=$(
 $HAMMER subscription list \
-  --organization "Default Organization" |
-awk -F'|' '$3 ~ /CentOS 7/ {gsub(/ /,"",$1); print $1}'
+    --organization "Default Organization" |
+awk -F'|' '$3 ~ /CentOS 7/ {
+    gsub(/ /,"",$1)
+    print $1
+}'
 )
 
-ROCKY_SUB_ID=$(
+ROCKY8_SUB_ID=$(
 $HAMMER subscription list \
-  --organization "Default Organization" |
-awk -F'|' '$3 ~ /Rocky Linux 8/ {gsub(/ /,"",$1); print $1}'
+    --organization "Default Organization" |
+awk -F'|' '$3 ~ /Rocky Linux 8/ {
+    gsub(/ /,"",$1)
+    print $1
+}'
 )
 
 ROCKY9_SUB_ID=$(
@@ -998,77 +1008,66 @@ awk -F'|' -v product="$PRODUCT_NAME" '
 }'
 )
 
-info "Attaching CentOS 7 subscription..."
+###############################################################################
+# Function to Attach Subscription
+###############################################################################
 
-OUTPUT=$(
-$HAMMER activation-key add-subscription \
-    --organization "Default Organization" \
-    --name "centos7-prod-key" \
-    --subscription-id "$CENTOS_SUB_ID" 2>&1
-)
+attach_subscription() {
 
-RC=$?
+    KEY="$1"
+    SUB_ID="$2"
+    PRODUCT="$3"
 
-echo "$OUTPUT"
+    echo
+    info "Attaching $PRODUCT subscription..."
 
-if echo "$OUTPUT" | grep -qi "already"; then
-    skip "CentOS 7 subscription already attached."
-elif echo "$OUTPUT" | grep -qi "added"; then
-    ok "CentOS 7 subscription attached."
-elif [ $RC -eq 0 ]; then
-    ok "CentOS 7 subscription attached."
-else
-    error "Subscription attachment failed."
-    record_failure "centos7-prod-key"
-fi
+    if [ -z "$SUB_ID" ]; then
+        error "Subscription ID not found for $PRODUCT"
+        record_failure "$PRODUCT Subscription"
+        return
+    fi
 
-echo
+    OUTPUT=$(
+    $HAMMER activation-key add-subscription \
+        --organization "Default Organization" \
+        --name "$KEY" \
+        --subscription-id "$SUB_ID" 2>&1
+    )
 
-info "Attaching Rocky Linux 8 subscription..."
+    RC=$?
 
-OUTPUT=$(
-$HAMMER activation-key add-subscription \
-    --organization "Default Organization" \
-    --name "rocky8-prod-key" \
-    --subscription-id "$ROCKY_SUB_ID" 2>&1
-)
+    echo "$OUTPUT"
 
-echo "$OUTPUT"
+    if echo "$OUTPUT" | grep -qi "already"; then
+        skip "$PRODUCT subscription already attached."
+    elif echo "$OUTPUT" | grep -qi "added"; then
+        ok "$PRODUCT subscription attached."
+    elif [ $RC -eq 0 ]; then
+        ok "$PRODUCT subscription attached."
+    else
+        error "$PRODUCT subscription attachment failed."
+        record_failure "$KEY"
+    fi
+}
 
-if echo "$OUTPUT" | grep -qi "already been registered"; then
-    skip "Rocky Linux 8 subscription already attached."
-elif echo "$OUTPUT" | grep -qi "added"; then
-    ok "Rocky Linux 8 subscription attached."
-elif [ $? -eq 0 ]; then
-    ok "Rocky Linux 8 subscription attached."
-else
-    error "Subscription attachment failed."
-    record_failure "rocky8-prod-key"
-fi
+###############################################################################
+# Attach Subscriptions
+###############################################################################
 
-info "Attaching $PRODUCT_NAME subscription..."
+attach_subscription \
+    "centos7-prod-key" \
+    "$CENTOS_SUB_ID" \
+    "CentOS 7"
 
-OUTPUT=$(
-$HAMMER activation-key add-subscription \
-    --organization "Default Organization" \
-    --name "rocky8-prod-key" \
-    --subscription-id "$ROCKY_SUB_ID" 2>&1
-)
+attach_subscription \
+    "rocky8-prod-key" \
+    "$ROCKY8_SUB_ID" \
+    "Rocky Linux 8"
 
-RC=$?
-
-echo "$OUTPUT"
-
-if echo "$OUTPUT" | grep -qi "already"; then
-    skip "Rocky Linux 8 subscription already attached."
-elif echo "$OUTPUT" | grep -qi "added"; then
-    ok "Rocky Linux 8 subscription attached."
-elif [ $RC -eq 0 ]; then
-    ok "Rocky Linux 8 subscription attached."
-else
-    error "Subscription attachment failed."
-    record_failure "rocky8-prod-key"
-fi
+attach_subscription \
+    "$ACTIVATION_KEY" \
+    "$ROCKY9_SUB_ID" \
+    "$PRODUCT_NAME"
 
 ###############################################################################
 # Verification
