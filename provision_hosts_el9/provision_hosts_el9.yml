@@ -43,7 +43,8 @@
     # Host Group
     # 1 = CentOS 7
     # 2 = Rocky Linux 8
-    # 3 = Rocky Linux 9
+    # 3 = Rocky Linux 9.2
+    # 4 = Rocky Linux 9.8
     ###########################################################################
     
     hostgroup: "{{ hostgroup | default('1', true) }}"
