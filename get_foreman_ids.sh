@@ -4,167 +4,175 @@
 # Foreman Dynamic ID Lookup
 #
 # Usage:
-#   ./get_foreman_ids.sh "VGS HOSTS ROCKY 9.2"
-#   ./get_foreman_ids.sh "VGS HOSTS ROCKY 9.8"
-#   ./get_foreman_ids.sh "VGS HOSTS ROCKY 8"
-#   ./get_foreman_ids.sh "VGS HOSTS CENTOS 7"
 ###############################################################################
 
 FOREMAN_SERVER="https://cent-07-01.vgs.com"
 FOREMAN_USER="admin"
 FOREMAN_PASS="zqs977dXzqfEvTML"
 
-HOSTGROUP="$1"
-
-if [[ -z "$HOSTGROUP" ]]; then
-    echo
-    echo "Usage:"
-    echo "  $0 \"VGS HOSTS ROCKY 9.2\""
-    echo "  $0 \"VGS HOSTS ROCKY 9.8\""
-    echo "  $0 \"VGS HOSTS ROCKY 8\""
-    echo "  $0 \"VGS HOSTS CENTOS 7\""
-    echo
-    exit 1
-fi
+HOSTGROUPS=(
+    "VGS HOSTS CENTOS 7"
+    "VGS HOSTS ROCKY 8"
+    "VGS HOSTS ROCKY 9.2"
+    "VGS HOSTS ROCKY 9.8"
+)
 
 ###############################################################################
-# Get Host Group Information
+# Generate Ansible Mapping
 ###############################################################################
 
-HG_INFO=$(hammer \
-    --server "$FOREMAN_SERVER" \
-    --username "$FOREMAN_USER" \
-    --password "$FOREMAN_PASS" \
-    hostgroup info --name "$HOSTGROUP" 2>/dev/null)
+declare -A HOSTGROUP_MAP
+HOSTGROUP_MAP["VGS HOSTS CENTOS 7"]=1
+HOSTGROUP_MAP["VGS HOSTS ROCKY 8"]=2
+HOSTGROUP_MAP["VGS HOSTS ROCKY 9.2"]=3
+HOSTGROUP_MAP["VGS HOSTS ROCKY 9.8"]=4
 
-if [[ $? -ne 0 || -z "$HG_INFO" ]]; then
-    echo "ERROR: Host Group '$HOSTGROUP' not found."
-    exit 1
-fi
+declare -A HOSTGROUP_IDS
+declare -A OS_IDS
+declare -A MEDIUM_IDS
 
-###############################################################################
-# Extract Information
-###############################################################################
+HOSTGROUPS=(
+    "VGS HOSTS CENTOS 7"
+    "VGS HOSTS ROCKY 8"
+    "VGS HOSTS ROCKY 9.2"
+    "VGS HOSTS ROCKY 9.8"
+)
 
-HOSTGROUP_ID=$(echo "$HG_INFO" | awk -F': *' '/^Id:/ {print $2}')
+PTABLE_ID=""
+ARCH_ID=""
 
-OS_NAME=$(echo "$HG_INFO" | awk -F': *' '/Operating System:/ {print $2}')
+for HG in "${HOSTGROUPS[@]}"; do
 
-MEDIUM_NAME=$(echo "$HG_INFO" | awk -F': *' '/Medium:/ {print $2}')
+    INFO=$(hammer \
+        --server "$FOREMAN_SERVER" \
+        --username "$FOREMAN_USER" \
+        --password "$FOREMAN_PASS" \
+        hostgroup info --name "$HG" 2>/dev/null)
 
-PTABLE_NAME=$(echo "$HG_INFO" | awk -F': *' '/Partition Table:/ {print $2}')
+    IDX=${HOSTGROUP_MAP[$HG]}
 
-ARCH_NAME=$(echo "$HG_INFO" | awk -F': *' '/Architecture:/ {print $2}')
+    HOSTGROUP_IDS[$IDX]=$(echo "$INFO" | awk -F': *' '/^Id:/ {print $2}')
+    OS_NAME=$(echo "$INFO" | awk -F': *' '/Operating System:/ {print $2}')
+    MEDIUM_NAME=$(echo "$INFO" | awk -F': *' '/Medium:/ {print $2}')
+    PTABLE_NAME=$(echo "$INFO" | awk -F': *' '/Partition Table:/ {print $2}')
+    ARCH_NAME=$(echo "$INFO" | awk -F': *' '/Architecture:/ {print $2}')
 
-PXE_LOADER=$(echo "$HG_INFO" | awk -F': *' '/PXE Loader:/ {print $2}')
-
-###############################################################################
-# Get OS ID
-###############################################################################
-
-OS_ID=$(hammer \
-    --server "$FOREMAN_SERVER" \
-    --username "$FOREMAN_USER" \
-    --password "$FOREMAN_PASS" \
-    os list | \
-    awk -F'|' -v os="$OS_NAME" '
+    OS_IDS[$IDX]=$(
+        hammer --server "$FOREMAN_SERVER" \
+               --username "$FOREMAN_USER" \
+               --password "$FOREMAN_PASS" \
+               os list |
+        awk -F'|' -v os="$OS_NAME" '
         {
-            gsub(/^ +| +$/, "", $2)
             gsub(/^ +| +$/, "", $1)
+            gsub(/^ +| +$/, "", $2)
             if ($2==os)
                 print $1
-        }')
+        }'
+    )
 
-###############################################################################
-# Get Medium ID
-###############################################################################
-
-MEDIUM_ID=$(hammer \
-    --server "$FOREMAN_SERVER" \
-    --username "$FOREMAN_USER" \
-    --password "$FOREMAN_PASS" \
-    medium list | \
-    awk -F'|' -v m="$MEDIUM_NAME" '
+    MEDIUM_IDS[$IDX]=$(
+        hammer --server "$FOREMAN_SERVER" \
+               --username "$FOREMAN_USER" \
+               --password "$FOREMAN_PASS" \
+               medium list |
+        awk -F'|' -v m="$MEDIUM_NAME" '
         {
-            gsub(/^ +| +$/, "", $2)
             gsub(/^ +| +$/, "", $1)
+            gsub(/^ +| +$/, "", $2)
             if ($2==m)
                 print $1
-        }')
+        }'
+    )
 
-###############################################################################
-# Get Partition Table ID
-###############################################################################
+    if [[ -z "$PTABLE_ID" ]]; then
+        PTABLE_ID=$(
+            hammer --server "$FOREMAN_SERVER" \
+                   --username "$FOREMAN_USER" \
+                   --password "$FOREMAN_PASS" \
+                   partition-table list |
+            awk -F'|' -v p="$PTABLE_NAME" '
+            {
+                gsub(/^ +| +$/, "", $1)
+                gsub(/^ +| +$/, "", $2)
+                if ($2==p)
+                    print $1
+            }'
+        )
+    fi
 
-PTABLE_ID=$(hammer \
-    --server "$FOREMAN_SERVER" \
-    --username "$FOREMAN_USER" \
-    --password "$FOREMAN_PASS" \
-    partition-table list | \
-    awk -F'|' -v p="$PTABLE_NAME" '
-        {
-            gsub(/^ +| +$/, "", $2)
-            gsub(/^ +| +$/, "", $1)
-            if ($2==p)
-                print $1
-        }')
+    if [[ -z "$ARCH_ID" ]]; then
+        ARCH_ID=$(
+            hammer --server "$FOREMAN_SERVER" \
+                   --username "$FOREMAN_USER" \
+                   --password "$FOREMAN_PASS" \
+                   architecture list |
+            awk -F'|' -v a="$ARCH_NAME" '
+            {
+                gsub(/^ +| +$/, "", $1)
+                gsub(/^ +| +$/, "", $2)
+                if ($2==a)
+                    print $1
+            }'
+        )
+    fi
 
-###############################################################################
-# Get Architecture ID
-###############################################################################
-
-ARCH_ID=$(hammer \
-    --server "$FOREMAN_SERVER" \
-    --username "$FOREMAN_USER" \
-    --password "$FOREMAN_PASS" \
-    architecture list | \
-    awk -F'|' -v a="$ARCH_NAME" '
-        {
-            gsub(/^ +| +$/, "", $2)
-            gsub(/^ +| +$/, "", $1)
-            if ($2==a)
-                print $1
-        }')
-
-###############################################################################
-# Display
-###############################################################################
-
-echo
-echo "============================================================"
-echo "Foreman Configuration"
-echo "============================================================"
-echo "Host Group      : $HOSTGROUP"
-echo "Host Group ID   : $HOSTGROUP_ID"
-echo
-echo "Operating System: $OS_NAME"
-echo "OS ID           : $OS_ID"
-echo
-echo "Medium          : $MEDIUM_NAME"
-echo "Medium ID       : $MEDIUM_ID"
-echo
-echo "Architecture    : $ARCH_NAME"
-echo "Architecture ID : $ARCH_ID"
-echo
-echo "Partition Table : $PTABLE_NAME"
-echo "Partition ID    : $PTABLE_ID"
-echo
-echo "PXE Loader      : $PXE_LOADER"
-echo "============================================================"
-
-###############################################################################
-# Ansible Variables
-###############################################################################
-
-echo
-echo "Ansible Variables"
-echo "-----------------"
+done
 
 cat <<EOF
-hostgroup_id: $HOSTGROUP_ID
-operatingsystem_id: $OS_ID
-medium_id: $MEDIUM_ID
-ptable_id: $PTABLE_ID
-architecture_id: $ARCH_ID
-pxe_loader: "$PXE_LOADER"
+
+###########################################################################
+# Host Group
+# 1 = CentOS 7
+# 2 = Rocky Linux 8
+# 3 = Rocky Linux 9.2
+# 4 = Rocky Linux 9.8
+###########################################################################
+
+hostgroup: "{{ hostgroup | default('1', true) }}"
+
+subnet_id: >-
+  {{
+    {
+      '1': 1,
+      '2': 2,
+      '3': 2,
+      '4': 2
+    }[hostgroup | string]
+  }}
+
+hostgroup_id: >-
+  {{
+    {
+      '1': ${HOSTGROUP_IDS[1]},
+      '2': ${HOSTGROUP_IDS[2]},
+      '3': ${HOSTGROUP_IDS[3]},
+      '4': ${HOSTGROUP_IDS[4]}
+    }[hostgroup | string]
+  }}
+
+operatingsystem_id: >-
+  {{
+    {
+      '1': ${OS_IDS[1]},
+      '2': ${OS_IDS[2]},
+      '3': ${OS_IDS[3]},
+      '4': ${OS_IDS[4]}
+    }[hostgroup | string]
+  }}
+
+medium_id: >-
+  {{
+    {
+      '1': ${MEDIUM_IDS[1]},
+      '2': ${MEDIUM_IDS[2]},
+      '3': ${MEDIUM_IDS[3]},
+      '4': ${MEDIUM_IDS[4]}
+    }[hostgroup | string]
+  }}
+
+ptable_id: ${PTABLE_ID}
+
+architecture_id: ${ARCH_ID}
+
 EOF
