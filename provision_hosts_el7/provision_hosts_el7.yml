@@ -40,11 +40,14 @@
     loc_id: 2
     
     ###########################################################################
-    # Host Group
+    #Host Group
     # 1 = CentOS 7
     # 2 = Rocky Linux 8
-    # 3 = Rocky Linux 9
+    # 3 = Rocky Linux 9.2
+    # 4 = Rocky Linux 9.8
     ###########################################################################
+    
+    hostgroup: "{{ hostgroup | default('1', true) }}"
     
     subnet_id: >-
       {{
@@ -55,38 +58,39 @@
           '4': 2
         }[hostgroup | string]
       }}
-
+    
     hostgroup_id: >-
       {{
         {
           '1': 1,
           '2': 2,
-          '3': 5,
-          '4': 4
+          '3': 4,
+          '4': 3
         }[hostgroup | string]
       }}
-
+    
     operatingsystem_id: >-
       {{
         {
           '1': 2,
           '2': 3,
-          '3': 7,
-          '4': 8
+          '3': 5,
+          '4': 4
         }[hostgroup | string]
       }}
-
+    
     medium_id: >-
       {{
         {
           '1': 15,
           '2': 16,
           '3': 18,
-          '4': 19
+          '4': 17
         }[hostgroup | string]
       }}
-
+    
     ptable_id: 126
+
   tasks:
 
     ###########################################################################
