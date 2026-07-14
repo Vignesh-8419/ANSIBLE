@@ -3170,12 +3170,12 @@ survey_spec = {
         {
             "type": "integer",
             "question_name": "Host Group",
-            "question_description": "1 = CentOS (Default), 2 = Rocky",
+            "question_description": "1 = CentOS (Default), 2 = Rocky 8, 3 = Rocky 9.2, 4 = Rocky 9.8",
             "variable": "hostgroup",
             "required": False,
             "default": 1,
             "min": 1,
-            "max": 2
+            "max": 4
         }
     ]
 }
@@ -3294,12 +3294,12 @@ survey_spec = {
         {
             "type": "integer",
             "question_name": "Host Group",
-            "question_description": "1 = Rocky (Default), 2 = CentOS",
+            "question_description": "1 = CentOS (Default), 2 = Rocky 8, 3 = Rocky 9.2, 4 = Rocky 9.8",
             "variable": "hostgroup",
             "required": False,
             "default": 1,
             "min": 1,
-            "max": 2
+            "max": 4
         }
     ]
 }
@@ -3418,12 +3418,12 @@ survey_spec = {
         {
             "type": "integer",
             "question_name": "Host Group",
-            "question_description": "1 = Rocky 9 (Default), 2 = Rocky 8, 3 = CentOS 7",
+            "question_description": "1 = CentOS (Default), 2 = Rocky 8, 3 = Rocky 9.2, 4 = Rocky 9.8",
             "variable": "hostgroup",
             "required": False,
             "default": 1,
             "min": 1,
-            "max": 3
+            "max": 4
         }
     ]
 }
