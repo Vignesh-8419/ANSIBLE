@@ -172,3 +172,9 @@ curl -L -o get_foreman_ids.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/get_foreman_ids.sh?$(date +%s)" && \
 chmod +x get_foreman_ids.sh
 ```
+
+```text
+curl -L -o bootstrap_subscription_manager.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/bootstrap_subscription_manager.sh?$(date +%s)" && \
+chmod +x bootstrap_subscription_manager.sh
+```
