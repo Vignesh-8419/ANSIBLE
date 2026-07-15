@@ -1816,8 +1816,9 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "CENTOS-VM-TEMPLATE-WF"
 
 JT1_NAME = "CENTOS-VM-TEMPLATE"
-JT2_NAME = "RHEL_Hardening"
-JT3_NAME = "Offline_Patching_el7"
+JT2_NAME = "CREATE-ADMIN-SSH"
+JT3_NAME = "RHEL_Hardening"
+JT4_NAME = "Offline_Patching_el7"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "centos-07-servers"
@@ -1827,6 +1828,7 @@ org = Organization.objects.get(name=ORG_NAME)
 jt1 = JobTemplate.objects.get(name=JT1_NAME)
 jt2 = JobTemplate.objects.get(name=JT2_NAME)
 jt3 = JobTemplate.objects.get(name=JT3_NAME)
+jt4 = JobTemplate.objects.get(name=JT4_NAME)
 
 cred = Credential.objects.get(name=CREDENTIAL_NAME)
 inv = Inventory.objects.get(name=INVENTORY_NAME)
@@ -1836,10 +1838,16 @@ wf, created = WorkflowJobTemplate.objects.get_or_create(
     organization=org
 )
 
+# ------------------------------------------------------------------
 # Remove existing workflow nodes
+# ------------------------------------------------------------------
+
 wf.workflow_job_template_nodes.all().delete()
 
+# ------------------------------------------------------------------
 # Fixed inventory and credential
+# ------------------------------------------------------------------
+
 wf.inventory = inv
 
 # Disable prompts at workflow launch
@@ -1847,7 +1855,10 @@ wf.ask_inventory_on_launch = False
 wf.ask_limit_on_launch = False
 wf.ask_credential_on_launch = False
 
-# Enable survey so target_hosts is prompted once
+# ------------------------------------------------------------------
+# Workflow Survey
+# ------------------------------------------------------------------
+
 wf.survey_enabled = True
 wf.survey_spec = {
     "name": "Target Host Selection",
@@ -1868,7 +1879,10 @@ wf.survey_spec = {
 
 wf.save()
 
+# ------------------------------------------------------------------
 # Attach credential to workflow
+# ------------------------------------------------------------------
+
 wf.credentials.clear()
 wf.credentials.add(cred)
 
@@ -1891,12 +1905,18 @@ n3 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt3
 )
 
+n4 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt4
+)
+
 # ------------------------------------------------------------------
 # Workflow Order
 # ------------------------------------------------------------------
 
 n1.success_nodes.add(n2)
 n2.success_nodes.add(n3)
+n3.success_nodes.add(n4)
 
 print(f"Workflow '{wf.name}' {'created' if created else 'updated'}")
 print("Execution Order:")
@@ -1905,10 +1925,14 @@ print("      ↓")
 print(f"  {jt2.name}")
 print("      ↓")
 print(f"  {jt3.name}")
+print("      ↓")
+print(f"  {jt4.name}")
+
 EOF
 
 echo
 echo "CENTOS Workflow created successfully."
+
 # --------------------------------------------------------------
 # Workflow : ROCKYOS-VM-TEMPLATE (WITH PATCHING)
 # --------------------------------------------------------------
@@ -1932,8 +1956,9 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "ROCKYOS-VM-TEMPLATE (WITH PATCHING)"
 
 JT1_NAME = "ROCKYOS-VM-TEMPLATE"
-JT2_NAME = "RHEL_Hardening"
-JT3_NAME = "Offline_Patching_el8"
+JT2_NAME = "CREATE-ADMIN-SSH"
+JT3_NAME = "RHEL_Hardening"
+JT4_NAME = "Offline_Patching_el8"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "rocky-8-servers"
@@ -1943,6 +1968,7 @@ org = Organization.objects.get(name=ORG_NAME)
 jt1 = JobTemplate.objects.get(name=JT1_NAME)
 jt2 = JobTemplate.objects.get(name=JT2_NAME)
 jt3 = JobTemplate.objects.get(name=JT3_NAME)
+jt4 = JobTemplate.objects.get(name=JT4_NAME)
 
 cred = Credential.objects.get(name=CREDENTIAL_NAME)
 inv = Inventory.objects.get(name=INVENTORY_NAME)
@@ -1952,10 +1978,16 @@ wf, created = WorkflowJobTemplate.objects.get_or_create(
     organization=org
 )
 
+# ------------------------------------------------------------------
 # Remove existing workflow nodes
+# ------------------------------------------------------------------
+
 wf.workflow_job_template_nodes.all().delete()
 
+# ------------------------------------------------------------------
 # Fixed inventory and credential
+# ------------------------------------------------------------------
+
 wf.inventory = inv
 
 # Disable launch prompts
@@ -1963,7 +1995,10 @@ wf.ask_inventory_on_launch = False
 wf.ask_limit_on_launch = False
 wf.ask_credential_on_launch = False
 
-# Enable survey
+# ------------------------------------------------------------------
+# Workflow Survey
+# ------------------------------------------------------------------
+
 wf.survey_enabled = True
 wf.survey_spec = {
     "name": "Target Host Selection",
@@ -1984,7 +2019,10 @@ wf.survey_spec = {
 
 wf.save()
 
+# ------------------------------------------------------------------
 # Attach credential
+# ------------------------------------------------------------------
+
 wf.credentials.clear()
 wf.credentials.add(cred)
 
@@ -2007,12 +2045,18 @@ n3 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt3
 )
 
+n4 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt4
+)
+
 # ------------------------------------------------------------------
 # Workflow Order
 # ------------------------------------------------------------------
 
 n1.success_nodes.add(n2)
 n2.success_nodes.add(n3)
+n3.success_nodes.add(n4)
 
 print(f"Workflow '{wf.name}' {'created' if created else 'updated'}")
 print()
@@ -2025,6 +2069,9 @@ print(jt2.name)
 print("   |")
 print("   v")
 print(jt3.name)
+print("   |")
+print("   v")
+print(jt4.name)
 
 EOF
 
@@ -2054,7 +2101,8 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "ROCKYOS-VM-TEMPLATE (WITHOUT PATCHING)"
 
 JT1_NAME = "ROCKYOS-VM-TEMPLATE"
-JT2_NAME = "RHEL_Hardening"
+JT2_NAME = "CREATE-ADMIN-SSH"
+JT3_NAME = "RHEL_Hardening"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "rocky-8-servers"
@@ -2063,6 +2111,7 @@ org = Organization.objects.get(name=ORG_NAME)
 
 jt1 = JobTemplate.objects.get(name=JT1_NAME)
 jt2 = JobTemplate.objects.get(name=JT2_NAME)
+jt3 = JobTemplate.objects.get(name=JT3_NAME)
 
 cred = Credential.objects.get(name=CREDENTIAL_NAME)
 inv = Inventory.objects.get(name=INVENTORY_NAME)
@@ -2072,10 +2121,16 @@ wf, created = WorkflowJobTemplate.objects.get_or_create(
     organization=org
 )
 
+# ------------------------------------------------------------------
 # Remove existing workflow nodes
+# ------------------------------------------------------------------
+
 wf.workflow_job_template_nodes.all().delete()
 
+# ------------------------------------------------------------------
 # Fixed inventory and credential
+# ------------------------------------------------------------------
+
 wf.inventory = inv
 
 # Disable launch prompts
@@ -2083,7 +2138,10 @@ wf.ask_inventory_on_launch = False
 wf.ask_limit_on_launch = False
 wf.ask_credential_on_launch = False
 
-# Enable survey
+# ------------------------------------------------------------------
+# Workflow Survey
+# ------------------------------------------------------------------
+
 wf.survey_enabled = True
 wf.survey_spec = {
     "name": "Target Host Selection",
@@ -2104,11 +2162,17 @@ wf.survey_spec = {
 
 wf.save()
 
+# ------------------------------------------------------------------
 # Attach credential
+# ------------------------------------------------------------------
+
 wf.credentials.clear()
 wf.credentials.add(cred)
 
-# Create workflow nodes
+# ------------------------------------------------------------------
+# Create Workflow Nodes
+# ------------------------------------------------------------------
+
 n1 = WorkflowJobTemplateNode.objects.create(
     workflow_job_template=wf,
     unified_job_template=jt1
@@ -2119,8 +2183,17 @@ n2 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt2
 )
 
-# Execution order
+n3 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt3
+)
+
+# ------------------------------------------------------------------
+# Workflow Order
+# ------------------------------------------------------------------
+
 n1.success_nodes.add(n2)
+n2.success_nodes.add(n3)
 
 print(f"Workflow '{wf.name}' {'created' if created else 'updated'}")
 print()
@@ -2130,6 +2203,9 @@ print(jt1.name)
 print("   |")
 print("   v")
 print(jt2.name)
+print("   |")
+print("   v")
+print(jt3.name)
 
 EOF
 
@@ -2159,8 +2235,8 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "ROCKY9-VM-TEMPLATE-WF"
 
 JT1_NAME = "ROCKY9-VM-TEMPLATE"
-JT2_NAME = "RHEL_Hardening"
-JT3_NAME = "Disable_SELinux_el9"
+JT2_NAME = "CREATE-ADMIN-SSH"
+JT3_NAME = "RHEL_Hardening"
 JT4_NAME = "Offline_Patching_el9"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
@@ -2181,10 +2257,16 @@ wf, created = WorkflowJobTemplate.objects.get_or_create(
     organization=org
 )
 
+# ------------------------------------------------------------------
 # Remove existing workflow nodes
+# ------------------------------------------------------------------
+
 wf.workflow_job_template_nodes.all().delete()
 
+# ------------------------------------------------------------------
 # Fixed inventory and credential
+# ------------------------------------------------------------------
+
 wf.inventory = inv
 
 # Disable launch prompts
@@ -2192,7 +2274,10 @@ wf.ask_inventory_on_launch = False
 wf.ask_limit_on_launch = False
 wf.ask_credential_on_launch = False
 
-# Enable survey
+# ------------------------------------------------------------------
+# Workflow Survey
+# ------------------------------------------------------------------
+
 wf.survey_enabled = True
 wf.survey_spec = {
     "name": "Target Host Selection",
@@ -2213,10 +2298,17 @@ wf.survey_spec = {
 
 wf.save()
 
+# ------------------------------------------------------------------
+# Attach credential
+# ------------------------------------------------------------------
+
 wf.credentials.clear()
 wf.credentials.add(cred)
 
-# Create workflow nodes
+# ------------------------------------------------------------------
+# Create Workflow Nodes
+# ------------------------------------------------------------------
+
 n1 = WorkflowJobTemplateNode.objects.create(
     workflow_job_template=wf,
     unified_job_template=jt1
@@ -2237,7 +2329,10 @@ n4 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt4
 )
 
-# Execution order
+# ------------------------------------------------------------------
+# Workflow Order
+# ------------------------------------------------------------------
+
 n1.success_nodes.add(n2)
 n2.success_nodes.add(n3)
 n3.success_nodes.add(n4)
@@ -2256,11 +2351,146 @@ print(jt3.name)
 print("   |")
 print("   v")
 print(jt4.name)
+
 EOF
 
 echo
 echo "ROCKY 9 Workflow created successfully."
 
+
+# --------------------------------------------------------------
+# Workflow : ROCKY9-VM-TEMPLATE-WF-Without-Patching
+# --------------------------------------------------------------
+
+echo
+echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
+echo -e "${WHITE} Creating Workflow: ROCKY9-VM-TEMPLATE-WF-Without-Patching${NC}"
+echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
+
+awx-manage shell <<'EOF'
+from awx.main.models import (
+    WorkflowJobTemplate,
+    WorkflowJobTemplateNode,
+    JobTemplate,
+    Credential,
+    Inventory,
+    Organization
+)
+
+ORG_NAME = "Default"
+WORKFLOW_NAME = "ROCKY9-VM-TEMPLATE-WF-Without-Patching"
+
+JT1_NAME = "ROCKY9-VM-TEMPLATE"
+JT2_NAME = "CREATE-ADMIN-SSH"
+JT3_NAME = "RHEL_Hardening"
+
+CREDENTIAL_NAME = "Linux Admin Credential"
+INVENTORY_NAME = "rocky-9-servers"
+
+org = Organization.objects.get(name=ORG_NAME)
+
+jt1 = JobTemplate.objects.get(name=JT1_NAME)
+jt2 = JobTemplate.objects.get(name=JT2_NAME)
+jt3 = JobTemplate.objects.get(name=JT3_NAME)
+
+cred = Credential.objects.get(name=CREDENTIAL_NAME)
+inv = Inventory.objects.get(name=INVENTORY_NAME)
+
+wf, created = WorkflowJobTemplate.objects.get_or_create(
+    name=WORKFLOW_NAME,
+    organization=org
+)
+
+# ------------------------------------------------------------------
+# Remove existing workflow nodes
+# ------------------------------------------------------------------
+
+wf.workflow_job_template_nodes.all().delete()
+
+# ------------------------------------------------------------------
+# Fixed inventory and credential
+# ------------------------------------------------------------------
+
+wf.inventory = inv
+
+# Disable launch prompts
+wf.ask_inventory_on_launch = False
+wf.ask_limit_on_launch = False
+wf.ask_credential_on_launch = False
+
+# ------------------------------------------------------------------
+# Workflow Survey
+# ------------------------------------------------------------------
+
+wf.survey_enabled = True
+wf.survey_spec = {
+    "name": "Target Host Selection",
+    "description": "Enter one or more Rocky Linux 9 hosts (without .vgs.com)",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: rocky-09-01 or rocky-09-01,rocky-09-02 or rocky-09-0*",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "rocky-09-0*",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+wf.save()
+
+# ------------------------------------------------------------------
+# Attach credential
+# ------------------------------------------------------------------
+
+wf.credentials.clear()
+wf.credentials.add(cred)
+
+# ------------------------------------------------------------------
+# Create Workflow Nodes
+# ------------------------------------------------------------------
+
+n1 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt1
+)
+
+n2 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt2
+)
+
+n3 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt3
+)
+
+# ------------------------------------------------------------------
+# Workflow Order
+# ------------------------------------------------------------------
+
+n1.success_nodes.add(n2)
+n2.success_nodes.add(n3)
+
+print(f"Workflow '{wf.name}' {'created' if created else 'updated'}")
+print()
+print("Execution Order")
+print("----------------")
+print(jt1.name)
+print("   |")
+print("   v")
+print(jt2.name)
+print("   |")
+print("   v")
+print(jt3.name)
+
+EOF
+
+echo
+echo "ROCKY 9 Workflow (Without Patching) created successfully."
 
 # ==============================================================================
 # Verify Workflow Templates
@@ -3494,8 +3724,9 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "Provision_Hosts_el7_Subscription_Patching_EL7"
 
 JT1_NAME = "Provision_Hosts_el7"
-JT2_NAME = "RHEL_Hardening"
-JT3_NAME = "Subscription_Patching_EL7"
+JT2_NAME = "CREATE-ADMIN-SSH"
+JT3_NAME = "RHEL_Hardening"
+JT4_NAME = "Subscription_Patching_EL7"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "centos-07-servers"
@@ -3505,6 +3736,7 @@ org = Organization.objects.get(name=ORG_NAME)
 jt1 = JobTemplate.objects.get(name=JT1_NAME)
 jt2 = JobTemplate.objects.get(name=JT2_NAME)
 jt3 = JobTemplate.objects.get(name=JT3_NAME)
+jt4 = JobTemplate.objects.get(name=JT4_NAME)
 
 cred = Credential.objects.get(name=CREDENTIAL_NAME)
 inv = Inventory.objects.get(name=INVENTORY_NAME)
@@ -3596,11 +3828,17 @@ n3 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt3
 )
 
+n4 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt4
+)
+
 # --------------------------------------------------------------
 # Execution Flow
 # --------------------------------------------------------------
 n1.success_nodes.add(n2)
 n2.success_nodes.add(n3)
+n3.success_nodes.add(n4)
 
 print(
     f"Workflow '{wf.name}' "
@@ -3617,6 +3855,9 @@ print(jt2.name)
 print("   |")
 print("   v")
 print(jt3.name)
+print("   |")
+print("   v")
+print(jt4.name)
 EOF
 
 # ==============================================================
@@ -3668,8 +3909,9 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "Provision_Hosts_el8_Subscription_Patching_EL8"
 
 JT1_NAME = "Provision_Hosts_el8"
-JT2_NAME = "RHEL_Hardening"
-JT3_NAME = "Subscription_Patching_EL8"
+JT2_NAME = "CREATE-ADMIN-SSH"
+JT3_NAME = "RHEL_Hardening"
+JT4_NAME = "Subscription_Patching_EL8"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "rocky-8-servers"
@@ -3679,6 +3921,7 @@ org = Organization.objects.get(name=ORG_NAME)
 jt1 = JobTemplate.objects.get(name=JT1_NAME)
 jt2 = JobTemplate.objects.get(name=JT2_NAME)
 jt3 = JobTemplate.objects.get(name=JT3_NAME)
+jt4 = JobTemplate.objects.get(name=JT4_NAME)
 
 cred = Credential.objects.get(name=CREDENTIAL_NAME)
 inv = Inventory.objects.get(name=INVENTORY_NAME)
@@ -3770,11 +4013,17 @@ n3 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt3
 )
 
+n4 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt4
+)
+
 # --------------------------------------------------------------
 # Execution Flow
 # --------------------------------------------------------------
 n1.success_nodes.add(n2)
 n2.success_nodes.add(n3)
+n3.success_nodes.add(n4)
 
 print(
     f"Workflow '{wf.name}' "
@@ -3791,8 +4040,10 @@ print(jt2.name)
 print("   |")
 print("   v")
 print(jt3.name)
+print("   |")
+print("   v")
+print(jt4.name)
 EOF
-
 
 # ==============================================================
 # Verify Provision_Hosts_el8_Subscription_Patching_EL8
@@ -3843,8 +4094,9 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "Provision_Hosts_el9_Subscription_Patching_EL9"
 
 JT1_NAME = "Provision_Hosts_el9"
-JT2_NAME = "RHEL_Hardening"
-JT3_NAME = "Subscription_Patching_EL9"
+JT2_NAME = "CREATE-ADMIN-SSH"
+JT3_NAME = "RHEL_Hardening"
+JT4_NAME = "Subscription_Patching_EL9"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
 INVENTORY_NAME = "rocky-9-servers"
@@ -3854,6 +4106,7 @@ org = Organization.objects.get(name=ORG_NAME)
 jt1 = JobTemplate.objects.get(name=JT1_NAME)
 jt2 = JobTemplate.objects.get(name=JT2_NAME)
 jt3 = JobTemplate.objects.get(name=JT3_NAME)
+jt4 = JobTemplate.objects.get(name=JT4_NAME)
 
 cred = Credential.objects.get(name=CREDENTIAL_NAME)
 inv = Inventory.objects.get(name=INVENTORY_NAME)
@@ -3945,11 +4198,17 @@ n3 = WorkflowJobTemplateNode.objects.create(
     unified_job_template=jt3
 )
 
+n4 = WorkflowJobTemplateNode.objects.create(
+    workflow_job_template=wf,
+    unified_job_template=jt4
+)
+
 # --------------------------------------------------------------
 # Execution Flow
 # --------------------------------------------------------------
 n1.success_nodes.add(n2)
 n2.success_nodes.add(n3)
+n3.success_nodes.add(n4)
 
 print(
     f"Workflow '{wf.name}' "
@@ -3966,6 +4225,9 @@ print(jt2.name)
 print("   |")
 print("   v")
 print(jt3.name)
+print("   |")
+print("   v")
+print(jt4.name)
 EOF
 
 
