@@ -6,5 +6,3 @@
 - import_playbook: provision_hosts_el7.yml
 
 - import_playbook: bootorder_uefi_el7.yml
-
-- import_playbook: create_admin.yml
