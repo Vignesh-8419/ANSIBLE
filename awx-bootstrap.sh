@@ -3534,18 +3534,38 @@ wf.limit = "localhost"
 # --------------------------------------------------------------
 wf.survey_enabled = True
 wf.survey_spec = {
-    "name": "target_hosts",
+    "name": "Provision_Hosts_el7_Subscription_Patching_EL7",
     "description": "Provision Hosts + Hardening + Subscription Patching (EL7)",
     "spec": [
         {
             "type": "text",
             "question_name": "Target Hosts",
-            "question_description": "Enter host(s) to provision, harden and patch",
+            "question_description": "Hostname(s) or wildcard (example: cent-07-01,cent-07-05 or cent-07-*)",
             "variable": "target_hosts",
             "required": True,
             "default": "cent-07-*",
             "min": 1,
             "max": 1024
+        },
+        {
+            "type": "integer",
+            "question_name": "Foreman Server",
+            "question_description": "1 = Frontend (rocky-08-01), 2 = Backend (cent-07-01)",
+            "variable": "foreman_server",
+            "required": False,
+            "default": 1,
+            "min": 1,
+            "max": 2
+        },
+        {
+            "type": "integer",
+            "question_name": "Host Group",
+            "question_description": "1 = CentOS (Default), 2 = Rocky 8, 3 = Rocky 9.2, 4 = Rocky 9.8",
+            "variable": "hostgroup",
+            "required": False,
+            "default": 1,
+            "min": 1,
+            "max": 4
         }
     ]
 }
@@ -3688,18 +3708,38 @@ wf.limit = "localhost"
 # --------------------------------------------------------------
 wf.survey_enabled = True
 wf.survey_spec = {
-    "name": "target_hosts",
+    "name": "Provision_Hosts_el8_Subscription_Patching_EL8",
     "description": "Provision Hosts + Hardening + Subscription Patching (EL8)",
     "spec": [
         {
             "type": "text",
             "question_name": "Target Hosts",
-            "question_description": "Enter host(s) to provision, harden and patch",
+            "question_description": "Hostname(s) or wildcard (example: rocky-08-01,rocky-08-05 or rocky-08-*)",
             "variable": "target_hosts",
             "required": True,
             "default": "rocky-08-*",
             "min": 1,
             "max": 1024
+        },
+        {
+            "type": "integer",
+            "question_name": "Foreman Server",
+            "question_description": "1 = Frontend (rocky-08-01), 2 = Backend (cent-07-01)",
+            "variable": "foreman_server",
+            "required": False,
+            "default": 1,
+            "min": 1,
+            "max": 2
+        },
+        {
+            "type": "integer",
+            "question_name": "Host Group",
+            "question_description": "1 = CentOS, 2 = Rocky 8 (Default), 3 = Rocky 9.2, 4 = Rocky 9.8",
+            "variable": "hostgroup",
+            "required": False,
+            "default": 2,
+            "min": 1,
+            "max": 4
         }
     ]
 }
@@ -3843,18 +3883,38 @@ wf.limit = "localhost"
 # --------------------------------------------------------------
 wf.survey_enabled = True
 wf.survey_spec = {
-    "name": "target_hosts",
+    "name": "Provision_Hosts_el9_Subscription_Patching_EL9",
     "description": "Provision Hosts + Hardening + Subscription Patching (EL9)",
     "spec": [
         {
             "type": "text",
             "question_name": "Target Hosts",
-            "question_description": "Enter host(s) to provision, harden and patch",
+            "question_description": "Hostname(s) or wildcard (example: rocky-09-01,rocky-09-05 or rocky-09-*)",
             "variable": "target_hosts",
             "required": True,
             "default": "rocky-09-*",
             "min": 1,
             "max": 1024
+        },
+        {
+            "type": "integer",
+            "question_name": "Foreman Server",
+            "question_description": "1 = Frontend (rocky-08-01), 2 = Backend (cent-07-01)",
+            "variable": "foreman_server",
+            "required": False,
+            "default": 1,
+            "min": 1,
+            "max": 2
+        },
+        {
+            "type": "integer",
+            "question_name": "Host Group",
+            "question_description": "1 = CentOS, 2 = Rocky 8, 3 = Rocky 9.2, 4 = Rocky 9.8 (Default)",
+            "variable": "hostgroup",
+            "required": False,
+            "default": 4,
+            "min": 1,
+            "max": 4
         }
     ]
 }
