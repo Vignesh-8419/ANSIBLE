@@ -1,8 +1,11 @@
 ---
 - name: Create Shared Admin User
   hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
-  gather_facts: yes
   become: yes
+  become_method: sudo
+  become_user: root
+  gather_facts: yes
+  any_errors_fatal: false
 
   vars:
     admin_user: admin
