@@ -1,65 +1,87 @@
 #!/bin/bash
 #
-# setup_grub_dual_console.sh
+# setup_grub_dual_safe.sh
 #
 
-set -e
+set -euo pipefail
 
 echo "=========================================================="
-echo " Configuring GRUB (Safe Mode)"
+echo " Safe GRUB Console Configuration"
 echo "=========================================================="
 
 #
-# Remove only unwanted options
+# Update existing kernel entries
 #
 
 grubby --update-kernel=ALL \
-    --remove-args="rhgb quiet loglevel systemd.show_status console"
-
-#
-# Add required options
-#
+  --remove-args="rhgb quiet \
+                 ignore_loglevel \
+                 systemd.log_level \
+                 systemd.log_target \
+                 udev.log_level \
+                 loglevel \
+                 systemd.show_status \
+                 console"
 
 grubby --update-kernel=ALL \
-    --args="loglevel=6 systemd.show_status=true console=ttyS0,9600 console=tty0"
+  --args="loglevel=5 systemd.show_status=true console=ttyS0,9600 console=tty0"
 
 #
-# Update /etc/default/grub only for future kernels
+# Update /etc/default/grub without removing existing arguments
 #
 
-CURRENT_CMDLINE=$(grep '^GRUB_CMDLINE_LINUX=' /etc/default/grub \
-    | cut -d'"' -f2)
+CURRENT=$(grep '^GRUB_CMDLINE_LINUX=' /etc/default/grub | cut -d'"' -f2)
 
-NEW_CMDLINE=$(echo "$CURRENT_CMDLINE" \
+NEW="$CURRENT"
+
+for ARG in \
+    rhgb \
+    quiet \
+    ignore_loglevel \
+    systemd.log_level=debug \
+    systemd.log_target=console \
+    udev.log_level=debug
+do
+    NEW=$(echo "$NEW" | sed "s#${ARG}##g")
+done
+
+NEW=$(echo "$NEW" \
     | sed -E \
-      -e 's/\<rhgb\>//g' \
-      -e 's/\<quiet\>//g' \
-      -e 's/loglevel=[^ ]*//g' \
-      -e 's/systemd\.show_status=[^ ]*//g' \
-      -e 's/console=[^ ]*//g' \
-      | xargs)
+        -e 's/loglevel=[^ ]*//g' \
+        -e 's/systemd\.show_status=[^ ]*//g' \
+        -e 's/console=[^ ]*//g' \
+        | xargs)
 
-NEW_CMDLINE="$NEW_CMDLINE loglevel=6 systemd.show_status=true console=ttyS0,9600 console=tty0"
+NEW="$NEW loglevel=5 systemd.show_status=true console=ttyS0,9600 console=tty0"
 
 sed -i \
-    "s|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"$NEW_CMDLINE\"|" \
-    /etc/default/grub
+"s|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"$NEW\"|" \
+/etc/default/grub
 
 #
-# Rebuild grub.cfg
+# Regenerate grub.cfg
 #
 
 if [ -d /sys/firmware/efi ]; then
-    TARGET=$(find /boot/efi/EFI -name grub.cfg | grep -E 'rocky|redhat|centos' | head -n1)
+    TARGET=$(find /boot/efi/EFI -name grub.cfg | head -1)
 else
     TARGET="/boot/grub2/grub.cfg"
 fi
 
+echo
+echo "Generating $TARGET"
+
 grub2-mkconfig -o "$TARGET"
 
 echo
-echo "Current kernel args:"
+echo "=========================================================="
+echo "Kernel command line:"
 grubby --info=DEFAULT | grep '^args='
+echo "=========================================================="
 
 echo
-echo "Done."
+echo "/etc/default/grub:"
+grep '^GRUB_CMDLINE_LINUX' /etc/default/grub
+
+echo
+echo "Completed successfully."
