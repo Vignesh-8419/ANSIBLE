@@ -424,7 +424,7 @@ remote_exec "$NODE" "
     progress_stage "$NODE" "Installing Updates" "60"
 
     remote_exec "$NODE" "
-    yum update -y \
+    yum update - --skip-broken --allowerasing --nobest \
         --disablerepo='*' \
         --enablerepo=centos7-offline,rhel7-installed
     "
