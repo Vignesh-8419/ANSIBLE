@@ -591,13 +591,20 @@ install_sshpass() {
     echo "[INFO] sshpass not found. Creating temporary local repository..."
     echo
 
-    cat > /etc/yum.repos.d/local-sshpass.repo <<EOF
-[local-sshpass]
-name=Temporary Local Repository
-baseurl=${REPO_URL}/centos
+cat >/etc/yum.repos.d/patch.repo <<EOF
+[patch]
+name=patch-repo
+baseurl=http://http-server-01/repo/installed_rhel7
 enabled=1
 gpgcheck=0
-sslverify=0
+EOF
+
+cat >/etc/yum.repos.d/base.repo <<EOF
+[base]
+name=base-repo
+baseurl=http://http-server-01/repo/centos/
+enabled=1
+gpgcheck=0
 EOF
 
     yum clean all >/dev/null 2>&1
