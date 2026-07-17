@@ -588,12 +588,33 @@ install_sshpass() {
     fi
 
     echo
-    echo "[INFO] sshpass not found. Installing..."
+    echo "[INFO] sshpass not found. Creating temporary local repository..."
     echo
 
-    yum install -y sshpass
+    cat > /etc/yum.repos.d/local-sshpass.repo <<EOF
+[local-sshpass]
+name=Temporary Local Repository
+baseurl=${REPO_URL}/centos
+enabled=1
+gpgcheck=0
+sslverify=0
+EOF
 
-    if ! command -v sshpass >/dev/null 2>&1
+    yum clean all >/dev/null 2>&1
+    yum makecache --disablerepo='*' --enablerepo=local-sshpass >/dev/null 2>&1
+
+    yum install -y \
+        --disablerepo='*' \
+        --enablerepo=local-sshpass \
+        sshpass
+
+    RC=$?
+
+    rm -f /etc/yum.repos.d/local-sshpass.repo
+
+    yum clean all >/dev/null 2>&1
+
+    if [ $RC -ne 0 ] || ! command -v sshpass >/dev/null 2>&1
     then
         echo
         echo "[ERROR] Failed to install sshpass"
