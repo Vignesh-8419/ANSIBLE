@@ -607,17 +607,21 @@ enabled=1
 gpgcheck=0
 EOF
 
-    yum clean all >/dev/null 2>&1
-    yum makecache --disablerepo='*' --enablerepo=local-sshpass >/dev/null 2>&1
+yum clean all >/dev/null 2>&1
 
-    yum install -y \
-        --disablerepo='*' \
-        --enablerepo=local-sshpass \
-        sshpass
+yum makecache \
+    --disablerepo='*' \
+    --enablerepo=base,patch >/dev/null 2>&1
+
+yum install -y \
+    --disablerepo='*' \
+    --enablerepo=base,patch \
+    sshpass
 
     RC=$?
 
-    rm -f /etc/yum.repos.d/local-sshpass.repo
+    rm -f /etc/yum.repos.d/base.repo
+	rm -f /etc/yum.repos.d/patch.repo
 
     yum clean all >/dev/null 2>&1
 
