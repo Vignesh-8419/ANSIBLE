@@ -11,7 +11,8 @@
     # --- PHASE 0: PREPARE DATA ---
     - name: Load and normalize NetBox config context
       set_fact:
-        nb_ctx: "{{ config_context }}"
+        # Extract the dictionary container natively from index 0 of the NetBox array
+        nb_ctx: "{{ config_context[0] }}"
       when: config_context is defined and config_context | length > 0
 
     - name: Map Target IP
@@ -77,7 +78,7 @@
           vars:
             ansible_user: "{{ nb_ctx.vm_admin_user }}"
             ansible_password: "{{ nb_ctx.vm_admin_password }}"
-          when: inventory_hostname not in ['://vgs.com', 'localhost']
+          when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
 
         - name: Apply permanent static IP and DNS profile
           ansible.builtin.raw: |
@@ -105,7 +106,7 @@
             ansible_user: "{{ nb_ctx.vm_admin_user }}"
             ansible_password: "{{ nb_ctx.vm_admin_password }}"
 
-    # --- NEW STEP: Restore Ansible targeting to your intended static host IP ---
+    # --- RESTORE TARGET DIRECTORY MAPPING ---
     - name: Reset host pointer back to static IP mapping
       set_fact:
         ansible_host: "{{ target_hosts }}"
