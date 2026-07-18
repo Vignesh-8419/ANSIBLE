@@ -19,17 +19,6 @@
       set_fact:
         target_ip: "{{ ansible_host }}"
 
-    # --- PHASE 1: DNS REGISTRATION ---
-#    - name: Execute Pi-hole script on DNS Server
-#      ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ inventory_hostname }} {{ target_ip }}"
-#      delegate_to: 192.168.253.151 
-#      become: yes
-#      vars:
-        # Explicitly pull nb_ctx from the current host's facts
-#        ansible_user: "{{ hostvars[inventory_hostname]['nb_ctx']['infra_dns_user'] }}"
-#        ansible_ssh_pass: "{{ hostvars[inventory_hostname]['nb_ctx']['infra_dns_pass'] }}"
-#      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
-
     # --- PHASE 2: VCENTER PROVISIONING ---
     - name: Create VM in vCenter
       community.vmware.vmware_guest:
@@ -42,54 +31,18 @@
         folder: "/{{ nb_ctx.datacenter_name }}/{{ nb_ctx.folder | default('vm') }}"
     
         name: "{{ inventory_hostname.split('.')[0] }}"
-        template: "{{ nb_ctx.rocky9_template_name }}"
         state: poweredon
-    
-        hardware:
-          memory_mb: 4096
-          num_cpus: 4
+        template: "{{ nb_ctx.rocky9_template_name }}"
     
         networks:
           - name: "{{ nb_ctx.vm_network }}"
-            device_type: vmxnet3
-            connected: true
+            ip: "{{ target_ip }}"
+            netmask: "{{ nb_ctx.netmask }}"
+            gateway: "{{ nb_ctx.gateway }}"
+            dns_servers: "{{ nb_ctx.dns_servers }}"
             start_connected: true
     
-      delegate_to: localhost
-
-    - name: Show VM creation result
-      debug:
-        var: vm_deploy
-  
-    - name: Connect VM network adapter
-      community.vmware.vmware_guest_network:
-        hostname: "{{ nb_ctx.vcenter_hostname }}"
-        username: "{{ nb_ctx.vcenter_username }}"
-        password: "{{ nb_ctx.vcenter_password }}"
-        validate_certs: false
-    
-        datacenter: "{{ nb_ctx.datacenter_name }}"
-        name: "{{ inventory_hostname.split('.')[0] }}"
-    
-        network_name: "{{ nb_ctx.vm_network }}"
-        connected: true
-        start_connected: true
-        state: present
-    
-      delegate_to: localhost
-      
-    
-    - name: Power on VM
-      community.vmware.vmware_guest_powerstate:
-        hostname: "{{ nb_ctx.vcenter_hostname }}"
-        username: "{{ nb_ctx.vcenter_username }}"
-        password: "{{ nb_ctx.vcenter_password }}"
-        validate_certs: false
-    
-        datacenter: "{{ nb_ctx.datacenter_name }}"
-        name: "{{ inventory_hostname.split('.')[0] }}"
-    
-        state: powered-on
+        wait_for_ip_address: yes
     
       delegate_to: localhost
 
