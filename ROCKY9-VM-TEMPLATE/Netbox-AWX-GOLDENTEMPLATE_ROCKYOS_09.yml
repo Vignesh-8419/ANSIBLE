@@ -11,7 +11,8 @@
     # --- PHASE 0: PREPARE DATA ---
     - name: Load and normalize NetBox config context
       set_fact:
-        nb_ctx: "{{ config_context }}"
+        # CRITICAL FIX: Extract the dictionary out of the list index
+        nb_ctx: "{{ config_context[0] }}"
       when: config_context is defined and config_context | length > 0
 
     - name: Map Target IP
@@ -77,4 +78,4 @@
           vars:
             ansible_user: "{{ nb_ctx.vm_admin_user }}"
             ansible_password: "{{ nb_ctx.vm_admin_password }}"
-          when: inventory_hostname not in ['://vgs.com', 'localhost']
+          when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
