@@ -4,10 +4,10 @@ set -e
 echo "Configuring verbose boot..."
 
 grubby --update-kernel=ALL \
-    --remove-args="rhgb quiet loglevel systemd.show_status console"
+  --remove-args="rhgb quiet loglevel systemd.show_status console=tty0 console=ttyS0,9600 console"
 
 grubby --update-kernel=ALL \
-    --args="loglevel=5 systemd.show_status=true console=ttyS0,9600 console=tty0"
+  --args="loglevel=5 systemd.show_status=true console=ttyS0,9600 console=tty0"
 
 echo
 echo "Current kernel arguments:"
