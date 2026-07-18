@@ -46,6 +46,9 @@
     
       delegate_to: localhost
 
+    - name: Show VM creation result
+      debug:
+        var: vm_create
     # --- PHASE 3: GUEST CONFIGURATION ---
 
     # --- PHASE 3: GUEST CONFIGURATION ---
