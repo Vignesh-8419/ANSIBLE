@@ -178,3 +178,9 @@ curl -L -o bootstrap_subscription_manager.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/bootstrap_subscription_manager.sh?$(date +%s)" && \
 chmod +x bootstrap_subscription_manager.sh
 ```
+
+```text
+curl -L -o Offline_Patching_el7.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Offline_Patching_el7.sh?$(date +%s)" && \
+chmod +x Offline_Patching_el7.sh
+```
