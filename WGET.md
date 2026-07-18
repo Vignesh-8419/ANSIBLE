@@ -184,3 +184,9 @@ curl -L -o Offline_Patching_el7.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Offline_Patching_el7.sh?$(date +%s)" && \
 chmod +x Offline_Patching_el7.sh
 ```
+
+```text
+curl -L -o enable-verbose-boot.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-boot.sh?$(date +%s)" && \
+chmod +x enable-verbose-boot.sh
+```
