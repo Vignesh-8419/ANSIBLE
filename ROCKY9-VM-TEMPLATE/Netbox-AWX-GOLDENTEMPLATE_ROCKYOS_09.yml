@@ -11,16 +11,15 @@
     # --- PHASE 0: PREPARE DATA ---
     - name: Load and normalize NetBox config context
       set_fact:
-        # Extracting the dictionary out of the list index
-        nb_ctx: "{{ config_context[0] if config_context is not string and config_context | length > 0 else config_context }}"
-      when: config_context is defined
+        nb_ctx: "{{ config_context }}"
+      when: config_context is defined and config_context | length > 0
 
     - name: Map Target IP
       set_fact:
         target_ip: "{{ ansible_host }}"
 
     # --- PHASE 2: VCENTER PROVISIONING ---
-    - name: Create VM in vCenter
+    - name: Create VM in vCenter (Injecting Network Parameters via OVF)
       community.vmware.vmware_guest:
         hostname: "{{ nb_ctx.vcenter_hostname }}"
         username: "{{ nb_ctx.vcenter_username }}"
@@ -34,15 +33,32 @@
         networks:
           - name: "{{ nb_ctx.vm_network }}"
             start_connected: true
+        
+        # Bypasses vCenter OS customization to avoid open-vm-tools validation crash
+        vapp_properties:
+          - id: "guestinfo.ipaddr"
+            value: "{{ target_ip }}"
+            type: "string"
+          - id: "guestinfo.netmask"
+            value: "{{ nb_ctx.netmask | default('24') }}"
+            type: "string"
+          - id: "guestinfo.gateway"
+            value: "{{ nb_ctx.gateway }}"
+            type: "string"
+          - id: "guestinfo.dns"
+            value: "{{ nb_ctx.dns_servers | join(' ') }}"
+            type: "string"
+            
+        # Ansible will wait patiently for the final static IP to wake up and respond
         wait_for_ip_address: yes
-      register: vm_create
       delegate_to: localhost
 
     # --- PHASE 3: GUEST CONFIGURATION ---
+    # Ansible connects directly to the newly self-configured static IP (.151)
     - name: Guest Configuration Block
       block:
 
-        - name: Install open-vm-tools to prevent future customization errors
+        - name: Install open-vm-tools to prevent future infrastructure errors
           ansible.builtin.raw: |
             sudo dnf install -y open-vm-tools
             sudo systemctl enable --now vmtoolsd
