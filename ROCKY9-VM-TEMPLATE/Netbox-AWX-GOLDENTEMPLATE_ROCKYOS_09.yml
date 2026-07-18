@@ -18,8 +18,8 @@
       set_fact:
         target_ip: "{{ ansible_host }}"
 
-    # --- PHASE 2: VCENTER PROVISIONING WITH CLOUD-INIT ---
-    - name: Create VM in vCenter (Injecting Network Specs via Cloud-Init)
+    # --- PHASE 2: PROVISION WITH FORCED CUSTOMIZATION ENGINE ---
+    - name: Create VM in vCenter with Static IP Assignment
       community.vmware.vmware_guest:
         hostname: "{{ nb_ctx.vcenter_hostname }}"
         username: "{{ nb_ctx.vcenter_username }}"
@@ -30,35 +30,29 @@
         name: "{{ inventory_hostname.split('.')[0] }}"
         state: poweredon
         template: "{{ nb_ctx.rocky9_template_name }}"
+        
+        # Inject network definitions natively into vCenter without triggering the validation block
         networks:
           - name: "{{ nb_ctx.vm_network }}"
+            ip: "{{ target_ip }}"
+            netmask: "255.255.255.0"   # Explicitly using standard subnet string for vCenter native spec
+            gateway: "{{ nb_ctx.gateway }}"
+            dns_servers: "{{ nb_ctx.dns_servers }}"
             start_connected: true
-        
-        # Cloud-init properties parsed on boot by Rocky 9 without needing open-vm-tools
-        vapp_properties:
-          - id: "guestinfo.metadata"
-            value: |
-              instance-id: "{{ inventory_hostname.split('.')[0] }}"
-              local-hostname: "{{ inventory_hostname }}"
-              network:
-                version: 2
-                ethernets:
-                  interfaces:
-                    match:
-                      name: en*
-                    addresses:
-                      - "{{ target_ip }}/{{ nb_ctx.netmask | default('24') }}"
-                    gateway4: "{{ nb_ctx.gateway }}"
-                    nameservers:
-                      addresses: {{ nb_ctx.dns_servers | to_json }}
-            type: "string"
+            connected: true
 
-        # Ansible will wait strictly for your designated 192.168.253.151 IP to come online
+        # Forces vCenter to run the customization engine on first boot even if tools status reports missing
+        customization:
+          existing_customization_spec: null
+          hostname: "{{ inventory_hostname.split('.')[0] }}"
+          domain: "vgs.com"
+
+        # Ansible will wait directly for 192.168.253.151 to wake up over network interface
         wait_for_ip_address: yes
       delegate_to: localhost
 
     # --- PHASE 3: GUEST CONFIGURATION ---
-    # Ansible connects directly to the static IP (.151) configured by Cloud-Init
+    # Ansible connects directly to the static IP (.151) configured natively during cloning
     - name: Guest Configuration Block
       block:
 
