@@ -1,4 +1,4 @@
-=---
+---
 - name: End-to-End VM Provisioning and Configuration
   hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
   gather_facts: no
