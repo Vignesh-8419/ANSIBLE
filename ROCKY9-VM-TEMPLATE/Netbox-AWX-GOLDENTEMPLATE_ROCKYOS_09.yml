@@ -18,8 +18,8 @@
       set_fact:
         target_ip: "{{ ansible_host }}"
 
-    # --- PHASE 2: VCENTER PROVISIONING ---
-    - name: Create VM in vCenter (Bypassing OS Specs)
+    # --- PHASE 2: VCENTER PROVISIONING WITH CLOUD-INIT ---
+    - name: Create VM in vCenter (Injecting Network Specs via Cloud-Init)
       community.vmware.vmware_guest:
         hostname: "{{ nb_ctx.vcenter_hostname }}"
         username: "{{ nb_ctx.vcenter_username }}"
@@ -33,45 +33,32 @@
         networks:
           - name: "{{ nb_ctx.vm_network }}"
             start_connected: true
-        wait_for_ip_address: no # Do not wait for a random DHCP IP
-      delegate_to: localhost
+        
+        # Cloud-init properties parsed on boot by Rocky 9 without needing open-vm-tools
+        vapp_properties:
+          - id: "guestinfo.metadata"
+            value: |
+              instance-id: "{{ inventory_hostname.split('.')[0] }}"
+              local-hostname: "{{ inventory_hostname }}"
+              network:
+                version: 2
+                ethernets:
+                  interfaces:
+                    match:
+                      name: en*
+                    addresses:
+                      - "{{ target_ip }}/{{ nb_ctx.netmask | default('24') }}"
+                    gateway4: "{{ nb_ctx.gateway }}"
+                    nameservers:
+                      addresses: {{ nb_ctx.dns_servers | to_json }}
+            type: "string"
 
-    - name: Allow 15 seconds for VM Boot initialization
-      ansible.builtin.pause:
-        seconds: 15
-
-    # --- NEW: Inject Static IP directly through vCenter API (No SSH Required) ---
-    - name: Push Static IP Configuration using Guest API
-      community.vmware.vmware_vm_shell:
-        hostname: "{{ nb_ctx.vcenter_hostname }}"
-        username: "{{ nb_ctx.vcenter_username }}"
-        password: "{{ nb_ctx.vcenter_password }}"
-        validate_certs: false
-        vm_id: "{{ inventory_hostname.split('.')[0] }}"
-        # Credentials to authenticate directly inside the Guest OS layer
-        vm_username: "{{ nb_ctx.vm_admin_user }}"
-        vm_password: "{{ nb_ctx.vm_admin_password }}"
-        vm_shell: "/bin/bash"
-        vm_shell_args: >
-          -c "sudo hostnamectl set-hostname {{ inventory_hostname }} &&
-          ACTIVE_CONN=\$(nmcli -t -f NAME,DEVICE connection show --active | awk -F: '\$2!=\"\" {print \$1; exit}') &&
-          sudo nmcli connection modify \"\$ACTIVE_CONN\" ipv4.addresses \"{{ target_ip }}/{{ nb_ctx.netmask | default('24') }}\" &&
-          sudo nmcli connection modify \"\$ACTIVE_CONN\" ipv4.gateway \"{{ nb_ctx.gateway }}\" &&
-          sudo nmcli connection modify \"\$ACTIVE_CONN\" ipv4.dns \"{{ nb_ctx.dns_servers | join(' ') }}\" &&
-          sudo nmcli connection modify \"\$ACTIVE_CONN\" ipv4.method manual &&
-          sudo nmcli connection modify \"\$ACTIVE_CONN\" ipv4.ignore-auto-dns yes &&
-          sudo nmcli connection up \"\$ACTIVE_CONN\""
-      delegate_to: localhost
-
-    - name: Wait for Static IP to answer on SSH
-      ansible.builtin.wait_for:
-        host: "{{ target_ip }}"
-        port: 22
-        timeout: 60
+        # Ansible will wait strictly for your designated 192.168.253.151 IP to come online
+        wait_for_ip_address: yes
       delegate_to: localhost
 
     # --- PHASE 3: GUEST CONFIGURATION ---
-    # Connects straight to 192.168.253.151 over standard SSH transport
+    # Ansible connects directly to the static IP (.151) configured by Cloud-Init
     - name: Guest Configuration Block
       block:
 
