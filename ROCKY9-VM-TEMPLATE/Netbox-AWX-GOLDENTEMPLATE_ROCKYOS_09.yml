@@ -37,22 +37,24 @@
         username: "{{ nb_ctx.vcenter_username }}"
         password: "{{ nb_ctx.vcenter_password }}"
         validate_certs: false
+    
         datacenter: "{{ nb_ctx.datacenter_name }}"
         folder: "/{{ nb_ctx.datacenter_name }}/{{ nb_ctx.folder | default('vm') }}"
+    
         name: "{{ inventory_hostname.split('.')[0] }}"
-        state: poweredon
         template: "{{ nb_ctx.rocky9_template_name }}"
+        state: poweredon
+    
+        wait_for_ip_address: true
+    
         networks:
           - name: "{{ nb_ctx.vm_network }}"
+            connected: true
+            start_connected: true
             ip: "{{ target_ip }}"
             netmask: "{{ nb_ctx.netmask }}"
             gateway: "{{ nb_ctx.gateway }}"
             dns_servers: "{{ nb_ctx.dns_servers }}"
-            start_connected: true
-
-        wait_for_customization: true
-        wait_for_customization_timeout: 1800
-        wait_for_ip_address: true
 
       delegate_to: localhost
       when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
