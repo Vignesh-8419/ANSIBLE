@@ -38,12 +38,6 @@
       register: vm_create
       delegate_to: localhost
 
-    # --- NEW STEP: Route Ansible to the temporary DHCP IP ---
-    - name: Set temporary connection target to DHCP IP
-      set_fact:
-        ansible_host: "{{ vm_create.instance.ipv4 }}"
-      when: vm_create.instance.ipv4 is defined
-
     # --- PHASE 3: GUEST CONFIGURATION ---
     - name: Guest Configuration Block
       block:
