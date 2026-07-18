@@ -1,4 +1,4 @@
----
+=---
 - name: End-to-End VM Provisioning and Configuration
   hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
   gather_facts: no
@@ -18,8 +18,8 @@
       set_fact:
         target_ip: "{{ ansible_host }}"
 
-    # --- PHASE 2: PROVISION WITH FORCED CUSTOMIZATION ENGINE ---
-    - name: Create VM in vCenter with Static IP Assignment
+    # --- PHASE 2: FORCE VCENTER NETWORK PROFILE OVERRIDE ---
+    - name: Create VM and Overwrite Empty Interface Configuration
       community.vmware.vmware_guest:
         hostname: "{{ nb_ctx.vcenter_hostname }}"
         username: "{{ nb_ctx.vcenter_username }}"
@@ -31,33 +31,37 @@
         state: poweredon
         template: "{{ nb_ctx.rocky9_template_name }}"
         
-        # Inject network definitions natively into vCenter without triggering the validation block
+        # Explicit network declaration forced onto the hardware layer
         networks:
           - name: "{{ nb_ctx.vm_network }}"
             ip: "{{ target_ip }}"
-            netmask: "255.255.255.0"   # Explicitly using standard subnet string for vCenter native spec
+            netmask: "255.255.255.0"
             gateway: "{{ nb_ctx.gateway }}"
             dns_servers: "{{ nb_ctx.dns_servers }}"
             start_connected: true
             connected: true
 
-        # Forces vCenter to run the customization engine on first boot even if tools status reports missing
+        # Forcing custom profile engine metadata directly into the system container
         customization:
-          existing_customization_spec: null
           hostname: "{{ inventory_hostname.split('.')[0] }}"
           domain: "vgs.com"
+          timezone: "UTC"
 
-        # Ansible will wait directly for 192.168.253.151 to wake up over network interface
+        # Ansible will wait patiently until the virtual interface wakes up at 192.168.253.151
         wait_for_ip_address: yes
       delegate_to: localhost
 
-    # --- PHASE 3: GUEST CONFIGURATION ---
-    # Ansible connects directly to the static IP (.151) configured natively during cloning
+    # --- PHASE 3: GUEST POST-CONFIGURATION ---
     - name: Guest Configuration Block
       block:
 
-        - name: Install open-vm-tools to prevent future infrastructure errors
+        - name: Update Network Manager Profile and Fix Autoconnect Flaw
           ansible.builtin.raw: |
+            # Re-enable the hardware connection profile so it persists permanently across reboots
+            sudo nmcli connection modify "ens192" connection.autoconnect yes
+            sudo nmcli connection up "ens192"
+            
+            # Install open-vm-tools to prevent future deployment errors
             sudo dnf install -y open-vm-tools
             sudo systemctl enable --now vmtoolsd
           vars:
@@ -75,4 +79,4 @@
           vars:
             ansible_user: "{{ nb_ctx.vm_admin_user }}"
             ansible_password: "{{ nb_ctx.vm_admin_password }}"
-          when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+          when: inventory_hostname not in ['://vgs.com', 'localhost']
