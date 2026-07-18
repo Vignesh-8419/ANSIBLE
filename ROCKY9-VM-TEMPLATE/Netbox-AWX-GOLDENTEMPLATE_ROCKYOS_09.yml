@@ -11,8 +11,13 @@
     # --- PHASE 0: PREPARE DATA ---
     - name: Load and normalize NetBox config context
       set_fact:
-        nb_ctx: "{{ config_context }}"
-      when: config_context is defined and config_context | length > 0
+        # Extracting the dictionary out of the list index
+        nb_ctx: "{{ config_context[0] if config_context is not string and config_context | length > 0 else config_context }}"
+      when: config_context is defined
+
+    - name: Map Target IP
+      set_fact:
+        target_ip: "{{ ansible_host }}"
 
     # --- PHASE 2: VCENTER PROVISIONING ---
     - name: Create VM in vCenter
