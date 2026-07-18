@@ -11,8 +11,7 @@
     # --- PHASE 0: PREPARE DATA ---
     - name: Load and normalize NetBox config context
       set_fact:
-        # Extract the dictionary container natively from index 0 of the NetBox array
-        nb_ctx: "{{ config_context[0] }}"
+        nb_ctx: "{{ config_context }}"
       when: config_context is defined and config_context | length > 0
 
     - name: Map Target IP
@@ -59,44 +58,23 @@
     - name: Guest Configuration Block
       block:
 
+        - name: Install open-vm-tools to prevent future infrastructure errors
+          ansible.builtin.raw: |
+            sudo dnf install -y open-vm-tools
+            sudo systemctl enable --now vmtoolsd
+          vars:
+            ansible_user: "{{ nb_ctx.vm_admin_user }}"
+            ansible_password: "{{ nb_ctx.vm_admin_password }}"
+
         - name: Reset machine-id and SSH host keys
           ansible.builtin.raw: |
-            sudo rm -f /etc/machine-id
-            sudo rm -f /var/lib/dbus/machine-id
+            sudo rm -f /etc/machine-id /var/lib/dbus/machine-id
             sudo touch /etc/machine-id
-
             sudo rm -f /etc/ssh/ssh_host_*
-
-            # Generate new machine-id
             sudo systemd-machine-id-setup
-
-            # Generate new SSH host keys
             sudo ssh-keygen -A
-
-            # Restart SSH
             sudo systemctl restart sshd || sudo systemctl restart ssh
           vars:
             ansible_user: "{{ nb_ctx.vm_admin_user }}"
             ansible_password: "{{ nb_ctx.vm_admin_password }}"
-          when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
-
-        - name: Set Hostname and Network inside Guest
-          ansible.builtin.raw: |
-            sudo hostnamectl set-hostname {{ inventory_hostname }}
-
-            # Detect active NetworkManager connection
-            CONN_NAME=$(nmcli -t -f NAME,DEVICE connection show --active | awk -F: '$2 != "" {print $1; exit}')
-
-            # Detect active network interface
-            IFACE=$(nmcli -t -f DEVICE connection show --active | head -n1)
-
-            echo "Connection: $CONN_NAME"
-            echo "Interface : $IFACE"
-
-            sudo nmcli connection modify "$CONN_NAME" ipv4.dns "{{ nb_ctx.dns_servers | join(' ') }}"
-            sudo nmcli connection modify "$CONN_NAME" ipv4.ignore-auto-dns yes
-            sudo nmcli connection up "$CONN_NAME"
-          vars:
-            ansible_user: "{{ nb_ctx.vm_admin_user }}"
-            ansible_password: "{{ nb_ctx.vm_admin_password }}"
-          when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+          when: inventory_hostname not in ['://vgs.com', 'localhost']
