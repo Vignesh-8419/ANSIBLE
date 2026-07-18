@@ -285,10 +285,10 @@ elif echo "$OS_RELEASE" | grep -qi "release 9"; then
 
     TAGS=(
         "patch-el9-context"
-        "pxe-rockyos-context"
         "repo-config-context"
         "vmware-awx-context"
         "rocky9-patch-context"
+        "pxe-rocky9-context"
     )
 
 else
