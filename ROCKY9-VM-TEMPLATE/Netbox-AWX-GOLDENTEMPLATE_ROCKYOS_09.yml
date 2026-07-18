@@ -45,19 +45,53 @@
         template: "{{ nb_ctx.rocky9_template_name }}"
         state: poweredon
     
-        wait_for_ip_address: true
+        hardware:
+          memory_mb: 4096
+          num_cpus: 4
     
         networks:
           - name: "{{ nb_ctx.vm_network }}"
+            device_type: vmxnet3
             connected: true
             start_connected: true
-            ip: "{{ target_ip }}"
-            netmask: "{{ nb_ctx.netmask }}"
-            gateway: "{{ nb_ctx.gateway }}"
-            dns_servers: "{{ nb_ctx.dns_servers }}"
-
+    
       delegate_to: localhost
-      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+
+    - name: Show VM creation result
+      debug:
+        var: vm_deploy
+  
+    - name: Connect VM network adapter
+      community.vmware.vmware_guest_network:
+        hostname: "{{ nb_ctx.vcenter_hostname }}"
+        username: "{{ nb_ctx.vcenter_username }}"
+        password: "{{ nb_ctx.vcenter_password }}"
+        validate_certs: false
+    
+        datacenter: "{{ nb_ctx.datacenter_name }}"
+        name: "{{ inventory_hostname.split('.')[0] }}"
+    
+        network_name: "{{ nb_ctx.vm_network }}"
+        connected: true
+        start_connected: true
+        state: present
+    
+      delegate_to: localhost
+      
+    
+    - name: Power on VM
+      community.vmware.vmware_guest_powerstate:
+        hostname: "{{ nb_ctx.vcenter_hostname }}"
+        username: "{{ nb_ctx.vcenter_username }}"
+        password: "{{ nb_ctx.vcenter_password }}"
+        validate_certs: false
+    
+        datacenter: "{{ nb_ctx.datacenter_name }}"
+        name: "{{ inventory_hostname.split('.')[0] }}"
+    
+        state: powered-on
+    
+      delegate_to: localhost
 
     # --- PHASE 3: GUEST CONFIGURATION ---
 
