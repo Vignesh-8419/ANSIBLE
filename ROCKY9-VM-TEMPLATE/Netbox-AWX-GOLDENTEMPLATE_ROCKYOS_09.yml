@@ -73,19 +73,24 @@
           ansible.builtin.raw: |
             sudo hostnamectl set-hostname {{ inventory_hostname }}
             
-            # Find active connection interface name (e.g., ens192)
-            DEVICE=$(ip route | awk '/default/ {print $5; exit}')
-            ACTIVE_UUID=$(nmcli -t -f UUID,DEVICE connection show --active | awk -F: -v dev="$DEVICE" '$2==dev {print $1}')
+            # 1. Identify the exact connection name currently bound to the active interface
+            ACTIVE_CONN=$(nmcli -t -f NAME,DEVICE connection show --active | awk -F: '$2!="" {print $1; exit}')
             
-            # Change network profile from DHCP to manual static mapping using NetBox data
-            sudo nmcli connection modify "$ACTIVE_UUID" ipv4.addresses "{{ target_hosts }}/24"
-            sudo nmcli connection modify "$ACTIVE_UUID" ipv4.gateway "{{ nb_ctx.gateway }}"
-            sudo nmcli connection modify "$ACTIVE_UUID" ipv4.dns "{{ nb_ctx.dns_servers | join(' ') }}"
-            sudo nmcli connection modify "$ACTIVE_UUID" ipv4.method manual
-            sudo nmcli connection modify "$ACTIVE_UUID" ipv4.ignore-auto-dns yes
+            # 2. Modify that active profile to use your NetBox static allocations
+            sudo nmcli connection modify "$ACTIVE_CONN" ipv4.addresses "{{ target_ip }}/{{ nb_ctx.netmask | default('24') }}"
+            sudo nmcli connection modify "$ACTIVE_CONN" ipv4.gateway "{{ nb_ctx.gateway }}"
+            sudo nmcli connection modify "$ACTIVE_CONN" ipv4.dns "{{ nb_ctx.dns_servers | join(' ') }}"
+            sudo nmcli connection modify "$ACTIVE_CONN" ipv4.method manual
+            sudo nmcli connection modify "$ACTIVE_CONN" ipv4.ignore-auto-dns yes
             
-            # Apply changes asynchronously to avoid SSH disconnection hang
-            nohup sh -c "sudo nmcli connection up '$ACTIVE_UUID'" > /dev/null 2>&1 &
+            # 3. Clean up the duplicate, disconnected profile to prevent interface flapping
+            STALE_UUID=$(nmcli -t -f UUID,DEVICE connection show | awk -F: '$2=="" {print $1}')
+            if [ ! -z "$STALE_UUID" ]; then
+                sudo nmcli connection delete "$STALE_UUID"
+            fi
+            
+            # 4. Asynchronously bring the connection up to switch from DHCP to Static (.151)
+            nohup sh -c "sleep 2 && sudo nmcli connection up '$ACTIVE_CONN'" > /dev/null 2>&1 &
           vars:
             ansible_user: "{{ nb_ctx.vm_admin_user }}"
             ansible_password: "{{ nb_ctx.vm_admin_password }}"
