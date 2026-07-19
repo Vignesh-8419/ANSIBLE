@@ -80,24 +80,3 @@
             ansible_user: "{{ nb_ctx.vm_admin_user }}"
             ansible_password: "{{ nb_ctx.vm_admin_password }}"
           when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
-
-        - name: Set Hostname and Network inside Guest
-          ansible.builtin.raw: |
-            sudo hostnamectl set-hostname {{ inventory_hostname }}
-
-            # Detect active NetworkManager connection
-            CONN_NAME=$(nmcli -t -f NAME,DEVICE connection show --active | awk -F: '$2 != "" {print $1; exit}')
-
-            # Detect active network interface
-            IFACE=$(nmcli -t -f DEVICE connection show --active | head -n1)
-
-            echo "Connection: $CONN_NAME"
-            echo "Interface : $IFACE"
-
-            sudo nmcli connection modify "$CONN_NAME" ipv4.dns "{{ nb_ctx.dns_servers | join(' ') }}"
-            sudo nmcli connection modify "$CONN_NAME" ipv4.ignore-auto-dns yes
-            sudo nmcli connection up "$CONN_NAME"
-          vars:
-            ansible_user: "{{ nb_ctx.vm_admin_user }}"
-            ansible_password: "{{ nb_ctx.vm_admin_password }}"
-          when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
