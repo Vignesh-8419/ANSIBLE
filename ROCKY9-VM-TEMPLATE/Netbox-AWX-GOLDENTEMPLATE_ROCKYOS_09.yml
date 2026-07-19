@@ -10,15 +10,15 @@
     # --- PHASE 0: PREPARE DATA ---
     - name: Load and normalize NetBox config context
       set_fact:
-        nb_ctx: "{{ config_context[0] }}"  # Fixed: Restored the required list index
+        nb_ctx: "{{ config_context[0] }}"
       when: config_context is defined and config_context | length > 0
 
     - name: Map Target IP
       set_fact:
         target_ip: "{{ ansible_host }}"
 
-    # --- PHASE 1: PROVISION VM WITH HARD-CODED STATIC IP ---
-    - name: Create VM and Enforce Static IP Binding
+    # --- PHASE 1: PROVISION VM (WITHOUT BROKEN CUSTOMIZATION) ---
+    - name: Create VM from Template
       community.vmware.vmware_guest:
         hostname: "{{ nb_ctx.vcenter_hostname }}"
         username: "{{ nb_ctx.vcenter_username }}"
@@ -31,66 +31,72 @@
         template: "{{ nb_ctx.rocky9_template_name }}"
         networks:
           - name: "{{ nb_ctx.vm_network }}"
-            ip: "{{ target_ip }}"
-            netmask: "255.255.255.0"
-            gateway: "{{ nb_ctx.gateway }}"
-            dns_servers: "{{ nb_ctx.dns_servers }}"
             device_type: vmxnet3
             start_connected: true
             connected: true
-        customization:
-          hostname: "{{ inventory_hostname.split('.')[0] }}"
-          domain: "vgs.com"
-          timezone: "UTC"
-        wait_for_ip_address: yes
+        # Removed the broken 'customization:' block completely so vCenter doesn't unplug the cable
+        wait_for_ip_address: yes  # This will wait until it safely grabs its initial bootstrap IP
       delegate_to: localhost
+      register: vm_facts
 
-    # --- PHASE 1.5: FORCED HARDWARE ALIGNMENT ---
-    - name: Force vSphere Cable State and Kill Transient Dynamic Profiles
-      community.vmware.vmware_guest_network:
-        hostname: "{{ nb_ctx.vcenter_hostname }}"
-        username: "{{ nb_ctx.vcenter_username }}"
-        password: "{{ nb_ctx.vcenter_password }}"
-        validate_certs: false
-        datacenter: "{{ nb_ctx.datacenter_name }}"
-        name: "{{ inventory_hostname.split('.')[0] }}"
-        state: present
-        label: "Network adapter 1"
-        network_name: "{{ nb_ctx.vm_network }}"
-        connected: true
-        start_connected: true
-        guest_control: true
-      delegate_to: localhost
+    # --- PHASE 2: GUEST IP OVERRIDE MANAGEMENT ---
+    - name: Extract Bootstrap Runtime IP
+      set_fact:
+        bootstrap_ip: "{{ vm_facts.instance.ipv4 }}"
 
-    - name: Wait for Boot via Targeted Static IP
+    - name: Wait for SSH to accept keys on Bootstrap IP
       ansible.builtin.wait_for:
-        host: "{{ target_ip }}"
+        host: "{{ bootstrap_ip }}"
         port: 22
         timeout: 300
         delay: 10
       delegate_to: localhost
 
-    # --- PHASE 2: NATIVE GUEST PROFILE CONFIGURATION ---
-    - name: Install and enable open-vm-tools immediately
+    - name: Set Hostname Natively inside Guest OS
+      ansible.builtin.raw: |
+        hostnamectl set-hostname "{{ inventory_hostname.split('.')[0] }}"
+      vars:
+        ansible_user: "{{ nb_ctx.vm_admin_user }}"
+        ansible_password: "{{ nb_ctx.vm_admin_password }}"
+        ansible_host: "{{ bootstrap_ip }}"
+
+    - name: Kill DHCP and Enforce Static IP Only on Connection Profile
+      ansible.builtin.raw: |
+        # Locate active ethernet interface
+        IFACE=$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1; exit}')
+        
+        # Modify the interface directly to drop DHCP and bind your static IP exclusively
+        nmcli connection modify "$IFACE" ipv4.addresses "{{ target_ip }}/24"
+        nmcli connection modify "$IFACE" ipv4.gateway "{{ nb_ctx.gateway }}"
+        nmcli connection modify "$IFACE" ipv4.dns "{{ nb_ctx.dns_servers }}"
+        nmcli connection modify "$IFACE" ipv4.method manual
+        nmcli connection modify "$IFACE" connection.autoconnect yes
+        nmcli connection modify "$IFACE" connection.autoconnect-priority 0
+        
+        # Reload interface in background so it doesn't freeze the Ansible task
+        (sleep 2 && nmcli connection up "$IFACE") &
+      vars:
+        ansible_user: "{{ nb_ctx.vm_admin_user }}"
+        ansible_password: "{{ nb_ctx.vm_admin_password }}"
+        ansible_host: "{{ bootstrap_ip }}"
+
+    # --- PHASE 3: CONFIRM FINAL STATIC IP LINK ---
+    - name: Verify VM responds exclusively on target static IP
+      ansible.builtin.wait_for:
+        host: "{{ target_ip }}"
+        port: 22
+        timeout: 90
+        delay: 5
+      delegate_to: localhost
+
+    - name: Install and enable open-vm-tools
       ansible.builtin.raw: |
         dnf install -y open-vm-tools
         systemctl enable --now vmtoolsd
       vars:
         ansible_user: "{{ nb_ctx.vm_admin_user }}"
         ansible_password: "{{ nb_ctx.vm_admin_password }}"
-
-    - name: Enforce Strict Manual Profile Settings on Connection Manager
-      ansible.builtin.raw: |
-        nmcli connection modify ens33 ipv4.addresses "{{ target_ip }}/24"
-        nmcli connection modify ens33 ipv4.gateway "{{ nb_ctx.gateway }}"
-        nmcli connection modify ens33 ipv4.dns "{{ nb_ctx.dns_servers }}"
-        nmcli connection modify ens33 ipv4.method manual
-        nmcli connection modify ens33 connection.autoconnect yes
-        nmcli connection modify ens33 connection.autoconnect-priority 0
-        nmcli connection up ens33
-      vars:
-        ansible_user: "{{ nb_ctx.vm_admin_user }}"
-        ansible_password: "{{ nb_ctx.vm_admin_password }}"
+        ansible_host: "{{ target_ip }}"
 
     - name: Reset machine-id and SSH host keys
       ansible.builtin.raw: |
@@ -103,4 +109,5 @@
       vars:
         ansible_user: "{{ nb_ctx.vm_admin_user }}"
         ansible_password: "{{ nb_ctx.vm_admin_password }}"
+        ansible_host: "{{ target_ip }}"
       when: inventory_hostname not in ['://vgs.com', 'localhost']
