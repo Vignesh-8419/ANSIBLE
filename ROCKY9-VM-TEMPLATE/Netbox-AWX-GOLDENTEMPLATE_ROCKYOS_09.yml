@@ -2,102 +2,150 @@
 - name: End-to-End VM Provisioning and Configuration
   hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
   gather_facts: no
-  become_method: sudo
+  become: yes
   become_user: root
+
   vars:
     ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
 
   tasks:
-    # --- PHASE 0: PREPARE DATA ---
-    - name: Load and normalize NetBox config context
-      set_fact:
-        # Use the first index since your debug showed it's a list
-        nb_ctx: "{{ config_context[0] }}"
-      when: config_context is defined and config_context | length > 0
 
-    - name: Map Target IP
-      set_fact:
-        target_ip: "{{ ansible_host }}"
+  ####################################################################
+  # PHASE 0
+  ####################################################################
 
-    # --- PHASE 1: DNS REGISTRATION ---
-#    - name: Execute Pi-hole script on DNS Server
-#      ansible.builtin.shell: "/root/pihole-customdns.sh --add {{ inventory_hostname }} {{ target_ip }}"
-#      delegate_to: 192.168.253.151 
-#      become: yes
-#      vars:
-        # Explicitly pull nb_ctx from the current host's facts
-#        ansible_user: "{{ hostvars[inventory_hostname]['nb_ctx']['infra_dns_user'] }}"
-#        ansible_ssh_pass: "{{ hostvars[inventory_hostname]['nb_ctx']['infra_dns_pass'] }}"
-#      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+  - name: Load NetBox Config Context
+    set_fact:
+      nb_ctx: "{{ config_context[0] }}"
+    when: config_context is defined and config_context | length > 0
 
-    # --- PHASE 2: VCENTER PROVISIONING ---
-    - name: Create VM in vCenter
-      community.vmware.vmware_guest:
-        hostname: "{{ nb_ctx.vcenter_hostname }}"
-        username: "{{ nb_ctx.vcenter_username }}"
-        password: "{{ nb_ctx.vcenter_password }}"
-        validate_certs: false
-        datacenter: "{{ nb_ctx.datacenter_name }}"
-        folder: "/{{ nb_ctx.datacenter_name }}/{{ nb_ctx.folder | default('vm') }}"
-        name: "{{ inventory_hostname.split('.')[0] }}"
-        state: poweredon
-        template: "{{ nb_ctx.rocky9_template_name }}"
-        networks:
-          - name: "{{ nb_ctx.vm_network }}"
-            ip: "{{ target_ip }}"
-            netmask: "{{ nb_ctx.netmask }}"
-            gateway: "{{ nb_ctx.gateway }}"
-            dns_servers: "{{ nb_ctx.dns_servers }}"
-            start_connected: true
-        wait_for_ip_address: yes
-      delegate_to: localhost
-      when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+  - name: Target IP
+    set_fact:
+      target_ip: "{{ ansible_host }}"
 
-    # --- PHASE 3: GUEST CONFIGURATION ---
+  ####################################################################
+  # PHASE 1 - CREATE VM
+  ####################################################################
 
-    # --- PHASE 3: GUEST CONFIGURATION ---
+  - name: Clone VM from Template
+    community.vmware.vmware_guest:
+      hostname: "{{ nb_ctx.vcenter_hostname }}"
+      username: "{{ nb_ctx.vcenter_username }}"
+      password: "{{ nb_ctx.vcenter_password }}"
+      validate_certs: false
 
-    - name: Guest Configuration Block
-      block:
+      datacenter: "{{ nb_ctx.datacenter_name }}"
+      folder: "/{{ nb_ctx.datacenter_name }}/{{ nb_ctx.folder | default('vm') }}"
 
-        - name: Reset machine-id and SSH host keys
-          ansible.builtin.raw: |
-            sudo rm -f /etc/machine-id
-            sudo rm -f /var/lib/dbus/machine-id
-            sudo touch /etc/machine-id
+      name: "{{ inventory_hostname.split('.')[0] }}"
+      template: "{{ nb_ctx.rocky9_template_name }}"
+      state: poweredon
 
-            sudo rm -f /etc/ssh/ssh_host_*
+      wait_for_ip_address: yes
+      wait_for_ip_address_timeout: 600
 
-            # Generate new machine-id
-            sudo systemd-machine-id-setup
+      networks:
+        - name: "{{ nb_ctx.vm_network }}"
+          device_type: vmxnet3
+          connected: true
+          start_connected: true
 
-            # Generate new SSH host keys
-            sudo ssh-keygen -A
+    delegate_to: localhost
 
-            # Restart SSH
-            sudo systemctl restart sshd || sudo systemctl restart ssh
-          vars:
-            ansible_user: "{{ nb_ctx.vm_admin_user }}"
-            ansible_password: "{{ nb_ctx.vm_admin_password }}"
-          when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+  ####################################################################
+  # PHASE 2 - ENSURE NIC CONNECTED
+  ####################################################################
 
-        - name: Set Hostname and Network inside Guest
-          ansible.builtin.raw: |
-            sudo hostnamectl set-hostname {{ inventory_hostname }}
+  - name: Force Network Adapter Connected
+    community.vmware.vmware_guest_network:
+      hostname: "{{ nb_ctx.vcenter_hostname }}"
+      username: "{{ nb_ctx.vcenter_username }}"
+      password: "{{ nb_ctx.vcenter_password }}"
+      validate_certs: false
 
-            # Detect active NetworkManager connection
-            CONN_NAME=$(nmcli -t -f NAME,DEVICE connection show --active | awk -F: '$2 != "" {print $1; exit}')
+      datacenter: "{{ nb_ctx.datacenter_name }}"
+      name: "{{ inventory_hostname.split('.')[0] }}"
 
-            # Detect active network interface
-            IFACE=$(nmcli -t -f DEVICE connection show --active | head -n1)
+      label: "Network adapter 1"
+      state: present
 
-            echo "Connection: $CONN_NAME"
-            echo "Interface : $IFACE"
+      network_name: "{{ nb_ctx.vm_network }}"
+      connected: true
+      start_connected: true
 
-            sudo nmcli connection modify "$CONN_NAME" ipv4.dns "{{ nb_ctx.dns_servers | join(' ') }}"
-            sudo nmcli connection modify "$CONN_NAME" ipv4.ignore-auto-dns yes
-            sudo nmcli connection up "$CONN_NAME"
-          vars:
-            ansible_user: "{{ nb_ctx.vm_admin_user }}"
-            ansible_password: "{{ nb_ctx.vm_admin_password }}"
-          when: inventory_hostname not in ['dns-server-01.vgs.com', 'localhost']
+    delegate_to: localhost
+
+  ####################################################################
+  # PHASE 3 - WAIT FOR SSH
+  ####################################################################
+
+  - name: Wait for SSH
+    wait_for:
+      host: "{{ target_ip }}"
+      port: 22
+      timeout: 600
+      delay: 10
+    delegate_to: localhost
+
+  ####################################################################
+  # PHASE 4 - HOSTNAME
+  ####################################################################
+
+  - name: Set Hostname
+    raw: |
+      hostnamectl set-hostname "{{ inventory_hostname.split('.')[0] }}"
+    vars:
+      ansible_user: "{{ nb_ctx.vm_admin_user }}"
+      ansible_password: "{{ nb_ctx.vm_admin_password }}"
+
+  ####################################################################
+  # PHASE 5 - CONFIGURE STATIC IP
+  ####################################################################
+
+  - name: Configure Static Network
+    raw: |
+
+      IFACE=$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1;exit}')
+
+      CONN=$(nmcli -t -f NAME,DEVICE connection show | awk -F: -v dev="$IFACE" '$2==dev{print $1;exit}')
+
+      if [ -z "$CONN" ]; then
+          CONN="$IFACE"
+      fi
+
+      nmcli con mod "$CONN" ipv4.method manual
+      nmcli con mod "$CONN" ipv4.addresses "{{ target_ip }}/{{ nb_ctx.prefix | default('24') }}"
+      nmcli con mod "$CONN" ipv4.gateway "{{ nb_ctx.gateway }}"
+      nmcli con mod "$CONN" ipv4.dns "{{ (nb_ctx.dns_servers if nb_ctx.dns_servers is string else nb_ctx.dns_servers | join(' ')) }}"
+      nmcli con mod "$CONN" ipv4.ignore-auto-dns yes
+      nmcli con mod "$CONN" connection.autoconnect yes
+
+      nmcli con down "$CONN" || true
+      sleep 3
+      nmcli con up "$CONN"
+
+    vars:
+      ansible_user: "{{ nb_ctx.vm_admin_user }}"
+      ansible_password: "{{ nb_ctx.vm_admin_password }}"
+
+  ####################################################################
+  # PHASE 6 - RESET TEMPLATE IDENTIFIERS
+  ####################################################################
+
+  - name: Reset machine-id and SSH Keys
+    raw: |
+      rm -f /etc/machine-id
+      rm -f /var/lib/dbus/machine-id
+
+      touch /etc/machine-id
+
+      rm -f /etc/ssh/ssh_host_*
+
+      systemd-machine-id-setup
+      ssh-keygen -A
+
+      systemctl restart sshd || systemctl restart ssh
+
+    vars:
+      ansible_user: "{{ nb_ctx.vm_admin_user }}"
+      ansible_password: "{{ nb_ctx.vm_admin_password }}"
