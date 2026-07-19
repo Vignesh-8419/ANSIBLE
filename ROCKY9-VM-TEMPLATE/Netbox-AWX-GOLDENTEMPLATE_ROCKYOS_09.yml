@@ -10,15 +10,15 @@
     # --- PHASE 0: PREPARE DATA ---
     - name: Load and normalize NetBox config context
       set_fact:
-        nb_ctx: "{{ config_context[0] }}"
+        nb_ctx: "{{ config_context }}"
       when: config_context is defined and config_context | length > 0
 
     - name: Map Target IP
       set_fact:
         target_ip: "{{ ansible_host }}"
 
-    # --- PHASE 2: FORCE VCENTER NETWORK PROFILE OVERRIDE ---
-    - name: Create VM and Overwrite Empty Interface Configuration
+    # --- PHASE 1: PROVISION VM WITHOUT BROKEN CUSTOMIZATION ENGINE ---
+    - name: Create VM from Template
       community.vmware.vmware_guest:
         hostname: "{{ nb_ctx.vcenter_hostname }}"
         username: "{{ nb_ctx.vcenter_username }}"
@@ -26,47 +26,19 @@
         validate_certs: false
         datacenter: "{{ nb_ctx.datacenter_name }}"
         folder: "/{{ nb_ctx.datacenter_name }}/{{ nb_ctx.folder | default('vm') }}"
-        name: "{{ inventory_hostname.split('.')[0] }}"
+        name: "{{ inventory_hostname.split('.') }}"
         state: poweredon
         template: "{{ nb_ctx.rocky9_template_name }}"
         networks:
           - name: "{{ nb_ctx.vm_network }}"
-            ip: "{{ target_ip }}"
-            netmask: "255.255.255.0"
-            gateway: "{{ nb_ctx.gateway }}"
-            dns_servers: "{{ nb_ctx.dns_servers }}"
             device_type: vmxnet3
             start_connected: true
             connected: true
-            allow_guest_control: true  # Allows guest customization tools to manipulate state
-        customization:
-          hostname: "{{ inventory_hostname.split('.')[0] }}"
-          domain: "vgs.com"
-          timezone: "UTC"
+        # Removed the broken vCenter customization block entirely
         wait_for_ip_address: yes
       delegate_to: localhost
 
-    # Fix: Explicitly force the network card to connect if customization resets it
-    - name: Ensure Network Adapter is Connected
-      community.vmware.vmware_guest_network:
-        hostname: "{{ nb_ctx.vcenter_hostname }}"
-        username: "{{ nb_ctx.vcenter_username }}"
-        password: "{{ nb_ctx.vcenter_password }}"
-        validate_certs: false
-        name: "{{ inventory_hostname.split('.')[0] }}"
-        gather_network_facts: false
-        label: "Network adapter 1"
-        networks:
-          - name: "{{ nb_ctx.vm_network }}"
-            connected: true
-            start_connected: true
-      delegate_to: localhost
-      register: network_reconnect_result
-      until: network_reconnect_result is succeeded
-      retries: 3
-      delay: 5
-
-    - name: Wait for SSH to become available
+    - name: Wait for Boot via Interface
       ansible.builtin.wait_for:
         host: "{{ target_ip }}"
         port: 22
@@ -74,36 +46,36 @@
         delay: 10
       delegate_to: localhost
 
-    # --- PHASE 3: GUEST POST-CONFIGURATION ---
-
-    - name: Update NetworkManager profile and enable autoconnect
+    # --- PHASE 2: NATIVE GUEST PROFILE CONFIGURATION ---
+    
+    - name: Install and enable open-vm-tools immediately
       ansible.builtin.raw: |
-        IFACE=$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1; exit}')
-
-        if [ -n "$IFACE" ]; then
-            CONN=$(nmcli -t -f NAME,DEVICE connection show --active | \
-              awk -F: -v dev="$IFACE" '$2==dev{print $1; exit}')
-
-            if [ -n "$CONN" ]; then
-                nmcli connection modify "$CONN" connection.autoconnect yes
-                nmcli connection up "$CONN"
-                echo "Updated connection: $CONN ($IFACE)"
-            else
-                echo "No active NetworkManager connection found for $IFACE"
-                exit 1
-            fi
-        else
-            echo "No Ethernet interface found."
-            exit 1
-        fi
+        dnf install -y open-vm-tools
+        systemctl enable --now vmtoolsd
       vars:
         ansible_user: "{{ nb_ctx.vm_admin_user }}"
         ansible_password: "{{ nb_ctx.vm_admin_password }}"
 
-    - name: Install and enable open-vm-tools
+    - name: Set Hostname via NetworkManager
       ansible.builtin.raw: |
-        dnf install -y open-vm-tools
-        systemctl enable --now vmtoolsd
+        hostnamectl set-hostname "{{ inventory_hostname.split('.') }}"
+      vars:
+        ansible_user: "{{ nb_ctx.vm_admin_user }}"
+        ansible_password: "{{ nb_ctx.vm_admin_password }}"
+
+    - name: Apply Static IP and Network Profile to NetworkManager
+      ansible.builtin.raw: |
+        IFACE=$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1; exit}')
+        CONN=$(nmcli -t -f NAME,DEVICE connection show --active | awk -F: -v dev="$IFACE" '$2==dev{print $1; exit}')
+        
+        if [ -n "$CONN" ]; then
+            nmcli connection modify "$CONN" ipv4.addresses "{{ target_ip }}/24"
+            nmcli connection modify "$CONN" ipv4.gateway "{{ nb_ctx.gateway }}"
+            nmcli connection modify "$CONN" ipv4.dns "{{ nb_ctx.dns_servers }}"
+            nmcli connection modify "$CONN" ipv4.method manual
+            nmcli connection modify "$CONN" connection.autoconnect yes
+            nmcli connection up "$CONN"
+        fi
       vars:
         ansible_user: "{{ nb_ctx.vm_admin_user }}"
         ansible_password: "{{ nb_ctx.vm_admin_password }}"
