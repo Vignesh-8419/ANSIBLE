@@ -34,8 +34,7 @@
             device_type: vmxnet3
             start_connected: true
             connected: true
-        # Removed the broken 'customization:' block completely so vCenter doesn't unplug the cable
-        wait_for_ip_address: yes  # This will wait until it safely grabs its initial bootstrap IP
+        wait_for_ip_address: yes
       delegate_to: localhost
       register: vm_facts
 
@@ -62,8 +61,10 @@
 
     - name: Kill DHCP and Enforce Static IP Only on Connection Profile
       ansible.builtin.raw: |
-        # Locate active ethernet interface
+        {% raw %}
+        # Locate active ethernet interface safely escaping shell variables from Jinja
         IFACE=$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1; exit}')
+        {% endraw %}
         
         # Modify the interface directly to drop DHCP and bind your static IP exclusively
         nmcli connection modify "$IFACE" ipv4.addresses "{{ target_ip }}/24"
