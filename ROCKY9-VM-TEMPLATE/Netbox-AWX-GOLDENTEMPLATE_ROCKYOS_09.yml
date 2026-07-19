@@ -36,6 +36,7 @@
             netmask: "255.255.255.0"
             gateway: "{{ nb_ctx.gateway }}"
             dns_servers: "{{ nb_ctx.dns_servers }}"
+            device_type: vmxnet3
             start_connected: true
             connected: true
         customization:
