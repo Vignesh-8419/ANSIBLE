@@ -1,4 +1,3 @@
----
 - name: End-to-End VM Provisioning and Configuration
   hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
   gather_facts: no
@@ -39,12 +38,33 @@
             device_type: vmxnet3
             start_connected: true
             connected: true
+            allow_guest_control: true  # Allows guest customization tools to manipulate state
         customization:
           hostname: "{{ inventory_hostname.split('.')[0] }}"
           domain: "vgs.com"
           timezone: "UTC"
         wait_for_ip_address: yes
       delegate_to: localhost
+
+    # Fix: Explicitly force the network card to connect if customization resets it
+    - name: Ensure Network Adapter is Connected
+      community.vmware.vmware_guest_network:
+        hostname: "{{ nb_ctx.vcenter_hostname }}"
+        username: "{{ nb_ctx.vcenter_username }}"
+        password: "{{ nb_ctx.vcenter_password }}"
+        validate_certs: false
+        name: "{{ inventory_hostname.split('.')[0] }}"
+        gather_network_facts: false
+        label: "Network adapter 1"
+        networks:
+          - name: "{{ nb_ctx.vm_network }}"
+            connected: true
+            start_connected: true
+      delegate_to: localhost
+      register: network_reconnect_result
+      until: network_reconnect_result is succeeded
+      retries: 3
+      delay: 5
 
     - name: Wait for SSH to become available
       ansible.builtin.wait_for:
