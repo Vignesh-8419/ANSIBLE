@@ -37,15 +37,48 @@ echo "kube-rbac-proxy      : $KUBE_RBAC_PROXY_IMAGE"
 echo "============================================================"
 echo -e "${GREEN}✅ Background:${NC} Defined variables for namespace, operator version, VIP, admin password, and proxy image."
 
-# Pre-flight check: ensure cgroup v2 is active
+# ------------------------------------------------------------
+# Pre-flight check: Ensure cgroup v2 is active
+# ------------------------------------------------------------
 echo -e "${BLUE}# Pre-flight check${NC}"
-if [ "$(stat -fc %T /sys/fs/cgroup/)" != "cgroup2fs" ]; then
-  echo "❌ ERROR: Host is not running cgroup v2."
-  echo "Please edit /etc/default/grub and add:"
-  echo 'GRUB_CMDLINE_LINUX="rd.lvm.lv=rl/root rd.lvm.lv=rl/swap resume=/dev/mapper/rl-swap loglevel=7 systemd.show_status=true console=ttyS0,9600 console=tty0 systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false"'
-  echo "Then run: grub2-mkconfig -o /boot/grub2/grub.cfg && reboot"
-  exit 1
+
+if [ "$(stat -fc %T /sys/fs/cgroup)" != "cgroup2fs" ]; then
+
+    echo -e "${YELLOW}⚠ cgroup v2 is not enabled.${NC}"
+    echo "Updating GRUB configuration..."
+
+    GRUB_FILE="/etc/default/grub"
+
+    REQUIRED_ARGS=(
+        "systemd.unified_cgroup_hierarchy=1"
+        "systemd.legacy_systemd_cgroup_controller=false"
+    )
+
+    for arg in "${REQUIRED_ARGS[@]}"; do
+        if ! grep -q "$arg" "$GRUB_FILE"; then
+            sed -i "s/^GRUB_CMDLINE_LINUX=\"\(.*\)\"/GRUB_CMDLINE_LINUX=\"\1 $arg\"/" "$GRUB_FILE"
+            echo "  Added: $arg"
+        else
+            echo "  Already present: $arg"
+        fi
+    done
+
+    if [ -d /sys/firmware/efi ]; then
+        echo "UEFI system detected."
+        grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
+    else
+        echo "BIOS system detected."
+        grub2-mkconfig -o /boot/grub2/grub.cfg
+    fi
+
+    echo
+    echo -e "${GREEN}GRUB updated successfully.${NC}"
+    echo -e "${RED}A reboot is required before continuing.${NC}"
+    echo "Please reboot the server and rerun this script."
+    exit 0
 fi
+
+echo -e "${GREEN}✓ cgroup v2 is already active.${NC}"
 echo -e "${GREEN}✅ Background:${NC} Verified host is running cgroup v2, required for K3s."
 
 echo 'export PATH=$PATH:/usr/local/bin' > /etc/profile.d/localbin.sh
