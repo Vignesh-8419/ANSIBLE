@@ -30,8 +30,6 @@
         name: "{{ inventory_hostname.split('.')[0] }}"
         state: poweredon
         template: "{{ nb_ctx.rocky9_template_name }}"
-        
-        # Explicit network declaration forced onto the hardware layer
         networks:
           - name: "{{ nb_ctx.vm_network }}"
             ip: "{{ target_ip }}"
@@ -40,43 +38,64 @@
             dns_servers: "{{ nb_ctx.dns_servers }}"
             start_connected: true
             connected: true
-
-        # Forcing custom profile engine metadata directly into the system container
         customization:
           hostname: "{{ inventory_hostname.split('.')[0] }}"
           domain: "vgs.com"
           timezone: "UTC"
-
-        # Ansible will wait patiently until the virtual interface wakes up at 192.168.253.151
         wait_for_ip_address: yes
       delegate_to: localhost
 
+    - name: Wait for SSH to become available
+      ansible.builtin.wait_for:
+        host: "{{ target_ip }}"
+        port: 22
+        timeout: 300
+        delay: 10
+      delegate_to: localhost
+
     # --- PHASE 3: GUEST POST-CONFIGURATION ---
-    - name: Guest Configuration Block
-      block:
 
-        - name: Update Network Manager Profile and Fix Autoconnect Flaw
-          ansible.builtin.raw: |
-            # Re-enable the hardware connection profile so it persists permanently across reboots
-            sudo nmcli connection modify "ens192" connection.autoconnect yes
-            sudo nmcli connection up "ens192"
-            
-            # Install open-vm-tools to prevent future deployment errors
-            sudo dnf install -y open-vm-tools
-            sudo systemctl enable --now vmtoolsd
-          vars:
-            ansible_user: "{{ nb_ctx.vm_admin_user }}"
-            ansible_password: "{{ nb_ctx.vm_admin_password }}"
+    - name: Update NetworkManager profile and enable autoconnect
+      ansible.builtin.raw: |
+        IFACE=$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1; exit}')
 
-        - name: Reset machine-id and SSH host keys
-          ansible.builtin.raw: |
-            sudo rm -f /etc/machine-id /var/lib/dbus/machine-id
-            sudo touch /etc/machine-id
-            sudo rm -f /etc/ssh/ssh_host_*
-            sudo systemd-machine-id-setup
-            sudo ssh-keygen -A
-            sudo systemctl restart sshd || sudo systemctl restart ssh
-          vars:
-            ansible_user: "{{ nb_ctx.vm_admin_user }}"
-            ansible_password: "{{ nb_ctx.vm_admin_password }}"
-          when: inventory_hostname not in ['://vgs.com', 'localhost']
+        if [ -n "$IFACE" ]; then
+            CONN=$(nmcli -t -f NAME,DEVICE connection show --active | \
+              awk -F: -v dev="$IFACE" '$2==dev{print $1; exit}')
+
+            if [ -n "$CONN" ]; then
+                nmcli connection modify "$CONN" connection.autoconnect yes
+                nmcli connection up "$CONN"
+                echo "Updated connection: $CONN ($IFACE)"
+            else
+                echo "No active NetworkManager connection found for $IFACE"
+                exit 1
+            fi
+        else
+            echo "No Ethernet interface found."
+            exit 1
+        fi
+      vars:
+        ansible_user: "{{ nb_ctx.vm_admin_user }}"
+        ansible_password: "{{ nb_ctx.vm_admin_password }}"
+
+    - name: Install and enable open-vm-tools
+      ansible.builtin.raw: |
+        dnf install -y open-vm-tools
+        systemctl enable --now vmtoolsd
+      vars:
+        ansible_user: "{{ nb_ctx.vm_admin_user }}"
+        ansible_password: "{{ nb_ctx.vm_admin_password }}"
+
+    - name: Reset machine-id and SSH host keys
+      ansible.builtin.raw: |
+        rm -f /etc/machine-id /var/lib/dbus/machine-id
+        touch /etc/machine-id
+        rm -f /etc/ssh/ssh_host_*
+        systemd-machine-id-setup
+        ssh-keygen -A
+        systemctl restart sshd || systemctl restart ssh
+      vars:
+        ansible_user: "{{ nb_ctx.vm_admin_user }}"
+        ansible_password: "{{ nb_ctx.vm_admin_password }}"
+      when: inventory_hostname not in ['://vgs.com', 'localhost']
