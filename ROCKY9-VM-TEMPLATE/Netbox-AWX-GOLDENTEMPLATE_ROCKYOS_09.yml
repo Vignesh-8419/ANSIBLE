@@ -34,23 +34,24 @@
             device_type: vmxnet3
             start_connected: true
             connected: true
-        wait_for_ip_address: no  # Changed to NO so we don't hang on the disconnected interface
+        wait_for_ip_address: no
       delegate_to: localhost
 
-    # --- PHASE 1.5: HARDWARE LEVEL FORCE-CONNECT ---
+    # --- PHASE 1.5: HARDWARE LEVEL FORCE-CONNECT (FIXED SYNTAX) ---
     - name: Force vSphere Virtual Cable to Connect State
       community.vmware.vmware_guest_network:
         hostname: "{{ nb_ctx.vcenter_hostname }}"
         username: "{{ nb_ctx.vcenter_username }}"
         password: "{{ nb_ctx.vcenter_password }}"
         validate_certs: false
+        datacenter: "{{ nb_ctx.datacenter_name }}"
         name: "{{ inventory_hostname.split('.')[0] }}"
-        gather_network_facts: false
+        state: present
         label: "Network adapter 1"
-        networks:
-          - name: "{{ nb_ctx.vm_network }}"
-            connected: true
-            start_connected: true
+        network_name: "{{ nb_ctx.vm_network }}"
+        connected: true
+        start_connected: true
+        guest_control: true
       delegate_to: localhost
       register: hw_net_result
       until: hw_net_result is succeeded
