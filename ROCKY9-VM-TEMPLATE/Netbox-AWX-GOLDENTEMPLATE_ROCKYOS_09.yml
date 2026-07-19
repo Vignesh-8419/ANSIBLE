@@ -3,149 +3,63 @@
   hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
   gather_facts: no
   become: yes
-  become_user: root
 
   vars:
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
   tasks:
 
-  ####################################################################
-  # PHASE 0
-  ####################################################################
+    - name: Load NetBox Config Context
+      set_fact:
+        nb_ctx: "{{ config_context[0] }}"
 
-  - name: Load NetBox Config Context
-    set_fact:
-      nb_ctx: "{{ config_context[0] }}"
-    when: config_context is defined and config_context | length > 0
+    - name: Set Target IP
+      set_fact:
+        target_ip: "{{ ansible_host }}"
 
-  - name: Target IP
-    set_fact:
-      target_ip: "{{ ansible_host }}"
+    - name: Clone VM from Template
+      community.vmware.vmware_guest:
+        hostname: "{{ nb_ctx.vcenter_hostname }}"
+        username: "{{ nb_ctx.vcenter_username }}"
+        password: "{{ nb_ctx.vcenter_password }}"
+        validate_certs: false
 
-  ####################################################################
-  # PHASE 1 - CREATE VM
-  ####################################################################
+        datacenter: "{{ nb_ctx.datacenter_name }}"
+        folder: "/{{ nb_ctx.datacenter_name }}/{{ nb_ctx.folder | default('vm') }}"
 
-  - name: Clone VM from Template
-    community.vmware.vmware_guest:
-      hostname: "{{ nb_ctx.vcenter_hostname }}"
-      username: "{{ nb_ctx.vcenter_username }}"
-      password: "{{ nb_ctx.vcenter_password }}"
-      validate_certs: false
+        name: "{{ inventory_hostname.split('.')[0] }}"
+        template: "{{ nb_ctx.rocky9_template_name }}"
+        state: poweredon
 
-      datacenter: "{{ nb_ctx.datacenter_name }}"
-      folder: "/{{ nb_ctx.datacenter_name }}/{{ nb_ctx.folder | default('vm') }}"
+        wait_for_ip_address: yes
+        wait_for_ip_address_timeout: 600
 
-      name: "{{ inventory_hostname.split('.')[0] }}"
-      template: "{{ nb_ctx.rocky9_template_name }}"
-      state: poweredon
+        customization:
+          hostname: "{{ inventory_hostname.split('.')[0] }}"
+          domain: "vgs.com"
 
-      wait_for_ip_address: yes
-      wait_for_ip_address_timeout: 600
+          dns_servers:
+            - "192.168.253.1"
 
-      networks:
-        - name: "{{ nb_ctx.vm_network }}"
-          device_type: vmxnet3
-          connected: true
-          start_connected: true
+          nic_setting_map:
+            - ip:
+                ip: "{{ target_ip }}"
+                subnet_mask: "{{ nb_ctx.netmask }}"
+              gateway:
+                - "{{ nb_ctx.gateway }}"
 
-    delegate_to: localhost
+        networks:
+          - name: "{{ nb_ctx.vm_network }}"
+            device_type: vmxnet3
+            connected: true
+            start_connected: true
 
-  ####################################################################
-  # PHASE 2 - ENSURE NIC CONNECTED
-  ####################################################################
+      delegate_to: localhost
 
-  - name: Force Network Adapter Connected
-    community.vmware.vmware_guest_network:
-      hostname: "{{ nb_ctx.vcenter_hostname }}"
-      username: "{{ nb_ctx.vcenter_username }}"
-      password: "{{ nb_ctx.vcenter_password }}"
-      validate_certs: false
-
-      datacenter: "{{ nb_ctx.datacenter_name }}"
-      name: "{{ inventory_hostname.split('.')[0] }}"
-
-      label: "Network adapter 1"
-      state: present
-
-      network_name: "{{ nb_ctx.vm_network }}"
-      connected: true
-      start_connected: true
-
-    delegate_to: localhost
-
-  ####################################################################
-  # PHASE 3 - WAIT FOR SSH
-  ####################################################################
-
-  - name: Wait for SSH
-    wait_for:
-      host: "{{ target_ip }}"
-      port: 22
-      timeout: 600
-      delay: 10
-    delegate_to: localhost
-
-  ####################################################################
-  # PHASE 4 - HOSTNAME
-  ####################################################################
-
-  - name: Set Hostname
-    raw: |
-      hostnamectl set-hostname "{{ inventory_hostname.split('.')[0] }}"
-    vars:
-      ansible_user: "{{ nb_ctx.vm_admin_user }}"
-      ansible_password: "{{ nb_ctx.vm_admin_password }}"
-
-  ####################################################################
-  # PHASE 5 - CONFIGURE STATIC IP
-  ####################################################################
-
-  - name: Configure Static Network
-    raw: |
-
-      IFACE=$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1;exit}')
-
-      CONN=$(nmcli -t -f NAME,DEVICE connection show | awk -F: -v dev="$IFACE" '$2==dev{print $1;exit}')
-
-      if [ -z "$CONN" ]; then
-          CONN="$IFACE"
-      fi
-
-      nmcli con mod "$CONN" ipv4.method manual
-      nmcli con mod "$CONN" ipv4.addresses "{{ target_ip }}/{{ nb_ctx.prefix | default('24') }}"
-      nmcli con mod "$CONN" ipv4.gateway "{{ nb_ctx.gateway }}"
-      nmcli con mod "$CONN" ipv4.dns "{{ (nb_ctx.dns_servers if nb_ctx.dns_servers is string else nb_ctx.dns_servers | join(' ')) }}"
-      nmcli con mod "$CONN" ipv4.ignore-auto-dns yes
-      nmcli con mod "$CONN" connection.autoconnect yes
-
-      nmcli con down "$CONN" || true
-      sleep 3
-      nmcli con up "$CONN"
-
-    vars:
-      ansible_user: "{{ nb_ctx.vm_admin_user }}"
-      ansible_password: "{{ nb_ctx.vm_admin_password }}"
-
-  ####################################################################
-  # PHASE 6 - RESET TEMPLATE IDENTIFIERS
-  ####################################################################
-
-  - name: Reset machine-id and SSH Keys
-    raw: |
-      rm -f /etc/machine-id
-      rm -f /var/lib/dbus/machine-id
-
-      touch /etc/machine-id
-
-      rm -f /etc/ssh/ssh_host_*
-
-      systemd-machine-id-setup
-      ssh-keygen -A
-
-      systemctl restart sshd || systemctl restart ssh
-
-    vars:
-      ansible_user: "{{ nb_ctx.vm_admin_user }}"
-      ansible_password: "{{ nb_ctx.vm_admin_password }}"
+    - name: Wait for SSH
+      wait_for:
+        host: "{{ target_ip }}"
+        port: 22
+        timeout: 600
+        delay: 10
+      delegate_to: localhost
