@@ -1,8 +1,9 @@
 ```text
-nmcli con up ens33 && \
+CONN=$(nmcli -t -f NAME,DEVICE connection show --active | awk -F: '$2!=""{print $1; exit}') && \
+nmcli con up "$CONN" && \
 curl -L -o Server_Setup.sh "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Server_Setup.sh?$(date +%s)" && \
 chmod +x Server_Setup.sh && \
-nmcli con down ens33
+nmcli con down "$CONN"
 ```
 
 ```text
