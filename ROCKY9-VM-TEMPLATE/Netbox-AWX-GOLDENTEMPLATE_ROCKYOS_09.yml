@@ -17,7 +17,7 @@
       set_fact:
         target_ip: "{{ ansible_host }}"
 
-    # --- PHASE 1: PROVISION VM WITHOUT BROKEN CUSTOMIZATION ENGINE ---
+    # --- PHASE 1: PROVISION VM ---
     - name: Create VM from Template
       community.vmware.vmware_guest:
         hostname: "{{ nb_ctx.vcenter_hostname }}"
@@ -34,8 +34,28 @@
             device_type: vmxnet3
             start_connected: true
             connected: true
-        wait_for_ip_address: yes
+        wait_for_ip_address: no  # Changed to NO so we don't hang on the disconnected interface
       delegate_to: localhost
+
+    # --- PHASE 1.5: HARDWARE LEVEL FORCE-CONNECT ---
+    - name: Force vSphere Virtual Cable to Connect State
+      community.vmware.vmware_guest_network:
+        hostname: "{{ nb_ctx.vcenter_hostname }}"
+        username: "{{ nb_ctx.vcenter_username }}"
+        password: "{{ nb_ctx.vcenter_password }}"
+        validate_certs: false
+        name: "{{ inventory_hostname.split('.')[0] }}"
+        gather_network_facts: false
+        label: "Network adapter 1"
+        networks:
+          - name: "{{ nb_ctx.vm_network }}"
+            connected: true
+            start_connected: true
+      delegate_to: localhost
+      register: hw_net_result
+      until: hw_net_result is succeeded
+      retries: 5
+      delay: 5
 
     - name: Wait for Boot via Interface
       ansible.builtin.wait_for:
@@ -46,7 +66,6 @@
       delegate_to: localhost
 
     # --- PHASE 2: NATIVE GUEST PROFILE CONFIGURATION ---
-    
     - name: Install and enable open-vm-tools immediately
       ansible.builtin.raw: |
         dnf install -y open-vm-tools
