@@ -23,9 +23,27 @@ fi
 
 print_header
 
-# Target interface hardcoded as per your requirement
-INTERFACE="ens192"
+# ------------------------------------------
+# Detect the primary network interface
+# ------------------------------------------
+
+# Try to detect the interface used for the default route
+INTERFACE=$(ip route | awk '/default/ {print $5; exit}')
+
+# Fallback: first non-loopback Ethernet interface
+if [ -z "$INTERFACE" ]; then
+    INTERFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -Ev '^(lo|virbr|docker|veth|br-|tun|tap)' | head -n1)
+fi
+
+# Validate detection
+if [ -z "$INTERFACE" ]; then
+    echo -e "${RED}❌ Unable to detect a network interface.${NC}"
+    exit 1
+fi
+
 CONFIG_FILE="/etc/sysconfig/network-scripts/ifcfg-$INTERFACE"
+
+echo -e "${GREEN}Detected network interface: ${INTERFACE}${NC}"
 
 # ------------------------------------------
 # USER PROMPTS
