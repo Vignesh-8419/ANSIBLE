@@ -1,0 +1,33 @@
+mkdir -p /root/rocky9-golden
+mkdir -p /mnt/rocky9iso
+
+mount /dev/sr0 /mnt/rocky9iso
+
+cp -a /mnt/rocky9iso/. /root/rocky9-golden/
+
+umount /mnt/rocky9iso
+
+cd /root
+
+xorriso -as mkisofs \
+-o Rocky9_Golden_RAID.iso \
+-isohybrid-mbr /usr/share/syslinux/isohdpfx.bin \
+-c isolinux/boot.cat \
+-b isolinux/isolinux.bin \
+-no-emul-boot \
+-boot-load-size 4 \
+-boot-info-table \
+-eltorito-alt-boot \
+-e images/efiboot.img \
+-no-emul-boot \
+-isohybrid-gpt-basdat \
+-J \
+-R \
+-V "updated_rocky9" \
+/root/rocky9-golden
+
+implantisomd5 /root/Rocky8_Golden_RAID.iso
+
+
+
+
