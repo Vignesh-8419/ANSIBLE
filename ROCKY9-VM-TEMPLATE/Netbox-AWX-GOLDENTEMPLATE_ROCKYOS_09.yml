@@ -10,7 +10,7 @@
     # --- PHASE 0: PREPARE DATA ---
     - name: Load and normalize NetBox config context
       set_fact:
-        nb_ctx: "{{ config_context }}"
+        nb_ctx: "{{ config_context[0] }}"
       when: config_context is defined and config_context | length > 0
 
     - name: Map Target IP
@@ -26,7 +26,7 @@
         validate_certs: false
         datacenter: "{{ nb_ctx.datacenter_name }}"
         folder: "/{{ nb_ctx.datacenter_name }}/{{ nb_ctx.folder | default('vm') }}"
-        name: "{{ inventory_hostname.split('.') }}"
+        name: "{{ inventory_hostname.split('.')[0] }}"
         state: poweredon
         template: "{{ nb_ctx.rocky9_template_name }}"
         networks:
@@ -34,7 +34,6 @@
             device_type: vmxnet3
             start_connected: true
             connected: true
-        # Removed the broken vCenter customization block entirely
         wait_for_ip_address: yes
       delegate_to: localhost
 
@@ -58,7 +57,7 @@
 
     - name: Set Hostname via NetworkManager
       ansible.builtin.raw: |
-        hostnamectl set-hostname "{{ inventory_hostname.split('.') }}"
+        hostnamectl set-hostname "{{ inventory_hostname.split('.')[0] }}"
       vars:
         ansible_user: "{{ nb_ctx.vm_admin_user }}"
         ansible_password: "{{ nb_ctx.vm_admin_password }}"
