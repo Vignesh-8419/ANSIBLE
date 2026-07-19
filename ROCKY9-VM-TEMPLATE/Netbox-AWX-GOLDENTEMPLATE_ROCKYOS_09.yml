@@ -10,15 +10,15 @@
     # --- PHASE 0: PREPARE DATA ---
     - name: Load and normalize NetBox config context
       set_fact:
-        nb_ctx: "{{ config_context[0] }}"
+        nb_ctx: "{{ config_context }}"
       when: config_context is defined and config_context | length > 0
 
     - name: Map Target IP
       set_fact:
         target_ip: "{{ ansible_host }}"
 
-    # --- PHASE 1: PROVISION VM ---
-    - name: Create VM from Template
+    # --- PHASE 1: PROVISION VM WITH HARD-CODED STATIC IP ---
+    - name: Create VM and Enforce Static IP Binding
       community.vmware.vmware_guest:
         hostname: "{{ nb_ctx.vcenter_hostname }}"
         username: "{{ nb_ctx.vcenter_username }}"
@@ -26,26 +26,35 @@
         validate_certs: false
         datacenter: "{{ nb_ctx.datacenter_name }}"
         folder: "/{{ nb_ctx.datacenter_name }}/{{ nb_ctx.folder | default('vm') }}"
-        name: "{{ inventory_hostname.split('.')[0] }}"
+        name: "{{ inventory_hostname.split('.') }}"
         state: poweredon
         template: "{{ nb_ctx.rocky9_template_name }}"
         networks:
           - name: "{{ nb_ctx.vm_network }}"
+            ip: "{{ target_ip }}"
+            netmask: "255.255.255.0"
+            gateway: "{{ nb_ctx.gateway }}"
+            dns_servers: "{{ nb_ctx.dns_servers }}"
             device_type: vmxnet3
             start_connected: true
             connected: true
-        wait_for_ip_address: no
+        # Force vSphere Client customization tool to overwrite template defaults immediately
+        customization:
+          hostname: "{{ inventory_hostname.split('.') }}"
+          domain: "vgs.com"
+          timezone: "UTC"
+        wait_for_ip_address: yes
       delegate_to: localhost
 
-    # --- PHASE 1.5: HARDWARE LEVEL FORCE-CONNECT (FIXED SYNTAX) ---
-    - name: Force vSphere Virtual Cable to Connect State
+    # --- PHASE 1.5: FORCED HARDWARE ALIGNMENT ---
+    - name: Force vSphere Cable State and Kill Transient Dynamic Profiles
       community.vmware.vmware_guest_network:
         hostname: "{{ nb_ctx.vcenter_hostname }}"
         username: "{{ nb_ctx.vcenter_username }}"
         password: "{{ nb_ctx.vcenter_password }}"
         validate_certs: false
         datacenter: "{{ nb_ctx.datacenter_name }}"
-        name: "{{ inventory_hostname.split('.')[0] }}"
+        name: "{{ inventory_hostname.split('.') }}"
         state: present
         label: "Network adapter 1"
         network_name: "{{ nb_ctx.vm_network }}"
@@ -53,12 +62,8 @@
         start_connected: true
         guest_control: true
       delegate_to: localhost
-      register: hw_net_result
-      until: hw_net_result is succeeded
-      retries: 5
-      delay: 5
 
-    - name: Wait for Boot via Interface
+    - name: Wait for Boot via Targeted Static IP
       ansible.builtin.wait_for:
         host: "{{ target_ip }}"
         port: 22
@@ -75,26 +80,15 @@
         ansible_user: "{{ nb_ctx.vm_admin_user }}"
         ansible_password: "{{ nb_ctx.vm_admin_password }}"
 
-    - name: Set Hostname via NetworkManager
+    - name: Enforce Strict Manual Profile Settings on Connection Manager
       ansible.builtin.raw: |
-        hostnamectl set-hostname "{{ inventory_hostname.split('.')[0] }}"
-      vars:
-        ansible_user: "{{ nb_ctx.vm_admin_user }}"
-        ansible_password: "{{ nb_ctx.vm_admin_password }}"
-
-    - name: Apply Static IP and Network Profile to NetworkManager
-      ansible.builtin.raw: |
-        IFACE=$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1; exit}')
-        CONN=$(nmcli -t -f NAME,DEVICE connection show --active | awk -F: -v dev="$IFACE" '$2==dev{print $1; exit}')
-        
-        if [ -n "$CONN" ]; then
-            nmcli connection modify "$CONN" ipv4.addresses "{{ target_ip }}/24"
-            nmcli connection modify "$CONN" ipv4.gateway "{{ nb_ctx.gateway }}"
-            nmcli connection modify "$CONN" ipv4.dns "{{ nb_ctx.dns_servers }}"
-            nmcli connection modify "$CONN" ipv4.method manual
-            nmcli connection modify "$CONN" connection.autoconnect yes
-            nmcli connection up "$CONN"
-        fi
+        nmcli connection modify ens33 ipv4.addresses "{{ target_ip }}/24"
+        nmcli connection modify ens33 ipv4.gateway "{{ nb_ctx.gateway }}"
+        nmcli connection modify ens33 ipv4.dns "{{ nb_ctx.dns_servers }}"
+        nmcli connection modify ens33 ipv4.method manual
+        nmcli connection modify ens33 connection.autoconnect yes
+        nmcli connection modify ens33 connection.autoconnect-priority 0
+        nmcli connection up ens33
       vars:
         ansible_user: "{{ nb_ctx.vm_admin_user }}"
         ansible_password: "{{ nb_ctx.vm_admin_password }}"
