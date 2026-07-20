@@ -1,3 +1,5 @@
+rhel/rocky
+
 mkdir -p /root/rocky9-golden
 mkdir -p /mnt/rocky9iso
 
