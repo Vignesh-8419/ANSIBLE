@@ -1,5 +1,6 @@
 # RAID1 Disk Replacement SOP (UEFI + GPT + LVM)
-```textsfdisk -d /dev/sda | sfdisk /dev/sdb
+```text
+sfdisk -d /dev/sda | sfdisk /dev/sdb
 mdadm --manage /dev/md0 --add /dev/sdb2
 cat /proc/mdstat
 ```
