@@ -1,0 +1,194 @@
+#cloud-config
+autoinstall:
+  version: 1
+
+  locale: en_US.UTF-8
+
+  keyboard:
+    layout: us
+
+  timezone: Asia/Kolkata
+
+  identity:
+    hostname: ubuntu
+    username: admin
+    password: "$6$f2CqqSxlPrXgSilb$giAfpuh7ZKf0FoP0Qw5cmQk/uAB6Cnuazd/2UVB4f6V8Tq36HttTdpcw9/IDm5G5efKeDhowjpfdEFS9JRRSl0"
+
+  ssh:
+    install-server: true
+    allow-pw: true
+    authorized-keys: []
+
+  network:
+    version: 2
+    ethernets:
+      default:
+        match:
+          name: "*"
+        dhcp4: true
+        dhcp6: false
+
+  packages:
+    - open-vm-tools
+    - curl
+    - wget
+    - vim
+    - net-tools
+    - mdadm
+    - lvm2
+
+  storage:
+    config:
+  
+    # ----------------------------
+    # Disk 1
+    # ----------------------------
+    - id: disk-sda
+      type: disk
+      match:
+        path: /dev/sda
+      ptable: gpt
+      wipe: superblock-recursive
+      preserve: false
+      grub_device: true
+  
+    # ----------------------------
+    # Disk 2
+    # ----------------------------
+    - id: disk-sdb
+      type: disk
+      match:
+        path: /dev/sdb
+      ptable: gpt
+      wipe: superblock-recursive
+      preserve: false
+      grub_device: true
+  
+    # ---------- EFI ----------
+    - id: sda-efi
+      type: partition
+      device: disk-sda
+      size: 512M
+      flag: boot
+      
+    - id: sdb-efi
+      type: partition
+      device: disk-sdb
+      size: 512M
+      flag: boot
+  
+    # ---------- /boot ----------
+    - id: sda-boot
+      type: partition
+      device: disk-sda
+      size: 2G
+  
+    - id: sdb-boot
+      type: partition
+      device: disk-sdb
+      size: 2G
+  
+    # ---------- LVM ----------
+    - id: sda-lvm
+      type: partition
+      device: disk-sda
+      size: -1
+  
+    - id: sdb-lvm
+      type: partition
+      device: disk-sdb
+      size: -1
+  
+    # ---------- RAID /boot ----------
+    - id: md0
+      type: raid
+      name: md0
+      raidlevel: raid1
+      metadata: "1.2"
+      devices:
+        - sda-boot
+        - sdb-boot
+  
+    # ---------- RAID PV ----------
+    - id: md1
+      type: raid
+      name: md1
+      raidlevel: raid1
+      metadata: "1.2"
+      devices:
+        - sda-lvm
+        - sdb-lvm
+  
+    # ---------- LVM VG ----------
+    - id: vg0
+      type: lvm_volgroup
+      name: ubuntu-vg
+      devices:
+        - md1
+
+    # ---------- Swap LV ----------
+    - id: lv-swap
+      type: lvm_partition
+      name: swap
+      volgroup: vg0
+      size: 8G
+
+    # ---------- Root LV ----------
+    - id: lv-root
+      type: lvm_partition
+      name: root
+      volgroup: vg0
+      size: -1
+
+    # ---------- Format ----------
+    - id: fmt-efi1
+      type: format
+      volume: sda-efi
+      fstype: fat32
+
+    - id: fmt-efi2
+      type: format
+      volume: sdb-efi
+      fstype: fat32
+
+    - id: fmt-boot
+      type: format
+      volume: md0
+      fstype: ext4
+
+    - id: fmt-root
+      type: format
+      volume: lv-root
+      fstype: ext4
+
+    - id: fmt-swap
+      type: format
+      volume: lv-swap
+      fstype: swap
+  
+    # ---------- Mount ----------
+    - id: mnt-root
+      type: mount
+      device: fmt-root
+      path: /
+  
+    - id: mnt-boot
+      type: mount
+      device: fmt-boot
+      path: /boot
+  
+    - id: mnt-efi
+      type: mount
+      device: fmt-efi1
+      path: /boot/efi
+
+  late-commands:
+    - curtin in-target -- systemctl enable ssh
+    - curtin in-target -- systemctl enable open-vm-tools
+    - curtin in-target -- apt-get clean
+    - curtin in-target -- cloud-init clean
+    - curtin in-target -- truncate -s 0 /etc/machine-id
+
+    # Passwordless sudo for admin
+    - curtin in-target -- bash -c 'echo "admin ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/admin'
+    - curtin in-target -- chmod 440 /etc/sudoers.d/admin
