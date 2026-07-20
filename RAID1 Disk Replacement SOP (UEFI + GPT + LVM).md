@@ -1,5 +1,8 @@
 # RAID1 Disk Replacement SOP (UEFI + GPT + LVM)
 sfdisk -d /dev/sda | sfdisk /dev/sdb
+mdadm --manage /dev/md0 --add /dev/sdb2
+cat /proc/mdstat
+
 ## Overview
 
 This SOP describes the recovery procedure for replacing a failed disk in a Linux server configured with:
