@@ -131,7 +131,6 @@ autoinstall:
         size: 8G
   
       # ---------- Root Logical Volume ----------
-      # Size key is completely omitted so Subiquity expands LVM over the remaining space
       - id: lv-root
         type: lvm_partition
         name: root
@@ -180,7 +179,7 @@ autoinstall:
         path: /boot/efi
 
   late-commands:
-    # Footprint cleanup (strips out the systemctl enablement loops that freeze the setup screen)
+    # Cleanup footprints cleanly
     - curtin in-target -- apt-get clean
     - curtin in-target -- cloud-init clean
     - curtin in-target -- truncate -s 0 /etc/machine-id
@@ -193,10 +192,10 @@ autoinstall:
     - curtin in-target -- mkdir -p /boot/efi2
     - curtin in-target -- bash -c 'UUID=$(blkid -s UUID -o value /dev/sdb1); echo "UUID=${UUID} /boot/efi2 vfat defaults,nofail 0 2" >> /etc/fstab'
 
-    # MASTER REPLICATION SYNC: Mount secondary disk, run file-level sync, unmount cleanly
+    # REPAIRED MASTER SYNC: Mount secondary target, copy boot structures, and lazy unmount cleanly
     - curtin in-target -- mount /boot/efi2
     - curtin in-target -- bash -c 'cp -r /boot/efi/* /boot/efi2/'
-    - curtin in-target -- umount /boot/efi2
+    - curtin in-target -- umount -l /boot/efi2
 
     # Register boot signatures directly on the secondary disk firmware
     - curtin in-target -- grub-install /dev/sdb
