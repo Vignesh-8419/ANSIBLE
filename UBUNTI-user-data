@@ -22,10 +22,12 @@ autoinstall:
   network:
     version: 2
     ethernets:
-      ens32:
+      vmnic: # Valid canonical Netplan layout identifier token mapping
+        match:
+          name: "en*" # Catches interface index changes seamlessly during node cloning
         dhcp4: true
         dhcp6: false
-        optional: true # CRITICAL FIX: Stops the system from hanging at boot if DHCP takes too long to respond
+        optional: true # Bypasses network service-wait execution blocks during failover
 
   packages:
     - open-vm-tools
@@ -47,7 +49,7 @@ autoinstall:
         ptable: gpt
         wipe: superblock-recursive
         preserve: false
-        grub_device: true
+        grub_device: true # Primary system NVRAM registration target
 
       # ----------------------------
       # Disk 2
@@ -59,7 +61,7 @@ autoinstall:
         ptable: gpt
         wipe: superblock-recursive
         preserve: false
-        grub_device: true
+        # grub_device key omitted here to satisfy strict Subiquity 24.04 RAID layout schemas
     
       # ---------- EFI Partition Elements ----------
       - id: sda-efi
@@ -132,6 +134,7 @@ autoinstall:
         size: 8G
   
       # ---------- Root Logical Volume ----------
+      # Size parameter omitted so the storage module fills the VG safely across the remaining extents
       - id: lv-root
         type: lvm_partition
         name: root
@@ -180,9 +183,11 @@ autoinstall:
         path: /boot/efi
 
   late-commands:
-    # Cleanup footprints cleanly
+    # Golden Template Sanitation Loop: Wipes lease variables, transient caches, and identifiers safely
     - curtin in-target -- apt-get clean
-    - curtin in-target -- cloud-init clean
+    - curtin in-target -- cloud-init clean --logs
+    - curtin in-target -- rm -f /etc/cloud/cloud-init.disabled
+    - curtin in-target -- bash -c 'rm -rf /var/lib/systemd/netif/* /var/lib/dhcp/* /var/lib/dhcpcd/* || true'
     - curtin in-target -- truncate -s 0 /etc/machine-id
 
     # Passwordless sudo for admin account
@@ -193,10 +198,10 @@ autoinstall:
     - curtin in-target -- mkdir -p /boot/efi2
     - curtin in-target -- bash -c 'UUID=$(blkid -s UUID -o value /dev/sdb1); echo "UUID=${UUID} /boot/efi2 vfat defaults,nofail 0 2" >> /etc/fstab'
 
-    # MASTER REPLICATION SYNC: Mount secondary target and perform metadata-safe copy
+    # Master Replication Sync: Mount secondary target, copy boot structures, and let Subiquity handle unmount
     - curtin in-target -- mount /boot/efi2
     - curtin in-target -- bash -c 'cp -a /boot/efi/. /boot/efi2/'
 
-    # Register standard boot signatures onto the secondary disk structure layout
+    # Deploy fallback removable tracks to sdb to ensure hands-free failovers succeed
     - curtin in-target -- grub-install --removable /dev/sdb
     - curtin in-target -- update-grub
