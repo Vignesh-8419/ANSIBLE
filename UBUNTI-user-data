@@ -22,9 +22,7 @@ autoinstall:
   network:
     version: 2
     ethernets:
-      default:
-        match:
-          name: "*"
+      ens32: # Hardcoding ens32 directly prevents DHCP discovery timeouts during disk-failover loops
         dhcp4: true
         dhcp6: false
 
