@@ -48,7 +48,8 @@ autoinstall:
         ptable: gpt
         wipe: superblock-recursive
         preserve: false
-    
+        grub_device: true # Forces independent NVRAM registration pass for Disk A
+
       # ----------------------------
       # Disk 2
       # ----------------------------
@@ -59,7 +60,8 @@ autoinstall:
         ptable: gpt
         wipe: superblock-recursive
         preserve: false
-    
+        grub_device: true # Forces independent NVRAM registration pass for Disk B
+
       # ---------- EFI Partition Elements ----------
       - id: sda-efi
         type: partition
@@ -67,45 +69,45 @@ autoinstall:
         size: 512M
         flag: boot
         grub_device: true
-        
+
       - id: sdb-efi
         type: partition
         device: disk-sdb
         size: 512M
         flag: boot
-    
+
       # ---------- /boot Partition Elements ----------
       - id: sda-boot
         type: partition
         device: disk-sda
         size: 2G
-    
+
       - id: sdb-boot
         type: partition
         device: disk-sdb
         size: 2G
-    
+
       # ---------- LVM Physical Volumes ----------
       - id: sda-lvm
         type: partition
         device: disk-sda
         size: 96G
-    
+
       - id: sdb-lvm
         type: partition
         device: disk-sdb
         size: 96G
-    
+
       # ---------- RAID /boot ----------
       - id: md0
         type: raid
         name: md0
         raidlevel: raid1
-        metadata: "1.2"
+        metadata: "1.0"
         devices:
           - sda-boot
           - sdb-boot
-    
+
       # ---------- RAID PV ----------
       - id: md1
         type: raid
@@ -115,64 +117,64 @@ autoinstall:
         devices:
           - sda-lvm
           - sdb-lvm
-    
+
       # ---------- LVM Volume Group ----------
       - id: vg0
         type: lvm_volgroup
         name: ubuntu-vg
         devices:
           - md1
-  
+
       # ---------- Swap Logical Volume ----------
       - id: lv-swap
         type: lvm_partition
         name: swap
         volgroup: vg0
         size: 8G
-  
+
       # ---------- Root Logical Volume ----------
       - id: lv-root
         type: lvm_partition
         name: root
         volgroup: vg0
-  
+
       # ---------- Format Filesystems ----------
       - id: fmt-efi1
         type: format
         volume: sda-efi
         fstype: fat32
-  
+
       - id: fmt-efi2
         type: format
         volume: sdb-efi
         fstype: fat32
-  
+
       - id: fmt-boot
         type: format
         volume: md0
         fstype: ext4
-  
+
       - id: fmt-root
         type: format
         volume: lv-root
         fstype: ext4
-  
+
       - id: fmt-swap
         type: format
         volume: lv-swap
         fstype: swap
-    
+
       # ---------- Mount Points ----------
       - id: mnt-root
         type: mount
         device: fmt-root
         path: /
-    
+
       - id: mnt-boot
         type: mount
         device: fmt-boot
         path: /boot
-    
+
       - id: mnt-efi
         type: mount
         device: fmt-efi1
@@ -192,11 +194,10 @@ autoinstall:
     - curtin in-target -- mkdir -p /boot/efi2
     - curtin in-target -- bash -c 'UUID=$(blkid -s UUID -o value /dev/sdb1); echo "UUID=${UUID} /boot/efi2 vfat defaults,nofail 0 2" >> /etc/fstab'
 
-    # REPAIRED MASTER SYNC: Mount secondary target, copy boot structures, and lazy unmount cleanly
+    # MASTER REPLICATION SYNC: Mount secondary target and perform metadata-safe copy
     - curtin in-target -- mount /boot/efi2
-    - curtin in-target -- bash -c 'cp -r /boot/efi/* /boot/efi2/'
-    - curtin in-target -- umount -l /boot/efi2
+    - curtin in-target -- bash -c 'cp -a /boot/efi/. /boot/efi2/'
 
-    # Register boot signatures directly on the secondary disk firmware
-    - curtin in-target -- grub-install /dev/sdb
+    # Register standard boot signatures onto the secondary disk structure layout
+    - curtin in-target -- grub-install --removable /dev/sdb
     - curtin in-target -- update-grub
