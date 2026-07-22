@@ -227,8 +227,7 @@ autoinstall:
     - curtin in-target -- chmod 440 /etc/sudoers.d/99-admin
 
     # Make EFI mount non-fatal if primary disk is missing
-    - curtin in-target -- sed -i -E 's#^([^#].*[[:space:]]/boot/efi[[:space:]]+vfat[[:space:]]+)[^[:space:]]+#\1umask=0077,nofail,x-systemd.device-timeout=2#' /etc/fstab
-	
+    - curtin in-target -- sed -i 's/defaults/umask=0077,nofail,x-systemd.device-timeout=2/' /etc/fstab	
     # Regenerate initramfs
     - curtin in-target -- update-initramfs -u
 
