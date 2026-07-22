@@ -193,6 +193,7 @@ autoinstall:
         path: /boot/efi
 
   late-commands:
+    # Golden Image Sanitation Loop
     - curtin in-target -- apt-get clean
     - curtin in-target -- cloud-init clean --logs
     - curtin in-target -- rm -f /etc/cloud/cloud-init.disabled
@@ -203,31 +204,32 @@ autoinstall:
 
     # Disable cloud-init networking
     - curtin in-target -- mkdir -p /etc/cloud/cloud.cfg.d
-    - curtin in-target -- wget -O /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg http://192.168.253.136/repo/scripts/99-disable-network-config.cfg
+    - curtin in-target -- wget --tries=3 --timeout=10 -O /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg http://192.168.253.136/repo/scripts/99-disable-network-config.cfg
 
     # Download Netplan configuration
     - curtin in-target -- mkdir -p /etc/netplan
-    - curtin in-target -- wget -O /etc/netplan/01-netcfg.yaml http://192.168.253.136/repo/scripts/01-netcfg.yaml
+    - curtin in-target -- wget --tries=3 --timeout=10 -O /etc/netplan/01-netcfg.yaml http://192.168.253.136/repo/scripts/01-netcfg.yaml
     - curtin in-target -- chmod 600 /etc/netplan/01-netcfg.yaml
 
     # Download EFI sync script
     - curtin in-target -- mkdir -p /usr/local/sbin
-    - curtin in-target -- wget -O /usr/local/sbin/sync-efi.sh http://192.168.253.136/repo/scripts/sync-efi.sh
+    - curtin in-target -- wget --tries=3 --timeout=10 -O /usr/local/sbin/sync-efi.sh http://192.168.253.136/repo/scripts/sync-efi.sh
     - curtin in-target -- chmod 755 /usr/local/sbin/sync-efi.sh
 
     # Download systemd service
-    - curtin in-target -- wget -O /etc/systemd/system/sync-efi.service http://192.168.253.136/repo/scripts/sync-efi.service
+    - curtin in-target -- wget --tries=3 --timeout=10 -O /etc/systemd/system/sync-efi.service http://192.168.253.136/repo/scripts/sync-efi.service
 
     # Enable service
     - curtin in-target -- systemctl daemon-reload
     - curtin in-target -- systemctl enable sync-efi.service
 
     # Enable passwordless sudo for admin
-    - curtin in-target -- bash -c 'echo "admin ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/99-admin'
+    - curtin in-target -- sh -c 'echo "admin ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/99-admin'
     - curtin in-target -- chmod 440 /etc/sudoers.d/99-admin
 
-    # Make EFI mount non-fatal if primary disk is missing
-    - curtin in-target -- sed -i 's/defaults/umask=0077,nofail,x-systemd.device-timeout=2/' /etc/fstab	
+    # Cleaned and Sanitized FSTAB isolation syntax block
+    - curtin in-target -- sed -i 's/defaults/umask=0077,nofail,x-systemd.device-timeout=2/' /etc/fstab
+
     # Regenerate initramfs
     - curtin in-target -- update-initramfs -u
 
