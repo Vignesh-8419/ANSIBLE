@@ -9,10 +9,21 @@ autoinstall:
 
   timezone: Asia/Kolkata
 
+  refresh-installer:
+    update: false
+
   identity:
     hostname: ubuntu
     username: admin
     password: "$6$f2CqqSxlPrXgSilb$giAfpuh7ZKf0FoP0Qw5cmQk/uAB6Cnuazd/2UVB4f6V8Tq36HttTdpcw9/IDm5G5efKeDhowjpfdEFS9JRRSl0"
+
+  apt:
+    fallback: offline-install
+    preserve_sources_list: false
+    mirror-selection:
+      primary:
+        - arches: [amd64]
+          uri: http://ubuntu.com
 
   ssh:
     install-server: true
@@ -22,12 +33,12 @@ autoinstall:
   network:
     version: 2
     ethernets:
-      vmnic: 
+      vmnic:
         match:
-          name: "en*" # MAXIMUM PORTABILITY: Dynamically captures ens32, enp2s0, or ens160 across all VMware hardware specs
+          name: "en*" # MAXIMUM PORTABILITY: Dynamically captures ens32, enp2s0, or ens160 safely
         dhcp4: true
         dhcp6: false
-        dhcp-identifier: mac # Directs systemd-networkd to track leases strictly by physical hardware MAC
+        dhcp-identifier: mac # Tracks leases strictly by hardware MAC to prevent address collision stalls
         optional: true # Bypasses network service-wait execution blocks during failover
 
   packages:
@@ -62,8 +73,7 @@ autoinstall:
         ptable: gpt
         wipe: superblock-recursive
         preserve: false
-        # grub_device key omitted to prevent NVRAM boot manager path collisions
-    
+
       # ---------- EFI Partition Elements ----------
       - id: sda-efi
         type: partition
@@ -71,36 +81,35 @@ autoinstall:
         size: 512M
         flag: boot
         grub_device: true # Maps primary boot variables onto sda1
-        
+
       - id: sdb-efi
         type: partition
         device: disk-sdb
         size: 512M
         flag: boot
-        # grub_device key omitted to prevent NVRAM boot manager path collisions
-    
+
       # ---------- /boot Partition Elements ----------
       - id: sda-boot
         type: partition
         device: disk-sda
         size: 2G
-    
+
       - id: sdb-boot
         type: partition
         device: disk-sdb
         size: 2G
-    
+
       # ---------- LVM Physical Volumes ----------
       - id: sda-lvm
         type: partition
         device: disk-sda
         size: 96G
-    
+
       - id: sdb-lvm
         type: partition
         device: disk-sdb
         size: 96G
-    
+
       # ---------- RAID /boot ----------
       - id: md0
         type: raid
@@ -110,7 +119,7 @@ autoinstall:
         devices:
           - sda-boot
           - sdb-boot
-    
+
       # ---------- RAID PV ----------
       - id: md1
         type: raid
@@ -120,97 +129,108 @@ autoinstall:
         devices:
           - sda-lvm
           - sdb-lvm
-    
+
       # ---------- LVM Volume Group ----------
       - id: vg0
         type: lvm_volgroup
         name: ubuntu-vg
         devices:
           - md1
-  
+
       # ---------- Swap Logical Volume ----------
       - id: lv-swap
         type: lvm_partition
         name: swap
         volgroup: vg0
         size: 8G
-  
+
       # ---------- Root Logical Volume ----------
-      # Size parameter omitted so the storage module fills the VG safely across the remaining extents
       - id: lv-root
         type: lvm_partition
         name: root
         volgroup: vg0
-  
+
       # ---------- Format Filesystems ----------
       - id: fmt-efi1
         type: format
         volume: sda-efi
         fstype: fat32
-  
+
       - id: fmt-efi2
         type: format
         volume: sdb-efi
         fstype: fat32
-  
+
       - id: fmt-boot
         type: format
         volume: md0
         fstype: ext4
-  
+
       - id: fmt-root
         type: format
         volume: lv-root
         fstype: ext4
-  
+
       - id: fmt-swap
         type: format
         volume: lv-swap
         fstype: swap
-    
+
       # ---------- Mount Points ----------
       - id: mnt-root
         type: mount
         device: fmt-root
         path: /
-    
+
       - id: mnt-boot
         type: mount
         device: fmt-boot
         path: /boot
-    
+
       - id: mnt-efi
         type: mount
         device: fmt-efi1
         path: /boot/efi
 
   late-commands:
-    # Golden Image Sanitation Loop: Clean caches, network leases, and transient IDs safely
     - curtin in-target -- apt-get clean
     - curtin in-target -- cloud-init clean --logs
     - curtin in-target -- rm -f /etc/cloud/cloud-init.disabled
-    - curtin in-target -- bash -c 'rm -rf /var/lib/systemd/netif/* /var/lib/dhcp/* /var/lib/dhcpcd/* || true'
-    - curtin in-target -- bash -c 'truncate -s 0 /etc/machine-id && rm -f /var/lib/dbus/machine-id'
+    - curtin in-target -- rm -rf /var/lib/systemd/netif
+    - curtin in-target -- rm -rf /var/lib/dhcp
+    - curtin in-target -- truncate -s 0 /etc/machine-id
+    - curtin in-target -- rm -f /var/lib/dbus/machine-id
 
-    # Passwordless sudo for admin account
-    - curtin in-target -- bash -c 'echo "admin ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/admin'
-    - curtin in-target -- chmod 440 /etc/sudoers.d/admin
+    # Disable cloud-init networking
+    - curtin in-target -- mkdir -p /etc/cloud/cloud.cfg.d
+    - curtin in-target -- wget -O /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg http://192.168.253.136/repo/scripts/99-disable-network-config.cfg
 
-    # Automatically provision the fallback EFI directory structure safely
-    - curtin in-target -- mkdir -p /boot/efi2
-    
-    # CRITICAL DUAL-DRIVE INSULATION: Converts BOTH primary and secondary mounts to 'nofail' to prevent emergency stalls
-    - curtin in-target -- bash -c 'sed -i "s/vfat defaults/vfat defaults,nofail/" /etc/fstab'
-    - curtin in-target -- sh -c 'UUID=$(blkid -s UUID -o value /dev/sdb1); echo "UUID=$UUID /boot/efi2 vfat defaults,nofail 0 2" >> /etc/fstab'
+    # Download Netplan configuration
+    - curtin in-target -- mkdir -p /etc/netplan
+    - curtin in-target -- wget -O /etc/netplan/01-netcfg.yaml http://192.168.253.136/repo/scripts/01-netcfg.yaml
+    - curtin in-target -- chmod 600 /etc/netplan/01-netcfg.yaml
 
-    # IDEMPOTENT TARGET REPLICATION: Explicit hardware target mount and file track synchronization
-    - curtin in-target -- mount /dev/sdb1 /boot/efi2
-    - curtin in-target -- bash -c 'cp -a /boot/efi/. /boot/efi2/'
+    # Download EFI sync script
+    - curtin in-target -- mkdir -p /usr/local/sbin
+    - curtin in-target -- wget -O /usr/local/sbin/sync-efi.sh http://192.168.253.136/repo/scripts/sync-efi.sh
+    - curtin in-target -- chmod 755 /usr/local/sbin/sync-efi.sh
 
-    # TARGETED GRUB INJECTION: Re-installs canonical GRUB to /boot/efi and standalone removable targets to /boot/efi2
-    - curtin in-target -- grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck
-    - curtin in-target -- grub-install --target=x86_64-efi --efi-directory=/boot/efi2 --bootloader-id=ubuntu --removable --recheck
+    # Download systemd service
+    - curtin in-target -- wget -O /etc/systemd/system/sync-efi.service http://192.168.253.136/repo/scripts/sync-efi.service
+
+    # Enable service
+    - curtin in-target -- systemctl daemon-reload
+    - curtin in-target -- systemctl enable sync-efi.service
+
+    # Enable passwordless sudo for admin
+    - curtin in-target -- bash -c 'echo "admin ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/99-admin'
+    - curtin in-target -- chmod 440 /etc/sudoers.d/99-admin
+
+    # Make EFI mount non-fatal if primary disk is missing
+    - curtin in-target -- sed -i -E 's#^([^#].*[[:space:]]/boot/efi[[:space:]]+vfat[[:space:]]+)[^[:space:]]+#\1umask=0077,nofail,x-systemd.device-timeout=2#' /etc/fstab
+	
+    # Regenerate initramfs
+    - curtin in-target -- update-initramfs -u
+
+    # Regenerate GRUB configuration
     - curtin in-target -- update-grub
-
-    # CLEAN TEARDOWN CLOSEOUT: Unmount the backup workspace filesystem cleanly before completing installation
-    - curtin in-target -- umount /boot/efi2
