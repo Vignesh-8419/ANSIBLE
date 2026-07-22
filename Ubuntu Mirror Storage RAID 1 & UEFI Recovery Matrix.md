@@ -1,98 +1,461 @@
-# Ubuntu 24.04 LTS RAID 1 + LVM Manual Recovery Runbook
+# Ubuntu 24.04 RAID1 Recovery & Validation Guide
 
-This guide covers the exact manual command sequences required to hot-plug a new disk and restore full mirror redundancy on an Ubuntu 24.04 LTS dual-disk system.
-
----
-
-## ⚠️ Crucial Note on Kernel Device Mapping
-When **Disk 1 (`sda`)** completely fails or is removed, the virtual motherboard shifts boot operations over to **Disk 2 (`sdb`)**. Upon entering the live operating system, **the surviving second disk automatically shifts into the primary `/dev/sda` device slot.** 
-
-Because of this kernel reallocation behavior, in **both** failure scenarios, your brand-new, empty replacement hard drive will always register inside the OS as **`/dev/sdb`**.
+This document describes the complete recovery procedure for a two-disk RAID1 Ubuntu 24.04 system using UEFI, RAID1 `/boot`, RAID1 LVM, and dual EFI partitions.
 
 ---
 
-## Scenario A: Disk 1 (`sda`) Failed & Is Replaced
+# Scenario 1: Disk 1 (sda) Failure and Recovery
 
-Use this exact command sequence if `cat /proc/mdstat` shows a degraded state of **`[_U]`**, indicating that the first disk is missing or dead.
+## Initial State
+
+- Booted successfully with **only sdb connected**
+- RAID degraded
+- Replace failed disk with a new blank 100GB disk
+
+---
+
+## Step 1 - Rescan SCSI Bus
 
 ```bash
-# 1. Force the SCSI bus to scan and detect the hot-plugged replacement disk live
-for host in /sys/class/scsi_host/host*; do echo "- - -" > \${host}/scan; done
+for host in /sys/class/scsi_host/host*; do
+    echo "- - -" > "$host/scan"
+done
+```
 
-# 2. Verify that the new blank drive appears on your screen as 'sdb'
+Verify new disk:
+
+```bash
+lsblk
+```
+
+Expected:
+
+```
+sda   <-- new blank disk
+sdb   <-- existing RAID member
+```
+
+---
+
+## Step 2 - Clone Partition Table
+
+```bash
+sgdisk --backup=/tmp/sdb-gpt.bin /dev/sdb
+sgdisk --load-backup=/tmp/sdb-gpt.bin /dev/sda
+sgdisk -G /dev/sda
+partprobe /dev/sda
+```
+
+Verify:
+
+```bash
+lsblk
+```
+
+Expected:
+
+```
+sda
+├─sda1
+├─sda2
+└─sda3
+```
+
+---
+
+## Step 3 - Create EFI Filesystem
+
+```bash
+mkfs.vfat -F32 /dev/sda1
+```
+
+---
+
+## Step 4 - Rebuild RAID
+
+```bash
+mdadm --add /dev/md0 /dev/sda2
+mdadm --add /dev/md1 /dev/sda3
+```
+
+Monitor rebuild:
+
+```bash
+watch cat /proc/mdstat
+```
+
+Wait until:
+
+```
+md0 [UU]
+md1 [UU]
+```
+
+---
+
+## Step 5 - Restore EFI
+
+Mount both EFI partitions:
+
+```bash
+mount /boot/efi
+
+mkdir -p /mnt/efi2
+
+mount /dev/sda1 /mnt/efi2
+```
+
+Install GRUB:
+
+```bash
+grub-install \
+    --target=x86_64-efi \
+    --efi-directory=/mnt/efi2 \
+    --bootloader-id=ubuntu \
+    --removable \
+    --recheck
+```
+
+Synchronize EFI:
+
+```bash
+rsync -aHAX --delete /boot/efi/ /mnt/efi2/
+```
+
+Create fallback bootloader:
+
+```bash
+mkdir -p /mnt/efi2/EFI/BOOT
+
+cp -f /mnt/efi2/EFI/ubuntu/shimx64.efi \
+      /mnt/efi2/EFI/BOOT/BOOTX64.EFI
+
+cp -f /mnt/efi2/EFI/ubuntu/mmx64.efi \
+      /mnt/efi2/EFI/BOOT/
+```
+
+Sync:
+
+```bash
+sync
+```
+
+Verify:
+
+```bash
+diff -rq /boot/efi /mnt/efi2
+```
+
+No output means success.
+
+Unmount:
+
+```bash
+umount /mnt/efi2
+```
+
+---
+
+## Step 6 - Validation
+
+RAID
+
+```bash
+cat /proc/mdstat
+```
+
+Expected:
+
+```
+md0 [UU]
+md1 [UU]
+```
+
+Verify EFI mount
+
+```bash
+mount | grep /boot/efi
+```
+
+Verify boot entries
+
+```bash
+efibootmgr -v
+```
+
+---
+
+## Step 7 - Boot Validation
+
+Shutdown
+
+```bash
+shutdown -h now
+```
+
+Disconnect **Disk 2 (sdb)**
+
+Boot VM.
+
+Verify:
+
+```bash
 lsblk
 
-# 3. Clone the exact partition layout structure from sda over to sdb
-sfdisk -d /dev/sda | sfdisk /dev/sdb
+cat /proc/mdstat
 
-# 4. Add the new partition tracks back into your active RAID arrays
-mdadm --manage /dev/md0 --add /dev/sdb2
-mdadm --manage /dev/md1 --add /dev/sdb3
+mount | grep /boot/efi
 
-# 5. Format the new partition into a clean FAT32 EFI track configuration
-mkfs.vfat -F32 /dev/sdb1
+efibootmgr -v
+```
 
-# 6. Mount the secondary EFI directory target path
-mount /dev/sdb1 /boot/efi2
+Expected:
 
-# 7. Mirror your active boot configuration tracking files onto the new blocks
-cp -a /boot/efi/. /boot/efi2/
+```
+md0 [U_]
+md1 [U_]
+```
 
-# 8. Dynamically rewrite the /etc/fstab entry to map the new disk's unique UUID
-NEW_UUID=\$(blkid -s UUID -o value /dev/sdb1)
-sed -i "/\/boot\/efi2/c\UUID=\${NEW_UUID} /boot/efi2 vfat defaults,nofail 0 2" /etc/fstab
+Boot successful = PASS
 
-# 9. Install standalone fallback GRUB records to make the new drive self-bootable
-grub-install --removable /dev/sdb
-update-grub
+---
+
+# Scenario 2: Disk 2 (sdb) Failure and Recovery
+
+## Initial State
+
+- Booted successfully with **only sda connected**
+- RAID degraded
+- Replace failed disk with new blank disk
+
+---
+
+## Step 1 - Rescan
+
+```bash
+for host in /sys/class/scsi_host/host*; do
+    echo "- - -" > "$host/scan"
+done
+```
+
+Verify
+
+```bash
+lsblk
+```
+
+Expected
+
+```
+sda <-- existing disk
+
+sdb <-- new blank disk
 ```
 
 ---
 
-## Scenario B: Disk 2 (`sdb`) Failed & Is Replaced
-
-Use this exact command sequence if `cat /proc/mdstat` shows a degraded state of **`[U_]`**, indicating that the second disk is missing or dead.
+## Step 2 - Clone GPT
 
 ```bash
-# 1. Force the SCSI bus to scan and detect the hot-plugged replacement disk live
-for host in /sys/class/scsi_host/host*; do echo "- - -" > \${host}/scan; done
+sgdisk --backup=/tmp/sda-gpt.bin /dev/sda
+sgdisk --load-backup=/tmp/sda-gpt.bin /dev/sdb
+sgdisk -G /dev/sdb
+partprobe /dev/sdb
+```
 
-# 2. Verify that the new blank drive appears on your screen as 'sdb'
+Verify
+
+```bash
+lsblk
+```
+
+---
+
+## Step 3 - Create EFI
+
+```bash
+mkfs.vfat -F32 /dev/sdb1
+```
+
+---
+
+## Step 4 - Rebuild RAID
+
+```bash
+mdadm --add /dev/md0 /dev/sdb2
+
+mdadm --add /dev/md1 /dev/sdb3
+```
+
+Monitor
+
+```bash
+watch cat /proc/mdstat
+```
+
+Wait until
+
+```
+md0 [UU]
+
+md1 [UU]
+```
+
+---
+
+## Step 5 - Restore EFI
+
+Mount
+
+```bash
+mount /boot/efi
+
+mkdir -p /mnt/efi2
+
+mount /dev/sdb1 /mnt/efi2
+```
+
+Install GRUB
+
+```bash
+grub-install \
+    --target=x86_64-efi \
+    --efi-directory=/mnt/efi2 \
+    --bootloader-id=ubuntu \
+    --removable \
+    --recheck
+```
+
+Synchronize EFI
+
+```bash
+rsync -aHAX --delete /boot/efi/ /mnt/efi2/
+```
+
+Create fallback
+
+```bash
+mkdir -p /mnt/efi2/EFI/BOOT
+
+cp -f /mnt/efi2/EFI/ubuntu/shimx64.efi \
+      /mnt/efi2/EFI/BOOT/BOOTX64.EFI
+
+cp -f /mnt/efi2/EFI/ubuntu/mmx64.efi \
+      /mnt/efi2/EFI/BOOT/
+```
+
+Flush
+
+```bash
+sync
+```
+
+Validate
+
+```bash
+diff -rq /boot/efi /mnt/efi2
+```
+
+No output = PASS
+
+Unmount
+
+```bash
+umount /mnt/efi2
+```
+
+---
+
+## Step 6 - Validation
+
+```bash
+cat /proc/mdstat
+```
+
+Expected
+
+```
+md0 [UU]
+
+md1 [UU]
+```
+
+EFI
+
+```bash
+mount | grep /boot/efi
+```
+
+Boot entries
+
+```bash
+efibootmgr -v
+```
+
+---
+
+## Step 7 - Boot Validation
+
+Shutdown
+
+```bash
+shutdown -h now
+```
+
+Disconnect **Disk 1 (sda)**
+
+Boot VM
+
+Verify
+
+```bash
 lsblk
 
-# 3. Clone the exact partition layout structure from sda over to sdb
-sfdisk -d /dev/sda | sfdisk /dev/sdb
+cat /proc/mdstat
 
-# 4. Add the new partition tracks back into your active RAID arrays
-mdadm --manage /dev/md0 --add /dev/sdb2
-mdadm --manage /dev/md1 --add /dev/sdb3
+mount | grep /boot/efi
 
-# 5. Format the new partition into a clean FAT32 EFI track configuration
-mkfs.vfat -F32 /dev/sdb1
-
-# 6. Mount the secondary EFI directory target path
-mount /dev/sdb1 /boot/efi2
-
-# 7. Mirror your active boot configuration tracking files onto the new blocks
-cp -a /boot/efi/. /boot/efi2/
-
-# 8. Dynamically rewrite the /etc/fstab entry to map the new disk's unique UUID
-NEW_UUID=\$(blkid -s UUID -o value /dev/sdb1)
-sed -i "/\/boot\/efi2/c\UUID=\${NEW_UUID} /boot/efi2 vfat defaults,nofail 0 2" /etc/fstab
-
-# 9. Install standalone fallback GRUB records to make the new drive self-bootable
-grub-install --removable /dev/sdb
-update-grub
+efibootmgr -v
 ```
+
+Expected
+
+```
+md0 [_U]
+
+md1 [_U]
+```
+
+Boot successful = PASS
 
 ---
 
-## ⏳ Step 3: Monitor Data Resynchronization Progress
+# Final Validation Checklist
 
-Once the recovery loop for either scenario is executed, the background block-level mirroring initiates instantly. Monitor the live rebuild progress by running:
+| Check | Expected |
+|--------|----------|
+| RAID Status | md0 [UU], md1 [UU] |
+| EFI Files | `diff -rq` returns no output |
+| GRUB Installed | `grub-install` completed successfully |
+| Boot Entries | Present in `efibootmgr -v` |
+| Boot with only sda | PASS |
+| Boot with only sdb | PASS |
+| RAID rebuild | PASS |
+| EFI synchronization | PASS |
+| Single disk boot | PASS |
+| Full recovery validated | PASS |
+
+---
+
+# Notes
+
+- Always run `sync` before unmounting the EFI partition.
+- Wait for RAID rebuild to complete before restoring EFI.
+- If `/boot/efi` is not mounted, mount it before running `rsync`.
+- After modifying `/etc/fstab`, run:
 
 ```bash
-watch -n 1 cat /proc/mdstat
+systemctl daemon-reload
 ```
 
-When the reconstruction percentage counters reach 100% and disappear, the array flags will transition completely back into the optimal mirrored state of **`[2/2] [UU]`**.
+to reload the updated configuration.
