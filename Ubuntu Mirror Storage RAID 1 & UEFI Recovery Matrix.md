@@ -1,100 +1,98 @@
-# Ubuntu Mirror Storage RAID 1 & UEFI Recovery Matrix
+# Ubuntu 24.04 LTS RAID 1 + LVM Manual Recovery Runbook
 
-This document provides immediate, actionable steps to restore storage parity and boot redundancy after replacing a failed disk drive.
+This guide covers the exact manual command sequences required to hot-plug a new disk and restore full mirror redundancy on an Ubuntu 24.04 LTS dual-disk system.
 
 ---
 
-## 🚨 Pre-Recovery System Verification
+## ⚠️ Crucial Note on Kernel Device Mapping
+When **Disk 1 (`sda`)** completely fails or is removed, the virtual motherboard shifts boot operations over to **Disk 2 (`sdb`)**. Upon entering the live operating system, **the surviving second disk automatically shifts into the primary `/dev/sda` device slot.** 
 
-Before executing any commands, verify the system's current block device names and array mapping configuration.
+Because of this kernel reallocation behavior, in **both** failure scenarios, your brand-new, empty replacement hard drive will always register inside the OS as **`/dev/sdb`**.
+
+---
+
+## Scenario A: Disk 1 (`sda`) Failed & Is Replaced
+
+Use this exact command sequence if `cat /proc/mdstat` shows a degraded state of **`[_U]`**, indicating that the first disk is missing or dead.
 
 ```bash
-# Verify active/missing block partitions
+# 1. Force the SCSI bus to scan and detect the hot-plugged replacement disk live
+for host in /sys/class/scsi_host/host*; do echo "- - -" > \${host}/scan; done
+
+# 2. Verify that the new blank drive appears on your screen as 'sdb'
 lsblk
 
-# Check the status of degraded RAID arrays
-cat /proc/mdstat
-```
-
-> **IMPORTANT ASSUMPTION:** In the procedures below, `/dev/sda` represents the surviving healthy drive, and `/dev/sdb` represents the newly installed replacement drive. If your system identifies them differently, swap the names accordingly.
-
----
-
-## 📂 Scenario A: Replacing Drive `sdb` (Secondary Drive Failed)
-*The primary active partition (`/dev/sda1` mounted at `/boot/efi`) is running normally. The system booted successfully from the primary disk.*
-
-### Execution Commands
-
-```bash
-# 1. Clone the working partition map from sda directly over to sdb
+# 3. Clone the exact partition layout structure from sda over to sdb
 sfdisk -d /dev/sda | sfdisk /dev/sdb
 
-# 2. Re-attach the new raw space blocks back to the active RAID paths
+# 4. Add the new partition tracks back into your active RAID arrays
 mdadm --manage /dev/md0 --add /dev/sdb2
 mdadm --manage /dev/md1 --add /dev/sdb3
 
-# 3. Provision a clean FAT32 filesystem table layer onto the new EFI space
+# 5. Format the new partition into a clean FAT32 EFI track configuration
 mkfs.vfat -F32 /dev/sdb1
 
-# 4. Copy the primary boot configuration files onto the secondary target
-dd if=/dev/sda1 of=/dev/sdb1 bs=4M status=progress
+# 6. Mount the secondary EFI directory target path
+mount /dev/sdb1 /boot/efi2
 
-# 5. Deploy boot records onto the new hardware tracking block
-grub-install /dev/sdb
+# 7. Mirror your active boot configuration tracking files onto the new blocks
+cp -a /boot/efi/. /boot/efi2/
+
+# 8. Dynamically rewrite the /etc/fstab entry to map the new disk's unique UUID
+NEW_UUID=\$(blkid -s UUID -o value /dev/sdb1)
+sed -i "/\/boot\/efi2/c\UUID=\${NEW_UUID} /boot/efi2 vfat defaults,nofail 0 2" /etc/fstab
+
+# 9. Install standalone fallback GRUB records to make the new drive self-bootable
+grub-install --removable /dev/sdb
 update-grub
-
-# 6. Re-map the non-blocking /etc/fstab entry with the new drive's unique signature
-NEW_UUID=$(blkid -s UUID -o value /dev/sdb1)
-sed -i "/\/boot\/efi2/c\UUID=${NEW_UUID} /boot/efi2 vfat defaults,nofail 0 2" /etc/fstab
 ```
 
 ---
 
-## 📂 Scenario B: Replacing Drive `sda` (Primary Drive Failed)
-*The primary drive died. The system used the fallback paths to boot from the secondary drive. In this state, the surviving drive typically maps to `/dev/sda` inside the operating system, and the new replacement drive shows up as `/dev/sdb`.*
+## Scenario B: Disk 2 (`sdb`) Failed & Is Replaced
 
-### Execution Commands
+Use this exact command sequence if `cat /proc/mdstat` shows a degraded state of **`[U_]`**, indicating that the second disk is missing or dead.
 
 ```bash
-# 1. Copy the layout map from the surviving drive over to the replacement drive
+# 1. Force the SCSI bus to scan and detect the hot-plugged replacement disk live
+for host in /sys/class/scsi_host/host*; do echo "- - -" > \${host}/scan; done
+
+# 2. Verify that the new blank drive appears on your screen as 'sdb'
+lsblk
+
+# 3. Clone the exact partition layout structure from sda over to sdb
 sfdisk -d /dev/sda | sfdisk /dev/sdb
 
-# 2. Add the new partitions to the degraded RAID arrays
+# 4. Add the new partition tracks back into your active RAID arrays
 mdadm --manage /dev/md0 --add /dev/sdb2
 mdadm --manage /dev/md1 --add /dev/sdb3
 
-# 3. Format the replacement EFI partition to FAT32
+# 5. Format the new partition into a clean FAT32 EFI track configuration
 mkfs.vfat -F32 /dev/sdb1
 
-# 4. Clone the active boot tracks onto the new partition
-dd if=/dev/sda1 of=/dev/sdb1 bs=4M status=progress
+# 6. Mount the secondary EFI directory target path
+mount /dev/sdb1 /boot/efi2
 
-# 5. Install the GRUB bootloader components to the new drive
-grub-install /dev/sdb
+# 7. Mirror your active boot configuration tracking files onto the new blocks
+cp -a /boot/efi/. /boot/efi2/
+
+# 8. Dynamically rewrite the /etc/fstab entry to map the new disk's unique UUID
+NEW_UUID=\$(blkid -s UUID -o value /dev/sdb1)
+sed -i "/\/boot\/efi2/c\UUID=\${NEW_UUID} /boot/efi2 vfat defaults,nofail 0 2" /etc/fstab
+
+# 9. Install standalone fallback GRUB records to make the new drive self-bootable
+grub-install --removable /dev/sdb
 update-grub
-
-# 6. Update the /etc/fstab UUID tracking rule to match the new hardware signature
-NEW_UUID=$(blkid -s UUID -o value /dev/sdb1)
-sed -i "/\/boot\/efi2/c\UUID=${NEW_UUID} /boot/efi2 vfat defaults,nofail 0 2" /etc/fstab
 ```
 
 ---
 
-## ⏳ Rebuild Tracking & Status Verification
+## ⏳ Step 3: Monitor Data Resynchronization Progress
 
-Once added, data mirroring runs asynchronously in the background. Performance may be slightly impacted until synchronization completes.
+Once the recovery loop for either scenario is executed, the background block-level mirroring initiates instantly. Monitor the live rebuild progress by running:
 
-Monitor progress using:
 ```bash
 watch -n 1 cat /proc/mdstat
 ```
 
-**Expected Healthy Output Example:**
-```text
-md0 : active raid1 sda2[0] sdb2[1]
-      2094080 blocks super 1.2 [2/2] [UU]
-
-md1 : active raid1 sda3[0] sdb3[1]
-      100596736 blocks super 1.2 [2/2] [UU]
-```
-*(The `[UU]` token verifies that both storage segments are running in an optimal, mirrored state).*
+When the reconstruction percentage counters reach 100% and disappear, the array flags will transition completely back into the optimal mirrored state of **`[2/2] [UU]`**.
