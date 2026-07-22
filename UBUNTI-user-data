@@ -24,7 +24,7 @@ autoinstall:
     ethernets:
       vmnic: 
         match:
-          name: "en*" # Universally captures ens32, enp2s0, or ens160 automatically
+          name: "en*" # MAXIMUM PORTABILITY: Dynamically captures ens32, enp2s0, or ens160 across all VMware hardware specs
         dhcp4: true
         dhcp6: false
         dhcp-identifier: mac # Directs systemd-networkd to track leases strictly by physical hardware MAC
@@ -50,7 +50,7 @@ autoinstall:
         ptable: gpt
         wipe: superblock-recursive
         preserve: false
-        grub_device: true # Primary system NVRAM registration target
+        grub_device: true # Registers Disk A to virtual motherboard NVRAM lookup tables
 
       # ----------------------------
       # Disk 2
@@ -62,6 +62,7 @@ autoinstall:
         ptable: gpt
         wipe: superblock-recursive
         preserve: false
+        grub_device: true # FIXED: Registers Disk B to virtual motherboard NVRAM lookup tables
     
       # ---------- EFI Partition Elements ----------
       - id: sda-efi
@@ -69,13 +70,14 @@ autoinstall:
         device: disk-sda
         size: 512M
         flag: boot
-        grub_device: true
+        grub_device: true # Maps primary boot variables onto sda1
         
       - id: sdb-efi
         type: partition
         device: disk-sdb
         size: 512M
         flag: boot
+        grub_device: true # FIXED: Maps secondary boot variables onto sdb1
     
       # ---------- /boot Partition Elements ----------
       - id: sda-boot
@@ -134,6 +136,7 @@ autoinstall:
         size: 8G
   
       # ---------- Root Logical Volume ----------
+      # Size parameter omitted so the storage module fills the VG safely across the remaining extents
       - id: lv-root
         type: lvm_partition
         name: root
