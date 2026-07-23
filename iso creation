@@ -1,18 +1,18 @@
 rhel/rocky
 
-mkdir -p /root/rocky9-golden
-mkdir -p /mnt/rocky9iso
+mkdir -p /root/rocky8-golden
+mkdir -p /mnt/rocky8iso
 
-mount /dev/sr0 /mnt/rocky9iso
+mount /dev/sr0 /mnt/rocky8iso
 
-cp -a /mnt/rocky9iso/. /root/rocky9-golden/
+cp -a /mnt/rocky8iso/. /root/rocky8-golden/
 
-umount /mnt/rocky9iso
+umount /mnt/rocky8iso
 
 cd /root
 
 xorriso -as mkisofs \
--o Rocky9_Golden_RAID.iso \
+-o rocky8_Golden_RAID.iso \
 -isohybrid-mbr /usr/share/syslinux/isohdpfx.bin \
 -c isolinux/boot.cat \
 -b isolinux/isolinux.bin \
@@ -25,8 +25,8 @@ xorriso -as mkisofs \
 -isohybrid-gpt-basdat \
 -J \
 -R \
--V "updated_rocky9" \
-/root/rocky9-golden
+-V "updated_rocky8" \
+/root/rocky8-golden
 
 implantisomd5 /root/Rocky8_Golden_RAID.iso
 
