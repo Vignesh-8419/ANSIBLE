@@ -1,126 +1,27 @@
-# Ubuntu 24.04 RAID1 Recovery & Validation Guide
+# Ubuntu 24.04 RAID1 Disk Recovery SOP
 
-This document describes the complete recovery procedure for a two-disk Ubuntu 24.04 system configured with:
-
-- UEFI Boot
-- Dual EFI System Partitions
-- RAID1 `/boot`
-- RAID1 LVM
-- Root filesystem on LVM
+> Assumption:
+> - The system has successfully booted from the healthy disk.
+> - `/boot/efi` is already mounted from the healthy disk.
+> - Replace `<NEW_DISK>` with `sda` or `sdb` depending on which disk failed.
 
 ---
 
-# Architecture
-
-```
-                Ubuntu 24.04 RAID1 Layout
-
-             +-------------------------------+
-             |         UEFI Firmware         |
-             +---------------+---------------+
-                             |
-         +-------------------+-------------------+
-         |                                       |
-     Disk 1 (sda)                           Disk 2 (sdb)
-         |                                       |
-    EFI (FAT32)                            EFI (FAT32)
-         |                                       |
-         +---------- Boot Failover --------------+
-                       (Identical EFI)
-
-    /boot (RAID1 md0)                  /boot (RAID1 md0)
-
-    LVM PV (RAID1 md1)                 LVM PV (RAID1 md1)
-              |                                  |
-              +---------------+------------------+
-                              |
-                        Ubuntu Volume Group
-                              |
-                      +-------+--------+
-                      |                |
-                     Root             Swap
-```
-
-The EFI System Partition (ESP) is **NOT** part of RAID1 because UEFI firmware cannot read Linux Software RAID.
-
-Instead, each disk has its own FAT32 EFI partition containing identical bootloader files.
-
----
-
-# Recovery Workflow
-
-The recovery procedure is identical regardless of whether **Disk 1 (sda)** or **Disk 2 (sdb)** fails.
-
-Simply replace the failed disk and substitute the correct device names.
-
----
-
-# Scenario 1
-
-Recovering **Disk 1 (sda)**
-
-Healthy disk:
-
-```
-sdb
-```
-
-Replacement disk:
-
-```
-sda
-```
-
----
-
-# Scenario 2
-
-Recovering **Disk 2 (sdb)**
-
-Healthy disk:
-
-```
-sda
-```
-
-Replacement disk:
-
-```
-sdb
-```
-
----
-
-# Step 1 - Detect Replacement Disk
-
-Rescan the SCSI bus.
+# 1. Detect New Disk
 
 ```bash
 for host in /sys/class/scsi_host/host*; do
     echo "- - -" > "$host/scan"
 done
-```
 
-Verify.
-
-```bash
 lsblk
-```
-
-Example:
-
-```
-sda
-sdb
 ```
 
 ---
 
-# Step 2 - Clone GPT
+# 2. Clone Partition Table
 
-Clone the partition table from the healthy disk.
-
-## Recovering sda
+## If replacing sda
 
 ```bash
 sgdisk --backup=/tmp/sdb-gpt.bin /dev/sdb
@@ -129,7 +30,7 @@ sgdisk -G /dev/sda
 partprobe /dev/sda
 ```
 
-## Recovering sdb
+## If replacing sdb
 
 ```bash
 sgdisk --backup=/tmp/sda-gpt.bin /dev/sda
@@ -138,7 +39,7 @@ sgdisk -G /dev/sdb
 partprobe /dev/sdb
 ```
 
-Verify.
+Verify:
 
 ```bash
 lsblk
@@ -146,15 +47,15 @@ lsblk
 
 ---
 
-# Step 3 - Create EFI Filesystem
+# 3. Create EFI Filesystem
 
-Recovering **sda**
+## If replacing sda
 
 ```bash
 mkfs.vfat -F32 /dev/sda1
 ```
 
-Recovering **sdb**
+## If replacing sdb
 
 ```bash
 mkfs.vfat -F32 /dev/sdb1
@@ -162,47 +63,44 @@ mkfs.vfat -F32 /dev/sdb1
 
 ---
 
-# Step 4 - Rebuild RAID
+# 4. Rebuild RAID
 
-Recovering **sda**
+## If replacing sda
 
 ```bash
 mdadm --add /dev/md0 /dev/sda2
 mdadm --add /dev/md1 /dev/sda3
 ```
 
-Recovering **sdb**
+## If replacing sdb
 
 ```bash
 mdadm --add /dev/md0 /dev/sdb2
 mdadm --add /dev/md1 /dev/sdb3
 ```
 
-Monitor rebuild.
+Monitor rebuild:
 
 ```bash
 watch cat /proc/mdstat
 ```
 
-Continue only when:
+Continue only after RAID rebuild completes:
 
 ```
 md0 [UU]
-
 md1 [UU]
 ```
 
 ---
 
-# Step 5 - Restore EFI
-
-## 5.1 Verify Existing EFI Mounts
+# 5. Verify EFI Mount
 
 ```bash
-mount | grep efi
+mount | grep /boot/efi
 ```
 
-Typical output:
+Expected:
 
 ```
 /dev/sda1 on /boot/efi
@@ -214,31 +112,29 @@ or
 /dev/sdb1 on /boot/efi
 ```
 
-If `/boot/efi` is already mounted, **do not mount it again**.
+If `/boot/efi` is **not** mounted, stop and mount the healthy EFI partition before continuing.
 
 ---
 
-## 5.2 Mount Replacement EFI
-
-Create mount point.
+# 6. Mount Replacement EFI
 
 ```bash
 mkdir -p /mnt/efi2
 ```
 
-Recovering **sda**
+## If replacing sda
 
 ```bash
 mount /dev/sda1 /mnt/efi2
 ```
 
-Recovering **sdb**
+## If replacing sdb
 
 ```bash
 mount /dev/sdb1 /mnt/efi2
 ```
 
-Verify.
+Verify:
 
 ```bash
 mount | grep efi
@@ -253,32 +149,17 @@ Expected:
 
 ---
 
-## 5.3 Verify Source EFI
-
-Ensure the source EFI contains boot files.
+# 7. Verify Source EFI
 
 ```bash
 find /boot/efi -maxdepth 3 -type f
 ```
 
-Expected example:
-
-```
-/boot/efi/EFI/BOOT/BOOTX64.EFI
-```
-
-or
-
-```
-/boot/efi/EFI/ubuntu/shimx64.efi
-/boot/efi/EFI/ubuntu/grubx64.efi
-```
-
-If no files are listed, stop and investigate before continuing.
+If this returns no files, stop and investigate.
 
 ---
 
-## 5.4 Install GRUB
+# 8. Install GRUB on Replacement EFI
 
 ```bash
 grub-install \
@@ -289,27 +170,19 @@ grub-install \
     --recheck
 ```
 
-Verify.
+---
+
+# 9. Synchronize EFI
 
 ```bash
-find /mnt/efi2/EFI -maxdepth 2 -type f
+rsync -aHAX --delete /boot/efi/ /mnt/efi2/
+
+sync
 ```
 
 ---
 
-## 5.5 Synchronize EFI
-
-```bash
-rsync -aHAX --delete /boot/efi/ /mnt/efi2/
-```
-
-Flush writes.
-
-```bash
-sync
-```
-
-Verify.
+# 10. Verify EFI Synchronization
 
 ```bash
 diff -rq /boot/efi /mnt/efi2
@@ -323,19 +196,15 @@ Expected:
 
 ---
 
-## 5.6 Cleanup
+# 11. Cleanup
 
 ```bash
 umount /mnt/efi2
 ```
 
-> Do **not** unmount `/boot/efi` if it was already mounted by the operating system.
-
 ---
 
-# Step 6 - Validation
-
-Verify RAID.
+# 12. Verify RAID
 
 ```bash
 cat /proc/mdstat
@@ -345,37 +214,30 @@ Expected:
 
 ```
 md0 [UU]
-
 md1 [UU]
 ```
 
-Verify boot entries.
+---
+
+# 13. Verify Boot Entries
 
 ```bash
 efibootmgr -v
 ```
 
-Verify disks.
-
-```bash
-lsblk
-```
-
 ---
 
-# Step 7 - Boot Failover Validation
+# 14. Boot Failover Test
 
-Shutdown.
+Shutdown:
 
 ```bash
 shutdown -h now
 ```
 
-Disconnect the healthy disk.
+Disconnect the healthy disk and boot using only the recovered disk.
 
-Boot using only the recovered disk.
-
-Verify.
+Verify:
 
 ```bash
 lsblk
@@ -387,53 +249,46 @@ efibootmgr -v
 
 Expected:
 
-Recovering **sda**
+If booting from **sda**:
 
 ```
 md0 [U_]
-
 md1 [U_]
 ```
 
-Recovering **sdb**
+If booting from **sdb**:
 
 ```
 md0 [_U]
-
 md1 [_U]
 ```
 
-If the system boots successfully, the recovery is complete.
+Boot successful = Recovery completed.
 
 ---
 
 # Post-Patch EFI Synchronization
 
-Whenever Ubuntu updates any of the following:
+Run this only after updates that include:
 
 - Linux Kernel
 - GRUB
 - shim
 - EFI bootloader packages
 
-Synchronize the secondary EFI partition.
-
-Verify current mounts.
-
-```bash
-mount | grep efi
-```
-
-Mount the secondary EFI if required.
-
 ```bash
 mkdir -p /mnt/efi2
+```
+
+Mount the secondary EFI partition:
+
+```bash
 mount /dev/sdb1 /mnt/efi2
 ```
 
-(or `/dev/sda1` depending on which disk is secondary)
+(or `/dev/sda1` if booted from Disk 2)
 
-Install GRUB.
+Update GRUB:
 
 ```bash
 grub-install \
@@ -444,7 +299,7 @@ grub-install \
     --recheck
 ```
 
-Synchronize.
+Synchronize:
 
 ```bash
 rsync -aHAX --delete /boot/efi/ /mnt/efi2/
@@ -456,40 +311,8 @@ diff -rq /boot/efi /mnt/efi2
 umount /mnt/efi2
 ```
 
-No output from `diff` indicates both EFI partitions are identical.
+Expected:
 
----
-
-# Final Validation Checklist
-
-| Validation | Expected |
-|------------|----------|
-| RAID Healthy | md0 [UU], md1 [UU] |
-| EFI Source Mounted | PASS |
-| EFI Destination Mounted | PASS |
-| Source EFI Contains Boot Files | PASS |
-| GRUB Installed Successfully | PASS |
-| EFI Synchronization | PASS |
-| `diff -rq` Returns No Output | PASS |
-| UEFI Boot Entries Present | PASS |
-| Boot Using Disk 1 Only | PASS |
-| Boot Using Disk 2 Only | PASS |
-| RAID Rebuild Successful | PASS |
-| Full Recovery Validated | PASS |
-
----
-
-# Important Notes
-
-- Always wait for RAID rebuild to complete before restoring EFI.
-- Never assume `/boot/efi` is unmounted. Check first using `mount | grep efi`.
-- Never assume the bootloader is stored under `EFI/ubuntu`; some installations use only `EFI/BOOT`.
-- Always verify the source EFI contains boot files before running `rsync`.
-- Always run `sync` before unmounting the destination EFI.
-- Always verify synchronization using:
-
-```bash
-diff -rq /boot/efi /mnt/efi2
 ```
-
-No output indicates both EFI partitions are identical.
+(no output)
+```
