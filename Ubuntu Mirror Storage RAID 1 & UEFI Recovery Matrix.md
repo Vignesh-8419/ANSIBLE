@@ -1,37 +1,40 @@
-# Ubuntu 24.04 RAID1 Disk Recovery SOP
+# Ubuntu 24.04 LTS RAID1 Disk Recovery SOP (UEFI + Software RAID1 + LVM)
 
 ## Purpose
 
-Recover a failed disk in an Ubuntu 24.04 server configured with:
+This document describes the complete procedure to recover a failed disk on an Ubuntu 24.04 server configured with:
 
 - UEFI Boot
-- Software RAID1
 - Dual EFI System Partitions
-- RAID1 /boot
-- RAID1 LVM PV
+- Software RAID1 (/boot)
+- Software RAID1 (LVM PV)
 - LVM Root Filesystem
+
+This SOP has been fully validated on Ubuntu 24.04.3 LTS.
 
 ---
 
 # Storage Layout
 
-Disk 1
+```
+Disk 1 (Healthy)
+----------------
+sda1    EFI (FAT32)
+sda2    md0 (/boot)
+sda3    md1 (LVM)
 
-sda1  EFI (FAT32)
-sda2  md0 (/boot)
-sda3  md1 (LVM)
-
-Disk 2
-
-sdb1  EFI (FAT32)
-sdb2  md0 (/boot)
-sdb3  md1 (LVM)
+Disk 2 (Replacement)
+--------------------
+sdb1    EFI (FAT32)
+sdb2    md0 (/boot)
+sdb3    md1 (LVM)
+```
 
 ---
 
 # Phase 1 - Detect Replacement Disk
 
-Rescan disks
+Rescan storage.
 
 ```bash
 for host in /sys/class/scsi_host/host*; do
@@ -41,29 +44,86 @@ done
 partprobe
 ```
 
-Verify
+Verify disks.
 
 ```bash
 lsblk
 ```
 
-If the replacement disk has no partitions, continue to Phase 2.
+Example immediately after replacing Disk2
+
+```
+NAME
+sda
+├── sda1
+├── sda2
+└── sda3
+
+sdb
+```
+
+If the replacement disk has no partitions, continue.
 
 ---
 
-# Phase 2 - Clone GPT
+# Phase 2 - Identify Healthy and Replacement Disk
 
-Determine the healthy disk.
+Determine which EFI partition is currently mounted.
 
 ```bash
 mount | grep /boot/efi
 ```
 
-If mounted from
+If nothing is returned,
+
+the EFI partition is **not mounted**.
+
+This can happen after booting with only one disk because the UUID stored in
+`/etc/fstab` belongs to the old disk.
+
+Determine the EFI partition.
+
+```bash
+blkid | grep vfat
+```
+
+Example
 
 ```
 /dev/sda1
 ```
+
+Mount it.
+
+```bash
+mkdir -p /boot/efi
+
+mount /dev/sda1 /boot/efi
+```
+
+Verify.
+
+```bash
+mount | grep /boot/efi
+```
+
+Expected
+
+```
+/dev/sda1 on /boot/efi
+```
+
+---
+
+Now determine disks.
+
+If
+
+```
+/dev/sda1
+```
+
+is mounted,
 
 Healthy disk
 
@@ -77,7 +137,31 @@ Replacement disk
 sdb
 ```
 
-Clone GPT
+If
+
+```
+/dev/sdb1
+```
+
+is mounted,
+
+Healthy disk
+
+```
+sdb
+```
+
+Replacement disk
+
+```
+sda
+```
+
+---
+
+# Phase 3 - Clone GPT
+
+Example (healthy disk = sda)
 
 ```bash
 sgdisk --backup=/tmp/gpt.bin /dev/sda
@@ -89,37 +173,7 @@ sgdisk -G /dev/sdb
 partprobe /dev/sdb
 ```
 
-If mounted from
-
-```
-/dev/sdb1
-```
-
-Healthy disk
-
-```
-sdb
-```
-
-Replacement disk
-
-```
-sda
-```
-
-Clone GPT
-
-```bash
-sgdisk --backup=/tmp/gpt.bin /dev/sdb
-
-sgdisk --load-backup=/tmp/gpt.bin /dev/sda
-
-sgdisk -G /dev/sda
-
-partprobe /dev/sda
-```
-
-Verify
+Verify.
 
 ```bash
 lsblk
@@ -128,10 +182,6 @@ lsblk
 Expected
 
 ```
-sda1
-sda2
-sda3
-
 sdb1
 sdb2
 sdb3
@@ -139,37 +189,31 @@ sdb3
 
 ---
 
-# Phase 3 - Prepare Replacement Disk
+# Phase 4 - Prepare Replacement Disk
 
 Create EFI filesystem.
 
-If replacement disk is sdb
+Example
 
 ```bash
 mkfs.vfat -F32 /dev/sdb1
 ```
 
-If replacement disk is sda
+Verify.
 
 ```bash
-mkfs.vfat -F32 /dev/sda1
+blkid /dev/sdb1
 ```
 
-Verify
-
-```bash
-blkid
-```
-
-The replacement EFI should show
+Expected
 
 ```
 TYPE="vfat"
 ```
 
-Add RAID members.
+---
 
-Example (replacement disk sdb)
+Add RAID members.
 
 ```bash
 mdadm --add /dev/md0 /dev/sdb2
@@ -177,13 +221,13 @@ mdadm --add /dev/md0 /dev/sdb2
 mdadm --add /dev/md1 /dev/sdb3
 ```
 
-Monitor rebuild
+Monitor rebuild.
 
 ```bash
 watch cat /proc/mdstat
 ```
 
-Wait until BOTH arrays show
+Wait until
 
 ```
 md0 [UU]
@@ -191,11 +235,25 @@ md0 [UU]
 md1 [UU]
 ```
 
-Do not continue until rebuild completes.
+Verify.
+
+```bash
+cat /proc/mdstat
+```
+
+Expected
+
+```
+md0 [UU]
+
+md1 [UU]
+```
+
+Do **NOT** continue until rebuild finishes.
 
 ---
 
-# Phase 4 - Restore EFI
+# Phase 5 - Restore EFI
 
 Determine active EFI.
 
@@ -209,7 +267,7 @@ If active EFI is
 /dev/sda1
 ```
 
-Mount replacement EFI
+Mount replacement EFI.
 
 ```bash
 mkdir -p /mnt/efi2
@@ -223,13 +281,15 @@ If active EFI is
 /dev/sdb1
 ```
 
-Mount replacement EFI
+Mount replacement EFI.
 
 ```bash
 mkdir -p /mnt/efi2
 
 mount /dev/sda1 /mnt/efi2
 ```
+
+---
 
 Verify the mount.
 
@@ -245,11 +305,7 @@ Expected
 /dev/sdb1 on /mnt/efi2
 ```
 
-(or vice versa)
-
-**IMPORTANT**
-
-Verify `/mnt/efi2` is mounted from the replacement EFI partition before continuing.
+**STOP** if both mount points refer to the same device.
 
 ---
 
@@ -292,15 +348,13 @@ Expected
 Installation finished. No error reported.
 ```
 
-Verify
+Verify.
 
 ```bash
 find /mnt/efi2/EFI -maxdepth 3 -type f
 ```
 
----
-
-Synchronize EFI.
+Synchronize.
 
 ```bash
 rsync -aHAX --delete /boot/efi/ /mnt/efi2/
@@ -320,7 +374,7 @@ Expected
 (no output)
 ```
 
-Unmount.
+Cleanup.
 
 ```bash
 umount /mnt/efi2
@@ -328,7 +382,7 @@ umount /mnt/efi2
 
 ---
 
-# Phase 5 - Final Verification
+# Phase 6 - Final Verification
 
 Verify RAID.
 
@@ -358,13 +412,13 @@ efibootmgr -v
 
 Expected
 
-At least one Ubuntu boot entry.
+Ubuntu boot entry.
 
 ---
 
-# Phase 6 - Boot Failover Test
+# Phase 7 - Boot Failover Test
 
-Power off.
+Shutdown.
 
 ```bash
 shutdown -h now
@@ -374,7 +428,7 @@ Disconnect the healthy disk.
 
 Boot using only the recovered disk.
 
-Verify
+Verify.
 
 ```bash
 lsblk
@@ -388,15 +442,65 @@ efibootmgr -v
 
 Expected
 
-- System boots successfully.
-- RAID is degraded (expected).
-- Ubuntu boot entry exists.
+```
+md0 [_U]
+
+md1 [_U]
+```
+
+or
+
+```
+md0 [U_]
+
+md1 [U_]
+```
+
+Both are normal.
+
+---
+
+## IMPORTANT
+
+After booting with only one disk,
+
+Ubuntu **may not automatically mount** `/boot/efi`.
+
+Check.
+
+```bash
+mount | grep /boot/efi
+```
+
+If nothing is returned,
+
+identify the EFI partition.
+
+```bash
+blkid | grep vfat
+```
+
+Mount it manually.
+
+Example
+
+```bash
+mount /dev/sda1 /boot/efi
+```
+
+Verify.
+
+```bash
+mount | grep /boot/efi
+```
+
+Then continue verification.
 
 Reconnect the healthy disk.
 
 Boot normally.
 
-Verify
+Verify.
 
 ```bash
 cat /proc/mdstat
@@ -410,37 +514,76 @@ md0 [UU]
 md1 [UU]
 ```
 
-Recovery completed successfully.
+Recovery completed.
 
 ---
 
 # Post-Patch EFI Synchronization
 
-After updating any of the following:
+Run after updating:
 
-- Linux kernel
+- Kernel
 - GRUB
 - shim
 - EFI packages
 
-Determine the active EFI.
+Verify `/boot/efi` is mounted.
 
 ```bash
 mount | grep /boot/efi
 ```
 
-Mount the inactive EFI.
+If not mounted,
 
-Verify
+identify the EFI partition.
+
+```bash
+blkid | grep vfat
+```
+
+Mount it.
+
+Example
+
+```bash
+mount /dev/sda1 /boot/efi
+```
+
+Determine inactive EFI.
+
+If active EFI is
+
+```
+/dev/sda1
+```
+
+Mount
+
+```bash
+mkdir -p /mnt/efi2
+
+mount /dev/sdb1 /mnt/efi2
+```
+
+If active EFI is
+
+```
+/dev/sdb1
+```
+
+Mount
+
+```bash
+mkdir -p /mnt/efi2
+
+mount /dev/sda1 /mnt/efi2
+```
+
+Verify.
 
 ```bash
 mount | grep efi
 ```
-
-Ensure:
-
-- `/boot/efi` = active EFI
-- `/mnt/efi2` = inactive EFI
 
 Install GRUB.
 
@@ -487,11 +630,13 @@ umount /mnt/efi2
 - [ ] GPT cloned
 - [ ] EFI filesystem created
 - [ ] Replacement EFI verified as FAT32
-- [ ] RAID rebuild complete (`md0 [UU]`, `md1 [UU]`)
-- [ ] Replacement EFI mounted correctly
+- [ ] RAID rebuilt (`md0 [UU]`, `md1 [UU]`)
+- [ ] `/boot/efi` mounted
+- [ ] Replacement EFI mounted on `/mnt/efi2`
+- [ ] Verified `/boot/efi` and `/mnt/efi2` are different devices
 - [ ] GRUB installed on replacement EFI
 - [ ] EFI synchronized
-- [ ] `diff -rq` returns no output
-- [ ] `efibootmgr` shows Ubuntu entry
-- [ ] Boot tested using recovered disk only
-- [ ] Recovery completed
+- [ ] `diff -rq` shows no differences
+- [ ] `efibootmgr` shows Ubuntu boot entry
+- [ ] Boot tested with recovered disk only
+- [ ] Recovery completed successfully
