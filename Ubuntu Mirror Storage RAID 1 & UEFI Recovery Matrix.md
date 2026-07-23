@@ -1,146 +1,131 @@
-# Ubuntu 24.04 RAID1 Disk Recovery SOP
+# Ubuntu 24.04 RAID1 Recovery SOP
 
-> Assumption:
-> - The system has successfully booted from the healthy disk.
-> - `/boot/efi` is already mounted from the healthy disk.
-> - Replace `<NEW_DISK>` with `sda` or `sdb` depending on which disk failed.
+## Prerequisites
+
+- Replace the failed disk.
+- Boot the server from the remaining healthy disk.
+- Login as root.
 
 ---
 
-# 1. Detect New Disk
+# Step 1 - Detect the New Disk
+
+Rescan storage.
 
 ```bash
 for host in /sys/class/scsi_host/host*; do
     echo "- - -" > "$host/scan"
 done
 
-lsblk
+partprobe
+
+lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINT
 ```
+
+Identify:
+
+- Healthy disk
+- New replacement disk
 
 ---
 
-# 2. Clone Partition Table
-
-## If replacing sda
-
-```bash
-sgdisk --backup=/tmp/sdb-gpt.bin /dev/sdb
-sgdisk --load-backup=/tmp/sdb-gpt.bin /dev/sda
-sgdisk -G /dev/sda
-partprobe /dev/sda
-```
-
-## If replacing sdb
-
-```bash
-sgdisk --backup=/tmp/sda-gpt.bin /dev/sda
-sgdisk --load-backup=/tmp/sda-gpt.bin /dev/sdb
-sgdisk -G /dev/sdb
-partprobe /dev/sdb
-```
-
-Verify:
-
-```bash
-lsblk
-```
-
----
-
-# 3. Create EFI Filesystem
-
-## If replacing sda
-
-```bash
-mkfs.vfat -F32 /dev/sda1
-```
-
-## If replacing sdb
-
-```bash
-mkfs.vfat -F32 /dev/sdb1
-```
-
----
-
-# 4. Rebuild RAID
-
-## If replacing sda
-
-```bash
-mdadm --add /dev/md0 /dev/sda2
-mdadm --add /dev/md1 /dev/sda3
-```
-
-## If replacing sdb
-
-```bash
-mdadm --add /dev/md0 /dev/sdb2
-mdadm --add /dev/md1 /dev/sdb3
-```
-
-Monitor rebuild:
-
-```bash
-watch cat /proc/mdstat
-```
-
-Continue only after RAID rebuild completes:
-
-```
-md0 [UU]
-md1 [UU]
-```
-
----
-
-# 5. Verify EFI Mount
+# Step 2 - Identify Current EFI
 
 ```bash
 mount | grep /boot/efi
 ```
 
-Expected:
+Example:
 
 ```
 /dev/sda1 on /boot/efi
 ```
 
-or
+This is your **healthy EFI**.
 
-```
-/dev/sdb1 on /boot/efi
-```
-
-If `/boot/efi` is **not** mounted, stop and mount the healthy EFI partition before continuing.
+Remember this device.
 
 ---
 
-# 6. Mount Replacement EFI
+# Step 3 - Clone GPT
+
+Assume
+
+Healthy disk = /dev/<HEALTHY_DISK>
+
+Replacement disk = /dev/<NEW_DISK>
+
+```bash
+sgdisk --backup=/tmp/gpt.bin /dev/<HEALTHY_DISK>
+
+sgdisk --load-backup=/tmp/gpt.bin /dev/<NEW_DISK>
+
+sgdisk -G /dev/<NEW_DISK>
+
+partprobe /dev/<NEW_DISK>
+```
+
+Verify
+
+```bash
+lsblk
+```
+
+---
+
+# Step 4 - Create EFI Filesystem
+
+```bash
+mkfs.vfat -F32 /dev/<NEW_DISK>1
+```
+
+---
+
+# Step 5 - Add RAID Members
+
+```bash
+mdadm --add /dev/md0 /dev/<NEW_DISK>2
+
+mdadm --add /dev/md1 /dev/<NEW_DISK>3
+```
+
+Monitor rebuild
+
+```bash
+watch cat /proc/mdstat
+```
+
+Continue only after
+
+```
+md0 [UU]
+
+md1 [UU]
+```
+
+---
+
+# Step 6 - Mount Replacement EFI
+
+Create mount point
 
 ```bash
 mkdir -p /mnt/efi2
 ```
 
-## If replacing sda
+Mount the replacement EFI
 
 ```bash
-mount /dev/sda1 /mnt/efi2
+mount /dev/<NEW_DISK>1 /mnt/efi2
 ```
 
-## If replacing sdb
-
-```bash
-mount /dev/sdb1 /mnt/efi2
-```
-
-Verify:
+Verify
 
 ```bash
 mount | grep efi
 ```
 
-Expected:
+Expected
 
 ```
 /boot/efi
@@ -149,17 +134,17 @@ Expected:
 
 ---
 
-# 7. Verify Source EFI
+# Step 7 - Verify Healthy EFI
 
 ```bash
 find /boot/efi -maxdepth 3 -type f
 ```
 
-If this returns no files, stop and investigate.
+If no files are displayed, stop and investigate.
 
 ---
 
-# 8. Install GRUB on Replacement EFI
+# Step 8 - Install GRUB
 
 ```bash
 grub-install \
@@ -170,9 +155,15 @@ grub-install \
     --recheck
 ```
 
+Verify
+
+```bash
+find /mnt/efi2/EFI -maxdepth 3 -type f
+```
+
 ---
 
-# 9. Synchronize EFI
+# Step 9 - Synchronize EFI
 
 ```bash
 rsync -aHAX --delete /boot/efi/ /mnt/efi2/
@@ -182,13 +173,13 @@ sync
 
 ---
 
-# 10. Verify EFI Synchronization
+# Step 10 - Verify Synchronization
 
 ```bash
 diff -rq /boot/efi /mnt/efi2
 ```
 
-Expected:
+Expected
 
 ```
 (no output)
@@ -196,7 +187,7 @@ Expected:
 
 ---
 
-# 11. Cleanup
+# Step 11 - Cleanup
 
 ```bash
 umount /mnt/efi2
@@ -204,22 +195,23 @@ umount /mnt/efi2
 
 ---
 
-# 12. Verify RAID
+# Step 12 - Verify RAID
 
 ```bash
 cat /proc/mdstat
 ```
 
-Expected:
+Expected
 
 ```
 md0 [UU]
+
 md1 [UU]
 ```
 
 ---
 
-# 13. Verify Boot Entries
+# Step 13 - Verify Boot Entries
 
 ```bash
 efibootmgr -v
@@ -227,17 +219,19 @@ efibootmgr -v
 
 ---
 
-# 14. Boot Failover Test
+# Step 14 - Boot Validation
 
-Shutdown:
+Shutdown
 
 ```bash
 shutdown -h now
 ```
 
-Disconnect the healthy disk and boot using only the recovered disk.
+Disconnect the healthy disk.
 
-Verify:
+Boot using only the recovered disk.
+
+Verify
 
 ```bash
 lsblk
@@ -247,48 +241,42 @@ cat /proc/mdstat
 efibootmgr -v
 ```
 
-Expected:
-
-If booting from **sda**:
+Expected
 
 ```
-md0 [U_]
-md1 [U_]
+md0 degraded
+
+System boots successfully
 ```
 
-If booting from **sdb**:
-
-```
-md0 [_U]
-md1 [_U]
-```
-
-Boot successful = Recovery completed.
+Recovery completed.
 
 ---
 
-# Post-Patch EFI Synchronization
+# Post Patch EFI Synchronization
 
-Run this only after updates that include:
+Run after updating:
 
 - Linux Kernel
 - GRUB
 - shim
-- EFI bootloader packages
+- EFI packages
+
+Identify the secondary EFI partition.
+
+```bash
+lsblk -f
+```
+
+Mount it.
 
 ```bash
 mkdir -p /mnt/efi2
+
+mount /dev/<SECONDARY_EFI> /mnt/efi2
 ```
 
-Mount the secondary EFI partition:
-
-```bash
-mount /dev/sdb1 /mnt/efi2
-```
-
-(or `/dev/sda1` if booted from Disk 2)
-
-Update GRUB:
+Install GRUB.
 
 ```bash
 grub-install \
@@ -299,7 +287,7 @@ grub-install \
     --recheck
 ```
 
-Synchronize:
+Synchronize.
 
 ```bash
 rsync -aHAX --delete /boot/efi/ /mnt/efi2/
@@ -307,12 +295,32 @@ rsync -aHAX --delete /boot/efi/ /mnt/efi2/
 sync
 
 diff -rq /boot/efi /mnt/efi2
+```
 
+Cleanup.
+
+```bash
 umount /mnt/efi2
 ```
 
-Expected:
+---
 
+# Final Validation
+
+```bash
+cat /proc/mdstat
+
+efibootmgr -v
+
+lsblk
+
+diff -rq /boot/efi /mnt/efi2
 ```
-(no output)
-```
+
+Expected
+
+- RAID Healthy
+- No diff output
+- GRUB installed
+- Boot entries present
+- Both disks independently bootable
