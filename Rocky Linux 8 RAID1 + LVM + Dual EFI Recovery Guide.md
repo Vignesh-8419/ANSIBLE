@@ -22,11 +22,12 @@ udevadm settle
 ```
 
 ### Step 2: Re-add Partitions to the Active Software RAID Arrays
+Due to Anaconda's partition slot assignments, you must add **sdb2** to the `/boot` array (`md1`) and **sdb3** to the root LVM storage array (`md0`).
 ```bash
-# 1. Rebuild the /boot array partition
-mdadm --manage /dev/md1 --add /dev/sdb1
+# 1. Rebuild the /boot array partition using sdb2
+mdadm --manage /dev/md1 --add /dev/sdb2
 
-# 2. Rebuild the root LVM storage array partition
+# 2. Rebuild the root LVM storage array partition using sdb3
 mdadm --manage /dev/md0 --add /dev/sdb3
 ```
 
@@ -36,17 +37,21 @@ watch -n 1 cat /proc/mdstat
 ```
 *Wait until both arrays show `[UU]` and the status reads `active` with no recovery percentage lines remaining.*
 
-### Step 4: Re-Synchronize the Secondary Backup EFI Payload
+### Step 4: Format and Synchronize the Secondary Backup EFI Payload
+On this layout, `sdb1` is the raw 600M standalone partition slice that holds your backup bootloader files.
 ```bash
-# 1. Run the system sync script manually
+# 1. Format the sdb1 partition as FAT32
+mkfs.vfat -F32 -n "EFI-BACKUP" /dev/sdb1
+
+# 2. Run the system sync script manually to mirror the boot directory
 /usr/local/sbin/sync-esp.sh
 
-# 2. Force-register the "Rocky Backup" motherboard variable if it dropped out
+# 3. Force-register the "Rocky Backup" entry into the motherboard NVRAM (targeting partition 1)
 if [ -d /sys/firmware/efi/efivars ]; then
-    efibootmgr -c -d /dev/sdb -p 2 -L "Rocky Backup" -l '\EFI\rocky\shimx64.efi' || true
+    efibootmgr -c -d /dev/sdb -p 1 -L "Rocky Backup" -l '\EFI\rocky\shimx64.efi' || true
 fi
 
-# 3. Restart the tracking service state to ensure it resets cleanly
+# 4. Restart the tracking service state to ensure it resets cleanly
 systemctl restart sync-esp.service
 systemctl status sync-esp.service
 ```
@@ -71,6 +76,7 @@ udevadm settle
 ```
 
 ### Step 2: Re-add Partitions to the Active Software RAID Arrays
+On `sda`, the partition mapping dictates that **sda2** joins the `/boot` array and **sda3** joins the root LVM storage array.
 ```bash
 # 1. Re-add sda2 to the /boot RAID1 array (md1)
 mdadm --manage /dev/md1 --add /dev/sda2
@@ -94,7 +100,7 @@ mkfs.vfat -F32 -n "EFI-SYSTEM" /dev/sda1
 mkdir -p /tmp/sda1
 mount /dev/sda1 /tmp/sda1
 
-# 3. Copy the clean bootloader directory path tree over from your live sdb2 mount
+# 3. Copy the clean bootloader directory path tree over from your live mount
 mkdir -p /tmp/sda1/EFI
 rsync -ahrlptD --delete /boot/efi/EFI/ /tmp/sda1/EFI/
 
@@ -118,6 +124,6 @@ fi
 # Must return [UU] status on all arrays
 cat /proc/mdstat
 
-# Must display both "Rocky Linux" (sda1) and "Rocky Backup" (sdb2)
+# Must display both "Rocky Linux" (sda1) and "Rocky Backup" (sdb1)
 efibootmgr -v
 ```
