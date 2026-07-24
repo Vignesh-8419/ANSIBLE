@@ -35,11 +35,11 @@ autoinstall:
     ethernets:
       vmnic:
         match:
-          name: "en*" # MAXIMUM PORTABILITY: Dynamically captures ens32, enp2s0, or ens160 safely
+          name: "en*" # MAXIMUM PORTABILITY: Dynamically captures ens32, enp2s0, or ens160 safely [INDEX]
         dhcp4: true
         dhcp6: false
-        dhcp-identifier: mac # Tracks leases strictly by hardware MAC to prevent address collision stalls
-        optional: true # Bypasses network service-wait execution blocks during failover
+        dhcp-identifier: mac # Tracks leases strictly by hardware MAC to prevent address collision stalls [INDEX]
+        optional: true # Bypasses network service-wait execution blocks during failover [INDEX]
 
   packages:
     - open-vm-tools
@@ -61,7 +61,7 @@ autoinstall:
         ptable: gpt
         wipe: superblock-recursive
         preserve: false
-        grub_device: true # Primary system NVRAM registration target
+        grub_device: true # Primary system NVRAM registration target [INDEX]
 
       # ----------------------------
       # Disk 2
@@ -80,7 +80,7 @@ autoinstall:
         device: disk-sda
         size: 512M
         flag: boot
-        grub_device: true # Maps primary boot variables onto sda1
+        grub_device: true # Maps primary boot variables onto sda1 [INDEX]
 
       - id: sdb-efi
         type: partition
@@ -115,7 +115,7 @@ autoinstall:
         type: raid
         name: md0
         raidlevel: raid1
-        metadata: "1.0" # Keeps metadata signatures highly visible for early-stage UEFI boot loops
+        metadata: "1.0" # Keeps metadata signatures highly visible for early-stage UEFI boot loops [INDEX]
         devices:
           - sda-boot
           - sdb-boot
@@ -193,45 +193,40 @@ autoinstall:
         path: /boot/efi
 
   late-commands:
-    # Golden Image Sanitation Loop
+    # Golden Image Cleanup
     - curtin in-target -- apt-get clean
-    - curtin in-target -- cloud-init clean --logs
     - curtin in-target -- rm -f /etc/cloud/cloud-init.disabled
     - curtin in-target -- rm -rf /var/lib/systemd/netif
     - curtin in-target -- rm -rf /var/lib/dhcp
     - curtin in-target -- truncate -s 0 /etc/machine-id
     - curtin in-target -- rm -f /var/lib/dbus/machine-id
-
+  
     # Disable cloud-init networking
     - curtin in-target -- mkdir -p /etc/cloud/cloud.cfg.d
     - curtin in-target -- wget --tries=3 --timeout=10 -O /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg http://192.168.253.136/repo/scripts/99-disable-network-config.cfg
-
-    # Download Netplan configuration
+  
+    # Netplan
     - curtin in-target -- mkdir -p /etc/netplan
     - curtin in-target -- wget --tries=3 --timeout=10 -O /etc/netplan/01-netcfg.yaml http://192.168.253.136/repo/scripts/01-netcfg.yaml
     - curtin in-target -- chmod 600 /etc/netplan/01-netcfg.yaml
-
-    # Download EFI sync script
+  
+    # EFI Sync
     - curtin in-target -- mkdir -p /usr/local/sbin
     - curtin in-target -- wget --tries=3 --timeout=10 -O /usr/local/sbin/sync-efi.sh http://192.168.253.136/repo/scripts/sync-efi.sh
     - curtin in-target -- chmod 755 /usr/local/sbin/sync-efi.sh
-
-    # Download systemd service
+  
+    # Systemd Service
     - curtin in-target -- wget --tries=3 --timeout=10 -O /etc/systemd/system/sync-efi.service http://192.168.253.136/repo/scripts/sync-efi.service
-
-    # Enable service
     - curtin in-target -- systemctl daemon-reload
     - curtin in-target -- systemctl enable sync-efi.service
-
-    # Enable passwordless sudo for admin
+  
+    # Passwordless sudo
     - curtin in-target -- sh -c 'echo "admin ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/99-admin'
     - curtin in-target -- chmod 440 /etc/sudoers.d/99-admin
-
-    # Cleaned and Sanitized FSTAB isolation syntax block
-    - curtin in-target -- sed -i 's/defaults/umask=0077,nofail,x-systemd.device-timeout=2/' /etc/fstab
-
-    # Regenerate initramfs
+  
+    # Make /boot/efi non-fatal
+    - curtin in-target -- sed -i '\|/boot/efi| s/defaults/defaults,nofail,x-systemd.device-timeout=2/' /etc/fstab
+  
+    # Rebuild boot files
     - curtin in-target -- update-initramfs -u
-
-    # Regenerate GRUB configuration
     - curtin in-target -- update-grub
