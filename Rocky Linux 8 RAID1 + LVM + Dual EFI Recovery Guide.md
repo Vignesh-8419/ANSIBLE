@@ -106,6 +106,7 @@ watch -n 1 cat /proc/mdstat
 *Wait until both arrays return to a healthy `[UU]` state.*
 
 ### Step 4: Format and Setup the New Primary EFI Partition
+Because the system is running off `sdb`, your active EFI directory tree is currently mounted directly at `/boot/efi2` instead of `/boot/efi`.
 ```bash
 # 1. CRITICAL: Clear cached metadata or old installer signatures to unlock the block layer
 wipefs -af /dev/sda1
@@ -118,9 +119,9 @@ mkfs.vfat -F32 -n "EFI-SYSTEM" /dev/sda1
 mkdir -p /tmp/sda1
 mount /dev/sda1 /tmp/sda1
 
-# 4. Copy the clean bootloader directory path tree over from your live mount
+# 4. FIXED: Copy the clean bootloader files from the active /boot/efi2 mount path
 mkdir -p /tmp/sda1/EFI
-rsync -ahrlptD --delete /boot/efi/EFI/ /tmp/sda1/EFI/
+rsync -ahrlptD --delete /boot/efi2/EFI/ /tmp/sda1/EFI/
 
 # 5. Unmount the recovery mountpoint cleanly
 sync
@@ -131,7 +132,14 @@ rmdir /tmp/sda1
 ### Step 5: Restore Motherboard UEFI Primary Boot Option Pointers
 ```bash
 if [ -d /sys/firmware/efi/efivars ]; then
+    # Clear out any stale entries if present
+    efibootmgr -b 0005 -B || true
+    
+    # Register primary track target
     efibootmgr -c -d /dev/sda -p 1 -L "Rocky Linux" -l '\EFI\rocky\shimx64.efi'
+    
+    # Secure priority order
+    efibootmgr -o 0005,0006,0000,0001,0002,0003,0004 || true
 fi
 ```
 
