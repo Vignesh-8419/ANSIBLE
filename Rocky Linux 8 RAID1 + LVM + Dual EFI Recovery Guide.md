@@ -38,20 +38,34 @@ watch -n 1 cat /proc/mdstat
 *Wait until both arrays show `[UU]` and the status reads `active` with no recovery percentage lines remaining.*
 
 ### Step 4: Format and Synchronize the Secondary Backup EFI Payload
-On this layout, `sdb1` is the raw 600M standalone partition slice that holds your backup bootloader files.
+On this layout, `sdb1` is the raw 600M standalone partition slice that holds your backup bootloader files. 
+
 ```bash
-# 1. Format the sdb1 partition as FAT32
+# 1. CRITICAL: Clear cached metadata or old installer signatures to unlock the block layer
+wipefs -af /dev/sdb1
+dd if=/dev/zero of=/dev/sdb1 bs=1M count=10 status=none
+
+# 2. Format the sdb1 partition fresh as a clean FAT32 filesystem
 mkfs.vfat -F32 -n "EFI-BACKUP" /dev/sdb1
 
-# 2. Run the system sync script manually to mirror the boot directory
+# 3. Run the system sync script manually to mirror the boot directory
 /usr/local/sbin/sync-esp.sh
 
-# 3. Force-register the "Rocky Backup" entry into the motherboard NVRAM (targeting partition 1)
+# 4. Force-register the "Rocky Backup" entry into the motherboard NVRAM (targeting partition 1)
 if [ -d /sys/firmware/efi/efivars ]; then
+    # Clear out any stale duplicate backup entries if present
+    efibootmgr -b 0006 -B || true
+    efibootmgr -b 0007 -B || true
+    efibootmgr -b 0008 -B || true
+    
+    # Register the single clean tracking entry
     efibootmgr -c -d /dev/sdb -p 1 -L "Rocky Backup" -l '\EFI\rocky\shimx64.efi' || true
+    
+    # Ensure correct boot priority (Primary Drive first, Fallback Drive second)
+    efibootmgr -o 0005,0006,0000,0001,0002,0003,0004 || true
 fi
 
-# 4. Restart the tracking service state to ensure it resets cleanly
+# 5. Restart the tracking service state to ensure it resets cleanly
 systemctl restart sync-esp.service
 systemctl status sync-esp.service
 ```
@@ -93,18 +107,22 @@ watch -n 1 cat /proc/mdstat
 
 ### Step 4: Format and Setup the New Primary EFI Partition
 ```bash
-# 1. Format sda1 as FAT32
+# 1. CRITICAL: Clear cached metadata or old installer signatures to unlock the block layer
+wipefs -af /dev/sda1
+dd if=/dev/zero of=/dev/sda1 bs=1M count=10 status=none
+
+# 2. Format sda1 as FAT32
 mkfs.vfat -F32 -n "EFI-SYSTEM" /dev/sda1
 
-# 2. Mount it temporarily to seed bootloader binaries
+# 3. Mount it temporarily to seed bootloader binaries
 mkdir -p /tmp/sda1
 mount /dev/sda1 /tmp/sda1
 
-# 3. Copy the clean bootloader directory path tree over from your live mount
+# 4. Copy the clean bootloader directory path tree over from your live mount
 mkdir -p /tmp/sda1/EFI
 rsync -ahrlptD --delete /boot/efi/EFI/ /tmp/sda1/EFI/
 
-# 4. Unmount the recovery mountpoint cleanly
+# 5. Unmount the recovery mountpoint cleanly
 sync
 umount /tmp/sda1
 rmdir /tmp/sda1
