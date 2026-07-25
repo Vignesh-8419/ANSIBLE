@@ -2,8 +2,7 @@ rhel/rocky
 
 mkdir -p /root/rocky8-golden
 mkdir -p /mnt/rocky8iso
-
-mount /dev/sr0 /mnt/rocky8iso
+mount /root/Rocky8_Golden_RAID.iso /mnt/rocky8iso
 
 cp -a /mnt/rocky8iso/. /root/rocky8-golden/
 
