@@ -1,15 +1,14 @@
-# 🛠️ Rocky Linux 8 High-Availability Post-Installation Recovery Guide
+# 🛠️ Rocky Linux 8 RAID1 + LVM + Dual EFI Recovery Guide
 
-This guide provides step-by-step restoration and mirror rebuilding procedures for your enterprise Software RAID1 system. Use these instructions when a physical disk fails or is replaced with a fresh, blank 100GB drive.
+This document provides step-by-step restoration instructions for both failure scenarios: when the secondary disk (`sdb`) is blank/replaced, or when the primary disk (`sda`) is blank/replaced.
 
 ---
 
 ## 📋 Scenario A: Rebuilding when Drive 2 (`sdb`) Fails or is Replaced
 
-*Use these instructions if your system is running safely on the primary disk (`sda`) and you have inserted a fresh, blank drive into the second slot (`sdb`).*
+*Use these instructions if `sda` is active, and `sdb` is a raw, blank drive.*
 
-### Step 1: Clone Partition Table Structure from `sda` to `sdb`
-Replicate the exact GUID Partition Table (GPT) geometry from the surviving disk to the blank disk and randomize the unique GUIDs.
+### Step 1: Copy Partition Table Structure from `sda` to `sdb`
 ```bash
 # 1. Replicate GPT layout from sda to sdb
 sgdisk /dev/sda -R /dev/sdb
@@ -23,28 +22,27 @@ udevadm settle
 ```
 
 ### Step 2: Re-add Partitions to the Active Software RAID Arrays
-Add the matching partition slices back into the degraded RAID pools to trigger an immediate online data resynchronization.
+Due to Anaconda's partition slot assignments, you must add **sdb2** to the `/boot` array (`md1`) and **sdb3** to the root LVM storage array (`md0`).
 ```bash
-# 1. Re-add sdb2 to the /boot RAID1 array (md1)
+# 1. Rebuild the /boot array partition using sdb2
 mdadm --manage /dev/md1 --add /dev/sdb2
 
-# 2. Re-add sdb3 to the main LVM storage RAID1 array (md0)
+# 2. Rebuild the root LVM storage array partition using sdb3
 mdadm --manage /dev/md0 --add /dev/sdb3
 ```
 
 ### Step 3: Monitor Data Rebuild Progress
-Track the live background replication progress until the percentage indicators drop off completely.
 ```bash
 watch -n 1 cat /proc/mdstat
 ```
-*Wait until both arrays show a healthy `[UU]` matrix block and the recovery lines are gone.*
+*Wait until both arrays show `[UU]` and the status reads `active` with no recovery percentage lines remaining.*
 
 ### Step 4: Format and Synchronize the Secondary Backup EFI Payload
-Clear the block layer cache, format the standalone 600MB slice (`sdb1`) as FAT32, and trigger the synchronization utility.
+On this layout, `sdb1` is the raw 600M standalone partition slice that holds your backup bootloader files.
+
 ```bash
 # 1. CRITICAL: Purge low-level block layer device caches and drop phantom memory locks
 blkid -g
-blockdev --rereadpt /dev/sdb
 partprobe /dev/sdb
 udevadm settle
 wipefs -af /dev/sdb1
@@ -52,12 +50,16 @@ wipefs -af /dev/sdb1
 # 2. Format the sdb1 partition fresh as a clean FAT32 filesystem
 mkfs.vfat -F32 -s 2 -n "EFI-BACKUP" /dev/sdb1
 
-# 3. Run the system sync script manually to mirror the boot directory and removable path fallback
+# 3. Ensure the master source EFI partition is mounted before syncing
+if ! mountpoint -q /boot/efi; then
+    mount -t vfat /dev/sda1 /boot/efi || true
+fi
+
+# 4. Run the system sync script manually to mirror the boot directory and removable path fallback
 /usr/local/sbin/sync-esp.sh
 ```
 
 ### Step 5: Restore Motherboard UEFI NVRAM Boot Pointers
-Clear out older ghost markers and register a single clean pointer for your backup drive targeting partition index 1.
 ```bash
 if [ -d /sys/firmware/efi/efivars ]; then
     # Clear out any stale duplicate backup entries if present
@@ -83,10 +85,9 @@ systemctl status sync-esp.service
 
 ## 📋 Scenario B: Rebuilding when Drive 1 (`sda`) Fails or is Replaced
 
-*Use these instructions if your primary drive (`sda`) failed or was pulled, the system automatically booted hands-free from the backup disk, and you have inserted a fresh, blank drive into the primary slot.*
+*Use these instructions if the system booted automatically from `sdb`, and `sda` is a raw, blank drive.*
 
-### Step 1: Clone Partition Table Structure from `sdb` to `sda`
-Replicate the exact GPT schema from your surviving drive over to the new primary drive.
+### Step 1: Copy Partition Table Structure from `sdb` to `sda`
 ```bash
 # 1. Replicate GPT layout from sdb to sda
 sgdisk /dev/sdb -R /dev/sda
@@ -100,7 +101,7 @@ udevadm settle
 ```
 
 ### Step 2: Re-add Partitions to the Active Software RAID Arrays
-Rebuild the storage blocks across your operating system and data plane arrays.
+On `sda`, the partition mapping dictates that **sda2** joins the `/boot` array and **sda3** joins the root LVM storage array.
 ```bash
 # 1. Re-add sda2 to the /boot RAID1 array (md1)
 mdadm --manage /dev/md1 --add /dev/sda2
@@ -116,7 +117,7 @@ watch -n 1 cat /proc/mdstat
 *Wait until both arrays return to a healthy, fully operational `[UU]` state.*
 
 ### Step 4: Format and Setup the New Primary EFI Partition
-Because the system is running off the backup drive, your active EFI directory tree is currently mounted directly at `/boot/efi2`. Format your new `sda1` slice and seed it.
+Because the system is running off the backup drive, your active EFI directory tree is currently mounted directly at `/boot/efi2`.
 ```bash
 # 1. CRITICAL: Purge low-level block layer device caches and drop phantom memory locks
 blkid -g
@@ -143,7 +144,6 @@ rmdir /tmp/sda1
 ```
 
 ### Step 5: Restore Motherboard UEFI Primary Boot Option Pointers
-Re-register your primary boot variable to partition index 1 on `sda` and reset your automated high-availability sequence.
 ```bash
 if [ -d /sys/firmware/efi/efivars ]; then
     # Clear out any stale primary entries if present
@@ -160,7 +160,6 @@ fi
 ---
 
 ## 🔍 Post-Recovery Health Check Matrix
-Always run these two verification commands to guarantee your high-availability storage plane is completely healthy:
 ```bash
 # Must return optimal [UU] status on all arrays
 cat /proc/mdstat
