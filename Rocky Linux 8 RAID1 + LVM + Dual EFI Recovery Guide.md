@@ -41,13 +41,12 @@ watch -n 1 cat /proc/mdstat
 On this layout, `sdb1` is the raw 600M standalone partition slice that holds your backup bootloader files.
 
 ```bash
-# 1. CRITICAL: Force drop block layer metadata caches and clear installer signatures
+# 1. CRITICAL: Force remove persistent software RAID metadata blocks from the partition boundary
+mdadm --zero-superblock --force /dev/sdb1
+
+# 2. Flush block device maps and drop cached signatures
 partprobe /dev/sdb
 udevadm settle
-wipefs -af /dev/sdb1
-
-# 2. Zero out block headers completely with direct sync options to delete phantom flags
-dd if=/dev/zero of=/dev/sdb1 bs=512 count=20480 conv=fdatasync
 
 # 3. Format the sdb1 partition fresh as a clean FAT32 filesystem
 mkfs.vfat -F32 -s 2 -n "EFI-BACKUP" /dev/sdb1
@@ -113,13 +112,12 @@ watch -n 1 cat /proc/mdstat
 ### Step 4: Format and Setup the New Primary EFI Partition
 Because the system is running off `sdb`, your active EFI directory tree is currently mounted directly at `/boot/efi2` instead of `/boot/efi`.
 ```bash
-# 1. CRITICAL: Force drop block layer metadata caches and clear installer signatures
+# 1. CRITICAL: Force remove persistent software RAID metadata blocks from the partition boundary
+mdadm --zero-superblock --force /dev/sda1
+
+# 2. Flush block device maps and drop cached signatures
 partprobe /dev/sda
 udevadm settle
-wipefs -af /dev/sda1
-
-# 2. Zero out block headers completely with direct sync options to delete phantom flags
-dd if=/dev/zero of=/dev/sda1 bs=512 count=20480 conv=fdatasync
 
 # 3. Format sda1 as FAT32
 mkfs.vfat -F32 -s 2 -n "EFI-SYSTEM" /dev/sda1
