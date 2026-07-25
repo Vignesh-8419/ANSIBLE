@@ -41,20 +41,20 @@ watch -n 1 cat /proc/mdstat
 On this layout, `sdb1` is the raw 600M standalone partition slice that holds your backup bootloader files.
 
 ```bash
-# 1. CRITICAL: Force remove persistent software RAID metadata blocks from the partition boundary
-mdadm --zero-superblock --force /dev/sdb1
-
-# 2. Flush block device maps and drop cached signatures
+# 1. CRITICAL: Purge low-level block layer device caches and drop phantom memory locks
+blkid -g
+blockdev --rereadpt /dev/sdb
 partprobe /dev/sdb
 udevadm settle
+wipefs -af /dev/sdb1
 
-# 3. Format the sdb1 partition fresh as a clean FAT32 filesystem
-mkfs.vfat -F32 -s 2 -n "EFI-BACKUP" /dev/sdb1
+# 2. Format the sdb1 partition fresh as a clean FAT32 filesystem
+mkfs.vfat -F32 -n "EFI-BACKUP" /dev/sdb1
 
-# 4. Run the system sync script manually to mirror the boot directory
+# 3. Run the system sync script manually to mirror the boot directory
 /usr/local/sbin/sync-esp.sh
 
-# 5. Force-register the "Rocky Backup" entry into the motherboard NVRAM (targeting partition 1)
+# 4. Force-register the "Rocky Backup" entry into the motherboard NVRAM (targeting partition 1)
 if [ -d /sys/firmware/efi/efivars ]; then
     # Clear out any stale duplicate backup entries if present
     efibootmgr -b 0006 -B || true
@@ -68,7 +68,7 @@ if [ -d /sys/firmware/efi/efivars ]; then
     efibootmgr -o 0005,0006,0000,0001,0002,0003,0004 || true
 fi
 
-# 6. Restart the tracking service state to ensure it resets cleanly
+# 5. Restart the tracking service state to ensure it resets cleanly
 systemctl reset-failed sync-esp.service
 systemctl restart sync-esp.service
 systemctl status sync-esp.service
@@ -112,25 +112,25 @@ watch -n 1 cat /proc/mdstat
 ### Step 4: Format and Setup the New Primary EFI Partition
 Because the system is running off `sdb`, your active EFI directory tree is currently mounted directly at `/boot/efi2` instead of `/boot/efi`.
 ```bash
-# 1. CRITICAL: Force remove persistent software RAID metadata blocks from the partition boundary
-mdadm --zero-superblock --force /dev/sda1
-
-# 2. Flush block device maps and drop cached signatures
+# 1. CRITICAL: Purge low-level block layer device caches and drop phantom memory locks
+blkid -g
+blockdev --rereadpt /dev/sda
 partprobe /dev/sda
 udevadm settle
+wipefs -af /dev/sda1
 
-# 3. Format sda1 as FAT32
-mkfs.vfat -F32 -s 2 -n "EFI-SYSTEM" /dev/sda1
+# 2. Format sda1 as FAT32
+mkfs.vfat -F32 -n "EFI-SYSTEM" /dev/sda1
 
-# 4. Mount it temporarily to seed bootloader binaries
+# 3. Mount it temporarily to seed bootloader binaries
 mkdir -p /tmp/sda1
 mount /dev/sda1 /tmp/sda1
 
-# 5. Copy the clean bootloader files from the active /boot/efi2 mount path
+# 4. Copy the clean bootloader files from the active /boot/efi2 mount path
 mkdir -p /tmp/sda1/EFI
 rsync -ahrlptD --delete /boot/efi2/EFI/ /tmp/sda1/EFI/
 
-# 6. Unmount the recovery mountpoint cleanly
+# 5. Unmount the recovery mountpoint cleanly
 sync
 umount /tmp/sda1
 rmdir /tmp/sda1
