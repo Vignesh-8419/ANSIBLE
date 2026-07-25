@@ -50,12 +50,24 @@ wipefs -af /dev/sdb1
 # 2. Format the sdb1 partition fresh as a clean FAT32 filesystem
 mkfs.vfat -F32 -s 2 -n "EFI-BACKUP" /dev/sdb1
 
-# 3. Ensure the master source EFI partition is mounted before syncing
+# 3. Ensure the master source EFI partition is mounted cleanly
 if ! mountpoint -q /boot/efi; then
     mount -t vfat /dev/sda1 /boot/efi || true
 fi
 
-# 4. Run the system sync script manually to mirror the boot directory and removable path fallback
+# 4. SELF-HEALING RECOVERY LOOP: If the primary source is missing its EFI data, 
+# restore the master payload using the backup image files on sdb1 before running sync
+if [ ! -d /boot/efi/EFI ]; then
+    echo "Primary EFI corrupted or empty! Restoring from sdb1 storage pass..."
+    mkdir -p /tmp/sdb1_src
+    mount -t vfat /dev/sdb1 /tmp/sdb1_src || true
+    mkdir -p /boot/efi/EFI
+    rsync -ahrlptD --delete /tmp/sdb1_src/EFI/ /boot/efi/EFI/
+    umount /tmp/sdb1_src || true
+    rmdir /tmp/sdb1_src || true
+fi
+
+# 5. Run the system sync script manually to mirror the boot tracks
 /usr/local/sbin/sync-esp.sh
 ```
 
@@ -71,7 +83,7 @@ if [ -d /sys/firmware/efi/efivars ]; then
     # Register the single clean tracking entry pointing to sdb1
     efibootmgr -c -d /dev/sdb -p 1 -L "Rocky Backup" -l '\EFI\rocky\shimx64.efi' || true
     
-    # Enforce correct priority boot path ordering
+    # Enforce correct priority boot path ordering (Terminal Friendly)
     efibootmgr -o 0001,\$(efibootmgr | awk '/Rocky Backup/ {print substr(\$1,5,4); exit}'),0000,0002,0003,0004 || true
 fi
 
@@ -127,15 +139,19 @@ udevadm settle
 wipefs -af /dev/sda1
 
 # 2. Format sda1 fresh as a standard FAT32 filesystem
-mkfs.vfat -F32 -s 2 -n "EFI-SYSTEM" /dev/sda1
+mkfs.vfat -F32 -n "EFI-SYSTEM" /dev/sda1
 
 # 3. Mount it temporarily to seed bootloader binaries
 mkdir -p /tmp/sda1
 mount -t vfat /dev/sda1 /tmp/sda1
 
-# 4. Copy the clean bootloader directory tree over from your live /boot/efi2 mount path
-mkdir -p /tmp/sda1/EFI
-rsync -ahrlptD --delete /boot/efi2/EFI/ /tmp/sda1/EFI/
+# 4. SELF-HEALING RECOVERY LOOP: Verify source before rsync
+if [ ! -d /boot/efi2/EFI ] && [ -d /boot/efi/EFI ]; then
+    rsync -ahrlptD --delete /boot/efi/EFI/ /tmp/sda1/EFI/
+else
+    mkdir -p /tmp/sda1/EFI
+    rsync -ahrlptD --delete /boot/efi2/EFI/ /tmp/sda1/EFI/
+fi
 
 # 5. Unmount the recovery mountpoint cleanly
 sync
@@ -152,7 +168,7 @@ if [ -d /sys/firmware/efi/efivars ]; then
     # Register the primary track target pointing to sda1
     efibootmgr -c -d /dev/sda -p 1 -L "Rocky Linux" -l '\EFI\rocky\shimx64.efi'
     
-    # Enforce correct priority boot path ordering
+    # Enforce correct priority boot path ordering (Terminal Friendly)
     efibootmgr -o \$(efibootmgr | awk '/Rocky Linux/ {print substr(\$1,5,4); exit}'),0005,0000,0002,0003,0004 || true
 fi
 ```
