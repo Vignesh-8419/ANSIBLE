@@ -71,8 +71,8 @@ if [ -d /sys/firmware/efi/efivars ]; then
     # Register the single clean tracking entry pointing to sdb1
     efibootmgr -c -d /dev/sdb -p 1 -L "Rocky Backup" -l '\EFI\rocky\shimx64.efi' || true
     
-    # Ensure correct boot priority (Primary Drive first, Fallback Drive second)
-    efibootmgr -o 0001,\$(efibootmgr | awk '/Rocky Backup/ {print substr(\$1,5,4)}'),0000,0002,0003,0004 || true
+    # Enforce correct priority boot path ordering
+    efibootmgr -o 0001,\$(efibootmgr | awk '/Rocky Backup/ {print substr(\$1,5,4); exit}'),0000,0002,0003,0004 || true
 fi
 
 # Restart the background tracking service state cleanly
@@ -152,8 +152,8 @@ if [ -d /sys/firmware/efi/efivars ]; then
     # Register the primary track target pointing to sda1
     efibootmgr -c -d /dev/sda -p 1 -L "Rocky Linux" -l '\EFI\rocky\shimx64.efi'
     
-    # Secure the correct priority order
-    efibootmgr -o \$(efibootmgr | awk '/Rocky Linux/ {print substr(\$1,5,4)}'),0005,0000,0002,0003,0004 || true
+    # Enforce correct priority boot path ordering
+    efibootmgr -o \$(efibootmgr | awk '/Rocky Linux/ {print substr(\$1,5,4); exit}'),0005,0000,0002,0003,0004 || true
 fi
 ```
 
