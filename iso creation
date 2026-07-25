@@ -11,24 +11,7 @@ umount /mnt/rocky8iso
 
 cd /root
 
-xorriso -as mkisofs \
--o rocky8_Golden_RAID.iso \
--isohybrid-mbr /usr/share/syslinux/isohdpfx.bin \
--c isolinux/boot.cat \
--b isolinux/isolinux.bin \
--no-emul-boot \
--boot-load-size 4 \
--boot-info-table \
--eltorito-alt-boot \
--e images/efiboot.img \
--no-emul-boot \
--isohybrid-gpt-basdat \
--J \
--R \
--V "updated_rocky8" \
-/root/rocky8-golden
-
-implantisomd5 /root/Rocky8_Golden_RAID.iso
+xorriso -as mkisofs -iso-level 3 -o /root/rocky8_Golden_RAID.iso   -c isolinux/boot.cat -b isolinux/isolinux.bin   -no-emul-boot -boot-load-size 4 -boot-info-table   -eltorito-alt-boot -e images/efiboot.img -no-emul-boot   -isohybrid-gpt-basdat -J -R -V "ROCKY8_GOLDEN" /root/rocky8-golden
 
 
 =================================================================
