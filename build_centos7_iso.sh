@@ -13,7 +13,7 @@ ISO_NAME="${SCRIPT_DIR}/CentOS7_Golden_RAID.iso"
 VOLID="CENTOS7_GOLDEN"
 
 # Centralized HTTP asset repository endpoint target
-REPO_URL="http://192.168.253.136/repo/centos7-kickstarts"
+REPO_URL="http://192.168.253"
 
 cd "${ISO_ROOT}"
 
@@ -24,9 +24,12 @@ echo "==========================================================="
 echo
 echo "ISO Staging Root Directory: ${ISO_ROOT}"
 echo "Remote Asset Repository   : ${REPO_URL}"
+echo "Destination ISO Location  : ${ISO_NAME}"
 echo
 
-# Validate Core DVD Directories
+##############################################################################
+# Validate Required Baseline Tree Frameworks (CentOS 7 Core Directives)
+##############################################################################
 DIRS=(
 EFI
 images
@@ -43,13 +46,15 @@ do
     fi
 done
 
-# Validate Core Optical Bootloader Files Only
+##############################################################################
+# Validate Core Optical Bootloader Files Only (CentOS 7 Media Layout Sync)
+##############################################################################
 FILES=(
 isolinux/isolinux.bin
 isolinux/vmlinuz
 isolinux/initrd.img
 images/efiboot.img
-images/install.img
+images/stage2.img     # Fixed: CentOS 7 DVDs utilize stage2.img for the root loop
 EFI/BOOT/grub.cfg
 )
 
@@ -61,6 +66,9 @@ do
     fi
 done
 
+##############################################################################
+# Backup Original Bootloader Configurations
+##############################################################################
 cp -f EFI/BOOT/grub.cfg EFI/BOOT/grub.cfg.original
 
 if [ -f isolinux/isolinux.cfg ]; then
@@ -98,11 +106,15 @@ menuentry 'Install CentOS 7 (Enforced Sector Parity RAID1)' {
 }
 EOF
 
+##############################################################################
+# Flush Stale Output Targets and Generate ISO
+##############################################################################
 rm -f "${ISO_NAME}"
 
 echo
 echo "Compiling ISO via xorriso..."
 echo
+
 xorriso \
     -as mkisofs \
     -o "${ISO_NAME}" \
@@ -121,9 +133,15 @@ xorriso \
     -no-emul-boot \
     .
 
+##############################################################################
+# Post-Generation Verification Status Summary
+##############################################################################
+echo
 echo "==========================================================="
+
 if [ -f "${ISO_NAME}" ]; then
-    echo "SUCCESS: Bootable ISO compiled cleanly."
+    echo "SUCCESS: Monolithic Network-Bootable ISO compiled cleanly."
+    echo
     ls -lh "${ISO_NAME}"
     echo
     sha256sum "${ISO_NAME}"
@@ -131,4 +149,10 @@ else
     echo "ERROR: Target ISO output missing after generation pass."
     exit 1
 fi
+
+echo
 echo "==========================================================="
+echo "Done"
+echo "============================================================"
+
+exit 0
