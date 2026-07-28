@@ -1,7 +1,7 @@
 #!/bin/bash
 #==============================================================================
-# CentOS 7 Enterprise Golden ISO Builder
-# Optimized for 100% Symmetrical Block RAID 1 Deployments
+# CentOS 7 Enterprise Golden ISO Builder (Network-Agnostic Engine)
+# Version 3 - Optimized for centralized http payload configurations
 #==============================================================================
 
 set -euo pipefail
@@ -15,6 +15,9 @@ ISO_ROOT="${SCRIPT_DIR}/centos7-golden"
 ISO_NAME="${SCRIPT_DIR}/CentOS7_Golden_RAID.iso"
 VOLID="CENTOS7_GOLDEN"
 
+# Centralized HTTP asset repository pipeline string map
+REPO_URL="http://192.168.253.136/repo/centos7-kickstarts"
+
 ##############################################################################
 # Environment Setup
 ##############################################################################
@@ -22,42 +25,35 @@ cd "${ISO_ROOT}"
 
 echo
 echo "==========================================================="
-echo " CentOS 7 Enterprise Golden ISO Builder"
+echo " CentOS 7 Enterprise Golden ISO Builder (Network Mode)"
 echo "============================================================"
 echo
-echo "ISO Root Target Directory: ${ISO_ROOT}"
-echo "Destination ISO Location : ${ISO_NAME}"
+echo "ISO Staging Root Directory: ${ISO_ROOT}"
+echo "Remote Asset Repository   : ${REPO_URL}"
+echo "Destination ISO Location  : ${ISO_NAME}"
 echo
 
 ##############################################################################
-# Validate Required Directory Frameworks
+# Validate Required Baseline Tree Frameworks
 ##############################################################################
 DIRS=(
 EFI
 images
 isolinux
-kickstart
-scripts
 )
 
 for d in "${DIRS[@]}"
 do
     if [ ! -d "$d" ]; then
-        echo "ERROR : Missing baseline installation structural directory: $d"
+        echo "ERROR : Missing directory structure inside staging root: $d"
         exit 1
     fi
 done
 
 ##############################################################################
-# Validate Required File Matrix Elements (Slimmed to optimized 3-script layout)
+# Validate Core Optical Bootloader Dependencies Only
 ##############################################################################
 FILES=(
-kickstart/centos7.cfg
-
-scripts/30-postinstall.sh
-scripts/50-grub.sh
-scripts/99-cleanup.sh
-
 isolinux/isolinux.bin
 isolinux/vmlinuz
 isolinux/initrd.img
@@ -72,14 +68,14 @@ for f in "${FILES[@]}"
 do
     if [ ! -f "$f" ]; then
         echo
-        echo "CRITICAL DEFECT: Missing mandatory deployment tracking file asset:"
+        echo "CRITICAL DEFECT: Missing core boot file asset:"
         echo "   $f"
         exit 1
     fi
 done
 
 ##############################################################################
-# Safeguard and Backup Factory Default Boot Configuration Profiles
+# Backup Original Bootloader Configurations
 ##############################################################################
 cp -f EFI/BOOT/grub.cfg EFI/BOOT/grub.cfg.original
 
@@ -88,9 +84,9 @@ if [ -f isolinux/isolinux.cfg ]; then
 fi
 
 ##############################################################################
-# Compile Legacy BIOS System boot Target Menu Profile Configuration
+# BIOS Menu Compilation (Centralized HTTP Endpoint Routing Injection)
 ##############################################################################
-echo "Compiling master Isolinux BIOS layout definitions..."
+echo "Compiling master Isolinux BIOS definitions (Network Routing Mode)..."
 cat > isolinux/isolinux.cfg <<EOF
 default auto
 timeout 50
@@ -100,39 +96,31 @@ menu title CentOS 7 Enterprise Golden Installer System
 label auto
   menu label Install CentOS 7 (Enforced Sector Parity RAID1)
   kernel vmlinuz
-  append initrd=initrd.img inst.stage2=hd:LABEL=${VOLID} inst.ks=hd:LABEL=${VOLID}:/kickstart/centos7.cfg ip=dhcp quiet
+  append initrd=initrd.img inst.stage2=hd:LABEL=${VOLID} inst.ks=${REPO_URL}/centos7.cfg ip=dhcp quiet
 EOF
 
 ##############################################################################
-# Compile UEFI System Boot Target Menu Configuration (CentOS 7 Compatible Paths)
+# UEFI Menu Compilation (CentOS 7 Compatible Paths & Direct HTTP Target Routing)
 ##############################################################################
-echo "Compiling master GRUB UEFI layout definitions..."
+echo "Compiling master GRUB UEFI definitions (Network Routing Mode)..."
 cat > EFI/BOOT/grub.cfg <<EOF
 set default=0
 set timeout=5
 
 menuentry 'Install CentOS 7 (Enforced Sector Parity RAID1)' {
-    # Fixed: CentOS 7 UEFI requires standard native 'linux' and 'initrd' path commands
-    linux /isolinux/vmlinuz inst.stage2=hd:LABEL=${VOLID} inst.ks=hd:LABEL=${VOLID}:/kickstart/centos7.cfg ip=dhcp quiet
+    # Fixed: Converted to standard 'linux' and 'initrd' path tags for CentOS 7 runtime compatibility
+    linux /isolinux/vmlinuz inst.stage2=hd:LABEL=${VOLID} inst.ks=${REPO_URL}/centos7.cfg ip=dhcp quiet
     initrd /isolinux/initrd.img
 }
 EOF
 
 ##############################################################################
-# Enforce Core Boundary File Execution Permissions
-##############################################################################
-chmod +x scripts/*.sh
-
-##############################################################################
-# Flush and Purge Stale Deployment Block References
+# Flush Stale Output Targets and Generate ISO
 ##############################################################################
 rm -f "${ISO_NAME}"
 
-##############################################################################
-# Build Monolithic Bootable Hybrid Optical Enterprise Installation ISO File
-##############################################################################
 echo
-echo "Executing xorriso generation sweep..."
+echo "Executing xorriso production generation sweep..."
 echo
 
 xorriso \
@@ -154,19 +142,19 @@ xorriso \
     .
 
 ##############################################################################
-# Post-Generation Verification Statistics Summary Tracking pass
+# Post-Generation Verification Status Summary
 ##############################################################################
 echo
 echo "==========================================================="
 
 if [ -f "${ISO_NAME}" ]; then
-    echo "SUCCESS: Monolithic bootable image built cleanly."
+    echo "SUCCESS: Monolithic Network-Bootable ISO built cleanly."
     echo
     ls -lh "${ISO_NAME}"
     echo
     sha256sum "${ISO_NAME}"
 else
-    echo "ERROR: Image output targets missing from file array mapping layers."
+    echo "ERROR: Target ISO output missing after generation pass."
     exit 1
 fi
 
