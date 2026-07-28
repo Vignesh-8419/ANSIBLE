@@ -1,82 +1,66 @@
 #!/bin/bash
 #==============================================================================
-# CentOS 7 Enterprise Golden ISO Builder (Network-Agnostic Engine)
-# Version 3 - Optimized for centralized http payload configurations
+# CentOS 7 Enterprise Golden ISO Builder - Pure Network Routing Mode
+# Bypasses local file validation loops to fetch configurations via HTTP
 #==============================================================================
 
 set -euo pipefail
 
-##############################################################################
-# Configuration Variables
-##############################################################################
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ISO_ROOT="${SCRIPT_DIR}/centos7-golden"
 
 ISO_NAME="${SCRIPT_DIR}/CentOS7_Golden_RAID.iso"
 VOLID="CENTOS7_GOLDEN"
 
-# Centralized HTTP asset repository pipeline string map
+# Centralized HTTP asset repository endpoint target
 REPO_URL="http://192.168.253.136/repo/centos7-kickstarts"
 
-##############################################################################
-# Environment Setup
-##############################################################################
 cd "${ISO_ROOT}"
 
 echo
 echo "==========================================================="
-echo " CentOS 7 Enterprise Golden ISO Builder (Network Mode)"
-echo "============================================================"
+echo " CentOS 7 Enterprise Golden ISO Builder (Network Routing)"
+echo "==========================================================="
 echo
 echo "ISO Staging Root Directory: ${ISO_ROOT}"
 echo "Remote Asset Repository   : ${REPO_URL}"
-echo "Destination ISO Location  : ${ISO_NAME}"
 echo
 
-##############################################################################
-# Validate Required Baseline Tree Frameworks
-##############################################################################
+# Validate Core DVD Directories
 DIRS=(
 EFI
 images
 isolinux
+Packages
+repodata
 )
 
 for d in "${DIRS[@]}"
 do
     if [ ! -d "$d" ]; then
-        echo "ERROR : Missing directory structure inside staging root: $d"
+        echo "ERROR : Missing baseline directory structure inside staging root: $d"
         exit 1
     fi
 done
 
-##############################################################################
-# Validate Core Optical Bootloader Dependencies Only
-##############################################################################
+# Validate Core Optical Bootloader Files Only
 FILES=(
 isolinux/isolinux.bin
 isolinux/vmlinuz
 isolinux/initrd.img
-
 images/efiboot.img
 images/install.img
-
 EFI/BOOT/grub.cfg
 )
 
 for f in "${FILES[@]}"
 do
     if [ ! -f "$f" ]; then
-        echo
-        echo "CRITICAL DEFECT: Missing core boot file asset:"
-        echo "   $f"
+        echo "ERROR : Missing core boot asset: $f"
         exit 1
     fi
 done
 
-##############################################################################
-# Backup Original Bootloader Configurations
-##############################################################################
 cp -f EFI/BOOT/grub.cfg EFI/BOOT/grub.cfg.original
 
 if [ -f isolinux/isolinux.cfg ]; then
@@ -84,7 +68,7 @@ if [ -f isolinux/isolinux.cfg ]; then
 fi
 
 ##############################################################################
-# BIOS Menu Compilation (Centralized HTTP Endpoint Routing Injection)
+# BIOS Menu Compilation (Injects remote HTTP Kickstart routing)
 ##############################################################################
 echo "Compiling master Isolinux BIOS definitions (Network Routing Mode)..."
 cat > isolinux/isolinux.cfg <<EOF
@@ -100,7 +84,7 @@ label auto
 EOF
 
 ##############################################################################
-# UEFI Menu Compilation (CentOS 7 Compatible Paths & Direct HTTP Target Routing)
+# UEFI Menu Compilation (CentOS 7 Compatible Tags & Network Routing)
 ##############################################################################
 echo "Compiling master GRUB UEFI definitions (Network Routing Mode)..."
 cat > EFI/BOOT/grub.cfg <<EOF
@@ -108,21 +92,17 @@ set default=0
 set timeout=5
 
 menuentry 'Install CentOS 7 (Enforced Sector Parity RAID1)' {
-    # Fixed: Converted to standard 'linux' and 'initrd' path tags for CentOS 7 runtime compatibility
+    # Fixed: Uses standard 'linux' and 'initrd' path tags for CentOS 7 compatibility
     linux /isolinux/vmlinuz inst.stage2=hd:LABEL=${VOLID} inst.ks=${REPO_URL}/centos7.cfg ip=dhcp quiet
     initrd /isolinux/initrd.img
 }
 EOF
 
-##############################################################################
-# Flush Stale Output Targets and Generate ISO
-##############################################################################
 rm -f "${ISO_NAME}"
 
 echo
-echo "Executing xorriso production generation sweep..."
+echo "Compiling ISO via xorriso..."
 echo
-
 xorriso \
     -as mkisofs \
     -o "${ISO_NAME}" \
@@ -141,15 +121,9 @@ xorriso \
     -no-emul-boot \
     .
 
-##############################################################################
-# Post-Generation Verification Status Summary
-##############################################################################
-echo
 echo "==========================================================="
-
 if [ -f "${ISO_NAME}" ]; then
-    echo "SUCCESS: Monolithic Network-Bootable ISO built cleanly."
-    echo
+    echo "SUCCESS: Bootable ISO compiled cleanly."
     ls -lh "${ISO_NAME}"
     echo
     sha256sum "${ISO_NAME}"
@@ -157,8 +131,4 @@ else
     echo "ERROR: Target ISO output missing after generation pass."
     exit 1
 fi
-
-echo
 echo "==========================================================="
-echo "Done"
-echo "============================================================"
