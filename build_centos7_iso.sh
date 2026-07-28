@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE}")" && pwd)"
 ISO_ROOT="${SCRIPT_DIR}/centos7-golden"
 
 ISO_NAME="${SCRIPT_DIR}/CentOS7_Golden_RAID.iso"
@@ -34,6 +34,7 @@ DIRS=(
 EFI
 images
 isolinux
+LiveOS
 Packages
 repodata
 )
@@ -54,7 +55,7 @@ isolinux/isolinux.bin
 isolinux/vmlinuz
 isolinux/initrd.img
 images/efiboot.img
-images/stage2.img     # Fixed: CentOS 7 DVDs utilize stage2.img for the root loop
+LiveOS/squashfs.img   # Fixed: Matched directly to your extracted DVD structure
 EFI/BOOT/grub.cfg
 )
 
@@ -137,7 +138,7 @@ xorriso \
 # Post-Generation Verification Status Summary
 ##############################################################################
 echo
-echo "==========================================================="
+echo "============================================================"
 
 if [ -f "${ISO_NAME}" ]; then
     echo "SUCCESS: Monolithic Network-Bootable ISO compiled cleanly."
@@ -150,8 +151,7 @@ else
     exit 1
 fi
 
-echo
-echo "==========================================================="
+echo "============================================================"
 echo "Done"
 echo "============================================================"
 
