@@ -1,7 +1,7 @@
 #!/bin/bash
 #==============================================================================
 # CentOS 7 Enterprise Golden ISO Builder - Pure Network Routing Mode
-# Bypasses local file validation loops to fetch configurations via HTTP
+# Fixed: Enforces strict Secure Boot compliance variables for UEFI modes
 #==============================================================================
 
 set -euo pipefail
@@ -12,8 +12,8 @@ ISO_ROOT="${SCRIPT_DIR}/centos7-golden"
 ISO_NAME="${SCRIPT_DIR}/CentOS7_Golden_RAID.iso"
 VOLID="CENTOS7_GOLDEN"
 
-# Centralized HTTP asset repository endpoint target
-REPO_URL="http://192.168.253"
+# Fixed: Fully restore your complete centralized web server repository address
+REPO_URL="http://192.168.253.136/repo/centos7-kickstarts"
 
 cd "${ISO_ROOT}"
 
@@ -55,7 +55,7 @@ isolinux/isolinux.bin
 isolinux/vmlinuz
 isolinux/initrd.img
 images/efiboot.img
-LiveOS/squashfs.img   # Fixed: Matched directly to your extracted DVD structure
+LiveOS/squashfs.img   # Matches your extracted DVD structure
 EFI/BOOT/grub.cfg
 )
 
@@ -93,17 +93,17 @@ label auto
 EOF
 
 ##############################################################################
-# UEFI Menu Compilation (CentOS 7 Compatible Tags & Network Routing)
+# UEFI Menu Compilation (Strict Secure Boot EFI Compliance Routing)
 ##############################################################################
-echo "Compiling master GRUB UEFI definitions (Network Routing Mode)..."
+echo "Compiling master GRUB UEFI definitions (EFI Secure Boot Compliance Mode)..."
 cat > EFI/BOOT/grub.cfg <<EOF
 set default=0
 set timeout=5
 
 menuentry 'Install CentOS 7 (Enforced Sector Parity RAID1)' {
-    # Fixed: Uses standard 'linux' and 'initrd' path tags for CentOS 7 compatibility
-    linux /isolinux/vmlinuz inst.stage2=hd:LABEL=${VOLID} inst.ks=${REPO_URL}/centos7.cfg ip=dhcp quiet
-    initrd /isolinux/initrd.img
+    # Fixed: Swapped to linuxefi and initrdefi to satisfy CentOS 7 Secure Boot modules
+    linuxefi /isolinux/vmlinuz inst.stage2=hd:LABEL=${VOLID} inst.ks=${REPO_URL}/centos7.cfg ip=dhcp quiet
+    initrdefi /isolinux/initrd.img
 }
 EOF
 
