@@ -1,141 +1,118 @@
-# Rocky Linux 8.10 RAID1 Recovery SOP
-## Scenario 2 - SDB Disk Failure Recovery
-### UEFI + GPT + Software RAID1 + LVM
+# Rocky Linux 8.10 UEFI + Software RAID1 Recovery SOP
+## SDB Failure Recovery (Disk2 Replacement)
 
 ---
 
 # Purpose
 
-This document describes the complete recovery procedure when the **secondary disk (/dev/sdb)** fails and has been replaced with a new blank disk.
+This SOP describes the complete recovery procedure when **Disk2 (/dev/sdb)** has failed and has been replaced with a new disk.
 
-This procedure restores:
+Environment
 
+- Rocky Linux 8.10
+- UEFI Boot
 - GPT Partition Table
-- Software RAID1
+- Software RAID1 (mdadm)
 - LVM
-- EFI Partition
-- UEFI Boot Entries
-- Boot Order
+- VMware ESXi / Physical Server
 
-This SOP has been validated on Rocky Linux 8.10 running on VMware with UEFI firmware.
+Disk Layout
 
----
-
-# Environment
-
-| Item | Value |
-|------|-------|
-| Failed Disk | `/dev/sdb` |
-| Healthy Disk | `/dev/sda` |
-| Replacement Disk | `/dev/sdb` |
-| Boot Mode | UEFI |
-| Partition Table | GPT |
-| RAID | Software RAID1 |
-| Filesystem | XFS |
-| Bootloader | GRUB2 (UEFI) |
-
----
-
-# Expected Disk Layout
-
-```
-sda
-├── sda1   EFI (600 MB)
-├── sda2   RAID1 (/boot)
-└── sda3   RAID1 (LVM)
-
-sdb
-├── sdb1   EFI (600 MB)
-├── sdb2   RAID1 (/boot)
-└── sdb3   RAID1 (LVM)
-```
+| Disk | Partition | Purpose |
+|------|-----------|---------|
+| sda1 | EFI System Partition | FAT32 |
+| sda2 | RAID1 (/boot) | md0 |
+| sda3 | RAID1 (LVM PV) | md1 |
+| sdb1 | EFI System Partition | FAT32 |
+| sdb2 | RAID1 (/boot) | md0 |
+| sdb3 | RAID1 (LVM PV) | md1 |
 
 ---
 
 # Step 1 - Verify RAID Status
 
-Check RAID status.
-
 ```bash
 cat /proc/mdstat
+
+mdadm --detail /dev/md0
+
+mdadm --detail /dev/md1
+
+lsblk
 ```
 
 Expected
 
-```
-md0 [2/1]
-md1 [2/1]
-```
-
-or
-
-```
-md0 [_U]
-md1 [_U]
-```
-
-Verify disks.
-
-```bash
-lsblk
-```
-
-Verify VMware SCSI mapping.
-
-```bash
-lsscsi -g
-```
-
-> **Important**
->
-> Linux device names (`/dev/sda`, `/dev/sdb`) may change after replacing a disk.
-> Always verify which disk is healthy before proceeding.
+- md0 degraded
+- md1 degraded
+- /dev/sdb is missing or replaced
 
 ---
 
-# Step 2 - Restore GPT Partition Table
+# Step 2 - Verify New Disk
 
-Clone the partition table from the healthy disk.
+```bash
+lsblk
+
+fdisk -l
+
+lsscsi -g
+```
+
+Confirm
+
+```
+/dev/sda
+/dev/sdb
+```
+
+are present.
+
+---
+
+# Step 3 - Copy Partition Table
+
+Clone the GPT layout from Disk1.
 
 ```bash
 sgdisk -R=/dev/sdb /dev/sda
 ```
 
-Generate new GPT GUIDs.
+Generate new GPT GUIDs on the replacement disk.
 
 ```bash
 sgdisk -G /dev/sdb
 ```
 
-Reload the partition table.
+Reload partition table.
 
 ```bash
 partprobe /dev/sdb
+
+udevadm settle
 ```
 
-Verify.
+Verify
 
 ```bash
 lsblk
-```
 
-Expected
-
-```
-sdb1
-sdb2
-sdb3
+fdisk -l /dev/sdb
 ```
 
 ---
 
-# Step 3 - Rebuild RAID
+# Step 4 - Rebuild RAID
 
-Add the new partitions back into RAID.
+Add boot partition.
 
 ```bash
 mdadm --manage /dev/md0 --add /dev/sdb2
+```
 
+Add LVM partition.
+
+```bash
 mdadm --manage /dev/md1 --add /dev/sdb3
 ```
 
@@ -145,327 +122,246 @@ Monitor rebuild.
 watch cat /proc/mdstat
 ```
 
-Wait until
+Wait until:
 
 ```
-md0 [UU]
-
-md1 [UU]
+[UU]
 ```
 
----
+appears for both arrays.
 
-# Step 4 - Recreate EFI Filesystem
-
-Create a new FAT32 EFI filesystem.
+Verify
 
 ```bash
-mkfs.vfat -F32 /dev/sdb1
+cat /proc/mdstat
+
+mdadm --detail /dev/md0
+
+mdadm --detail /dev/md1
 ```
 
 ---
 
-# Step 5 - Restore EFI Boot Files
+# Step 5 - Create EFI Filesystem
+
+Format the EFI partition.
+
+```bash
+mkfs.vfat -F32 -n EFI-SYSTEM /dev/sdb1
+```
+
+Verify
+
+```bash
+blkid /dev/sdb1
+```
+
+Expected
+
+```
+TYPE="vfat"
+```
+
+---
+
+# Step 6 - Copy EFI Files
 
 Create mount points.
 
 ```bash
-mkdir -p /mnt/efi_old
-mkdir -p /mnt/efi_new
+mkdir -p /mnt/sda1
+mkdir -p /mnt/sdb1
 ```
 
-Mount the healthy EFI partition.
+Mount partitions.
 
 ```bash
-mount /dev/sda1 /mnt/efi_old
-```
+mount /dev/sda1 /mnt/sda1
 
-Mount the replacement EFI partition.
-
-```bash
-mount /dev/sdb1 /mnt/efi_new
+mount /dev/sdb1 /mnt/sdb1
 ```
 
 Copy EFI files.
 
 ```bash
-cp -a /mnt/efi_old/. /mnt/efi_new/
+cp -a /mnt/sda1/* /mnt/sdb1/
 ```
 
-Flush pending writes.
+Sync
 
 ```bash
 sync
 ```
 
-Verify copied files.
-
-```bash
-find /mnt/efi_new
-```
-
-Expected folders
-
-```
-EFI/
-EFI/BOOT/
-EFI/rocky/
-```
-
-Unmount.
-
-```bash
-umount /mnt/efi_old
-
-umount /mnt/efi_new
-```
-
----
-
-# Step 6 - Backup Existing Boot Entries
-
-Before making changes, save the current boot configuration.
-
-```bash
-efibootmgr -v > /root/efibootmgr.before
-```
-
----
-
-# Step 7 - Identify Current and Old UEFI Boot Entries
-
-## Display Current EFI Partition GUIDs
-
-```bash
-blkid /dev/sda1
-
-blkid /dev/sdb1
-```
-
-Example
-
-```
-/dev/sda1
-PARTUUID="B1E8C18E-XXXX"
-
-/dev/sdb1
-PARTUUID="3AD7E0F9-XXXX"
-```
-
----
-
-## Display Existing Boot Entries
-
-```bash
-efibootmgr -v
-```
-
-Example
-
-```
-Boot0005* Rocky Disk1
-HD(1,GPT,B1E8C18E-XXXX,...)
-
-Boot0006* Rocky Disk2
-HD(1,GPT,3AD7E0F9-XXXX,...)
-
-Boot0011* rocky
-HD(1,GPT,2AEB77D2-XXXX,...)
-
-Boot0012* rocky
-HD(1,GPT,07A8559A-XXXX,...)
-```
-
----
-
-## How to Identify Old Boot Entries
-
-Compare the PARTUUID values.
-
-### Keep
-
-Boot entries whose PARTUUID matches either
-
-```
-blkid /dev/sda1
-
-or
-
-blkid /dev/sdb1
-```
-
-Example
-
-```
-Current PARTUUIDs
-
-sda1 = B1E8C18E
-
-sdb1 = 3AD7E0F9
-
-Boot0005 -> B1E8C18E  ✅ Keep
-
-Boot0006 -> 3AD7E0F9  ✅ Keep
-```
-
----
-
-### Delete
-
-Delete any Rocky boot entry whose PARTUUID **does not match** either EFI partition.
-
-Example
-
-```
-Boot0011 -> 2AEB77D2  ❌ Delete
-
-Boot0012 -> 07A8559A  ❌ Delete
-```
-
-> **Important**
->
-> Never identify old entries by `Boot0005`, `Boot0006`, etc.
->
-> Boot numbers change after reinstallations and disk replacements.
->
-> Always compare the **PARTUUID**.
-
----
-
-# Step 8 - Delete Old Rocky Boot Entries
-
-Delete only the stale Rocky entries.
-
-Example
-
-```bash
-efibootmgr -b 0011 -B
-
-efibootmgr -b 0012 -B
-```
-
-Do **NOT** delete:
-
-- EFI Virtual Disk
-- EFI DVD/CDROM
-- EFI Network
-
----
-
-# Step 9 - Create New Boot Entries
-
-Create the entry for Disk 1.
-
-```bash
-efibootmgr \
---create \
---disk /dev/sda \
---part 1 \
---label "Rocky Disk1" \
---loader '\EFI\rocky\shimx64.efi'
-```
-
-Create the entry for Disk 2.
-
-```bash
-efibootmgr \
---create \
---disk /dev/sdb \
---part 1 \
---label "Rocky Disk2" \
---loader '\EFI\rocky\shimx64.efi'
-```
-
----
-
-# Step 10 - Verify Boot Entries
-
-Display the boot entries.
-
-```bash
-efibootmgr -v
-```
-
-Verify that the PARTUUID values match.
-
-```bash
-blkid /dev/sda1
-
-blkid /dev/sdb1
-```
-
-The PARTUUID values shown in `efibootmgr -v` should match the output of `blkid`.
-
----
-
-# Step 11 - Configure Boot Order
-
-List the current boot IDs.
-
-```bash
-efibootmgr
-```
-
-Example
-
-```
-Boot0005 Rocky Disk1
-
-Boot0006 Rocky Disk2
-```
-
-Set the boot order.
-
-```bash
-efibootmgr -o 0006,0005
-```
-
-Adjust the boot numbers based on your system.
-
 Verify.
 
 ```bash
-efibootmgr
-```
-
----
-
-# Step 12 - Reboot
-
-```bash
-reboot
-```
-
-After login, verify the active boot entry.
-
-```bash
-efibootmgr
+find /mnt/sdb1/EFI
 ```
 
 Expected
 
 ```
-BootCurrent
+EFI/BOOT
 
-Rocky Disk1
+EFI/rocky
 
-or
+shimx64.efi
 
-Rocky Disk2
+grubx64.efi
 ```
 
-It should **not** show only
+Unmount.
 
-```
-EFI Virtual Disk
+```bash
+umount /mnt/sda1
+
+umount /mnt/sdb1
 ```
 
 ---
 
-# Step 13 - Verify RAID
+# Step 7 - Verify EFI Mount
+
+Check if Linux has mounted the EFI System Partition.
+
+```bash
+findmnt /boot/efi
+```
+
+If nothing is returned:
+
+Get the UUID of the primary EFI partition.
+
+```bash
+blkid /dev/sda1
+```
+
+Example
+
+```
+UUID="C642-C512"
+```
+
+Edit `/etc/fstab`.
+
+```bash
+vi /etc/fstab
+```
+
+Add
+
+```fstab
+UUID=C642-C512 /boot/efi vfat umask=0077,shortname=winnt 0 2
+```
+
+Reload systemd.
+
+```bash
+systemctl daemon-reload
+```
+
+Mount.
+
+```bash
+mkdir -p /boot/efi
+
+mount -a
+```
+
+Verify.
+
+```bash
+findmnt /boot/efi
+```
+
+Expected
+
+```
+TARGET    SOURCE
+
+/boot/efi /dev/sda1
+```
+
+---
+
+# Step 8 - Verify UEFI Boot Entries
+
+Display firmware boot entries.
+
+```bash
+efibootmgr -v
+```
+
+Verify that:
+
+- Rocky Linux boot entries exist.
+- Loader path points to:
+
+```
+\EFI\rocky\shimx64.efi
+```
+
+Check EFI partition identifiers.
+
+```bash
+blkid /dev/sda1
+
+blkid /dev/sdb1
+```
+
+If a boot entry is missing completely, recreate it.
+
+Example for Disk1:
+
+```bash
+efibootmgr \
+-c \
+-d /dev/sda \
+-p 1 \
+-L "Rocky Linux Disk1" \
+-l '\EFI\rocky\shimx64.efi'
+```
+
+Example for Disk2:
+
+```bash
+efibootmgr \
+-c \
+-d /dev/sdb \
+-p 1 \
+-L "Rocky Linux Disk2" \
+-l '\EFI\rocky\shimx64.efi'
+```
+
+Set boot order.
+
+```bash
+efibootmgr -o 0006,0007
+```
+
+(Replace the numbers with the actual boot entry IDs on your system.)
+
+Verify.
+
+```bash
+efibootmgr -v
+```
+
+---
+
+# Step 9 - Final RAID Verification
 
 ```bash
 cat /proc/mdstat
+
+lsblk
+
+blkid
+
+findmnt /boot/efi
+
+efibootmgr -v
 ```
 
 Expected
@@ -476,65 +372,73 @@ md0 [UU]
 md1 [UU]
 ```
 
-Verify disks.
+EFI mounted.
 
-```bash
-lsblk
 ```
+/boot/efi
+```
+
+Rocky boot entries present.
 
 ---
 
-# Step 14 - Validate Disk Failover
+# Step 10 - Functional Boot Validation
 
-Power off the VM.
+## Test 1 - Boot from Disk1
 
-Remove Disk2 (`/dev/sdb`).
+1. Power off the VM/server.
+2. Remove or disconnect Disk2 (/dev/sdb).
+3. Boot the system.
 
-Power on the VM.
+Verify:
 
-Verify the boot entry.
-
-```bash
-efibootmgr
-```
-
-Verify RAID.
+- System boots successfully.
+- Login is possible.
+- RAID is degraded as expected.
 
 ```bash
 cat /proc/mdstat
 ```
 
-Expected
+---
 
+## Test 2 - Boot from Disk2
+
+1. Reconnect Disk2.
+2. Disconnect Disk1 (/dev/sda).
+3. Boot the system.
+
+Verify:
+
+- System boots successfully.
+- Login is possible.
+- RAID is degraded as expected.
+
+```bash
+cat /proc/mdstat
 ```
-md0 [_U]
-
-md1 [_U]
-```
-
-The server should boot successfully.
 
 ---
 
-# Recovery Validation Checklist
+# Recovery Completed
 
-- [ ] Replacement disk detected
-- [ ] GPT partition table restored
-- [ ] New GPT GUID generated
-- [ ] RAID rebuilt
-- [ ] RAID synchronized
-- [ ] EFI filesystem recreated
-- [ ] EFI boot files restored
-- [ ] Current EFI PARTUUID verified
-- [ ] Old UEFI boot entries removed
-- [ ] New UEFI boot entries created
-- [ ] Boot order configured
-- [ ] BootCurrent uses Rocky boot entry
-- [ ] RAID healthy
-- [ ] Server boots successfully after SDB failure
+Recovery is successful when:
+
+- GPT copied successfully.
+- New GUID generated.
+- RAID rebuilt.
+- md0 shows [UU].
+- md1 shows [UU].
+- EFI filesystem recreated.
+- EFI files copied successfully.
+- /boot/efi mounts successfully.
+- Rocky UEFI boot entries exist.
+- System boots using Disk1 only.
+- System boots using Disk2 only.
+- No RAID errors remain.
 
 ---
-
-# Recovery Complete
-
-The RAID1 array has been fully restored, UEFI boot redundancy has been re-established, and the system has been validated to boot successfully after an SDB disk failure.
+**Document Version:** 1.0  
+**OS:** Rocky Linux 8.10  
+**Boot Mode:** UEFI  
+**Storage:** GPT + Software RAID1 + LVM
