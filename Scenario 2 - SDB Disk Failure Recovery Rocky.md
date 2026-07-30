@@ -341,6 +341,15 @@ blkid /dev/sda1
 blkid /dev/sdb1
 ```
 
+Remove mismatch entries 
+
+Example
+
+```bash
+efibootmgr -e 000*,000*
+```
+
+
 If a Rocky boot entry is missing, recreate it.
 
 Disk1
