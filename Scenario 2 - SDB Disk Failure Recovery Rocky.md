@@ -1,4 +1,4 @@
-# Rocky Linux 8.10 UEFI + Software RAID1 Recovery SOP
+# Rocky Linux 8.10 UEFI + GPT + Software RAID1 Recovery SOP
 ## SDB Failure Recovery (Disk2 Replacement)
 
 ---
@@ -7,16 +7,18 @@
 
 This SOP describes the complete recovery procedure when **Disk2 (/dev/sdb)** has failed and has been replaced with a new disk.
 
-Environment
+This procedure has been validated on:
 
 - Rocky Linux 8.10
 - UEFI Boot
 - GPT Partition Table
 - Software RAID1 (mdadm)
 - LVM
-- VMware ESXi / Physical Server
+- VMware ESXi
 
-Disk Layout
+---
+
+# Storage Layout
 
 | Disk | Partition | Purpose |
 |------|-----------|---------|
@@ -45,11 +47,10 @@ Expected
 
 - md0 degraded
 - md1 degraded
-- /dev/sdb is missing or replaced
 
 ---
 
-# Step 2 - Verify New Disk
+# Step 2 - Verify Replacement Disk
 
 ```bash
 lsblk
@@ -59,26 +60,19 @@ fdisk -l
 lsscsi -g
 ```
 
-Confirm
-
-```
-/dev/sda
-/dev/sdb
-```
-
-are present.
+Verify the new replacement disk is visible.
 
 ---
 
-# Step 3 - Copy Partition Table
+# Step 3 - Clone Partition Table
 
-Clone the GPT layout from Disk1.
+Copy the GPT partition table.
 
 ```bash
 sgdisk -R=/dev/sdb /dev/sda
 ```
 
-Generate new GPT GUIDs on the replacement disk.
+Generate new GPT GUIDs.
 
 ```bash
 sgdisk -G /dev/sdb
@@ -95,22 +89,22 @@ udevadm settle
 Verify
 
 ```bash
-lsblk
-
 fdisk -l /dev/sdb
+
+lsblk
 ```
 
 ---
 
-# Step 4 - Rebuild RAID
+# Step 4 - Rebuild RAID Arrays
 
-Add boot partition.
+Add /boot member.
 
 ```bash
 mdadm --manage /dev/md0 --add /dev/sdb2
 ```
 
-Add LVM partition.
+Add LVM member.
 
 ```bash
 mdadm --manage /dev/md1 --add /dev/sdb3
@@ -122,13 +116,11 @@ Monitor rebuild.
 watch cat /proc/mdstat
 ```
 
-Wait until:
+Wait until
 
 ```
 [UU]
 ```
-
-appears for both arrays.
 
 Verify
 
@@ -150,7 +142,7 @@ Format the EFI partition.
 mkfs.vfat -F32 -n EFI-SYSTEM /dev/sdb1
 ```
 
-Verify
+Verify.
 
 ```bash
 blkid /dev/sdb1
@@ -164,16 +156,17 @@ TYPE="vfat"
 
 ---
 
-# Step 6 - Copy EFI Files
+# Step 6 - Copy EFI Boot Files
 
 Create mount points.
 
 ```bash
 mkdir -p /mnt/sda1
+
 mkdir -p /mnt/sdb1
 ```
 
-Mount partitions.
+Mount both EFI partitions.
 
 ```bash
 mount /dev/sda1 /mnt/sda1
@@ -181,13 +174,13 @@ mount /dev/sda1 /mnt/sda1
 mount /dev/sdb1 /mnt/sdb1
 ```
 
-Copy EFI files.
+Copy files.
 
 ```bash
 cp -a /mnt/sda1/* /mnt/sdb1/
 ```
 
-Sync
+Flush writes.
 
 ```bash
 sync
@@ -221,9 +214,9 @@ umount /mnt/sdb1
 
 ---
 
-# Step 7 - Verify EFI Mount
+# Step 7 - Configure /boot/efi Mount (IMPORTANT)
 
-Check if Linux has mounted the EFI System Partition.
+Verify if EFI is mounted.
 
 ```bash
 findmnt /boot/efi
@@ -231,28 +224,28 @@ findmnt /boot/efi
 
 If nothing is returned:
 
-Get the UUID of the primary EFI partition.
+Obtain the UUID.
 
 ```bash
 blkid /dev/sda1
 ```
 
-Example
-
-```
-UUID="C642-C512"
-```
-
-Edit `/etc/fstab`.
+Edit fstab.
 
 ```bash
 vi /etc/fstab
 ```
 
-Add
+Add the following entry.
 
 ```fstab
-UUID=C642-C512 /boot/efi vfat umask=0077,shortname=winnt 0 2
+UUID=<UUID_of_sda1> /boot/efi vfat umask=0077,shortname=winnt,nofail,x-systemd.device-timeout=1s 0 2
+```
+
+Example
+
+```fstab
+UUID=C642-C512 /boot/efi vfat umask=0077,shortname=winnt,nofail,x-systemd.device-timeout=1s 0 2
 ```
 
 Reload systemd.
@@ -261,11 +254,15 @@ Reload systemd.
 systemctl daemon-reload
 ```
 
-Mount.
+Create mount point.
 
 ```bash
 mkdir -p /boot/efi
+```
 
+Mount.
+
+```bash
 mount -a
 ```
 
@@ -278,31 +275,65 @@ findmnt /boot/efi
 Expected
 
 ```
-TARGET    SOURCE
+TARGET      SOURCE
 
-/boot/efi /dev/sda1
+/boot/efi   /dev/sda1
 ```
+
+---
+
+# Why "nofail" is Required
+
+The two EFI System Partitions have different FAT filesystem UUIDs.
+
+Example
+
+```
+Disk1 EFI
+
+UUID=C642-C512
+
+Disk2 EFI
+
+UUID=7A78-D0E7
+```
+
+Only one UUID can exist in `/etc/fstab`.
+
+During a disk failure, the configured EFI partition may not be present.
+
+Without:
+
+```
+nofail,x-systemd.device-timeout=1s
+```
+
+systemd treats the missing EFI partition as a boot failure and enters Emergency Mode.
+
+Adding these options allows the system to continue booting normally while the RAID arrays operate in degraded mode.
+
+This behaviour has been validated by testing a single-disk boot after removing Disk1.
 
 ---
 
 # Step 8 - Verify UEFI Boot Entries
 
-Display firmware boot entries.
+Display firmware entries.
 
 ```bash
 efibootmgr -v
 ```
 
-Verify that:
+Verify
 
 - Rocky Linux boot entries exist.
-- Loader path points to:
+- Loader path is
 
 ```
 \EFI\rocky\shimx64.efi
 ```
 
-Check EFI partition identifiers.
+Display partition identifiers.
 
 ```bash
 blkid /dev/sda1
@@ -310,9 +341,9 @@ blkid /dev/sda1
 blkid /dev/sdb1
 ```
 
-If a boot entry is missing completely, recreate it.
+If a Rocky boot entry is missing, recreate it.
 
-Example for Disk1:
+Disk1
 
 ```bash
 efibootmgr \
@@ -323,7 +354,7 @@ efibootmgr \
 -l '\EFI\rocky\shimx64.efi'
 ```
 
-Example for Disk2:
+Disk2
 
 ```bash
 efibootmgr \
@@ -334,13 +365,15 @@ efibootmgr \
 -l '\EFI\rocky\shimx64.efi'
 ```
 
-Set boot order.
+Set boot order if required.
+
+Example
 
 ```bash
 efibootmgr -o 0006,0007
 ```
 
-(Replace the numbers with the actual boot entry IDs on your system.)
+Replace with your actual Boot IDs.
 
 Verify.
 
@@ -350,7 +383,7 @@ efibootmgr -v
 
 ---
 
-# Step 9 - Final RAID Verification
+# Step 9 - Final Verification
 
 ```bash
 cat /proc/mdstat
@@ -382,40 +415,60 @@ Rocky boot entries present.
 
 ---
 
-# Step 10 - Functional Boot Validation
+# Step 10 - Functional Validation
 
-## Test 1 - Boot from Disk1
+## Test Disk2 Failure
 
-1. Power off the VM/server.
-2. Remove or disconnect Disk2 (/dev/sdb).
-3. Boot the system.
+Remove Disk2.
 
-Verify:
+Boot the server.
 
-- System boots successfully.
-- Login is possible.
-- RAID is degraded as expected.
+Verify
 
 ```bash
 cat /proc/mdstat
 ```
 
+Expected
+
+```
+md0 [U_]
+
+md1 [U_]
+```
+
+Server boots successfully.
+
 ---
 
-## Test 2 - Boot from Disk2
+## Test Disk1 Failure
 
-1. Reconnect Disk2.
-2. Disconnect Disk1 (/dev/sda).
-3. Boot the system.
+Reconnect Disk2.
 
-Verify:
+Remove Disk1.
 
-- System boots successfully.
-- Login is possible.
-- RAID is degraded as expected.
+Boot the server.
+
+Verify
 
 ```bash
 cat /proc/mdstat
+```
+
+Expected
+
+```
+md0 [U_]
+
+md1 [U_]
+```
+
+Server boots successfully.
+
+No Emergency Mode should occur because `/boot/efi` is configured with:
+
+```
+nofail,x-systemd.device-timeout=1s
 ```
 
 ---
@@ -424,21 +477,28 @@ cat /proc/mdstat
 
 Recovery is successful when:
 
-- GPT copied successfully.
-- New GUID generated.
+- GPT partition table cloned successfully.
+- New GPT GUID generated.
 - RAID rebuilt.
-- md0 shows [UU].
-- md1 shows [UU].
+- md0 healthy.
+- md1 healthy.
 - EFI filesystem recreated.
-- EFI files copied successfully.
-- /boot/efi mounts successfully.
-- Rocky UEFI boot entries exist.
-- System boots using Disk1 only.
-- System boots using Disk2 only.
-- No RAID errors remain.
+- EFI files copied.
+- /boot/efi configured in `/etc/fstab`.
+- `/boot/efi` uses:
+  - `nofail`
+  - `x-systemd.device-timeout=1s`
+- EFI mounts successfully.
+- Rocky boot entries exist.
+- System boots with Disk1 removed.
+- System boots with Disk2 removed.
+- RAID operates correctly in degraded mode.
+- No Emergency Mode occurs during single-disk boot.
 
 ---
-**Document Version:** 1.0  
-**OS:** Rocky Linux 8.10  
+
+**Document Version:** 1.1  
+**Operating System:** Rocky Linux 8.10  
 **Boot Mode:** UEFI  
-**Storage:** GPT + Software RAID1 + LVM
+**Storage:** GPT + Software RAID1 + LVM  
+**Validation:** Tested with simulated Disk2 replacement and single-disk boot failover.
