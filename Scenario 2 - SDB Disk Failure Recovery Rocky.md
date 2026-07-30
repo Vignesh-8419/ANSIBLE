@@ -346,7 +346,8 @@ Remove mismatch entries
 Example
 
 ```bash
-efibootmgr -b 000*,000*
+efibootmgr -b 0006 -B
+efibootmgr -b 0007 -B
 ```
 
 
