@@ -345,7 +345,7 @@ menuentry 'Install Rocky 8 via Kickstart' {
 
     linuxefi /rocky8/vmlinuz \
 inst.stage2=http://192.168.253.136/repo/rocky8/ \
-inst.ks=http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg \
+inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky8-kickstarts/rockyos.cfg \
 inst.text \
 inst.default_fstype=ext4 \
 inst.ks.device=bootif \
@@ -376,7 +376,7 @@ menuentry 'Install Rocky Linux 9.8 (UEFI)' {
     linuxefi /rocky9/vmlinuz \
     ip=dhcp \
     inst.repo=http://192.168.253.136/repo/rocky9/ \
-    inst.ks=http://192.168.253.136/repo/rocky9/kickstart/rockyos.cfg \
+    inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky9_8-kickstart/rocky9.cfg \
     inst.text \
     hostname=<%= @host.name %>
 
@@ -405,7 +405,7 @@ menuentry 'Install Rocky Linux 9.2 (UEFI)' {
         ip=dhcp \
         BOOTIF=01-${net_default_mac} \
         inst.repo=http://192.168.253.136/repo/rocky9.2/ \
-        inst.ks=http://192.168.253.136/repo/rocky9.2/kickstart/rocky92.cfg \
+        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky9-kickstart/rocky9.cfg\
         inst.text \
         inst.ks.device=bootif \
         hostname=<%= @host.name %>
@@ -612,7 +612,7 @@ menuentry 'Install CentOS 7 via Kickstart' {
 
     linuxefi /centos/vmlinuz \
 inst.stage2=http://192.168.253.136/repo/centos/ \
-inst.ks=http://192.168.253.136/repo/centos/kickstart/centos.cfg \
+inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/centos7-kickstart/centos7.cfg \
 inst.text \
 inst.default_fstype=ext4 \
 inst.ks.device=bootif \
