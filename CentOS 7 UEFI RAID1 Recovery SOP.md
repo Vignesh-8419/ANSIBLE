@@ -105,10 +105,13 @@ Determine which disk is still healthy.
 
 # Step 3 - Clone GPT Partition Table
 
+The backup/restore method is more reliable on CentOS 7 than `sgdisk -R`.
+
 ## If replacing Disk1 (sda)
 
 ```bash
-sgdisk -R=/dev/sda /dev/sdb
+sgdisk --backup=/tmp/gpt.bin /dev/sdb
+sgdisk --load-backup=/tmp/gpt.bin /dev/sda
 sgdisk -G /dev/sda
 partprobe /dev/sda
 udevadm settle
@@ -117,13 +120,21 @@ udevadm settle
 ## If replacing Disk2 (sdb)
 
 ```bash
-sgdisk -R=/dev/sdb /dev/sda
+sgdisk --backup=/tmp/gpt.bin /dev/sda
+sgdisk --load-backup=/tmp/gpt.bin /dev/sdb
 sgdisk -G /dev/sdb
 partprobe /dev/sdb
 udevadm settle
 ```
 
-Verify:
+Verify the partition table.
+
+```bash
+sgdisk -p /dev/sda
+sgdisk -p /dev/sdb
+```
+
+Verify Linux has detected the partitions.
 
 ```bash
 lsblk
@@ -142,8 +153,6 @@ sdb1
 sdb2
 sdb3
 ```
-
----
 
 # Step 4 - Add RAID Members
 
@@ -224,7 +233,7 @@ mount /dev/sdb1 /mnt/efi_new
 Synchronize the EFI contents.
 
 ```bash
-rsync -aHAX --delete /mnt/efi_old/ /mnt/efi_new/
+rsync -a --delete /mnt/efi_old/ /mnt/efi_new/
 
 sync
 ```
