@@ -431,6 +431,20 @@ mdadm --detail /dev/md0
 mdadm --detail /dev/md1
 ```
 
+```bash
+mkdir -p /root/scripts
+
+echo "Downloading enable-verbose-boot.sh..."
+curl --retry 5 --retry-delay 2 -fsSL \
+    -o /root/scripts/enable-verbose-boot.sh \
+    "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-boot.sh?$(date +%s)"
+
+chmod +x /root/scripts/enable-verbose-boot.sh
+
+echo "Executing enable-verbose-boot.sh..."
+/root/scripts/enable-verbose-boot.sh
+```
+
 Verify LVM:
 
 ```bash
