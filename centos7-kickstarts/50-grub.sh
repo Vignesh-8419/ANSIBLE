@@ -137,11 +137,32 @@ echo "Locating EFI System Partitions..."
 mkdir -p /boot/efi
 mkdir -p /mnt/efi-secondary
 
+EFI_MOUNTED_BY_SCRIPT=0
+
 PRIMARY_EFI=$(mount | awk '$3=="/boot/efi"{print $1}' | head -1)
 
 if [ -z "$PRIMARY_EFI" ]; then
 
-    PRIMARY_EFI=$(blkid -t TYPE=vfat -o device | head -1)
+    PRIMARY_EFI=""
+
+    for dev in $(blkid -t TYPE=vfat -o device)
+    do
+        mount "$dev" /boot/efi 2>/dev/null || continue
+    
+        if [ -f /boot/efi/EFI/centos/shimx64.efi ]
+        then
+            PRIMARY_EFI="$dev"
+            break
+        fi
+    
+        umount /boot/efi
+    
+    done
+    
+    [ -z "$PRIMARY_EFI" ] && {
+        echo "No valid EFI partition found."
+        exit 1
+    }
 
 fi
 
@@ -167,10 +188,14 @@ echo
 echo "Primary EFI   : $PRIMARY_EFI"
 echo "Secondary EFI : $SECONDARY_EFI"
 
-mount | grep -q " /boot/efi " || mount "$PRIMARY_EFI" /boot/efi
+if ! mountpoint -q /boot/efi; then
+    mount "$PRIMARY_EFI" /boot/efi
+    EFI_MOUNTED_BY_SCRIPT=1
+fi
 
-mount | grep -q " /mnt/efi-secondary " || \
+if ! mountpoint -q /mnt/efi-secondary; then
     mount "$SECONDARY_EFI" /mnt/efi-secondary
+fi
 
 echo
 echo "EFI partitions mounted successfully."
@@ -199,11 +224,12 @@ fi
 echo
 echo "Synchronizing EFI partitions..."
 
-mkdir -p /mnt/efi-secondary/EFI
-
-cp -a /boot/efi/EFI/. /mnt/efi-secondary/EFI/
+rsync -a --delete \
+    /boot/efi/ \
+    /mnt/efi-secondary/
 
 sync
+
 
 ###############################################################################
 # Create Fallback Bootloader
@@ -214,6 +240,7 @@ echo "Creating fallback EFI bootloader..."
 
 mkdir -p /boot/efi/EFI/BOOT
 mkdir -p /mnt/efi-secondary/EFI/BOOT
+
 
 cp -af \
     /boot/efi/EFI/centos/shimx64.efi \
@@ -232,7 +259,6 @@ cp -af \
     /mnt/efi-secondary/EFI/BOOT/grubx64.efi
 
 sync
-
 
 ###############################################################################
 # Save RAID Configuration
@@ -341,15 +367,11 @@ find /mnt/efi-secondary/EFI -maxdepth 3 -type f | sort || true
 echo
 echo "Verifying EFI synchronization..."
 
-PRIMARY_COUNT=$(find /boot/efi/EFI -type f 2>/dev/null | wc -l)
-SECONDARY_COUNT=$(find /mnt/efi-secondary/EFI -type f 2>/dev/null | wc -l)
-
-echo "Primary EFI Files   : $PRIMARY_COUNT"
-echo "Secondary EFI Files : $SECONDARY_COUNT"
-
-if [ "$PRIMARY_COUNT" -ne "$SECONDARY_COUNT" ]; then
-    echo
-    echo "WARNING: EFI partitions contain a different number of files."
+if diff -rq /boot/efi /mnt/efi-secondary >/dev/null
+then
+    echo "EFI synchronization verified."
+else
+    echo "WARNING: EFI partitions differ!"
 fi
 
 ###############################################################################
@@ -369,39 +391,19 @@ sync
 echo
 echo "Cleaning up..."
 
-# Remove /boot/efi2 from fstab
-if grep -qE '[[:space:]]/boot/efi2[[:space:]]' /etc/fstab; then
-    echo "Removing /boot/efi2 from /etc/fstab..."
-    cp -a /etc/fstab /etc/fstab.bak
-    sed -i '\|[[:space:]]/boot/efi2[[:space:]]|d' /etc/fstab
-fi
-
 # Unmount temporary mount point
 if mountpoint -q /mnt/efi-secondary; then
     umount /mnt/efi-secondary || true
 fi
 
-# Unmount permanent mount point if it is mounted
-if mountpoint -q /boot/efi2; then
-    umount /boot/efi2 || true
+# Unmount /boot/efi if we mounted it
+if [ "$EFI_MOUNTED_BY_SCRIPT" -eq 1 ]; then
+    umount /boot/efi || true
 fi
-
 rmdir /mnt/efi-secondary 2>/dev/null || true
 
 sync
 
-##############################################################################
-# Remove permanent EFI mount
-##############################################################################
-
-echo "Removing /boot/efi from /etc/fstab..."
-
-sed -i '\|[[:space:]]/boot/efi[[:space:]]|d' /etc/fstab
-
-systemctl daemon-reload || true
-
-echo "Current /etc/fstab:"
-cat /etc/fstab
 
 ###############################################################################
 # Final Summary
