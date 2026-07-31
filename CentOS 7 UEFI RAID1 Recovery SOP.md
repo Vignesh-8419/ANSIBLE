@@ -1,16 +1,25 @@
 # CentOS 7 UEFI RAID1 Recovery SOP
 ## Enterprise Golden Image Recovery Guide
-**Platform:** CentOS 7.9
-**Boot Mode:** UEFI
-**Partitioning:** GPT
-**RAID:** Software RAID1 (mdadm)
+
+**Platform:** CentOS 7.9  
+**Boot Mode:** UEFI  
+**Partition Table:** GPT  
+**RAID:** mdadm RAID1  
 **Volume Manager:** LVM
+
+> **IMPORTANT**
+>
+> - EFI System Partition (ESP) is **NOT RAID**.
+> - Both disks must contain their own FAT32 EFI partition.
+> - `/boot` and LVM are RAID1.
+> - Never run recovery commands while replacing the currently running system disk.
+> - Perform disk replacement only after shutdown or when booted from the surviving disk.
 
 ---
 
-# Scenario 1: Disk 1 (sda) Failure Recovery
+# Scenario 1 - Disk 1 (sda) Failed
 
-## Step 1 - Verify Failed Disk
+## Step 1 - Verify RAID
 
 ```bash
 lsblk
@@ -20,22 +29,22 @@ cat /proc/mdstat
 Expected:
 
 ```
-md0 : [_U]
-md1 : [_U]
+md0 : [U_]
+md1 : [U_]
 ```
 
 or
 
 ```
-md0 : [U_]
-md1 : [U_]
+md0 : [_U]
+md1 : [_U]
 ```
 
-depending on which disk failed.
+depending on which member failed.
 
 ---
 
-## Step 2 - Shutdown VM
+## Step 2 - Shutdown
 
 ```bash
 shutdown -h now
@@ -43,7 +52,7 @@ shutdown -h now
 
 Replace the failed **Disk 1 (sda)** with a new disk of equal or larger capacity.
 
-Power on the VM.
+Power on the system.
 
 ---
 
@@ -53,47 +62,47 @@ Power on the VM.
 lsblk
 ```
 
-Example:
+Example
 
 ```
 sda   100G
 sdb   100G
 ```
 
-New disk should have no partitions.
+The replacement disk should contain no partitions.
 
 ---
 
-## Step 4 - Replicate Partition Table
+## Step 4 - Clone GPT from Good Disk
+
+Good disk = **sdb**
+
+Destination = **sda**
 
 ```bash
 sgdisk --replicate=/dev/sda /dev/sdb
 ```
 
----
-
-## Step 5 - Generate New Disk GUID
+Assign a new GPT disk GUID.
 
 ```bash
 sgdisk -G /dev/sda
 ```
 
----
-
-## Step 6 - Reload Partition Table
+Reload the partition table.
 
 ```bash
 partprobe /dev/sda
 udevadm settle
 ```
 
-Verify:
+Verify.
 
 ```bash
 lsblk
 ```
 
-Expected:
+Expected
 
 ```
 sda1
@@ -103,16 +112,29 @@ sda3
 
 ---
 
-## Step 7 - Add RAID Members
+## Step 5 - Rebuild RAID
 
 ```bash
 mdadm --add /dev/md0 /dev/sda2
 mdadm --add /dev/md1 /dev/sda3
 ```
 
+Monitor rebuild.
+
+```bash
+watch cat /proc/mdstat
+```
+
+Wait until
+
+```
+md0 : [UU]
+md1 : [UU]
+```
+
 ---
 
-## Step 8 - Create EFI Filesystem
+## Step 6 - Create EFI Partition
 
 ```bash
 mkfs.vfat -F32 /dev/sda1
@@ -120,58 +142,101 @@ mkfs.vfat -F32 /dev/sda1
 
 ---
 
-## Step 9 - Copy EFI Bootloader
+## Step 7 - Copy EFI Files
 
-Create mount points:
+Create mount points.
 
 ```bash
 mkdir -p /mnt/efi-src
 mkdir -p /mnt/efi-dst
 ```
 
-Mount working EFI partition:
+Mount the working ESP.
 
 ```bash
 mount /dev/sdb1 /mnt/efi-src
 ```
 
-Mount new EFI partition:
+Mount the new ESP.
 
 ```bash
 mount /dev/sda1 /mnt/efi-dst
 ```
 
-Copy EFI files:
+Copy the EFI files.
 
 ```bash
 cp -a /mnt/efi-src/EFI /mnt/efi-dst/
 sync
 ```
 
-Verify:
+Verify.
 
 ```bash
 find /mnt/efi-dst/EFI -type f | sort
 ```
 
----
-
-## Step 10 - Monitor RAID Rebuild
+Unmount.
 
 ```bash
-watch cat /proc/mdstat
-```
-
-Wait until:
-
-```
-md0 : [UU]
-md1 : [UU]
+umount /mnt/efi-src
+umount /mnt/efi-dst
 ```
 
 ---
 
-## Step 11 - Save RAID Configuration
+## Step 8 - Install GRUB on New EFI Partition
+
+Mount the new ESP.
+
+```bash
+mount /dev/sda1 /boot/efi
+```
+
+Install GRUB.
+
+```bash
+grub2-install \
+    --target=x86_64-efi \
+    --efi-directory=/boot/efi \
+    --bootloader-id=CentOS \
+    --recheck
+```
+
+Generate configuration.
+
+```bash
+grub2-mkconfig -o /boot/grub2/grub.cfg
+```
+
+Unmount.
+
+```bash
+umount /boot/efi
+```
+
+---
+
+## Step 9 - Create UEFI Boot Entry
+
+```bash
+efibootmgr \
+    -c \
+    -d /dev/sda \
+    -p 1 \
+    -L "CentOS RAID1 Disk 1" \
+    -l '\EFI\centos\shimx64.efi'
+```
+
+Verify.
+
+```bash
+efibootmgr -v
+```
+
+---
+
+## Step 10 - Save RAID Configuration
 
 ```bash
 mdadm --detail --scan > /etc/mdadm.conf
@@ -179,51 +244,18 @@ mdadm --detail --scan > /etc/mdadm.conf
 
 ---
 
-## Step 12 - Verify
+# Scenario 2 - Disk 2 (sdb) Failed
 
-```bash
-lsblk
-cat /proc/mdstat
-efibootmgr -v
-```
-
-Expected:
-
-```
-md0 : [UU]
-md1 : [UU]
-```
-
-Both disks synchronized.
-
----
-
-# Scenario 2: Disk 2 (sdb) Failure Recovery
-
-## Step 1 - Verify Failed Disk
+## Step 1 - Verify RAID
 
 ```bash
 lsblk
 cat /proc/mdstat
 ```
 
-Expected:
-
-```
-md0 : [_U]
-md1 : [_U]
-```
-
-or
-
-```
-md0 : [U_]
-md1 : [U_]
-```
-
 ---
 
-## Step 2 - Shutdown VM
+## Step 2 - Shutdown
 
 ```bash
 shutdown -h now
@@ -231,7 +263,7 @@ shutdown -h now
 
 Replace failed **Disk 2 (sdb)**.
 
-Power on VM.
+Power on the system.
 
 ---
 
@@ -241,46 +273,40 @@ Power on VM.
 lsblk
 ```
 
-Expected:
-
-```
-sdb
-```
-
-without partitions.
+The new disk should contain no partitions.
 
 ---
 
-## Step 4 - Replicate Partition Table
+## Step 4 - Clone GPT
+
+Good disk = **sda**
+
+Destination = **sdb**
 
 ```bash
 sgdisk --replicate=/dev/sdb /dev/sda
 ```
 
----
-
-## Step 5 - Generate New Disk GUID
+Generate new GPT GUID.
 
 ```bash
 sgdisk -G /dev/sdb
 ```
 
----
-
-## Step 6 - Reload Partition Table
+Reload.
 
 ```bash
 partprobe /dev/sdb
 udevadm settle
 ```
 
-Verify:
+Verify.
 
 ```bash
 lsblk
 ```
 
-Expected:
+Expected
 
 ```
 sdb1
@@ -290,16 +316,29 @@ sdb3
 
 ---
 
-## Step 7 - Add RAID Members
+## Step 5 - Rebuild RAID
 
 ```bash
 mdadm --add /dev/md0 /dev/sdb2
 mdadm --add /dev/md1 /dev/sdb3
 ```
 
+Monitor.
+
+```bash
+watch cat /proc/mdstat
+```
+
+Wait until
+
+```
+md0 : [UU]
+md1 : [UU]
+```
+
 ---
 
-## Step 8 - Create EFI Filesystem
+## Step 6 - Create EFI Filesystem
 
 ```bash
 mkfs.vfat -F32 /dev/sdb1
@@ -307,58 +346,85 @@ mkfs.vfat -F32 /dev/sdb1
 
 ---
 
-## Step 9 - Copy EFI Bootloader
-
-Create mount points:
+## Step 7 - Copy EFI Files
 
 ```bash
 mkdir -p /mnt/efi-src
 mkdir -p /mnt/efi-dst
 ```
 
-Mount working EFI partition:
+Mount the working ESP.
 
 ```bash
 mount /dev/sda1 /mnt/efi-src
 ```
 
-Mount new EFI partition:
+Mount the new ESP.
 
 ```bash
 mount /dev/sdb1 /mnt/efi-dst
 ```
 
-Copy EFI:
+Copy.
 
 ```bash
 cp -a /mnt/efi-src/EFI /mnt/efi-dst/
 sync
 ```
 
-Verify:
+Verify.
 
 ```bash
 find /mnt/efi-dst/EFI -type f | sort
 ```
 
----
-
-## Step 10 - Monitor RAID Rebuild
+Unmount.
 
 ```bash
-watch cat /proc/mdstat
-```
-
-Wait until:
-
-```
-md0 : [UU]
-md1 : [UU]
+umount /mnt/efi-src
+umount /mnt/efi-dst
 ```
 
 ---
 
-## Step 11 - Save RAID Configuration
+## Step 8 - Install GRUB
+
+```bash
+mount /dev/sdb1 /boot/efi
+
+grub2-install \
+    --target=x86_64-efi \
+    --efi-directory=/boot/efi \
+    --bootloader-id=CentOS \
+    --recheck
+
+grub2-mkconfig -o /boot/grub2/grub.cfg
+
+umount /boot/efi
+```
+
+---
+
+## Step 9 - Create UEFI Boot Entry
+
+```bash
+efibootmgr \
+    -c \
+    -d /dev/sdb \
+    -p 1 \
+    -L "CentOS RAID1 Disk 2" \
+    -l '\EFI\centos\shimx64.efi'
+```
+
+Verify.
+
+```bash
+efibootmgr -v
+```
+
+---
+
+## Step 10 - Save RAID Configuration
 
 ```bash
 mdadm --detail --scan > /etc/mdadm.conf
@@ -366,15 +432,15 @@ mdadm --detail --scan > /etc/mdadm.conf
 
 ---
 
-## Step 12 - Verify
+# Post Recovery Validation
+
+## RAID
 
 ```bash
-lsblk
 cat /proc/mdstat
-efibootmgr -v
 ```
 
-Expected:
+Expected
 
 ```
 md0 : [UU]
@@ -383,28 +449,15 @@ md1 : [UU]
 
 ---
 
-# Post-Recovery Validation
-
-Verify RAID:
-
-```bash
-cat /proc/mdstat
-```
-
-Expected:
-
-```
-md0 : [UU]
-md1 : [UU]
-```
-
-Verify disks:
+## Block Devices
 
 ```bash
 lsblk
 ```
 
-Verify EFI contents:
+---
+
+## EFI Partitions
 
 ```bash
 mkdir -p /mnt/test
@@ -418,34 +471,44 @@ find /mnt/test/EFI -type f | sort
 umount /mnt/test
 ```
 
-Verify boot entries:
+---
+
+## UEFI Entries
 
 ```bash
 efibootmgr -v
 ```
 
-Verify mdadm:
+Verify that both disks have boot entries.
+
+---
+
+## RAID Detail
 
 ```bash
 mdadm --detail /dev/md0
 mdadm --detail /dev/md1
 ```
 
+---
+
+## Enable Verbose Boot
+
 ```bash
 mkdir -p /root/scripts
 
-echo "Downloading enable-verbose-boot.sh..."
 curl --retry 5 --retry-delay 2 -fsSL \
-    -o /root/scripts/enable-verbose-boot.sh \
-    "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-boot.sh?$(date +%s)"
+-o /root/scripts/enable-verbose-boot.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-boot.sh?$(date +%s)"
 
 chmod +x /root/scripts/enable-verbose-boot.sh
 
-echo "Executing enable-verbose-boot.sh..."
 /root/scripts/enable-verbose-boot.sh
 ```
 
-Verify LVM:
+---
+
+## LVM
 
 ```bash
 pvs
@@ -453,7 +516,9 @@ vgs
 lvs
 ```
 
-Verify Filesystems:
+---
+
+## Filesystems
 
 ```bash
 df -h
@@ -461,14 +526,16 @@ df -h
 
 ---
 
-# Recovery Completed Successfully
+# Recovery Completed
 
-Successful recovery is confirmed when:
+Recovery is successful when:
 
-- ✅ Both RAID arrays show `[UU]`
-- ✅ Both EFI partitions contain identical bootloader files
-- ✅ Both disks have GPT partition tables
-- ✅ LVM volumes are active
+- ✅ GPT exists on both disks
+- ✅ Both EFI partitions are FAT32
+- ✅ Both EFI partitions contain bootloader files
+- ✅ GRUB is installed on both EFI partitions
+- ✅ UEFI boot entries exist for both disks
+- ✅ md0 shows `[UU]`
+- ✅ md1 shows `[UU]`
+- ✅ LVM is healthy
 - ✅ System boots successfully with either disk removed
-- ✅ `efibootmgr -v` shows valid UEFI boot entries
-- ✅ `/boot`, `/`, `/home`, `/var`, and `swap` are functioning normally
