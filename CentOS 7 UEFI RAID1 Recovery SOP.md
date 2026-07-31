@@ -482,12 +482,12 @@ df -h
 mkdir -p /root/scripts
 
 curl --retry 5 --retry-delay 2 -fsSL \
--o /root/scripts/enable-verbose-boot.sh \
-"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-boot.sh?$(date +%s)"
+-o /root/scripts/enable-verbose-postboot.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-postboot.sh?$(date +%s)"
 
-chmod +x /root/scripts/enable-verbose-boot.sh
+chmod +x /root/scripts/enable-verbose-postboot.sh
 
-/root/scripts/enable-verbose-boot.sh
+/root/scripts/enable-verbose-postboot.sh
 ```
 
 ---
