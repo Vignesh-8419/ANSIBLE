@@ -251,15 +251,19 @@ echo
 echo "Configuring verbose boot..."
 
 # Backup GRUB defaults
-cp -an /etc/default/grub /etc/default/grub.bak
+if [ -f /etc/default/grub ]; then
+    cp -an /etc/default/grub /etc/default/grub.bak
+fi
 
 # Remove graphical boot arguments
-sed -i \
-    -e 's/\<rhgb\>//g' \
-    -e 's/\<quiet\>//g' \
-    -e 's/  */ /g' \
-    -e 's/" "/"/g' \
-    /etc/default/grub
+if [ -f /etc/default/grub ]; then
+    sed -i \
+        -e 's/\<rhgb\>//g' \
+        -e 's/\<quiet\>//g' \
+        -e 's/  */ /g' \
+        -e 's/" "/"/g' \
+        /etc/default/grub
+fi
 
 # Ensure GRUB timeout is visible
 if grep -q '^GRUB_TIMEOUT=' /etc/default/grub; then
@@ -270,7 +274,8 @@ fi
 
 # Regenerate GRUB configuration
 if [ -d /sys/firmware/efi ]; then
-    grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
+    mountpoint -q /boot/efi || mount "$PRIMARY_EFI" /boot/efi
+	grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
 else
     grub2-mkconfig -o /boot/grub2/grub.cfg
 fi
@@ -285,7 +290,16 @@ grubby --update-kernel=ALL --remove-args="rhgb quiet" || true
 echo
 echo "Rebuilding initramfs..."
 
-dracut -f "/boot/initramfs-$(uname -r).img" "$(uname -r)"
+if [ -d /lib/modules ]; then
+    KERNEL=$(ls /lib/modules | sort -V | tail -1)
+
+    if [ -f "/lib/modules/${KERNEL}/modules.dep" ]; then
+        dracut -f "/boot/initramfs-${KERNEL}.img" "${KERNEL}" || \
+            echo "WARNING: dracut failed."
+    else
+        echo "Skipping dracut (modules.dep not yet available)."
+    fi
+fi
 
 ###############################################################################
 # Verification
@@ -327,8 +341,8 @@ find /mnt/efi-secondary/EFI -maxdepth 3 -type f | sort || true
 echo
 echo "Verifying EFI synchronization..."
 
-PRIMARY_COUNT=$(find /boot/efi/EFI -type f | wc -l)
-SECONDARY_COUNT=$(find /mnt/efi-secondary/EFI -type f | wc -l)
+PRIMARY_COUNT=$(find /boot/efi/EFI -type f 2>/dev/null | wc -l)
+SECONDARY_COUNT=$(find /mnt/efi-secondary/EFI -type f 2>/dev/null | wc -l)
 
 echo "Primary EFI Files   : $PRIMARY_COUNT"
 echo "Secondary EFI Files : $SECONDARY_COUNT"
@@ -375,6 +389,19 @@ fi
 rmdir /mnt/efi-secondary 2>/dev/null || true
 
 sync
+
+##############################################################################
+# Remove permanent EFI mount
+##############################################################################
+
+echo "Removing /boot/efi from /etc/fstab..."
+
+sed -i '\|[[:space:]]/boot/efi[[:space:]]|d' /etc/fstab
+
+systemctl daemon-reload || true
+
+echo "Current /etc/fstab:"
+cat /etc/fstab
 
 ###############################################################################
 # Final Summary
