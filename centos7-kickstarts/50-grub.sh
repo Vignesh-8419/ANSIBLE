@@ -298,12 +298,60 @@ else
     echo 'GRUB_TIMEOUT=5' >> /etc/default/grub
 fi
 
-# Regenerate GRUB configuration
+###############################################################################
+# Regenerate GRUB Configuration
+###############################################################################
+
+echo
+echo "Regenerating GRUB configuration..."
+
 if [ -d /sys/firmware/efi ]; then
+
     mountpoint -q /boot/efi || mount "$PRIMARY_EFI" /boot/efi
-	grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
+
+    EFI_DIR=""
+
+    for d in /boot/efi/EFI/*; do
+        [ -d "$d" ] || continue
+
+        case "$(basename "$d")" in
+            BOOT)
+                continue
+                ;;
+        esac
+
+        if [ -f "$d/shimx64.efi" ] || [ -f "$d/grubx64.efi" ]; then
+            EFI_DIR="$d"
+            break
+        fi
+    done
+
+    if [ -z "$EFI_DIR" ]; then
+        echo "ERROR: Unable to locate EFI bootloader directory."
+        exit 1
+    fi
+
+    echo
+    echo "Using EFI directory:"
+    echo "$EFI_DIR"
+
+    grub2-mkconfig -o "$EFI_DIR/grub.cfg"
+
+    ###########################################################################
+    # Restore Standard GRUB Symlinks
+    ###########################################################################
+
+    mkdir -p /boot/grub2
+
+    ln -snf "$EFI_DIR/grub.cfg" /boot/grub2/grub.cfg
+    ln -snf "$EFI_DIR/grub.cfg" /etc/grub2-efi.cfg
+
 else
+
     grub2-mkconfig -o /boot/grub2/grub.cfg
+
+    ln -snf /boot/grub2/grub.cfg /etc/grub2.cfg
+
 fi
 
 # Update all installed kernels
