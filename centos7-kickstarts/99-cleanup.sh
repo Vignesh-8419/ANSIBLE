@@ -24,12 +24,6 @@ echo "Saving mdadm configuration..."
 mkdir -p /etc/mdadm
 mdadm --detail --scan >/etc/mdadm.conf
 
-################################################################################
-# Rebuild initramfs
-################################################################################
-echo
-echo "Rebuilding initramfs..."
-dracut -f --regenerate-all
 
 ################################################################################
 # Make EFI Mount Non-Fatal
@@ -52,7 +46,7 @@ fi
 
 echo
 echo "Updated EFI entry:"
-grep '/boot/efi' /etc/fstab
+grep '/boot/efi' /etc/fstab || echo "No /boot/efi entry present (expected)."
 
 ################################################################################
 # Rebuild GRUB Configuration (CentOS Path Shift Fixed)
