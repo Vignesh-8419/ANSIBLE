@@ -45,31 +45,43 @@ echo -e "${BLUE}# Pre-flight check${NC}"
 if [ "$(stat -fc %T /sys/fs/cgroup)" != "cgroup2fs" ]; then
 
     echo -e "${YELLOW}⚠ cgroup v2 is not enabled.${NC}"
-    echo "Updating kernel arguments..."
+    echo "Configuring kernel arguments..."
 
-    REQUIRED_ARGS=(
-        "systemd.unified_cgroup_hierarchy=1"
-        "systemd.legacy_systemd_cgroup_controller=false"
-    )
+    # Ensure grubenv exists
+    mkdir -p /boot/grub2
 
-    # Remove any existing copies to avoid duplicates
+    if [ ! -f /boot/grub2/grubenv ]; then
+        echo "Creating grub environment..."
+        grub2-editenv /boot/grub2/grubenv create || true
+    fi
+
+    # Remove old args (ignore if absent)
     grubby --update-kernel=ALL \
-        --remove-args="${REQUIRED_ARGS[*]}" >/dev/null 2>&1 || true
+      --remove-args="systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false" || true
 
-    # Add required kernel arguments
+    # Add required args
     grubby --update-kernel=ALL \
-        --args="${REQUIRED_ARGS[*]}"
+      --args="systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false"
 
     echo
-    echo -e "${GREEN}✓ Kernel arguments updated successfully.${NC}"
-    echo -e "${YELLOW}A reboot is required to enable cgroup v2.${NC}"
-    echo "Please reboot the server and rerun this script."
+    echo "Verifying kernel entries..."
 
+    if ! grep -q "systemd.unified_cgroup_hierarchy=1" /boot/loader/entries/*.conf; then
+        echo
+        echo -e "${RED}ERROR:${NC} Failed to update BLS boot entries."
+        echo "Kernel arguments were not written."
+        exit 1
+    fi
+
+    echo
+    echo -e "${GREEN}✓ Kernel entries updated successfully.${NC}"
+    echo -e "${YELLOW}Reboot required.${NC}"
+    echo
+    echo "After reboot, rerun this installer."
     exit 0
 fi
 
-echo -e "${GREEN}✓ cgroup v2 is already active.${NC}"
-echo -e "${GREEN}✅ Background:${NC} Verified host is running cgroup v2, required for K3s."
+echo -e "${GREEN}✓ cgroup v2 already enabled.${NC}"
 
 # -----------------------------
 # 2. Install prerequisites
