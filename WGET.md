@@ -1,5 +1,5 @@
 ```text
-systemctl restart NetworkManager && nmcli device connect ens33 && sleep 5 && curl -L -o /root/Server_Setup.sh "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Server_Setup.sh?$(date +%s)" && chmod +x /root/Server_Setup.sh
+IFACE=$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1; exit}') && systemctl restart NetworkManager && nmcli device connect "$IFACE" && sleep 5 && curl -L -o /root/Server_Setup.sh "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Server_Setup.sh?$(date +%s)" && chmod +x /root/Server_Setup.sh
 ```
 
 ```text
