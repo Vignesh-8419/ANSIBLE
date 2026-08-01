@@ -270,28 +270,39 @@ echo "Saving mdadm configuration..."
 mdadm --detail --scan > /etc/mdadm.conf
 
 ###############################################################################
-# Configure Verbose Boot
+# Configure GRUB Defaults
 ###############################################################################
 
 echo
-echo "Configuring verbose boot..."
+echo "Configuring GRUB defaults..."
 
 # Backup GRUB defaults
-if [ -f /etc/default/grub ]; then
-    cp -an /etc/default/grub /etc/default/grub.bak
-fi
+[ -f /etc/default/grub ] && \
+cp -an /etc/default/grub /etc/default/grub.bak
 
 # Remove graphical boot arguments
-if [ -f /etc/default/grub ]; then
-    sed -i \
-        -e 's/\<rhgb\>//g' \
-        -e 's/\<quiet\>//g' \
-        -e 's/  */ /g' \
-        -e 's/" "/"/g' \
-        /etc/default/grub
+sed -i \
+    -e 's/\<rhgb\>//g' \
+    -e 's/\<quiet\>//g' \
+    -e 's/  */ /g' \
+    -e 's/" "/"/g' \
+    /etc/default/grub
+
+# Always boot the first (latest) kernel
+if grep -q '^GRUB_DEFAULT=' /etc/default/grub; then
+    sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT=0/' /etc/default/grub
+else
+    echo 'GRUB_DEFAULT=0' >> /etc/default/grub
 fi
 
-# Ensure GRUB timeout is visible
+# Disable saved boot entries
+if grep -q '^GRUB_SAVEDEFAULT=' /etc/default/grub; then
+    sed -i 's/^GRUB_SAVEDEFAULT=.*/GRUB_SAVEDEFAULT=false/' /etc/default/grub
+else
+    echo 'GRUB_SAVEDEFAULT=false' >> /etc/default/grub
+fi
+
+# Timeout
 if grep -q '^GRUB_TIMEOUT=' /etc/default/grub; then
     sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=5/' /etc/default/grub
 else
@@ -356,6 +367,19 @@ fi
 
 # Update all installed kernels
 grubby --update-kernel=ALL --remove-args="rhgb quiet" || true
+
+# Make newest kernel the default
+NEW_KERNEL=$(ls /boot/vmlinuz-* | grep -v rescue | sort -V | tail -1)
+
+echo
+echo "Setting default kernel:"
+echo "$NEW_KERNEL"
+
+grubby --set-default "$NEW_KERNEL"
+
+echo
+echo "Current default kernel:"
+grubby --default-kernel
 
 ###############################################################################
 # Rebuild initramfs
