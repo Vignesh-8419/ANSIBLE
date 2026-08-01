@@ -283,25 +283,28 @@ lsblk
 ###############################################################################
 # Cleanup Mounts Safely
 ###############################################################################
+echo "Cleaning up EFI mounts..."
+
 sync
+
 mountpoint -q /boot/efi2 && umount /boot/efi2 || true
+mountpoint -q /boot/efi  && umount /boot/efi  || true
+
 rmdir /boot/efi2 2>/dev/null || true
 
 ###############################################################################
-# Update /etc/fstab (Manual Mount Policy Configuration Enforced)
+# Remove permanent EFI mount from /etc/fstab
 ###############################################################################
-##############################################################################
-# Remove permanent EFI mount
-##############################################################################
-
-echo "Removing /boot/efi from /etc/fstab..."
+echo "Removing /boot/efi entry from /etc/fstab..."
 
 sed -i '\|[[:space:]]/boot/efi[[:space:]]|d' /etc/fstab
 
 systemctl daemon-reload || true
 
-echo "Current /etc/fstab:"
+echo
+echo "===== Current /etc/fstab ====="
 cat /etc/fstab
+echo "=============================="
 echo "============================================================"
 echo "GRUB installation completed successfully."
 echo "============================================================"
