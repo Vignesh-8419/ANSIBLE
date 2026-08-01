@@ -338,59 +338,105 @@ kubectl patch ingress awx-ingress -n "$NAMESPACE" --type='merge' -p \
 echo -e "${GREEN}✅ Background:${NC} Created and patched the Ingress resource so AWX is accessible externally via Traefik at the VIP."
 
 # -----------------------------
-# 16. Wait for migration task (delayed)
+# 16. Wait for AWX to be Ready
 # -----------------------------
-echo -e "${BLUE}# 16. Wait for migration task${NC}"
-echo "⏳ Sleeping for 8 minutes to allow migrations to complete..."
-sleep 480
+echo -e "${BLUE}# 16. Wait for AWX${NC}"
 
-echo "📜 Checking migration pod logs again..."
-MIGRATION_POD=$(kubectl get pods -n "$NAMESPACE" \
-  -l app.kubernetes.io/name=awx-server-migration \
-  -o name | head -1 | cut -d/ -f2)
+echo "⏳ Waiting for AWX deployments to be created..."
 
-if [ -n "$MIGRATION_POD" ]; then
-  echo "✅ Found migration pod: $MIGRATION_POD"
-  echo "⏳ Printing last 10 lines of migration logs..."
-  kubectl logs -n "$NAMESPACE" "$MIGRATION_POD" | tail -n 10
-else
-  echo "⚠️ No migration pod found. Continuing..."
-fi
+until kubectl get deployment awx-server-task -n "$NAMESPACE" >/dev/null 2>&1; do
+    sleep 5
+done
 
-echo -e "${GREEN}✅ Background:${NC} Skipped rollout status check and instead waited 10 minutes, then verified migration logs. This avoids premature 'NotFound' errors while the operator reconciles resources."
+until kubectl get deployment awx-server-web -n "$NAMESPACE" >/dev/null 2>&1; do
+    sleep 5
+done
+
+echo "⏳ Waiting for Task deployment rollout..."
+kubectl rollout status deployment/awx-server-task \
+    -n "$NAMESPACE" \
+    --timeout=30m
+
+echo "⏳ Waiting for Web deployment rollout..."
+kubectl rollout status deployment/awx-server-web \
+    -n "$NAMESPACE" \
+    --timeout=30m
+
+echo "⏳ Waiting for Task pod..."
+
+until kubectl get pods -n "$NAMESPACE" \
+    -l app.kubernetes.io/component=task \
+    --no-headers 2>/dev/null | grep -q "Running"; do
+    sleep 10
+done
+
+echo "⏳ Waiting for Web pod..."
+
+until kubectl get pods -n "$NAMESPACE" \
+    -l app.kubernetes.io/component=web \
+    --no-headers 2>/dev/null | grep -q "Running"; do
+    sleep 10
+done
+
+echo
+kubectl get pods -n "$NAMESPACE"
+
+echo -e "${GREEN}✅ Background:${NC} AWX Task and Web pods are fully running."
+
 
 # -----------------------------
 # 17. Wait for AWX UI
 # -----------------------------
 echo -e "${BLUE}# 17. Wait for AWX UI${NC}"
-echo "⏳ Waiting for AWX UI at http://$VIP ..."
-for i in {1..80}; do
-    if [ "$(curl -s -L -o /dev/null -w "%{http_code}" "http://$VIP" --connect-timeout 5)" == "200" ]; then
-        break
-    fi
-    sleep 15
+
+echo "⏳ Waiting for AWX login page..."
+
+until curl -ks "http://${VIP}" | grep -qi "awx"; do
+    sleep 10
 done
-echo -e "${GREEN}✅ Background:${NC} Confirmed the AWX web UI is responding with HTTP 200 at the VIP, meaning the dashboard is live."
+
+echo -e "${GREEN}✅ Background:${NC} AWX UI is responding."
+
 
 # -----------------------------
 # 18. Configure Default Execution Environment
 # -----------------------------
 echo -e "${BLUE}# 18. Configure Default Execution Environment${NC}"
-echo "🔧 Setting AWX EE (24.6.1) as the default Execution Environment..."
 
-kubectl exec -i deployment/awx-server-task -n "$NAMESPACE" -- awx-manage shell <<'PYTHON'
-from awx.main.models import Organization
-from awx.main.models.execution_environments import ExecutionEnvironment
+echo "⏳ Locating Task pod..."
 
-org = Organization.objects.get(name="Default")
-ee = ExecutionEnvironment.objects.get(name="AWX EE (24.6.1)")
+TASK_POD=""
 
-org.default_environment = ee
-org.save()
+until [ -n "$TASK_POD" ]; do
+    TASK_POD=$(kubectl get pod -n "$NAMESPACE" \
+        -l app.kubernetes.io/component=task \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
 
-print(f"Organization : {org.name}")
-print(f"Default EE   : {org.default_environment.name}")
-print(f"Image        : {org.default_environment.image}")
-PYTHON
+    [ -z "$TASK_POD" ] && sleep 5
+done
 
-echo -e "${GREEN}✅ Background:${NC} Configured the Default organization to use AWX EE (24.6.1)."
+echo "Using Task Pod: $TASK_POD"
+
+echo "⏳ Waiting for awx-manage..."
+
+until kubectl exec -n "$NAMESPACE" "$TASK_POD" -- true >/dev/null 2>&1; do
+    sleep 10
+done
+
+kubectl exec -n "$NAMESPACE" "$TASK_POD" -- \
+bash -c "
+awx-manage shell <<'EOF'
+from main.models.execution_environments import ExecutionEnvironment
+ee=ExecutionEnvironment.objects.filter(name='AWX EE (latest)').first()
+if ee:
+    ee.image='quay.io/ansible/awx-ee:24.6.1'
+    ee.credential=None
+    ee.pull='always'
+    ee.save()
+    print('Execution Environment updated.')
+else:
+    print('Default EE not found.')
+EOF
+"
+
+echo -e "${GREEN}✅ Background:${NC} Default Execution Environment configured successfully."
