@@ -42,52 +42,67 @@ echo -e "${GREEN}✅ Background:${NC} Defined variables for namespace, operator 
 # ------------------------------------------------------------
 echo -e "${BLUE}# Pre-flight check${NC}"
 
-if [ "$(stat -fc %T /sys/fs/cgroup)" != "cgroup2fs" ]; then
-
+# Already running cgroup v2?
+if [ "$(stat -fc %T /sys/fs/cgroup)" = "cgroup2fs" ]; then
+    echo -e "${GREEN}✓ cgroup v2 is already active.${NC}"
+else
     echo -e "${YELLOW}⚠ cgroup v2 is not enabled.${NC}"
-    echo "Updating kernel arguments..."
 
     EFI_MOUNTED=0
 
-    if [ -d /sys/firmware/efi ]; then
+    # Mount EFI only if it is not already mounted
+    if ! mountpoint -q /boot/efi; then
+        echo "Mounting EFI partition..."
 
         mkdir -p /boot/efi
 
-        if ! mountpoint -q /boot/efi; then
+        for dev in $(blkid -t TYPE=vfat -o device); do
+            if mount "$dev" /boot/efi 2>/dev/null; then
+                if [ -d /boot/efi/EFI/rocky ]; then
+                    EFI_MOUNTED=1
+                    echo "EFI mounted from $dev"
+                    break
+                fi
 
-            EFI_DEV=$(lsblk -nrpo NAME,FSTYPE,LABEL | \
-                      awk '$2=="vfat" && $3=="EFI-SYSTEM"{print $1; exit}')
-
-            if [ -z "$EFI_DEV" ]; then
-                echo "ERROR: EFI System Partition not found."
-                exit 1
+                umount /boot/efi
             fi
-
-            echo "Mounting EFI partition: $EFI_DEV"
-            mount "$EFI_DEV" /boot/efi
-            EFI_MOUNTED=1
-        fi
+        done
+    else
+        EFI_MOUNTED=2
     fi
 
-    grubby --update-kernel=ALL \
-      --remove-args="systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false" || true
+    if [ ! -d /boot/efi/EFI/rocky ]; then
+        echo
+        echo "ERROR: Unable to locate /boot/efi/EFI/rocky"
+        exit 1
+    fi
+
+    echo "Updating kernel arguments..."
 
     grubby --update-kernel=ALL \
       --args="systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false"
 
-    if [ "$EFI_MOUNTED" -eq 1 ]; then
-        sync
+    echo "Rebuilding grub.cfg..."
+
+    grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
+
+    sync
+
+    # Unmount only if we mounted it
+    if [ "$EFI_MOUNTED" = "1" ]; then
+        echo "Unmounting EFI partition..."
         umount /boot/efi
     fi
 
     echo
-    echo -e "${GREEN}Kernel arguments updated successfully.${NC}"
-    echo
-    echo "Reboot the server and rerun this installer."
+    echo "=================================================="
+    echo "cgroup v2 has been enabled."
+    echo "Please reboot the server."
+    echo "After reboot rerun this installer."
+    echo "=================================================="
     exit 0
 fi
 
-echo -e "${GREEN}✓ cgroup v2 is already active.${NC}"
 echo -e "${GREEN}✅ Background:${NC} Verified host is running cgroup v2."
 
 # -----------------------------
