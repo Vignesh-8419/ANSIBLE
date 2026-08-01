@@ -43,45 +43,19 @@ echo -e "${GREEN}✅ Background:${NC} Defined variables for namespace, operator 
 echo -e "${BLUE}# Pre-flight check${NC}"
 
 if [ "$(stat -fc %T /sys/fs/cgroup)" != "cgroup2fs" ]; then
-
-    echo -e "${YELLOW}⚠ cgroup v2 is not enabled.${NC}"
-    echo "Configuring kernel arguments..."
-
-    # Ensure grubenv exists
-    mkdir -p /boot/grub2
-
-    if [ ! -f /boot/grub2/grubenv ]; then
-        echo "Creating grub environment..."
-        grub2-editenv /boot/grub2/grubenv create || true
-    fi
-
-    # Remove old args (ignore if absent)
-    grubby --update-kernel=ALL \
-      --remove-args="systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false" || true
-
-    # Add required args
-    grubby --update-kernel=ALL \
-      --args="systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false"
-
     echo
-    echo "Verifying kernel entries..."
-
-    if ! grep -q "systemd.unified_cgroup_hierarchy=1" /boot/loader/entries/*.conf; then
-        echo
-        echo -e "${RED}ERROR:${NC} Failed to update BLS boot entries."
-        echo "Kernel arguments were not written."
-        exit 1
-    fi
-
+    echo -e "${RED}ERROR:${NC} cgroup v2 is not enabled."
     echo
-    echo -e "${GREEN}✓ Kernel entries updated successfully.${NC}"
-    echo -e "${YELLOW}Reboot required.${NC}"
+    echo "This installer requires cgroup v2."
     echo
-    echo "After reboot, rerun this installer."
-    exit 0
+    echo "Enable cgroup v2 using your standard OS bootloader procedure,"
+    echo "reboot the server, and then rerun this installer."
+    echo
+    exit 1
 fi
 
-echo -e "${GREEN}✓ cgroup v2 already enabled.${NC}"
+echo -e "${GREEN}✓ cgroup v2 is already active.${NC}"
+echo -e "${GREEN}✅ Background:${NC} Verified host is running cgroup v2, required for K3s."
 
 # -----------------------------
 # 2. Install prerequisites
