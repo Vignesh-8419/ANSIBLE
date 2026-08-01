@@ -25,8 +25,8 @@ timedatectl set-timezone Asia/Kolkata || true
 ###############################################################################
 # Hostname Configuration
 ###############################################################################
-echo "Setting generic deployment hostname..."
-hostnamectl set-hostname localhost.localdomain || true
+#echo "Setting generic deployment hostname..."
+#hostnamectl set-hostname localhost.localdomain || true
 
 ###############################################################################
 # Enable Core System Services
@@ -159,29 +159,27 @@ sync
 ###############################################################################
 cat >/usr/local/sbin/mount-efi <<'EOF'
 #!/bin/bash
-set -euo pipefail
+if [ "$(stat -fc %T /sys/fs/cgroup)" != "cgroup2fs" ]; then
 
-mkdir -p /boot/efi
+    echo "cgroup v2 is not enabled."
+    echo "Mounting EFI partition..."
 
-# Already mounted
-mountpoint -q /boot/efi && exit 0
+    /usr/local/sbin/mount-efi
 
-while read -r dev
-do
-    if mount "$dev" /boot/efi 2>/dev/null; then
+    grubby --update-kernel=ALL \
+      --remove-args="systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false" || true
 
-        if [ -f /boot/efi/EFI/rocky/shimx64.efi ] || \
-           [ -f /boot/efi/EFI/BOOT/BOOTX64.EFI ]; then
-            echo "Mounted EFI partition: $dev"
-            exit 0
-        fi
+    grubby --update-kernel=ALL \
+      --args="systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false"
 
-        umount /boot/efi
-    fi
-done < <(blkid -t TYPE=vfat -o device)
+    sync
+    umount /boot/efi
 
-echo "No valid EFI partition found."
-exit 1
+    echo
+    echo "Kernel updated."
+    echo "Please reboot and rerun this installer."
+    exit 0
+fi
 EOF
 
 chmod 755 /usr/local/sbin/mount-efi
