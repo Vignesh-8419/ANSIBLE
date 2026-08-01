@@ -45,45 +45,31 @@ echo -e "${BLUE}# Pre-flight check${NC}"
 if [ "$(stat -fc %T /sys/fs/cgroup)" != "cgroup2fs" ]; then
 
     echo -e "${YELLOW}⚠ cgroup v2 is not enabled.${NC}"
-    echo "Updating GRUB configuration..."
-
-    GRUB_FILE="/etc/default/grub"
+    echo "Updating kernel arguments..."
 
     REQUIRED_ARGS=(
         "systemd.unified_cgroup_hierarchy=1"
         "systemd.legacy_systemd_cgroup_controller=false"
     )
 
-    for arg in "${REQUIRED_ARGS[@]}"; do
-        if ! grep -q "$arg" "$GRUB_FILE"; then
-            sed -i "s/^GRUB_CMDLINE_LINUX=\"\(.*\)\"/GRUB_CMDLINE_LINUX=\"\1 $arg\"/" "$GRUB_FILE"
-            echo "  Added: $arg"
-        else
-            echo "  Already present: $arg"
-        fi
-    done
+    # Remove any existing copies to avoid duplicates
+    grubby --update-kernel=ALL \
+        --remove-args="${REQUIRED_ARGS[*]}" >/dev/null 2>&1 || true
 
-    if [ -d /sys/firmware/efi ]; then
-        echo "UEFI system detected."
-        grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
-    else
-        echo "BIOS system detected."
-        grub2-mkconfig -o /boot/grub2/grub.cfg
-    fi
+    # Add required kernel arguments
+    grubby --update-kernel=ALL \
+        --args="${REQUIRED_ARGS[*]}"
 
     echo
-    echo -e "${GREEN}GRUB updated successfully.${NC}"
-    echo -e "${RED}A reboot is required before continuing.${NC}"
+    echo -e "${GREEN}✓ Kernel arguments updated successfully.${NC}"
+    echo -e "${YELLOW}A reboot is required to enable cgroup v2.${NC}"
     echo "Please reboot the server and rerun this script."
+
     exit 0
 fi
 
 echo -e "${GREEN}✓ cgroup v2 is already active.${NC}"
 echo -e "${GREEN}✅ Background:${NC} Verified host is running cgroup v2, required for K3s."
-
-echo 'export PATH=$PATH:/usr/local/bin' > /etc/profile.d/localbin.sh
-chmod +x /etc/profile.d/localbin.sh
-source /etc/profile.d/localbin.sh
 
 # -----------------------------
 # 2. Install prerequisites
