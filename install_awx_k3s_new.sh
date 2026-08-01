@@ -43,19 +43,52 @@ echo -e "${GREEN}✅ Background:${NC} Defined variables for namespace, operator 
 echo -e "${BLUE}# Pre-flight check${NC}"
 
 if [ "$(stat -fc %T /sys/fs/cgroup)" != "cgroup2fs" ]; then
+
+    echo -e "${YELLOW}⚠ cgroup v2 is not enabled.${NC}"
+    echo "Updating kernel arguments..."
+
+    EFI_MOUNTED=0
+
+    if [ -d /sys/firmware/efi ]; then
+
+        mkdir -p /boot/efi
+
+        if ! mountpoint -q /boot/efi; then
+
+            EFI_DEV=$(lsblk -nrpo NAME,FSTYPE,LABEL | \
+                      awk '$2=="vfat" && $3=="EFI-SYSTEM"{print $1; exit}')
+
+            if [ -z "$EFI_DEV" ]; then
+                echo "ERROR: EFI System Partition not found."
+                exit 1
+            fi
+
+            echo "Mounting EFI partition: $EFI_DEV"
+            mount "$EFI_DEV" /boot/efi
+            EFI_MOUNTED=1
+        fi
+    fi
+
+    grubby --update-kernel=ALL \
+      --remove-args="systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false" || true
+
+    grubby --update-kernel=ALL \
+      --args="systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false"
+
+    if [ "$EFI_MOUNTED" -eq 1 ]; then
+        sync
+        umount /boot/efi
+    fi
+
     echo
-    echo -e "${RED}ERROR:${NC} cgroup v2 is not enabled."
+    echo -e "${GREEN}Kernel arguments updated successfully.${NC}"
     echo
-    echo "This installer requires cgroup v2."
-    echo
-    echo "Enable cgroup v2 using your standard OS bootloader procedure,"
-    echo "reboot the server, and then rerun this installer."
-    echo
-    exit 1
+    echo "Reboot the server and rerun this installer."
+    exit 0
 fi
 
 echo -e "${GREEN}✓ cgroup v2 is already active.${NC}"
-echo -e "${GREEN}✅ Background:${NC} Verified host is running cgroup v2, required for K3s."
+echo -e "${GREEN}✅ Background:${NC} Verified host is running cgroup v2."
 
 # -----------------------------
 # 2. Install prerequisites
