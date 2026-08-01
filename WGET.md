@@ -1,5 +1,5 @@
 ```text
-IFACE=$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1; exit}') && systemctl restart NetworkManager && nmcli device connect "$IFACE" && sleep 5 && curl -L -o /root/Server_Setup.sh "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Server_Setup.sh?$(date +%s)" && chmod +x /root/Server_Setup.sh && nmcli device disconnect "$IFACE"
+IFACE=$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1; exit}') && CONN=$(nmcli -t -f NAME,DEVICE connection show | awk -F: -v d="$IFACE" '$2==d{print $1; exit}') && nmcli -t -f NAME,DEVICE connection show | awk -F: -v c="$CONN" '$1!=c && $2==""{print $1}' | xargs -r -n1 nmcli connection delete && systemctl restart NetworkManager && nmcli device connect "$IFACE" && sleep 5 && curl -L -o /root/Server_Setup.sh "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Server_Setup.sh?$(date +%s)" && chmod +x /root/Server_Setup.sh && nmcli device disconnect "$IFACE"
 ```
 
 ```text
