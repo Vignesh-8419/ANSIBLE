@@ -99,8 +99,23 @@ gpgcheck=1
 gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 EOF
 
+# -------------------------------
+# STEP 2.1: Configure YUM Exclusions
+# -------------------------------
+echo "📝 Configuring YUM exclusions..."
+
+sed -i '/^exclude=.*mesa/d' /etc/yum.conf
+
+cat <<EOF >> /etc/yum.conf
+
+exclude=mesa* mesa-lib* mesa-dri-drivers*
+EOF
+
+echo "✅ Current YUM exclusions:"
+grep '^exclude' /etc/yum.conf
+
 echo "🧠 Installing SSH PASS..."
-yum install sshpass -y
+yum install -y sshpass
 
 
 # -------------------------------
