@@ -46,6 +46,13 @@ name=CentOS Base Repo
 baseurl=http://$MOUNT_POINT/centos
 enabled=1
 gpgcheck=0
+
+[mesa]
+name=Local Mesa Repo
+baseurl=http://http-server-01.vgs.com/repo/mesa
+enabled=1
+gpgcheck=0
+priority=1
 EOF
 
 echo "📝 Creating patch.repo..."
@@ -98,21 +105,6 @@ enabled=1
 gpgcheck=1
 gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 EOF
-
-# -------------------------------
-# STEP 2.1: Configure YUM Exclusions
-# -------------------------------
-echo "📝 Configuring YUM exclusions..."
-
-sed -i '/^exclude=.*mesa/d' /etc/yum.conf
-
-cat <<EOF >> /etc/yum.conf
-
-exclude=mesa* mesa-lib* mesa-dri-drivers*
-EOF
-
-echo "✅ Current YUM exclusions:"
-grep '^exclude' /etc/yum.conf
 
 echo "🧠 Installing SSH PASS..."
 yum install -y sshpass
