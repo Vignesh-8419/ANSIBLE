@@ -623,7 +623,7 @@ menuentry 'Install CentOS 7 (Enforced Sector Parity RAID1)' {
 
     linuxefi /centos/vmlinuz \
 inst.stage2=http://192.168.253.136/repo/centos/ \
-inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/centos7-kickstart/centos7.cfg \
+inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/centos7-kickstarts/centos7.cfg \
 inst.text \
 inst.default_fstype=ext4 \
 inst.ks.device=bootif \
