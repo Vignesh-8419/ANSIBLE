@@ -324,6 +324,32 @@
           Review /var/log/leapp/leapp-report.txt before continuing.
       when: preupgrade_pass2.rc != 0
 
+    ####################################################################
+    # Mount EFI partitions before Leapp upgrade
+    ####################################################################
+    
+    - name: Create temporary EFI mount points
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /boot/efi
+        - /boot/efi2
+    
+    - name: Mount primary EFI
+      mount:
+        path: /boot/efi
+        src: /dev/sda1
+        fstype: vfat
+        state: mounted
+    
+    - name: Mount secondary EFI
+      mount:
+        path: /boot/efi2
+        src: /dev/sdb1
+        fstype: vfat
+        state: mounted
 
     ####################################################################
     # Upgrade
@@ -345,44 +371,6 @@
     ####################################################################
     # Prepare EFI before reboot
     ####################################################################
-    
-    - name: Create temporary EFI mount points
-      file:
-        path: "{{ item }}"
-        state: directory
-        mode: "0755"
-      loop:
-        - /boot/efi
-        - /boot/efi2
-      when:
-        - upgrade_result is defined
-        - upgrade_result.rc == 0
-    
-    - name: Mount primary EFI
-      mount:
-        path: /boot/efi
-        src: /dev/sda1
-        fstype: vfat
-        state: mounted
-      when:
-        - upgrade_result is defined
-        - upgrade_result.rc == 0
-    
-    - name: Mount secondary EFI
-      mount:
-        path: /boot/efi2
-        src: /dev/sdb1
-        fstype: vfat
-        state: mounted
-      when:
-        - upgrade_result is defined
-        - upgrade_result.rc == 0
-    
-    - name: Regenerate GRUB configuration
-      command: grub2-mkconfig -o /boot/grub2/grub.cfg
-      when:
-        - upgrade_result is defined
-        - upgrade_result.rc == 0
     
     - name: Synchronize EFI partitions
       command: rsync -aH --delete /boot/efi/ /boot/efi2/
