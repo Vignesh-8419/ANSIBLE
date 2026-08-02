@@ -53,6 +53,13 @@ baseurl=http://http-server-01.vgs.com/repo/mesa
 enabled=1
 gpgcheck=0
 priority=1
+
+[gtk]
+name=Local GTK Repo
+baseurl=http://http-server-01.vgs.com/repo/gtk
+enabled=1
+gpgcheck=0
+priority=1
 EOF
 
 echo "📝 Creating patch.repo..."
