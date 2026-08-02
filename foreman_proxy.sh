@@ -277,19 +277,54 @@ systemctl restart dhcpd
 systemctl enable dhcpd
 
 
+# -------------------------------------------------------
+# Copy EFI boot files from NetBox server
+# -------------------------------------------------------
+
+echo "📥 Copying EFI boot files from NetBox..."
+
 sshpass -p 'Vigneshv12$' ssh \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
-  admin@netbox.vgs.com \
-  "echo 'Vigneshv12$' | sudo -S cat /boot/efi/EFI/rocky/shimx64.efi" \
-  > /var/lib/tftpboot/grub2/shimx64.efi
-  
+  admin@netbox.vgs.com <<'EOF'
+
+echo 'Vigneshv12$' | sudo -S bash <<'EOS'
+
+mkdir -p /boot/efi
+
+# Mount EFI only if not already mounted
+mountpoint -q /boot/efi || mount /dev/sda1 /boot/efi
+
+cat /boot/efi/EFI/rocky/shimx64.efi
+
+umount /boot/efi
+
+rmdir /boot/efi
+
+EOS
+EOF > /var/lib/tftpboot/grub2/shimx64.efi
+
 sshpass -p 'Vigneshv12$' ssh \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
-  admin@netbox.vgs.com \
-  "echo 'Vigneshv12$' | sudo -S cat /boot/efi/EFI/rocky/grub.cfg" \
-  > /var/lib/tftpboot/grub2/grub.cfg
+  admin@netbox.vgs.com <<'EOF'
+
+echo 'Vigneshv12$' | sudo -S bash <<'EOS'
+
+mkdir -p /boot/efi
+
+mountpoint -q /boot/efi || mount /dev/sda1 /boot/efi
+
+cat /boot/efi/EFI/rocky/grub.cfg
+
+umount /boot/efi
+
+rmdir /boot/efi
+
+EOS
+EOF > /var/lib/tftpboot/grub2/grub.cfg
+
+echo "✅ EFI boot files copied successfully."
 
 # ======================================================
 # Rocky Linux 8 PXE Boot Files
