@@ -492,17 +492,30 @@ done
 kubectl exec -n "$NAMESPACE" "$TASK_POD" -- \
 bash -c "
 awx-manage shell <<'EOF'
-from main.models.execution_environments import ExecutionEnvironment
-ee=ExecutionEnvironment.objects.filter(name='AWX EE (latest)').first()
-if ee:
-    ee.image='localhost:5000/awx-ee-vmware:24.6.1'
-    ee.credential=None
-    ee.pull='always'
+from awx.main.models.execution_environments import ExecutionEnvironment
+
+for ee in ExecutionEnvironment.objects.filter(id__in=[1,2]):
+    ee.image = 'localhost:5000/awx-ee-vmware:24.6.1'
+    ee.pull = 'always'
+    ee.credential = None
     ee.save()
-    print('Execution Environment updated.')
-else:
-    print('Default EE not found.')
+    print(f'Updated: {ee.id} {ee.name} -> {ee.image}')
+
+print()
+
+for ee in ExecutionEnvironment.objects.all():
+    print(ee.id, ee.name, ee.image)
 EOF
 "
 
-echo -e "${GREEN}✅ Background:${NC} Default Execution Environment configured successfully."
+echo "⏳ Restarting AWX Task deployment..."
+
+kubectl rollout restart deployment awx-server-task -n "$NAMESPACE"
+
+echo "⏳ Waiting for Task deployment rollout..."
+
+kubectl rollout status deployment/awx-server-task \
+    -n "$NAMESPACE" \
+    --timeout=10m
+
+echo -e "${GREEN}✅ Background:${NC} VMware Execution Environment configured successfully."
