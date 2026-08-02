@@ -82,17 +82,22 @@ else
     grubby --update-kernel=ALL \
       --args="systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false"
 
-    echo "Rebuilding grub.cfg..."
+echo "Rebuilding grub.cfg..."
 
-    grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg
+mkdir -p /boot/efi
+mkdir -p /boot/efi2
 
-    sync
+mount /dev/sda1 /boot/efi
+mount /dev/sdb1 /boot/efi2
 
-    # Unmount only if we mounted it
-    if [ "$EFI_MOUNTED" = "1" ]; then
-        echo "Unmounting EFI partition..."
-        umount /boot/efi
-    fi
+grub2-mkconfig -o /boot/grub2/grub.cfg
+
+rsync -aH --delete /boot/efi/ /boot/efi2/
+
+sync
+
+umount /boot/efi2
+umount /boot/efi
 
     echo
     echo "=================================================="
