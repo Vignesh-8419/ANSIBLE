@@ -146,36 +146,82 @@
           }}
 
     ####################################################################
-    # Install Leapp
+    # Clean Previous Leapp Installation
     ####################################################################
-
-    - name: Check if leapp command exists
-      command: which leapp
-      register: leapp_installed
-      changed_when: false
-      failed_when: false
     
-    - name: Install Leapp packages
+    - name: Remove existing Leapp packages
       yum:
         name:
           - leapp
+          - python2-leapp
+          - leapp-upgrade-el7toel8
+          - leapp-upgrade-el7toel8-deps
           - leapp-data-rocky
+          - leapp-deps
+        state: absent
+      ignore_errors: yes
+    
+    - name: Remove previous Leapp directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/leapp
+        - /usr/share/leapp
+        - /usr/share/leapp-repository
+        - /var/lib/leapp
+        - /var/log/leapp
+    
+    - name: Remove temporary Leapp files
+      shell: |
+        rm -rf /var/tmp/leapp*
+        rm -f /var/tmp/system-upgrade.state
+    
+    - name: Remove old Leapp repository
+      file:
+        path: /etc/yum.repos.d/leapp.repo
+        state: absent
+    
+    - name: Clean yum cache
+      command: yum clean all
+    
+    - name: Remove yum cache directory
+      file:
+        path: /var/cache/yum
+        state: absent
+    
+    - name: Rebuild yum cache
+      command: yum makecache
+    
+    ####################################################################
+    # Install Leapp
+    ####################################################################
+    
+    - name: Install complete Leapp package set
+      yum:
+        name:
+          - leapp
+          - python2-leapp
+          - leapp-upgrade-el7toel8
+          - leapp-upgrade-el7toel8-deps
+          - leapp-data-rocky
+          - leapp-deps
         state: present
-      when: leapp_installed.rc != 0
     
     - name: Verify Leapp installation
       shell: |
         leapp --version
-        rpm -qa | grep '^leapp' | sort
+        rpm -q \
+          leapp \
+          python2-leapp \
+          leapp-upgrade-el7toel8 \
+          leapp-upgrade-el7toel8-deps \
+          leapp-data-rocky \
+          leapp-deps
       register: leapp_verify
       changed_when: false
     
-    - name: Display Leapp installation status
-      debug:
-        var: leapp_verify.stdout_lines
-
-    - name: Display Leapp installation status
-      debug:
+    - debug:
         var: leapp_verify.stdout_lines
 
     ####################################################################
@@ -325,10 +371,10 @@
       when: preupgrade_pass2.rc != 0
 
     ####################################################################
-    # Mount EFI partitions before Leapp upgrade
+    # Configure EFI
     ####################################################################
     
-    - name: Create temporary EFI mount points
+    - name: Ensure EFI mount points exist
       file:
         path: "{{ item }}"
         state: directory
@@ -337,10 +383,23 @@
         - /boot/efi
         - /boot/efi2
     
+    - name: Get primary EFI UUID
+      command: blkid -s UUID -o value /dev/sda1
+      register: efi_uuid
+      changed_when: false
+    
+    - name: Configure /boot/efi in fstab
+      mount:
+        path: /boot/efi
+        src: "UUID={{ efi_uuid.stdout }}"
+        fstype: vfat
+        opts: defaults,umask=0077
+        state: mounted
+    
     - name: Mount primary EFI
       mount:
         path: /boot/efi
-        src: /dev/sda1
+        src: "UUID={{ efi_uuid.stdout }}"
         fstype: vfat
         state: mounted
     
@@ -361,7 +420,16 @@
           - leapp
           - upgrade
       register: upgrade_result
-      ignore_errors: yes
+
+    - name: Verify upgrade initramfs exists
+      stat:
+        path: /boot/initramfs-upgrade.x86_64.img
+      register: upgrade_initramfs
+    
+    - name: Fail if upgrade initramfs missing
+      fail:
+        msg: "Upgrade initramfs was not created."
+      when: not upgrade_initramfs.stat.exists
 
     - name: Display upgrade output
       debug:
