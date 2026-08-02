@@ -465,9 +465,9 @@ echo -e "${GREEN}✅ Background:${NC} AWX UI is responding."
 
 
 # -----------------------------
-# 18. Configure Default Execution Environment
+# 18. Configure VMware Execution Environment
 # -----------------------------
-echo -e "${BLUE}# 18. Configure Default Execution Environment${NC}"
+echo -e "${BLUE}# 18. Configure VMware Execution Environment${NC}"
 
 echo "⏳ Locating Task pod..."
 
@@ -483,39 +483,47 @@ done
 
 echo "Using Task Pod: $TASK_POD"
 
-echo "⏳ Waiting for awx-manage..."
+echo "⏳ Configuring Execution Environments..."
 
-until kubectl exec -n "$NAMESPACE" "$TASK_POD" -- true >/dev/null 2>&1; do
-    sleep 10
-done
+kubectl exec -n "$NAMESPACE" "$TASK_POD" -- bash <<'EOF'
 
-kubectl exec -n "$NAMESPACE" "$TASK_POD" -- \
-bash -c "
-awx-manage shell <<'EOF'
+awx-manage shell <<'PYEOF'
 from awx.main.models.execution_environments import ExecutionEnvironment
+from awx.conf.models import Setting
 
+EE_IMAGE = "localhost:5000/awx-ee-vmware:24.6.1"
+
+# Update built-in EEs
 for ee in ExecutionEnvironment.objects.filter(id__in=[1,2]):
-    ee.image = 'localhost:5000/awx-ee-vmware:24.6.1'
-    ee.pull = 'always'
+    ee.image = EE_IMAGE
+    ee.pull = "always"
     ee.credential = None
     ee.save()
-    print(f'Updated: {ee.id} {ee.name} -> {ee.image}')
+    print(f"Updated EE {ee.id}: {ee.name}")
 
-print()
+# Make EE #1 the global default
+default_ee = ExecutionEnvironment.objects.get(id=1)
 
+Setting.objects.update_or_create(
+    key="DEFAULT_EXECUTION_ENVIRONMENT",
+    defaults={"value": default_ee.id}
+)
+
+print("Default Execution Environment set to:", default_ee.name)
+
+print("\nExecution Environments:")
 for ee in ExecutionEnvironment.objects.all():
-    print(ee.id, ee.name, ee.image)
+    print(f"{ee.id} {ee.name} -> {ee.image}")
+PYEOF
+
 EOF
-"
 
 echo "⏳ Restarting AWX Task deployment..."
+kubectl rollout restart deployment/awx-server-task -n "$NAMESPACE"
 
-kubectl rollout restart deployment awx-server-task -n "$NAMESPACE"
-
-echo "⏳ Waiting for Task deployment rollout..."
-
+echo "⏳ Waiting for Task deployment..."
 kubectl rollout status deployment/awx-server-task \
     -n "$NAMESPACE" \
     --timeout=10m
 
-echo -e "${GREEN}✅ Background:${NC} VMware Execution Environment configured successfully."
+echo -e "${GREEN}✅ VMware Execution Environment configured successfully.${NC}"
