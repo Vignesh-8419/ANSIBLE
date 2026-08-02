@@ -137,12 +137,18 @@ info "Checking Rocky Linux 9 Installation Media..."
 
 ROCKY9_MEDIA=$(
 $HAMMER medium list | \
-awk -F'|' '/192\.168\.253\.136\/repo\/rocky9\// {gsub(/ /,"",$2); print $2}'
+awk -F'|' '/http:\/\/192\.168\.253\.136\/repo\/rocky9\// {
+    gsub(/^[ \t]+|[ \t]+$/, "", $2)
+    print $2
+    exit
+}'
 )
 
 if [[ -n "$ROCKY9_MEDIA" ]]; then
     skip "Rocky 9 installation media already exists: $ROCKY9_MEDIA"
 else
+    ROCKY9_MEDIA="Rocky 9 Remote"
+
     info "Creating $ROCKY9_MEDIA..."
 
     $HAMMER medium create \
@@ -152,14 +158,13 @@ else
 
     if [ $? -eq 0 ]; then
         ok "$ROCKY9_MEDIA created."
-        ROCKY9_MEDIA="$ROCKY9_MEDIA"
     else
         error "Failed to create $ROCKY9_MEDIA."
         record_failure "$ROCKY9_MEDIA"
     fi
 fi
 
-info "Checking Rocky Linux 9.2 Installation Media..."
+echo "Using installation media: $ROCKY9_MEDIA"
 
 if $HAMMER medium info --name "Rocky 9.2 Remote" >/dev/null 2>&1; then
     skip "Rocky 9.2 Remote already exists."
