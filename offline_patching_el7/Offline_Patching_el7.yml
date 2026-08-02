@@ -56,11 +56,14 @@
 
     - name: Execute Offline Patching
       raw: |
+        set -e
+
         BACKUP_DIR=/etc/yum.repos.d/backup_repos_original
 
         mkdir -p ${BACKUP_DIR}
 
-        find /etc/yum.repos.d -maxdepth 1 -name "*.repo" -type f -exec mv {} ${BACKUP_DIR}/ \; 2>/dev/null || true
+        find /etc/yum.repos.d -maxdepth 1 -name "*.repo" -type f \
+          -exec mv {} ${BACKUP_DIR}/ \; 2>/dev/null || true
 
         cat > /etc/yum.repos.d/base.repo <<EOF
         [base]
@@ -125,9 +128,35 @@
           - "Running Kernel : {{ running_kernel.stdout }}"
           - "Latest Kernel  : {{ latest_kernel.stdout }}"
 
+    - name: Update GRUB and Synchronize Secondary EFI
+      raw: |
+        set -e
+
+        mkdir -p /boot/efi
+        mkdir -p /boot/efi2
+
+        mountpoint -q /boot/efi || mount /dev/sda1 /boot/efi
+        mountpoint -q /boot/efi2 || mount /dev/sdb1 /boot/efi2
+
+        grub2-mkconfig -o /boot/grub2/grub.cfg
+
+        rsync -aH --delete /boot/efi/ /boot/efi2/
+
+        sync
+
+        umount /boot/efi2
+        umount /boot/efi
+      register: grub_sync
+      when: running_kernel.stdout not in latest_kernel.stdout
+
+    - name: Display GRUB Sync Output
+      debug:
+        var: grub_sync.stdout_lines
+      when: running_kernel.stdout not in latest_kernel.stdout
+
     - name: Schedule Immediate Reboot
       raw: shutdown -r +1
       when: running_kernel.stdout not in latest_kernel.stdout
-    
+
     - meta: end_play
       when: running_kernel.stdout not in latest_kernel.stdout
