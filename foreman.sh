@@ -114,7 +114,7 @@ gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 EOF
 
 echo "🧠 Installing SSH PASS..."
-yum install -y sshpass
+yum install -y sshpass mesa-libEGL* gtk*
 
 
 # -------------------------------
