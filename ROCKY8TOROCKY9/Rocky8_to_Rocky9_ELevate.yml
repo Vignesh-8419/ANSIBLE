@@ -509,9 +509,59 @@
       when: initramfs_check.stat.exists
 
     ####################################################################
+    # Sync EFI Partitions Before Reboot
+    ####################################################################
+    
+    - name: Create temporary EFI mount points
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /boot/efi
+        - /boot/efi2
+    
+    - name: Mount primary EFI partition
+      mount:
+        path: /boot/efi
+        src: /dev/sda1
+        fstype: vfat
+        state: mounted
+    
+    - name: Mount secondary EFI partition
+      mount:
+        path: /boot/efi2
+        src: /dev/sdb1
+        fstype: vfat
+        state: mounted
+    
+    - name: Regenerate GRUB configuration
+      command: grub2-mkconfig -o /boot/grub2/grub.cfg
+    
+    - name: Synchronize EFI partitions
+      command: rsync -aH --delete /boot/efi/ /boot/efi2/
+    
+    - name: Flush filesystem buffers
+      command: sync
+    
+    - name: Pause before reboot
+      pause:
+        seconds: 5
+    
+    - name: Unmount secondary EFI partition
+      mount:
+        path: /boot/efi2
+        state: unmounted
+    
+    - name: Unmount primary EFI partition
+      mount:
+        path: /boot/efi
+        state: unmounted
+    
+    ####################################################################
     # Final Reboot
     ####################################################################
-
+    
     - name: Reboot to start Rocky Linux 9 migration
       reboot:
         msg: "Starting Rocky Linux 9 ELevate migration"
