@@ -278,11 +278,12 @@ systemctl enable dhcpd
 
 
 # -------------------------------------------------------
-# Copy EFI boot files from NetBox server
+# Copy EFI boot files from NetBox
 # -------------------------------------------------------
 
 echo "📥 Copying EFI boot files from NetBox..."
 
+# Mount both EFI partitions on NetBox temporarily
 sshpass -p 'Vigneshv12$' ssh \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
@@ -290,20 +291,34 @@ sshpass -p 'Vigneshv12$' ssh \
 
 echo 'Vigneshv12$' | sudo -S bash <<'EOS'
 
-mkdir -p /boot/efi
+mkdir -p /boot/efi /boot/efi2
 
-# Mount EFI only if not already mounted
-mountpoint -q /boot/efi || mount /dev/sda1 /boot/efi
+mountpoint -q /boot/efi  || mount /dev/sda1 /boot/efi
+mountpoint -q /boot/efi2 || mount /dev/sdb1 /boot/efi2
 
-cat /boot/efi/EFI/rocky/shimx64.efi
-
-umount /boot/efi
-
-rmdir /boot/efi
+echo "EFI partitions mounted."
 
 EOS
-EOF > /var/lib/tftpboot/grub2/shimx64.efi
+EOF
 
+
+# Copy binary EFI executable
+sshpass -p 'Vigneshv12$' scp \
+  -o StrictHostKeyChecking=no \
+  -o UserKnownHostsFile=/dev/null \
+  admin@netbox.vgs.com:/boot/efi/EFI/rocky/shimx64.efi \
+  /var/lib/tftpboot/grub2/shimx64.efi
+
+
+# Copy grub.cfg
+sshpass -p 'Vigneshv12$' scp \
+  -o StrictHostKeyChecking=no \
+  -o UserKnownHostsFile=/dev/null \
+  admin@netbox.vgs.com:/boot/efi/EFI/rocky/grub.cfg \
+  /var/lib/tftpboot/grub2/grub.cfg
+
+
+# Unmount both EFI partitions
 sshpass -p 'Vigneshv12$' ssh \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
@@ -311,18 +326,25 @@ sshpass -p 'Vigneshv12$' ssh \
 
 echo 'Vigneshv12$' | sudo -S bash <<'EOS'
 
-mkdir -p /boot/efi
+sync
 
-mountpoint -q /boot/efi || mount /dev/sda1 /boot/efi
+mountpoint -q /boot/efi2 && umount /boot/efi2
+mountpoint -q /boot/efi  && umount /boot/efi
 
-cat /boot/efi/EFI/rocky/grub.cfg
+rmdir /boot/efi2 2>/dev/null || true
+rmdir /boot/efi 2>/dev/null || true
 
-umount /boot/efi
-
-rmdir /boot/efi
+echo "EFI partitions unmounted."
 
 EOS
-EOF > /var/lib/tftpboot/grub2/grub.cfg
+EOF
+
+
+chown foreman-proxy:root /var/lib/tftpboot/grub2/shimx64.efi
+chown foreman-proxy:root /var/lib/tftpboot/grub2/grub.cfg
+
+chmod 644 /var/lib/tftpboot/grub2/shimx64.efi
+chmod 644 /var/lib/tftpboot/grub2/grub.cfg
 
 echo "✅ EFI boot files copied successfully."
 
