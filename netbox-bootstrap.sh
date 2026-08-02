@@ -312,7 +312,7 @@ JSON=$(cat <<'EOF'
         "pxe-centos-context"
     ],
     "data": {
-        "centos_kickstart_url": "http://192.168.253.136/repo/centos/kickstart/centos.cfg",
+        "centos_kickstart_url": "http://192.168.253.136/repo/Foreman-kickstarts/centos7-kickstarts/centos7.cfg",
         "centos_template_name": "GOLDENTEMPLATE_CENTOS_07",
         "http_server": "192.168.253.136",
         "pxe_folder": "/var/lib/tftpboot",
@@ -346,7 +346,7 @@ JSON=$(cat <<'EOF'
     ],
     "data": {
         "http_server": "192.168.253.136",
-        "rockyos_kickstart_url": "http://192.168.253.136/repo/rocky8/kickstart/rockyos.cfg",
+        "rockyos_kickstart_url": "http://192.168.253.136/repo/Foreman-kickstarts/rocky8-kickstarts/rockyos.cfg",
         "pxe_folder": "/var/lib/tftpboot",
         "rockyos_template_name": "GOLDENTEMPLATE_ROCKYOS_08",
         "vm_root_password": "Root@123",
@@ -376,7 +376,7 @@ JSON=$(cat <<'EOF'
     ],
     "data": {
         "http_server": "192.168.253.136",
-        "rocky9_kickstart_url": "http://192.168.253.136/repo/rocky9/kickstart/rockyos.cfg",
+        "rocky9_kickstart_url": "http://192.168.253.136/repo/Foreman-kickstarts/rocky9-kickstarts/rocky9.cfg",
         "pxe_folder": "/var/lib/tftpboot",
         "rocky9_template_name": "GOLDENTEMPLATE_ROCKYOS_09",
         "vm_root_password": "Root@123",
