@@ -150,11 +150,57 @@
           set_fact:
             updates_installed: "{{ 'Nothing to do.' not in dnf_shell_output.stdout }}"
 
-        - name: Reboot If Updates Were Installed
-          reboot:
-            reboot_timeout: 900
-            msg: "Offline patching completed. Rebooting host."
-          when: updates_installed
+        - name: Capture Running Kernel
+          command: uname -r
+          register: running_kernel
+          changed_when: false
+
+        - name: Capture Latest Installed Kernel
+          shell: rpm -q kernel --last | head -1 | awk '{print $1}'
+          register: latest_kernel
+          changed_when: false
+
+        - name: Display Kernel Status
+          debug:
+            msg:
+              - "Running Kernel : {{ running_kernel.stdout }}"
+              - "Latest Kernel  : {{ latest_kernel.stdout }}"
+
+        - name: Update GRUB and Synchronize Secondary EFI
+          shell: |
+            set -e
+
+            mkdir -p /boot/efi
+            mkdir -p /boot/efi2
+
+            mount /dev/sda1 /boot/efi
+            mount /dev/sdb1 /boot/efi2
+
+            grub2-mkconfig -o /boot/grub2/grub.cfg
+
+            rsync -aH --delete /boot/efi/ /boot/efi2/
+
+            sync
+
+            umount /boot/efi2
+            umount /boot/efi
+          register: grub_sync
+          when:
+            - updates_installed
+            - running_kernel.stdout not in latest_kernel.stdout
+
+        - name: Display GRUB Sync Output
+          debug:
+            var: grub_sync.stdout_lines
+          when:
+            - updates_installed
+            - running_kernel.stdout not in latest_kernel.stdout
+
+        - name: Schedule Reboot
+          shell: shutdown -r +1
+          when:
+            - updates_installed
+            - running_kernel.stdout not in latest_kernel.stdout
 
       rescue:
 
