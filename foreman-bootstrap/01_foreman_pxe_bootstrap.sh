@@ -352,7 +352,7 @@ oses:
 set default=0
 set timeout=5
 
-menuentry 'Install Rocky 8 via Kickstart' {
+menuentry 'Install Rocky Linux 8.10 (Automatic RAID1)' {
 
     linuxefi /rocky8/vmlinuz \
 inst.stage2=http://192.168.253.136/repo/rocky8/ \
@@ -382,7 +382,7 @@ oses:
 set default=0
 set timeout=5
 
-menuentry 'Install Rocky Linux 9.8 (UEFI)' {
+menuentry 'Install Rocky Linux 9.8 (Enforced Sector Parity RAID1)' {
 
     linuxefi /rocky9/vmlinuz \
     ip=dhcp \
@@ -410,7 +410,7 @@ oses:
 set default=0
 set timeout=5
 
-menuentry 'Install Rocky Linux 9.2 (UEFI)' {
+menuentry 'Install Rocky Linux 9.2 (Enforced Sector Parity RAID1)' {
 
     linuxefi /rocky92/vmlinuz \
         ip=dhcp \
@@ -619,7 +619,7 @@ oses:
 set default=0
 set timeout=5
 
-menuentry 'Install CentOS 7 via Kickstart' {
+menuentry 'Install CentOS 7 (Enforced Sector Parity RAID1)' {
 
     linuxefi /centos/vmlinuz \
 inst.stage2=http://192.168.253.136/repo/centos/ \
