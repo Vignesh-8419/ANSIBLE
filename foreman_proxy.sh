@@ -68,6 +68,20 @@ name=Local CentOS Patch Repo
 baseurl=http://http-server-01.vgs.com/repo/installed_rhel7
 enabled=1
 gpgcheck=0
+
+[mesa]
+name=Local Mesa Repo
+baseurl=http://http-server-01.vgs.com/repo/mesa
+enabled=1
+gpgcheck=0
+priority=1
+
+[gtk]
+name=Local GTK Repo
+baseurl=http://http-server-01.vgs.com/repo/gtk
+enabled=1
+gpgcheck=0
+priority=1
 REPO
 
 echo "📝 Creating puppet.repo..."
