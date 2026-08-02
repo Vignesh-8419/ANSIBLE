@@ -171,6 +171,7 @@ echo -e "${GREEN}✅ Background:${NC} Installed K3s, linked kubectl, and confirm
 # -----------------------------
 # 5a. Create Local Container Registry
 # -----------------------------
+echo -e "${BLUE}# 5a. Create Local Container Registry${NC}"
 
 mkdir -p /opt/registry
 
@@ -185,6 +186,20 @@ else
     podman start registry >/dev/null 2>&1 || true
 fi
 
+# --------------------------------------------------
+# Configure Podman to trust the local HTTP registry
+# --------------------------------------------------
+mkdir -p /etc/containers/registries.conf.d
+
+cat >/etc/containers/registries.conf.d/localhost.conf <<EOF
+[[registry]]
+location="localhost:5000"
+insecure=true
+EOF
+
+# --------------------------------------------------
+# Configure K3s/containerd to use the local registry
+# --------------------------------------------------
 mkdir -p /etc/rancher/k3s
 
 cat >/etc/rancher/k3s/registries.yaml <<EOF
@@ -196,9 +211,21 @@ EOF
 
 systemctl restart k3s
 
+echo "⏳ Waiting for K3s node..."
 until kubectl get nodes 2>/dev/null | grep -q " Ready "; do
     sleep 5
 done
+
+echo "⏳ Verifying local registry..."
+
+curl -fs http://localhost:5000/v2/ >/dev/null \
+    && echo "✅ Local registry is reachable." \
+    || {
+        echo "❌ Local registry is not responding."
+        exit 1
+    }
+
+echo -e "${GREEN}✅ Background:${NC} Local registry configured for both Podman and K3s."
 
 # -----------------------------
 # 6. Install Kustomize
@@ -310,7 +337,9 @@ podman tag \
 localhost/awx-ee-vmware:24.6.1 \
 localhost:5000/awx-ee-vmware:24.6.1
 
-podman push localhost:5000/awx-ee-vmware:24.6.1
+podman push \
+  --tls-verify=false \
+  localhost:5000/awx-ee-vmware:24.6.1
 
 k3s crictl pull localhost:5000/awx-ee-vmware:24.6.1
 
