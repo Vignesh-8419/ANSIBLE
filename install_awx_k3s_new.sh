@@ -474,18 +474,23 @@ kubectl rollout status deployment/awx-server-web \
 echo "⏳ Waiting for Task pod..."
 
 until kubectl get pods -n "$NAMESPACE" \
-    -l app.kubernetes.io/component=task \
-    --no-headers 2>/dev/null | grep -q "Running"; do
-    sleep 10
+    -l app.kubernetes.io/name=awx-server-task \
+    --field-selector=status.phase=Running \
+    --no-headers 2>/dev/null | grep -q awx-server-task; do
+    sleep 5
 done
 
 echo "⏳ Waiting for Web pod..."
 
 until kubectl get pods -n "$NAMESPACE" \
-    -l app.kubernetes.io/component=web \
-    --no-headers 2>/dev/null | grep -q "Running"; do
-    sleep 10
+    -l app.kubernetes.io/name=awx-server-web \
+    --field-selector=status.phase=Running \
+    --no-headers 2>/dev/null | grep -q awx-server-web; do
+    sleep 5
 done
+
+echo
+kubectl get pods -n "$NAMESPACE"
 
 echo
 kubectl get pods -n "$NAMESPACE"
