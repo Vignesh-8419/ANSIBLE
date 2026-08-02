@@ -135,18 +135,24 @@ echo
 
 info "Checking Rocky Linux 9 Installation Media..."
 
-if $HAMMER medium info --name "$ROCKY9_MEDIA" >/dev/null 2>&1; then
-    skip "$ROCKY9_MEDIA already exists."
+ROCKY9_MEDIA=$(
+$HAMMER medium list | \
+awk -F'|' '/192\.168\.253\.136\/repo\/rocky9\// {gsub(/ /,"",$2); print $2}'
+)
+
+if [[ -n "$ROCKY9_MEDIA" ]]; then
+    skip "Rocky 9 installation media already exists: $ROCKY9_MEDIA"
 else
     info "Creating $ROCKY9_MEDIA..."
 
     $HAMMER medium create \
         --name "$ROCKY9_MEDIA" \
         --path "http://192.168.253.136/repo/rocky9/" \
-        --os-family "Redhat"
-    
+        --os-family Redhat
+
     if [ $? -eq 0 ]; then
         ok "$ROCKY9_MEDIA created."
+        ROCKY9_MEDIA="$ROCKY9_MEDIA"
     else
         error "Failed to create $ROCKY9_MEDIA."
         record_failure "$ROCKY9_MEDIA"
