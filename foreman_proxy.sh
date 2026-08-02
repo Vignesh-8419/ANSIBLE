@@ -198,6 +198,36 @@ if ! ip link show "\$INTERFACE" >/dev/null 2>&1; then
     exit 1
 fi
 
+# -------------------------------------------------------
+# Temporarily mount EFI partitions for Foreman TFTP setup
+# -------------------------------------------------------
+
+echo "📁 Temporarily mounting EFI partitions..."
+
+mkdir -p /boot/efi
+mkdir -p /boot/efi2
+
+mountpoint -q /boot/efi || mount /dev/sda1 /boot/efi
+mountpoint -q /boot/efi2 || mount /dev/sdb1 /boot/efi2
+
+echo "Verifying EFI contents..."
+
+ls -l /boot/efi/EFI/
+ls -l /boot/efi2/EFI/
+
+# Ensure shim exists where Foreman expects it
+if [ ! -f /boot/efi/EFI/centos/shimx64.efi ]; then
+    echo "❌ /boot/efi/EFI/centos/shimx64.efi not found"
+    exit 1
+fi
+
+if [ ! -f /boot/efi2/EFI/centos/shimx64.efi ]; then
+    echo "❌ /boot/efi2/EFI/centos/shimx64.efi not found"
+    exit 1
+fi
+
+echo "✅ EFI partitions mounted successfully."
+
 echo "🚀 Running Foreman Proxy installer..."
 foreman-installer \
   --force \
@@ -215,6 +245,22 @@ foreman-installer \
   --foreman-proxy-dns-interface "\${INTERFACE}" \
   --foreman-proxy-tftp true \
   --foreman-proxy-tftp-servername "${FOREMAN_PROXY}"
+
+# -------------------------------------------------------
+# Unmount temporary EFI partitions
+# -------------------------------------------------------
+
+echo "🧹 Unmounting temporary EFI partitions..."
+
+sync
+
+mountpoint -q /boot/efi2 && umount /boot/efi2
+mountpoint -q /boot/efi && umount /boot/efi
+
+rmdir /boot/efi2 2>/dev/null || true
+rmdir /boot/efi 2>/dev/null || true
+
+echo "✅ Temporary EFI mounts removed."
 
 echo "Configuring DHCP default gateway..."
 
