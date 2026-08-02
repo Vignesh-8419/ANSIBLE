@@ -209,7 +209,37 @@ fi
 # STEP 7: Configure Foreman Proxies (TFTP, DNS, DHCP)
 # -------------------------------
 echo "🛠️ Installing DHCP and TFTP services..."
-yum install -y dhcp-server dhcp tftp-server 
+yum install -y dhcp-server dhcp tftp-server
+
+# -------------------------------------------------------
+# Temporarily mount EFI partitions for Foreman TFTP setup
+# -------------------------------------------------------
+
+echo "📁 Temporarily mounting EFI partitions..."
+
+mkdir -p /boot/efi
+mkdir -p /boot/efi2
+
+mountpoint -q /boot/efi || mount /dev/sda1 /boot/efi
+mountpoint -q /boot/efi2 || mount /dev/sdb1 /boot/efi2
+
+echo "Verifying EFI contents..."
+
+ls -l /boot/efi/EFI/
+ls -l /boot/efi2/EFI/
+
+# Ensure shim exists where Foreman expects it
+if [ ! -f /boot/efi/EFI/centos/shimx64.efi ]; then
+    echo "❌ /boot/efi/EFI/centos/shimx64.efi not found"
+    exit 1
+fi
+
+if [ ! -f /boot/efi2/EFI/centos/shimx64.efi ]; then
+    echo "❌ /boot/efi2/EFI/centos/shimx64.efi not found"
+    exit 1
+fi
+
+echo "✅ EFI partitions mounted successfully."
 
 echo "📦 Configuring Foreman TFTP proxy..."
 foreman-installer --scenario katello \
@@ -244,6 +274,22 @@ foreman-installer --scenario katello \
   --foreman-proxy-dhcp-nameservers "cent-07-01.vgs.com" \
   --foreman-proxy-dhcp-config "/etc/dhcp/dhcpd.conf" \
   --foreman-proxy-dhcp-leases "/var/lib/dhcpd/dhcpd.leases"
+
+# -------------------------------------------------------
+# Unmount temporary EFI partitions
+# -------------------------------------------------------
+
+echo "🧹 Unmounting temporary EFI partitions..."
+
+sync
+
+mountpoint -q /boot/efi2 && umount /boot/efi2
+mountpoint -q /boot/efi && umount /boot/efi
+
+rmdir /boot/efi2 2>/dev/null || true
+rmdir /boot/efi 2>/dev/null || true
+
+echo "✅ Temporary EFI mounts removed."
   
 firewall-cmd --add-service=dhcp --permanent
 firewall-cmd --add-service=tftp --permanent
