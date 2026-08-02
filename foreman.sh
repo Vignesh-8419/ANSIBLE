@@ -79,21 +79,21 @@ echo "📝 Creating vault.repo..."
 cat <<EOF > /etc/yum.repos.d/vault.repo
 [base]
 name=CentOS Vault Base
-baseurl=http://vault.centos.org/7.9.2009/os/\$basearch/
+baseurl=https://vault.centos.org/centos/7/os/\$basearch/
 enabled=1
 gpgcheck=1
 gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 
 [updates]
 name=CentOS Vault Updates
-baseurl=http://vault.centos.org/7.9.2009/updates/\$basearch/
+baseurl=https://vault.centos.org/centos/7/updates/\$basearch/
 enabled=1
 gpgcheck=1
 gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 
 [extras]
 name=CentOS Vault Extras
-baseurl=http://vault.centos.org/7.9.2009/extras/\$basearch/
+baseurl=https://vault.centos.org/centos/7/extras/\$basearch/
 enabled=1
 gpgcheck=1
 gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
