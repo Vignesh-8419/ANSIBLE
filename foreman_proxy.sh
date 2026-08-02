@@ -127,6 +127,7 @@ enabled=1
 gpgcheck=0
 REPO
 
+yum install -y sshpass mesa-libEGL* gtk*
 yum install -y foreman foreman-proxy puppetserver --skip-broken
 yum install -y foreman-installer*
 
