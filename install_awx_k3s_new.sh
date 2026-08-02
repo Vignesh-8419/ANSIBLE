@@ -337,17 +337,26 @@ podman tag \
 localhost/awx-ee-vmware:24.6.1 \
 localhost:5000/awx-ee-vmware:24.6.1
 
-podman push \
-  --tls-verify=false \
-  localhost:5000/awx-ee-vmware:24.6.1
+podman push --tls-verify=false localhost:5000/awx-ee-vmware:24.6.1
 
 k3s crictl pull localhost:5000/awx-ee-vmware:24.6.1
+
+# --------------------------------------------------
+# Return to AWX Operator source
+# --------------------------------------------------
+cd /root/awx-operator
+
+test -f Makefile || {
+    echo "ERROR: AWX Operator source directory not found."
+    exit 1
+}
 
 # -----------------------------
 # 13. Deploy AWX Operator
 # -----------------------------
 echo -e "${BLUE}# 13. Deploy AWX Operator${NC}"
 echo "🏗️ Deploying AWX Operator..."
+
 make deploy NAMESPACE="$NAMESPACE"
 kubectl -n "$NAMESPACE" set image deployment/awx-operator-controller-manager \
   kube-rbac-proxy="$KUBE_RBAC_PROXY_IMAGE" || true
