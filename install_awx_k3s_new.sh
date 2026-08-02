@@ -164,6 +164,38 @@ kubectl get nodes
 echo -e "${GREEN}✅ Background:${NC} Installed K3s, linked kubectl, and confirmed node readiness."
 
 # -----------------------------
+# 5a. Create Local Container Registry
+# -----------------------------
+
+mkdir -p /opt/registry
+
+if ! podman ps -a --format "{{.Names}}" | grep -qx registry; then
+    podman run -d \
+      --name registry \
+      --restart=always \
+      -p 5000:5000 \
+      -v /opt/registry:/var/lib/registry:z \
+      docker.io/library/registry:2
+else
+    podman start registry >/dev/null 2>&1 || true
+fi
+
+mkdir -p /etc/rancher/k3s
+
+cat >/etc/rancher/k3s/registries.yaml <<EOF
+mirrors:
+  "localhost:5000":
+    endpoint:
+      - "http://localhost:5000"
+EOF
+
+systemctl restart k3s
+
+until kubectl get nodes 2>/dev/null | grep -q " Ready "; do
+    sleep 5
+done
+
+# -----------------------------
 # 6. Install Kustomize
 # -----------------------------
 echo -e "${BLUE}# 6. Install Kustomize${NC}"
@@ -242,6 +274,40 @@ kubectl create secret generic awx-server-admin-password \
   -n "$NAMESPACE" \
   --dry-run=client -o yaml | kubectl apply -f -
 echo -e "${GREEN}✅ Background:${NC} Created a Kubernetes secret storing the AWX admin password, referenced by the AWX CRD."
+
+# -----------------------------
+# Build VMware Execution Environment
+# -----------------------------
+
+mkdir -p /root/awx-ee-vmware
+cd /root/awx-ee-vmware
+
+cat > Containerfile <<'EOF'
+FROM quay.io/ansible/awx-ee:24.6.1
+
+USER root
+
+RUN dnf install -y python3-pip && \
+    pip3 install --no-cache-dir \
+        requests \
+        pyvmomi && \
+    ansible-galaxy collection install \
+        community.vmware \
+        vmware.vmware && \
+    dnf clean all
+
+USER 1000
+EOF
+
+podman build -t awx-ee-vmware:24.6.1 .
+
+podman tag \
+localhost/awx-ee-vmware:24.6.1 \
+localhost:5000/awx-ee-vmware:24.6.1
+
+podman push localhost:5000/awx-ee-vmware:24.6.1
+
+k3s crictl pull localhost:5000/awx-ee-vmware:24.6.1
 
 # -----------------------------
 # 13. Deploy AWX Operator
@@ -429,7 +495,7 @@ awx-manage shell <<'EOF'
 from main.models.execution_environments import ExecutionEnvironment
 ee=ExecutionEnvironment.objects.filter(name='AWX EE (latest)').first()
 if ee:
-    ee.image='quay.io/ansible/awx-ee:24.6.1'
+    ee.image='localhost:5000/awx-ee-vmware:24.6.1'
     ee.credential=None
     ee.pull='always'
     ee.save()
