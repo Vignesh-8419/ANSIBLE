@@ -1,0 +1,195 @@
+---
+- name: Rocky Linux 9 Post Upgrade Cleanup
+  hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
+  gather_facts: false
+  become: true
+  serial: 1
+
+  tasks:
+
+    ####################################################################
+    # Wait for Host
+    ####################################################################
+
+    - name: Wait for SSH
+      wait_for_connection:
+        timeout: 1800
+        sleep: 10
+
+    ####################################################################
+    # Ensure Python
+    ####################################################################
+
+    - name: Ensure Python 3 exists
+      raw: |
+        if ! command -v python3 >/dev/null 2>&1; then
+          dnf -y install python3
+        fi
+      changed_when: false
+
+    - meta: reset_connection
+
+    - name: Gather Facts
+      setup:
+
+    ####################################################################
+    # Detect Software RAID
+    ####################################################################
+
+    - name: Check md0
+      stat:
+        path: /dev/md0
+      register: md0_device
+
+    - name: Check md1
+      stat:
+        path: /dev/md1
+      register: md1_device
+
+    - name: Determine RAID
+      set_fact:
+        software_raid: "{{ md0_device.stat.exists or md1_device.stat.exists }}"
+
+    - debug:
+        msg: >-
+          {{
+            'Software RAID detected. Rebuilding RAID.'
+            if software_raid
+            else
+            'Standalone disk detected. RAID rebuild skipped.'
+          }}
+
+    ####################################################################
+    # Rebuild RAID
+    ####################################################################
+
+    - block:
+
+        - name: Clone partition table
+          command: sgdisk -R=/dev/sdb /dev/sda
+
+        - name: Generate new GPT GUID
+          command: sgdisk -G /dev/sdb
+
+        - name: Reload partition table
+          command: partprobe /dev/sdb
+
+        - name: Wait for partitions
+          wait_for:
+            path: /dev/sdb3
+            timeout: 60
+
+        - name: Add sdb2 back into md0
+          command: mdadm --add /dev/md0 /dev/sdb2
+
+        - name: Add sdb3 back into md1
+          command: mdadm --add /dev/md1 /dev/sdb3
+
+        - name: Wait for RAID rebuild
+          shell: |
+            while grep -qE 'recovery|resync' /proc/mdstat; do
+              sleep 15
+            done
+          args:
+            executable: /bin/bash
+
+        ################################################################
+        # EFI
+        ################################################################
+
+        - name: Create FAT32 filesystem
+          filesystem:
+            fstype: vfat
+            dev: /dev/sdb1
+
+        - name: Create EFI mountpoint
+          file:
+            path: /boot/efi2
+            state: directory
+
+        - name: Mount secondary EFI
+          mount:
+            path: /boot/efi2
+            src: /dev/sdb1
+            fstype: vfat
+            state: mounted
+
+        - name: Synchronize EFI
+          command: rsync -aH --delete /boot/efi/ /boot/efi2/
+
+        - name: Create EFI Boot Entry
+          shell: |
+            if ! efibootmgr -v | grep -q "Rocky RAID1 Disk2"; then
+              efibootmgr \
+                -c \
+                -d /dev/sdb \
+                -p 1 \
+                -L "Rocky RAID1 Disk2" \
+                -l '\EFI\rocky\shimx64.efi'
+            fi
+          args:
+            executable: /bin/bash
+
+        ################################################################
+        # mdadm
+        ################################################################
+
+        - name: Save mdadm configuration
+          shell: mdadm --detail --scan > /etc/mdadm.conf
+
+        - name: Rebuild initramfs
+          command: dracut -f
+
+        - name: Verify RAID
+          shell: cat /proc/mdstat
+          register: raid_status
+          changed_when: false
+
+        - debug:
+            var: raid_status.stdout_lines
+
+      when: software_raid
+
+    ####################################################################
+    # Final Verification
+    ####################################################################
+
+    - name: Show Operating System
+      command: cat /etc/os-release
+      register: os_release
+      changed_when: false
+
+    - debug:
+        var: os_release.stdout_lines
+
+    - name: Show Kernel
+      command: uname -r
+      register: kernel_version
+      changed_when: false
+
+    - debug:
+        var: kernel_version.stdout
+
+    - name: Show Block Devices
+      command: lsblk
+      register: lsblk_output
+      changed_when: false
+
+    - debug:
+        var: lsblk_output.stdout_lines
+
+    - name: Show EFI Entries
+      command: efibootmgr -v
+      register: efiboot
+      changed_when: false
+
+    - debug:
+        var: efiboot.stdout_lines
+
+    - name: Migration Complete
+      debug:
+        msg:
+          - "Rocky Linux 9 migration completed successfully."
+          - "RAID Status : {{ 'Healthy' if software_raid else 'Not Applicable' }}"
+          - "Kernel      : {{ kernel_version.stdout }}"
+          - "OS          : {{ ansible_distribution }} {{ ansible_distribution_version }}"
