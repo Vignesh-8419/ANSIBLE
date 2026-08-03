@@ -12,6 +12,10 @@
 
   pre_tasks:
 
+    ####################################################################
+    # Bootstrap Python
+    ####################################################################
+
     - name: Ensure Python is installed
       raw: |
         if ! command -v python >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then
@@ -24,28 +28,33 @@
     - name: Gather facts
       setup:
 
+    ####################################################################
+    # Validate Source OS
+    ####################################################################
+
     - name: Skip migration if already Rocky Linux 8
       debug:
-        msg: "Host is already running Rocky Linux {{ ansible_distribution_version }}. Skipping ELevate migration."
+        msg: "Host is already running Rocky Linux {{ ansible_distribution_version }}. Skipping migration."
       when:
         - ansible_distribution == "Rocky"
         - ansible_distribution_major_version == "8"
 
-    - name: End play when already Rocky Linux 8
-      meta: end_play
+    - meta: end_play
       when:
         - ansible_distribution == "Rocky"
         - ansible_distribution_major_version == "8"
 
     - name: Validate source operating system
       fail:
-        msg: "This playbook supports only CentOS 7."
-      when: ansible_distribution != "CentOS" or ansible_distribution_major_version != "7"
+        msg: This playbook supports only CentOS 7.
+      when:
+        - ansible_distribution != "CentOS"
+          or ansible_distribution_major_version != "7"
 
-  tasks: 
+  tasks:
 
     ####################################################################
-    # Configure ELevate Repository
+    # Configure Repositories
     ####################################################################
 
     - name: Backup existing repository files
@@ -53,7 +62,7 @@
         mkdir -p /etc/yum.repos.d/backup
         mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/ 2>/dev/null || true
 
-    - name: Create elevate.repo
+    - name: Create elevate repository
       copy:
         dest: "{{ elevate_repo_file }}"
         mode: "0644"
@@ -77,78 +86,47 @@
           gpgcheck=0
 
     ####################################################################
-    # Complete pending yum transaction
+    # Complete Pending Yum Transaction
     ####################################################################
 
-    - name: Check if yum-complete-transaction exists
+    - name: Check yum-complete-transaction
       stat:
         path: /usr/bin/yum-complete-transaction
       register: yum_complete
 
-    - name: Check pending yum transaction
-      shell: |
-        yum-complete-transaction --cleanup-only --quiet --skip-broken
-        echo $?
-      register: yum_pending
-      changed_when: false
+    - name: Cleanup pending yum transaction
+      shell: yum-complete-transaction --cleanup-only --quiet --skip-broken
       when: yum_complete.stat.exists
+      ignore_errors: yes
 
-    - name: Complete pending yum transaction
+    - name: Complete pending transaction
       command: yum-complete-transaction -y
-      when:
-        - yum_complete.stat.exists
-        - yum_pending.stdout != "0"
-
-    - name: Skip pending transaction cleanup
-      debug:
-        msg: "yum-complete-transaction is not installed. Skipping transaction cleanup."
-      when: not yum_complete.stat.exists
+      when: yum_complete.stat.exists
+      ignore_errors: yes
 
     ####################################################################
     # Install deltarpm
     ####################################################################
 
-    - name: Check if deltarpm is already installed
+    - name: Check deltarpm
       stat:
         path: /usr/bin/applydeltarpm
       register: deltarpm_bin
 
-    - name: Download deltarpm package
+    - name: Download deltarpm
       get_url:
         url: http://vault.centos.org/7.9.2009/os/x86_64/Packages/deltarpm-3.6-3.el7.x86_64.rpm
-        dest: /tmp/deltarpm-3.6-3.el7.x86_64.rpm
-        mode: "0644"
+        dest: /tmp/deltarpm.rpm
       when: not deltarpm_bin.stat.exists
-      retries: 3
-      delay: 5
 
     - name: Install deltarpm
-      command:
-        argv:
-          - rpm
-          - -ivh
-          - /tmp/deltarpm-3.6-3.el7.x86_64.rpm
+      command: rpm -ivh /tmp/deltarpm.rpm
       when: not deltarpm_bin.stat.exists
 
-    - name: Verify deltarpm installation
-      command: rpm -q deltarpm
-      register: deltarpm_check
-      changed_when: false
-      failed_when: false
-
-    - name: Display deltarpm status
-      debug:
-        msg: >-
-          {{
-            'deltarpm is installed.'
-            if deltarpm_check.rc == 0
-            else 'deltarpm is not installed.'
-          }}
-
     ####################################################################
-    # Clean Previous Leapp Installation
+    # Remove Previous Leapp Installation
     ####################################################################
-    
+
     - name: Remove existing Leapp packages
       yum:
         name:
@@ -160,7 +138,7 @@
           - leapp-deps
         state: absent
       ignore_errors: yes
-    
+
     - name: Remove previous Leapp directories
       file:
         path: "{{ item }}"
@@ -171,33 +149,33 @@
         - /usr/share/leapp-repository
         - /var/lib/leapp
         - /var/log/leapp
-    
+
     - name: Remove temporary Leapp files
       shell: |
         rm -rf /var/tmp/leapp*
         rm -f /var/tmp/system-upgrade.state
-    
+
     - name: Remove old Leapp repository
       file:
         path: /etc/yum.repos.d/leapp.repo
         state: absent
-    
+
     - name: Clean yum cache
       command: yum clean all
-    
-    - name: Remove yum cache directory
+
+    - name: Remove yum cache
       file:
         path: /var/cache/yum
         state: absent
-    
+
     - name: Rebuild yum cache
       command: yum makecache
-    
+
     ####################################################################
-    # Install Leapp
+    # Install Fresh Leapp
     ####################################################################
-    
-    - name: Install complete Leapp package set
+
+    - name: Install Leapp packages
       yum:
         name:
           - leapp
@@ -207,7 +185,7 @@
           - leapp-data-rocky
           - leapp-deps
         state: present
-    
+
     - name: Verify Leapp installation
       shell: |
         leapp --version
@@ -220,7 +198,7 @@
           leapp-deps
       register: leapp_verify
       changed_when: false
-    
+
     - debug:
         var: leapp_verify.stdout_lines
 
@@ -264,200 +242,177 @@
           enabled=1
           gpgcheck=0
 
-#    - name: Check immutable attribute
-#      command: lsattr "{{ rocky_repo_file }}"
-#      register: repo_attr
-#      changed_when: false
-#      failed_when: false
-
-#    - name: Lock Leapp repository file
-#      command:
-#        argv:
-#          - chattr
-#          - +i
-#          - "{{ rocky_repo_file }}"
-#      when: "'i' not in repo_attr.stdout"
-
     ####################################################################
     # Enable Root SSH Login
     ####################################################################
 
-    - name: Enable PermitRootLogin in sshd_config
+    - name: Enable PermitRootLogin
       lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^[#[:space:]]*PermitRootLogin'
-        line: 'PermitRootLogin yes'
+        line: PermitRootLogin yes
         backup: yes
 
-    - name: Restart SSH service
+    - name: Restart SSH
       service:
         name: sshd
         state: restarted
 
     ####################################################################
-    # Leapp Preupgrade - Pass 1
+    # Leapp Preupgrade Pass 1
     ####################################################################
-    
-    - name: Run first Leapp preupgrade
+
+    - name: Run first preupgrade
       command: leapp preupgrade
       register: preupgrade_pass1
       ignore_errors: yes
-    
+
     - name: Display first preupgrade output
       debug:
         var: preupgrade_pass1.stdout_lines
-    
+
     ####################################################################
     # Apply Preupgrade Fixes
     ####################################################################
-    
+
     - name: Remove perl-libs
       yum:
         name: perl-libs
         state: absent
-    
-    - name: Set SELinux to permissive
+      ignore_errors: yes
+
+    - name: Set SELinux permissive
       command: setenforce 0
       ignore_errors: yes
-    
+
     - name: Remove floppy module
       command: modprobe -r floppy
       ignore_errors: yes
-    
+
     - name: Remove pata_acpi module
       command: modprobe -r pata_acpi
       ignore_errors: yes
-    
+
     - name: Answer authselect confirmation
       command: >
         leapp answer
         --section authselect_check.confirm=True
       ignore_errors: yes
-    
-    - name: Answer PAM PKCS11 confirmation
+
+    - name: Answer remove_pam_pkcs11 confirmation
       command: >
         leapp answer
         --section remove_pam_pkcs11_module_check.confirm=True
       ignore_errors: yes
-    
-#    - name: Check immutable attribute
-#      command: lsattr {{ rocky_repo_file }}
-#      register: repo_attr
-#      changed_when: false
-#      failed_when: false
-    
-#    - name: Unlock Leapp repository file
-#      command: chattr -i {{ rocky_repo_file }}
-#      when: "'i' in repo_attr.stdout"
-    
+
     ####################################################################
-    # Leapp Preupgrade - Pass 2
+    # Leapp Preupgrade Pass 2
     ####################################################################
-    
-    - name: Run second Leapp preupgrade
+
+    - name: Run second preupgrade
       command: leapp preupgrade
       register: preupgrade_pass2
       ignore_errors: yes
-    
+
     - name: Display second preupgrade output
       debug:
         var: preupgrade_pass2.stdout_lines
 
-    - name: Fail if second preupgrade still has errors
+    - name: Fail if second preupgrade still failed
       fail:
         msg: |
           Leapp preupgrade still failed.
           Review /var/log/leapp/leapp-report.txt before continuing.
       when: preupgrade_pass2.rc != 0
 
-####################################################################
-# Detect Software RAID
-####################################################################
+    ####################################################################
+    # Detect Software RAID
+    ####################################################################
 
-- name: Check if md0 exists
-  stat:
-    path: /dev/md0
-  register: md0_device
+    - name: Check if md0 exists
+      stat:
+        path: /dev/md0
+      register: md0_device
 
-- name: Check if md1 exists
-  stat:
-    path: /dev/md1
-  register: md1_device
+    - name: Check if md1 exists
+      stat:
+        path: /dev/md1
+      register: md1_device
 
-- name: Determine if host is using software RAID
-  set_fact:
-    software_raid: "{{ md0_device.stat.exists or md1_device.stat.exists }}"
+    - name: Determine if software RAID is present
+      set_fact:
+        software_raid: "{{ md0_device.stat.exists or md1_device.stat.exists }}"
 
-- name: Display RAID detection
-  debug:
-    msg: >-
-      {{
-        'Software RAID detected. Preparing degraded RAID for Leapp upgrade.'
-        if software_raid
-        else
-        'Software RAID not detected. Skipping RAID preparation.'
-      }}
+    - name: Display RAID detection
+      debug:
+        msg: >-
+          {{
+            'Software RAID detected. Preparing degraded RAID for Leapp.'
+            if software_raid
+            else
+            'Software RAID not detected. Skipping RAID preparation.'
+          }}
 
-####################################################################
-# Prepare RAID for Leapp Upgrade (TEST WORKAROUND)
-####################################################################
+    ####################################################################
+    # Prepare RAID for Upgrade (RAID hosts only)
+    ####################################################################
 
-- block:
+    - block:
 
-    - name: Ensure secondary EFI mount point exists
-      file:
-        path: /boot/efi2
-        state: directory
+        - name: Ensure secondary EFI mount point exists
+          file:
+            path: /boot/efi2
+            state: directory
 
-    - name: Unmount secondary EFI if mounted
-      mount:
-        path: /boot/efi2
-        state: unmounted
-      ignore_errors: yes
+        - name: Unmount secondary EFI
+          mount:
+            path: /boot/efi2
+            state: unmounted
+          ignore_errors: yes
 
-    - name: Fail and remove sdb2 from md0
-      shell: |
-        if mdadm --detail /dev/md0 | grep -q "/dev/sdb2"; then
-          mdadm /dev/md0 --fail /dev/sdb2
-          mdadm /dev/md0 --remove /dev/sdb2
-        fi
-      args:
-        executable: /bin/bash
+        - name: Remove sdb2 from md0
+          shell: |
+            if mdadm --detail /dev/md0 | grep -q "/dev/sdb2"; then
+              mdadm /dev/md0 --fail /dev/sdb2
+              mdadm /dev/md0 --remove /dev/sdb2
+            fi
+          args:
+            executable: /bin/bash
 
-    - name: Fail and remove sdb3 from md1
-      shell: |
-        if mdadm --detail /dev/md1 | grep -q "/dev/sdb3"; then
-          mdadm /dev/md1 --fail /dev/sdb3
-          mdadm /dev/md1 --remove /dev/sdb3
-        fi
-      args:
-        executable: /bin/bash
+        - name: Remove sdb3 from md1
+          shell: |
+            if mdadm --detail /dev/md1 | grep -q "/dev/sdb3"; then
+              mdadm /dev/md1 --fail /dev/sdb3
+              mdadm /dev/md1 --remove /dev/sdb3
+            fi
+          args:
+            executable: /bin/bash
 
-    - name: Clear RAID metadata
-      shell: |
-        mdadm --zero-superblock /dev/sdb1 || true
-        mdadm --zero-superblock /dev/sdb2 || true
-        mdadm --zero-superblock /dev/sdb3 || true
-      args:
-        executable: /bin/bash
+        - name: Zero RAID superblocks
+          shell: |
+            mdadm --zero-superblock /dev/sdb1 || true
+            mdadm --zero-superblock /dev/sdb2 || true
+            mdadm --zero-superblock /dev/sdb3 || true
+          args:
+            executable: /bin/bash
 
-    - name: Wipe secondary disk signatures
-      shell: |
-        wipefs -a /dev/sdb || true
-        sgdisk --zap-all /dev/sdb || true
-        partprobe /dev/sdb || true
-      args:
-        executable: /bin/bash
+        - name: Wipe secondary disk
+          shell: |
+            wipefs -a /dev/sdb || true
+            sgdisk --zap-all /dev/sdb || true
+            partprobe /dev/sdb || true
+          args:
+            executable: /bin/bash
 
-    - name: Display RAID status
-      command: cat /proc/mdstat
-      register: mdstat_after
-      changed_when: false
+        - name: Show RAID status
+          command: cat /proc/mdstat
+          register: mdstat_after
+          changed_when: false
 
-    - debug:
-        var: mdstat_after.stdout_lines
+        - debug:
+            var: mdstat_after.stdout_lines
 
-  when: software_raid
+      when: software_raid
 
     ####################################################################
     # Upgrade
@@ -470,34 +425,67 @@
           - upgrade
       register: upgrade_result
 
-    - name: Verify upgrade initramfs exists
-      stat:
-        path: /boot/initramfs-upgrade.x86_64.img
-      register: upgrade_initramfs
-    
-    - name: Fail if upgrade initramfs missing
-      fail:
-        msg: "Upgrade initramfs was not created."
-      when: not upgrade_initramfs.stat.exists
-
     - name: Display upgrade output
       debug:
         var: upgrade_result.stdout_lines
       when: upgrade_result is defined
-    
+
+    ####################################################################
+    # Verify Upgrade Kernel
+    ####################################################################
+
+    - name: Verify upgrade kernel exists
+      stat:
+        path: /boot/vmlinuz-upgrade.x86_64
+      register: upgrade_kernel
+
+    - name: Verify upgrade initramfs exists
+      stat:
+        path: /boot/initramfs-upgrade.x86_64.img
+      register: upgrade_initramfs
+
+    - name: Fail if upgrade kernel is missing
+      fail:
+        msg: "Upgrade kernel (/boot/vmlinuz-upgrade.x86_64) was not created."
+      when: not upgrade_kernel.stat.exists
+
+    - name: Fail if upgrade initramfs is missing
+      fail:
+        msg: "Upgrade initramfs (/boot/initramfs-upgrade.x86_64.img) was not created."
+      when: not upgrade_initramfs.stat.exists
+
+    - name: Display upgrade kernel
+      command: grubby --default-kernel
+      register: default_kernel
+      changed_when: false
+
+    - debug:
+        var: default_kernel.stdout
+
     ####################################################################
     # Reboot
     ####################################################################
-    
-    - name: Reboot into Rocky Linux 8
+
+    - name: Reboot into Rocky Linux upgrade environment
       reboot:
-        reboot_timeout: 1800
+        reboot_timeout: 3600
+        connect_timeout: 10
+        post_reboot_delay: 60
       when:
         - upgrade_result is defined
         - upgrade_result.rc == 0
 
     ####################################################################
-    # Python 3
+    # Reconnect After Upgrade
+    ####################################################################
+
+    - name: Wait for SSH to become available
+      wait_for_connection:
+        timeout: 1800
+        sleep: 10
+
+    ####################################################################
+    # Bootstrap Python 3
     ####################################################################
 
     - name: Ensure Python 3 is installed
@@ -513,107 +501,191 @@
       set_fact:
         ansible_python_interpreter: /usr/bin/python3
 
-    - name: Gather facts after upgrade
+    - name: Gather facts after reboot
       setup:
-
-####################################################################
-# Rebuild RAID1 (Only for Software RAID Hosts)
-####################################################################
-
-- block:
-
-    - name: Clone partition table from sda to sdb
-      command: sgdisk -R=/dev/sdb /dev/sda
-
-    - name: Generate new GPT GUID for sdb
-      command: sgdisk -G /dev/sdb
-
-    - name: Reload partition table
-      command: partprobe /dev/sdb
-
-    - name: Wait for sdb partitions
-      wait_for:
-        path: /dev/sdb3
-        timeout: 60
-
-    - name: Add sdb2 back to md0
-      command: mdadm --add /dev/md0 /dev/sdb2
-
-    - name: Add sdb3 back to md1
-      command: mdadm --add /dev/md1 /dev/sdb3
-
-    - name: Wait for md0 rebuild to complete
-      shell: |
-        while grep -qE 'recovery|resync' /proc/mdstat; do
-          sleep 15
-        done
-      args:
-        executable: /bin/bash
-
-    - name: Create EFI filesystem
-      filesystem:
-        fstype: vfat
-        dev: /dev/sdb1
-
-    - name: Create secondary EFI mount point
-      file:
-        path: /boot/efi2
-        state: directory
-
-    - name: Mount secondary EFI
-      mount:
-        path: /boot/efi2
-        src: /dev/sdb1
-        fstype: vfat
-        state: mounted
-
-    - name: Synchronize EFI contents
-      synchronize:
-        src: /boot/efi/
-        dest: /boot/efi2/
-        archive: yes
-        delete: yes
-      delegate_to: "{{ inventory_hostname }}"
-
-    - name: Create second EFI boot entry
-      shell: |
-        if ! efibootmgr -v | grep -q "Rocky RAID1 Disk2"; then
-          efibootmgr \
-            -c \
-            -d /dev/sdb \
-            -p 1 \
-            -L "Rocky RAID1 Disk2" \
-            -l '\EFI\rocky\shimx64.efi'
-        fi
-      args:
-        executable: /bin/bash
-
-    - name: Save current mdadm configuration
-      shell: |
-        mdadm --detail --scan > /etc/mdadm.conf
-
-    - name: Rebuild initramfs
-      command: dracut -f
-
-    - name: Display final RAID status
-      command: cat /proc/mdstat
-      register: raid_status
-      changed_when: false
-
-    - debug:
-        var: raid_status.stdout_lines
-
-  when: software_raid
 
     ####################################################################
     # Verify Upgrade
     ####################################################################
 
+    - name: Verify operating system
+      command: cat /etc/os-release
+      register: os_release
+      changed_when: false
+
+    - debug:
+        var: os_release.stdout_lines
+
+    - name: Verify running kernel
+      command: uname -r
+      register: kernel_version
+      changed_when: false
+
+    - debug:
+        var: kernel_version.stdout
+
+
+    ####################################################################
+    # Rebuild RAID1 (Only for Software RAID Hosts)
+    ####################################################################
+
+    - block:
+
+        - name: Clone partition table from sda to sdb
+          command: sgdisk -R=/dev/sdb /dev/sda
+
+        - name: Generate new GPT disk GUID
+          command: sgdisk -G /dev/sdb
+
+        - name: Reload partition table
+          command: partprobe /dev/sdb
+
+        - name: Wait for sdb1
+          wait_for:
+            path: /dev/sdb1
+            timeout: 60
+
+        - name: Wait for sdb2
+          wait_for:
+            path: /dev/sdb2
+            timeout: 60
+
+        - name: Wait for sdb3
+          wait_for:
+            path: /dev/sdb3
+            timeout: 60
+
+        ################################################################
+        # Re-add RAID Members
+        ################################################################
+
+        - name: Add sdb2 back to md0
+          command: mdadm --add /dev/md0 /dev/sdb2
+
+        - name: Add sdb3 back to md1
+          command: mdadm --add /dev/md1 /dev/sdb3
+
+        ################################################################
+        # Wait for RAID Rebuild
+        ################################################################
+
+        - name: Wait for RAID rebuild to complete
+          shell: |
+            while grep -qE 'recovery|resync' /proc/mdstat; do
+              cat /proc/mdstat
+              sleep 15
+            done
+          args:
+            executable: /bin/bash
+          changed_when: false
+
+        - name: Verify RAID is healthy
+          shell: |
+            cat /proc/mdstat
+            grep '\[UU\]' /proc/mdstat
+          register: raid_verify
+          changed_when: false
+
+        - debug:
+            var: raid_verify.stdout_lines
+
+        ################################################################
+        # Recreate Secondary EFI
+        ################################################################
+
+        - name: Create FAT32 filesystem on sdb1
+          filesystem:
+            dev: /dev/sdb1
+            fstype: vfat
+
+        - name: Create EFI2 mount point
+          file:
+            path: /boot/efi2
+            state: directory
+
+        - name: Mount secondary EFI
+          mount:
+            path: /boot/efi2
+            src: /dev/sdb1
+            fstype: vfat
+            state: mounted
+
+        ################################################################
+        # Copy EFI Files
+        ################################################################
+
+        - name: Synchronize EFI contents
+          shell: |
+            rsync -aH --delete /boot/efi/ /boot/efi2/
+            sync
+          args:
+            executable: /bin/bash
+
+        - name: Verify copied EFI files
+          command: find /boot/efi2/EFI -maxdepth 2 -type f
+          register: efi_files
+          changed_when: false
+
+        - debug:
+            var: efi_files.stdout_lines
+
+        ################################################################
+        # Create Second UEFI Boot Entry
+        ################################################################
+
+        - name: Check existing EFI boot entries
+          command: efibootmgr -v
+          register: boot_entries
+          changed_when: false
+
+        - name: Create second EFI boot entry
+          shell: |
+            if ! efibootmgr -v | grep -q "Rocky RAID1 Disk2"; then
+              efibootmgr \
+                -c \
+                -d /dev/sdb \
+                -p 1 \
+                -L "Rocky RAID1 Disk2" \
+                -l '\EFI\rocky\shimx64.efi'
+            fi
+          args:
+            executable: /bin/bash
+
+        ################################################################
+        # Update mdadm & Initramfs
+        ################################################################
+
+        - name: Regenerate mdadm configuration
+          shell: |
+            mdadm --detail --scan > /etc/mdadm.conf
+
+        - name: Rebuild initramfs
+          command: dracut -f
+
+        - name: Regenerate GRUB configuration
+          command: grub2-mkconfig -o /boot/grub2/grub.cfg
+
+        ################################################################
+        # Final RAID Status
+        ################################################################
+
+        - name: Display final RAID status
+          command: cat /proc/mdstat
+          register: final_mdstat
+          changed_when: false
+
+        - debug:
+            var: final_mdstat.stdout_lines
+
+      when: software_raid
+
+
+    ####################################################################
+    # Final System Verification
+    ####################################################################
+
     - name: Verify Rocky Linux installation
-      command:
-        argv:
-          - cat
-          - /etc/os-release
+      command: cat /etc/os-release
       register: os_release
       changed_when: false
 
@@ -621,21 +693,146 @@
       debug:
         var: os_release.stdout_lines
 
-    - name: Display running kernel
-      command:
-        argv:
-          - uname
-          - -r
+    - name: Verify running kernel
+      command: uname -r
       register: kernel_version
       changed_when: false
 
-    - name: Show running kernel
+    - name: Display kernel version
       debug:
         var: kernel_version.stdout
 
-    - name: Display migration status
+    - name: Verify SELinux mode
+      command: getenforce
+      register: selinux_status
+      changed_when: false
+
+    - name: Display SELinux status
+      debug:
+        var: selinux_status.stdout
+
+    ####################################################################
+    # Verify Storage
+    ####################################################################
+
+    - name: Display block devices
+      command: lsblk
+      register: lsblk_output
+      changed_when: false
+
+    - name: Show block devices
+      debug:
+        var: lsblk_output.stdout_lines
+
+    - name: Display mounted filesystems
+      command: mount
+      register: mount_output
+      changed_when: false
+
+    - name: Show mounted filesystems
+      debug:
+        var: mount_output.stdout_lines
+
+    ####################################################################
+    # Verify RAID
+    ####################################################################
+
+    - name: Display mdadm configuration
+      command: cat /etc/mdadm.conf
+      register: mdadm_conf
+      changed_when: false
+      when: software_raid
+
+    - name: Show mdadm configuration
+      debug:
+        var: mdadm_conf.stdout_lines
+      when: software_raid
+
+    - name: Display RAID status
+      command: cat /proc/mdstat
+      register: mdstat
+      changed_when: false
+      when: software_raid
+
+    - name: Show RAID status
+      debug:
+        var: mdstat.stdout_lines
+      when: software_raid
+
+    ####################################################################
+    # Verify EFI
+    ####################################################################
+
+    - name: Display EFI boot entries
+      command: efibootmgr -v
+      register: efi_entries
+      changed_when: false
+
+    - name: Show EFI boot entries
+      debug:
+        var: efi_entries.stdout_lines
+
+    - name: Display primary EFI contents
+      command: find /boot/efi/EFI -maxdepth 2 -type f
+      register: primary_efi
+      changed_when: false
+
+    - name: Show primary EFI contents
+      debug:
+        var: primary_efi.stdout_lines
+
+    - name: Display secondary EFI contents
+      command: find /boot/efi2/EFI -maxdepth 2 -type f
+      register: secondary_efi
+      changed_when: false
+      when: software_raid
+
+    - name: Show secondary EFI contents
+      debug:
+        var: secondary_efi.stdout_lines
+      when: software_raid
+
+    ####################################################################
+    # Verify Default Kernel
+    ####################################################################
+
+    - name: Verify default kernel
+      command: grubby --default-kernel
+      register: default_kernel
+      changed_when: false
+
+    - name: Display default kernel
+      debug:
+        var: default_kernel.stdout
+
+    ####################################################################
+    # Final Status
+    ####################################################################
+
+    - name: Display migration summary
       debug:
         msg:
-          - "Migration completed successfully."
-          - "Operating System : {{ ansible_distribution }} {{ ansible_distribution_version }}"
-          - "Kernel           : {{ ansible_kernel }}"
+          - "============================================================"
+          - " CentOS 7 -> Rocky Linux 8 Migration Completed Successfully"
+          - "============================================================"
+          - " Host            : {{ inventory_hostname }}"
+          - " Distribution    : {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - " Kernel          : {{ ansible_kernel }}"
+          - " Python          : {{ ansible_python.version.major }}.{{ ansible_python.version.minor }}"
+          - " Software RAID   : {{ software_raid }}"
+          - "============================================================"
+
+    - name: Display RAID summary
+      debug:
+        msg:
+          - "RAID arrays rebuilt successfully."
+          - "EFI synchronized to both disks."
+          - "Secondary UEFI boot entry created."
+      when: software_raid
+
+    - name: Display non-RAID summary
+      debug:
+        msg:
+          - "Single disk system detected."
+          - "RAID rebuild steps were skipped."
+      when: not software_raid
