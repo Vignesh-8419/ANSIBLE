@@ -3,6 +3,8 @@
 
 - import_playbook: Rocky8_to_Rocky9_ELevate.yml
 
+- import_playbook:Rocky_9_raid_rebuild.yml
+
 - import_playbook: Rocky9_Post_Migration_Cleanup.yml
 
 - import_playbook: 03_repair_rescue.yml
