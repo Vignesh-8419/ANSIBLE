@@ -371,46 +371,6 @@
       when: preupgrade_pass2.rc != 0
 
     ####################################################################
-    # Configure EFI
-    ####################################################################
-    
-    - name: Ensure EFI mount points exist
-      file:
-        path: "{{ item }}"
-        state: directory
-        mode: "0755"
-      loop:
-        - /boot/efi
-        - /boot/efi2
-    
-    - name: Get primary EFI UUID
-      command: blkid -s UUID -o value /dev/sda1
-      register: efi_uuid
-      changed_when: false
-    
-    - name: Configure /boot/efi in fstab
-      mount:
-        path: /boot/efi
-        src: "UUID={{ efi_uuid.stdout }}"
-        fstype: vfat
-        opts: defaults,umask=0077
-        state: mounted
-    
-    - name: Mount primary EFI
-      mount:
-        path: /boot/efi
-        src: "UUID={{ efi_uuid.stdout }}"
-        fstype: vfat
-        state: mounted
-    
-    - name: Mount secondary EFI
-      mount:
-        path: /boot/efi2
-        src: /dev/sdb1
-        fstype: vfat
-        state: mounted
-
-    ####################################################################
     # Upgrade
     ####################################################################
 
@@ -435,45 +395,6 @@
       debug:
         var: upgrade_result.stdout_lines
       when: upgrade_result is defined
-
-    ####################################################################
-    # Prepare EFI before reboot
-    ####################################################################
-    
-    - name: Synchronize EFI partitions
-      command: rsync -aH --delete /boot/efi/ /boot/efi2/
-      when:
-        - upgrade_result is defined
-        - upgrade_result.rc == 0
-    
-    - name: Flush filesystem buffers
-      command: sync
-      when:
-        - upgrade_result is defined
-        - upgrade_result.rc == 0
-    
-    - name: Pause before reboot
-      pause:
-        seconds: 5
-      when:
-        - upgrade_result is defined
-        - upgrade_result.rc == 0
-    
-    - name: Unmount secondary EFI
-      mount:
-        path: /boot/efi2
-        state: unmounted
-      when:
-        - upgrade_result is defined
-        - upgrade_result.rc == 0
-    
-    - name: Unmount primary EFI
-      mount:
-        path: /boot/efi
-        state: unmounted
-      when:
-        - upgrade_result is defined
-        - upgrade_result.rc == 0
     
     ####################################################################
     # Reboot
