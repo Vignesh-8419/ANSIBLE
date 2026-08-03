@@ -8,32 +8,42 @@
   serial: 1
 
   vars:
-  
+
     repo_server: "http://192.168.253.136"
-    
-    rocky9_repo: "{{ 'rocky9.2' if (target_os | default('9')) == '9.2' else 'rocky9' }}"
-    
+
+    target_version: "{{ target_os | default('9') }}"
+
+    rocky9_repo: >-
+      {{
+        'rocky9.2'
+        if target_version == '9.2'
+        else 'rocky9'
+      }}
+
     elevate_repo_url: >-
-      {{ repo_server }}/repo/leapp/{{
-         '9.2' if (target_os | default('9')) == '9.2'
-         else '9'
-      }}/el8toel9
-    
+      {{
+        repo_server +
+        '/repo/leapp/' +
+        ('9.2' if target_version == '9.2' else '9') +
+        '/el8toel9'
+      }}
+
     rocky8_baseos: "{{ repo_server }}/repo/rocky8/BaseOS"
     rocky8_appstream: "{{ repo_server }}/repo/rocky8/AppStream"
-    
-#    rocky9_baseos: "{{ repo_server }}/repo/{{ rocky9_repo }}/BaseOS"
-#    rocky9_appstream: "{{ repo_server }}/repo/{{ rocky9_repo }}/AppStream"
-    
+
+    rocky9_baseos: "{{ repo_server }}/repo/{{ rocky9_repo }}/BaseOS"
+    rocky9_appstream: "{{ repo_server }}/repo/{{ rocky9_repo }}/AppStream"
+
     elevate_repo_file: /etc/yum.repos.d/el8toel9.repo
     leapp_repo_file: /etc/leapp/files/leapp_upgrade_repositories.repo
+
   ####################################################################
   # Bootstrap
   ####################################################################
 
   pre_tasks:
 
-    - name: Ensure Python is installed
+    - name: Ensure Python 3 is installed
       raw: |
         if ! command -v python3 >/dev/null 2>&1; then
           dnf -y install python3
@@ -45,13 +55,13 @@
     - name: Gather facts
       setup:
 
-    ##################################################################
-    # Validate Operating System
-    ##################################################################
+    ####################################################################
+    # Validate Source Operating System
+    ####################################################################
 
-    - name: Fail when OS is not Rocky Linux
+    - name: Fail if operating system is not Rocky Linux
       fail:
-        msg: "This playbook supports only Rocky Linux."
+        msg: This playbook supports only Rocky Linux.
       when: ansible_distribution != "Rocky"
 
     - name: End play if already Rocky Linux 9
@@ -60,16 +70,16 @@
         - ansible_distribution == "Rocky"
         - ansible_distribution_major_version == "9"
 
-    - name: Validate Rocky Linux version
+    - name: Fail if source version is not Rocky Linux 8
       fail:
-        msg: "Only Rocky Linux 8.x can be migrated."
+        msg: Only Rocky Linux 8.x systems can be upgraded.
       when: ansible_distribution_major_version != "8"
 
-    ##################################################################
-    # Connectivity Checks
-    ##################################################################
+    ####################################################################
+    # Repository Connectivity
+    ####################################################################
 
-    - name: Verify repository server is reachable
+    - name: Verify ELevate repository
       uri:
         url: "{{ elevate_repo_url }}"
         method: HEAD
@@ -84,19 +94,23 @@
 
     - name: Display repository status
       debug:
-        msg: "Repository server is reachable."
+        msg: Repository server is reachable.
 
   ####################################################################
-  # Configure Repositories
+  # Tasks
   ####################################################################
 
   tasks:
+
+    ####################################################################
+    # Configure Repositories
+    ####################################################################
 
     - name: Backup existing repositories
       shell: |
         mkdir -p /etc/yum.repos.d/backup
         find /etc/yum.repos.d -maxdepth 1 -name "*.repo" \
-        -exec mv {} /etc/yum.repos.d/backup/ \;
+          -exec mv {} /etc/yum.repos.d/backup/ \;
       args:
         executable: /bin/bash
 
@@ -135,32 +149,32 @@
     - name: Clean DNF metadata
       command: dnf clean all
 
-    - name: Rebuild metadata
-      command: dnf makecache
-
-    ####################################################################
-    # Remove Leapp Exclusions
-    ####################################################################
-    
-    - name: Remove DNF exclude for Leapp packages
-      lineinfile:
-        path: /etc/dnf/dnf.conf
-        regexp: '^exclude='
-        state: absent
-    
-    - name: Clean DNF metadata after removing excludes
-      command: dnf clean all
-    
-    - name: Remove DNF cache again
-      file:
-        path: /var/cache/dnf
-        state: absent
-    
     - name: Rebuild DNF metadata
       command: dnf makecache
 
     ####################################################################
-    # Install ELevate
+    # Remove DNF Excludes
+    ####################################################################
+
+    - name: Remove DNF exclude entries
+      lineinfile:
+        path: /etc/dnf/dnf.conf
+        regexp: '^exclude='
+        state: absent
+
+    - name: Clean DNF metadata again
+      command: dnf clean all
+
+    - name: Remove DNF cache again
+      file:
+        path: /var/cache/dnf
+        state: absent
+
+    - name: Rebuild DNF cache
+      command: dnf makecache
+
+    ####################################################################
+    # Install ELevate Packages
     ####################################################################
 
     - name: Install ELevate packages
@@ -175,27 +189,25 @@
           - leapp-upgrade-el8toel9-deps
         state: present
 
-    - name: Verify installed Leapp packages
+    - name: Verify installed packages
       shell: |
         rpm -qa | egrep '^(leapp|python3-leapp|snactor)' | sort
       register: leapp_packages
       changed_when: false
 
-    - name: Display installed Leapp packages
-      debug:
+    - debug:
         var: leapp_packages.stdout_lines
 
     ####################################################################
     # Verify Leapp
     ####################################################################
 
-    - name: Verify leapp command
+    - name: Verify leapp version
       command: leapp --version
       register: leapp_version
       changed_when: false
 
-    - name: Display leapp version
-      debug:
+    - debug:
         var: leapp_version.stdout_lines
 
     ####################################################################
@@ -208,22 +220,22 @@
         state: directory
         mode: "0755"
 
-#    - name: Configure Rocky Linux 9 repositories for Leapp
-#      copy:
-#        dest: "{{ leapp_repo_file }}"
-#        mode: "0644"
-#        content: |
-#          [rocky9-baseos]
-#          name=Rocky Linux 9 BaseOS
-#          baseurl={{ rocky9_baseos }}
-#          enabled=1
-#          gpgcheck=0
-#
-#          [rocky9-appstream]
-#          name=Rocky Linux 9 AppStream
-#          baseurl={{ rocky9_appstream }}
-#          enabled=1
-#          gpgcheck=0
+    - name: Configure Rocky Linux 9 repository mapping
+      copy:
+        dest: "{{ leapp_repo_file }}"
+        mode: "0644"
+        content: |
+          [rocky9-baseos]
+          name=Rocky Linux 9 BaseOS
+          baseurl={{ rocky9_baseos }}
+          enabled=1
+          gpgcheck=0
+
+          [rocky9-appstream]
+          name=Rocky Linux 9 AppStream
+          baseurl={{ rocky9_appstream }}
+          enabled=1
+          gpgcheck=0
 
     ####################################################################
     # Validate Repositories
@@ -241,7 +253,7 @@
         method: HEAD
         status_code: 200
 
-    - name: Verify ELevate repository
+    - name: Verify ELevate repository metadata
       uri:
         url: "{{ elevate_repo_url }}/repodata/repomd.xml"
         method: HEAD
@@ -261,7 +273,7 @@
         path: /var/lib/leapp
         state: absent
 
-    - name: Create fresh Leapp log directory
+    - name: Create Leapp log directory
       file:
         path: /var/log/leapp
         state: directory
@@ -278,24 +290,28 @@
         - ansible_selinux.status == "enabled"
       ignore_errors: yes
 
-    - name: Disable direct root SSH login
+    - name: Disable root SSH login
       lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^#?PermitRootLogin'
-        line: 'PermitRootLogin no'
-        create: yes
+        line: PermitRootLogin no
         backup: yes
 
+    - name: Restart SSH
+      service:
+        name: sshd
+        state: restarted
+
     ####################################################################
-    # Remove Loaded Modules
+    # Remove Loaded Kernel Modules
     ####################################################################
 
-    - name: Unload floppy module
+    - name: Remove floppy module
       shell: |
         lsmod | grep -q '^floppy' && modprobe -r floppy || true
       changed_when: false
 
-    - name: Unload pata_acpi module
+    - name: Remove pata_acpi module
       shell: |
         lsmod | grep -q '^pata_acpi' && modprobe -r pata_acpi || true
       changed_when: false
@@ -308,14 +324,14 @@
       shell: rpm -qa | grep '\.el7' || true
       register: el7_packages
       changed_when: false
-    
+
     - name: Fail if EL7 packages exist
       fail:
         msg: |
           EL7 packages detected:
-    
+
           {{ el7_packages.stdout }}
-    
+
           Remove these packages before running ELevate.
       when: el7_packages.stdout != ""
 
@@ -370,9 +386,9 @@
       failed_when: false
 
     ####################################################################
-    # Fix Firewalld AllowZoneDrifting
+    # Firewalld Fix
     ####################################################################
-    
+
     - name: Ensure AllowZoneDrifting is disabled
       lineinfile:
         path: /etc/firewalld/firewalld.conf
@@ -382,7 +398,7 @@
         create: yes
         backup: yes
       ignore_errors: yes
-    
+
     - name: Reload firewalld if running
       shell: |
         if systemctl is-active --quiet firewalld; then
@@ -392,10 +408,10 @@
       ignore_errors: yes
 
     ####################################################################
-    # Execute Final Preupgrade
+    # Final Preupgrade
     ####################################################################
 
-    - name: Run Leapp preupgrade
+    - name: Run final Leapp preupgrade
       command: leapp preupgrade
       register: preupgrade
       changed_when: true
@@ -434,10 +450,99 @@
 
           Review:
 
-          /var/log/leapp/leapp-report.txt
+            /var/log/leapp/leapp-report.txt
 
           Resolve all inhibitors before rerunning this playbook.
       when: inhibitors_found
+
+    ####################################################################
+    # Detect Software RAID
+    ####################################################################
+
+    - name: Check if md0 exists
+      stat:
+        path: /dev/md0
+      register: md0_device
+
+    - name: Check if md1 exists
+      stat:
+        path: /dev/md1
+      register: md1_device
+
+    - name: Determine if software RAID is present
+      set_fact:
+        software_raid: "{{ md0_device.stat.exists or md1_device.stat.exists }}"
+
+    - name: Display RAID detection
+      debug:
+        msg: >-
+          {{
+            'Software RAID detected. Applying temporary RAID workaround.'
+            if software_raid
+            else
+            'Software RAID not detected. Continuing normally.'
+          }}
+
+    ####################################################################
+    # RAID Workaround (Only for RAID Systems)
+    ####################################################################
+
+    - block:
+
+        - name: Create secondary EFI mount point
+          file:
+            path: /boot/efi2
+            state: directory
+
+        - name: Unmount secondary EFI
+          mount:
+            path: /boot/efi2
+            state: unmounted
+          ignore_errors: yes
+
+        - name: Remove sdb2 from md0
+          shell: |
+            if mdadm --detail /dev/md0 | grep -q "/dev/sdb2"; then
+              mdadm /dev/md0 --fail /dev/sdb2
+              mdadm /dev/md0 --remove /dev/sdb2
+            fi
+          args:
+            executable: /bin/bash
+
+        - name: Remove sdb3 from md1
+          shell: |
+            if mdadm --detail /dev/md1 | grep -q "/dev/sdb3"; then
+              mdadm /dev/md1 --fail /dev/sdb3
+              mdadm /dev/md1 --remove /dev/sdb3
+            fi
+          args:
+            executable: /bin/bash
+
+        - name: Zero RAID superblocks
+          shell: |
+            mdadm --zero-superblock /dev/sdb1 || true
+            mdadm --zero-superblock /dev/sdb2 || true
+            mdadm --zero-superblock /dev/sdb3 || true
+          args:
+            executable: /bin/bash
+
+        - name: Wipe secondary disk
+          shell: |
+            wipefs -a /dev/sdb || true
+            sgdisk --zap-all /dev/sdb || true
+            partprobe /dev/sdb || true
+          args:
+            executable: /bin/bash
+
+        - name: Display RAID status
+          shell: cat /proc/mdstat
+          register: mdstat_before_upgrade
+          changed_when: false
+
+        - debug:
+            var: mdstat_before_upgrade.stdout_lines
+
+      when: software_raid
 
     ####################################################################
     # Prepare Final Upgrade
@@ -449,11 +554,11 @@
       failed_when: false
       changed_when: false
 
-    - name: Remove Rocky 8 logos package to avoid EL9 file conflict
+    - name: Remove Rocky 8 logos package
       command: rpm -e --nodeps rocky-logos
       when: rocky_logos.rc == 0
 
-    - name: Verify rocky-logos has been removed
+    - name: Verify rocky-logos removal
       shell: rpm -q rocky-logos
       register: rocky_logos_removed
       failed_when: false
@@ -469,14 +574,14 @@
             'rocky-logos is still installed.'
           }}
 
-    - name: Disable network naming scheme check for Leapp
+    - name: Disable network naming scheme check
       lineinfile:
         path: /etc/environment
         regexp: '^LEAPP_DISABLE_NET_NAMING_SCHEMES='
         line: 'LEAPP_DISABLE_NET_NAMING_SCHEMES=1'
         create: yes
 
-    - name: Export LEAPP_DISABLE_NET_NAMING_SCHEMES for current session
+    - name: Export LEAPP_DISABLE_NET_NAMING_SCHEMES
       shell: export LEAPP_DISABLE_NET_NAMING_SCHEMES=1
       changed_when: false
 
@@ -498,70 +603,69 @@
     # Verify Upgrade Environment
     ####################################################################
 
-    - name: Verify Leapp upgrade initramfs exists
+    - name: Verify upgrade initramfs exists
       stat:
         path: "/boot/initramfs-{{ ansible_kernel }}.img"
       register: initramfs_check
 
-    - name: Show initramfs status
+    - name: Display initramfs status
       debug:
         msg: "Leapp upgrade initramfs generated successfully."
       when: initramfs_check.stat.exists
 
     ####################################################################
-    # Sync EFI Partitions Before Reboot
+    # Sync EFI Partitions (Only for RAID)
     ####################################################################
-    
-    - name: Create temporary EFI mount points
-      file:
-        path: "{{ item }}"
-        state: directory
-        mode: "0755"
-      loop:
-        - /boot/efi
-        - /boot/efi2
-    
-    - name: Mount primary EFI partition
-      mount:
-        path: /boot/efi
-        src: /dev/sda1
-        fstype: vfat
-        state: mounted
-    
-    - name: Mount secondary EFI partition
-      mount:
-        path: /boot/efi2
-        src: /dev/sdb1
-        fstype: vfat
-        state: mounted
-    
-    - name: Regenerate GRUB configuration
-      command: grub2-mkconfig -o /boot/grub2/grub.cfg
-    
-    - name: Synchronize EFI partitions
-      command: rsync -aH --delete /boot/efi/ /boot/efi2/
-    
-    - name: Flush filesystem buffers
-      command: sync
-    
+
+    - block:
+
+        - name: Create EFI mount points
+          file:
+            path: "{{ item }}"
+            state: directory
+            mode: "0755"
+          loop:
+            - /boot/efi
+            - /boot/efi2
+
+        - name: Mount primary EFI
+          mount:
+            path: /boot/efi
+            src: /dev/sda1
+            fstype: vfat
+            state: mounted
+
+        - name: Create FAT32 filesystem on sdb1
+          filesystem:
+            fstype: vfat
+            dev: /dev/sdb1
+
+        - name: Mount secondary EFI
+          mount:
+            path: /boot/efi2
+            src: /dev/sdb1
+            fstype: vfat
+            state: mounted
+
+        - name: Regenerate GRUB
+          command: grub2-mkconfig -o /boot/grub2/grub.cfg
+
+        - name: Synchronize EFI partitions
+          command: rsync -aH --delete /boot/efi/ /boot/efi2/
+
+        - name: Flush filesystem buffers
+          command: sync
+
+      when: software_raid
+
+    ####################################################################
+    # Reboot into Upgrade Environment
+    ####################################################################
+
     - name: Pause before reboot
       pause:
         seconds: 5
-    
-    - name: Unmount secondary EFI partition
-      mount:
-        path: /boot/efi2
-        state: unmounted
-    
-    - name: Unmount primary EFI partition
-      mount:
-        path: /boot/efi
-        state: unmounted
-    
-    ####################################################################
-    # Final Reboot
-    ####################################################################
-    
+
     - name: Reboot to start Rocky Linux 9 migration
       reboot:
         msg: "Starting Rocky Linux 9 ELevate migration"
@@ -571,15 +675,15 @@
         post_reboot_delay: 0
 
     ####################################################################
-    # End Play
+    # End Current Play
     ####################################################################
 
-    - name: Display migration message
+    - name: Display reboot message
       debug:
         msg:
           - "The system has rebooted into the Leapp upgrade environment."
           - "Leapp will perform the migration automatically."
           - "The host will reboot again when the migration completes."
-          - "Run Rocky9_Post_Migration_Cleanup.yml after the host is back online."
+          - "Post-upgrade tasks will continue after the system returns."
 
     - meta: end_play
