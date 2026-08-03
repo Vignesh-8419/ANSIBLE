@@ -117,28 +117,113 @@
         - name: Synchronize EFI
           command: rsync -aH --delete /boot/efi/ /boot/efi2/
 
-        - name: Create EFI Boot Entry
+        ################################################################
+        # Recreate UEFI Boot Entries
+        ################################################################
+        
+        - name: Get current EFI boot entries
+          command: efibootmgr
+          register: efi_boot_entries
+          changed_when: false
+        
+        - name: Remove old CentOS and Rocky EFI entries
           shell: |
-            if ! efibootmgr -v | grep -q "Rocky RAID1 Disk2"; then
-              efibootmgr \
-                -c \
-                -d /dev/sdb \
-                -p 1 \
-                -L "Rocky RAID1 Disk2" \
-                -l '\EFI\rocky\shimx64.efi'
-            fi
+            for id in $(efibootmgr | \
+              awk '/CentOS|Rocky/{print $1}' | \
+              sed 's/Boot//;s/*//'); do
+              efibootmgr -b "$id" -B
+            done
           args:
             executable: /bin/bash
+        
+        - name: Remove old CentOS EFI directories
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /boot/efi/EFI/centos
+            - /boot/efi2/EFI/centos
+          ignore_errors: yes
+        
+        - name: Create Rocky RAID1 Disk 1 EFI entry
+          command:
+            argv:
+              - efibootmgr
+              - -c
+              - -d
+              - /dev/sda
+              - -p
+              - "1"
+              - -L
+              - "Rocky RAID1 Disk 1"
+              - -l
+              - '\EFI\rocky\shimx64.efi'
+        
+        - name: Create Rocky RAID1 Disk 2 EFI entry
+          command:
+            argv:
+              - efibootmgr
+              - -c
+              - -d
+              - /dev/sdb
+              - -p
+              - "1"
+              - -L
+              - "Rocky RAID1 Disk 2"
+              - -l
+              - '\EFI\rocky\shimx64.efi'
+        
+        - name: Get new EFI boot entries
+          command: efibootmgr
+          register: new_efi_entries
+          changed_when: false
+        
+        - name: Extract Rocky boot numbers
+          set_fact:
+            rocky_boot_order: >-
+              {{
+                new_efi_entries.stdout_lines
+                | select('search','Rocky RAID1 Disk')
+                | map('regex_replace','Boot([0-9A-F]{4}).*','\\1')
+                | list
+              }}
+        
+        - name: Set Rocky boot order
+          command:
+            argv:
+              - efibootmgr
+              - -o
+              - "{{ rocky_boot_order | join(',') }}"
+          when: rocky_boot_order | length >= 2
+        
+        - name: Verify EFI boot entries
+          command: efibootmgr -v
+          register: final_efi
+          changed_when: false
+        
+        - debug:
+            var: final_efi.stdout_lines
 
         ################################################################
-        # mdadm
+        # Save RAID Configuration
         ################################################################
 
         - name: Save mdadm configuration
           shell: mdadm --detail --scan > /etc/mdadm.conf
 
+        - name: Verify mdadm configuration
+          command: cat /etc/mdadm.conf
+          register: mdadm_conf
+          changed_when: false
+
+        - debug:
+            var: mdadm_conf.stdout_lines
+
         - name: Rebuild initramfs
           command: dracut -f
+
+        - name: Regenerate GRUB configuration
+          command: grub2-mkconfig -o /boot/grub2/grub.cfg
 
         - name: Verify RAID
           shell: cat /proc/mdstat
