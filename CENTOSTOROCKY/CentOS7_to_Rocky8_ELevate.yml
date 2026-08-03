@@ -621,6 +621,18 @@
           args:
             executable: /bin/bash
 
+        - name: Remove CentOS EFI directory from primary EFI
+          file:
+            path: /boot/efi/EFI/centos
+            state: absent
+          ignore_errors: yes
+    
+        - name: Remove CentOS EFI directory from secondary EFI
+          file:
+            path: /boot/efi2/EFI/centos
+            state: absent
+          ignore_errors: yes
+
         - name: Verify copied EFI files
           command: find /boot/efi2/EFI -maxdepth 2 -type f
           register: efi_files
@@ -746,6 +758,28 @@
 
         - name: Regenerate GRUB configuration
           command: grub2-mkconfig -o /boot/grub2/grub.cfg
+
+        - name: Flush filesystem buffers
+          command: sync
+    
+        - name: Unmount secondary EFI
+          mount:
+            path: /boot/efi2
+            state: unmounted
+
+        - name: Remove temporary /boot/efi fstab entry
+          lineinfile:
+            path: /etc/fstab
+            regexp: '^[^#].*\s+/boot/efi\s+vfat\s+'
+            state: absent
+    
+        - name: Verify fstab
+          command: cat /etc/fstab
+          register: fstab_verify
+          changed_when: false
+    
+        - debug:
+            var: fstab_verify.stdout_lines
 
         ################################################################
         # Final RAID Status
@@ -909,7 +943,7 @@
         msg:
           - "RAID arrays rebuilt successfully."
           - "EFI synchronized to both disks."
-          - "Secondary UEFI boot entry created."
+          - "UEFI boot entries recreated on both RAID disks."
       when: software_raid
 
     - name: Display non-RAID summary
