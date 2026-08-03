@@ -237,6 +237,20 @@
         - name: Flush filesystem buffers
           command: sync
 
+        - name: Remove temporary /boot/efi fstab entry
+          lineinfile:
+            path: /etc/fstab
+            regexp: '^[^#].*\s+/boot/efi\s+vfat\s+'
+            state: absent
+
+        - name: Verify fstab
+          command: cat /etc/fstab
+          register: fstab_verify
+          changed_when: false
+
+        - debug:
+            var: fstab_verify.stdout_lines
+
         - name: Unmount secondary EFI
           mount:
             path: /boot/efi2
