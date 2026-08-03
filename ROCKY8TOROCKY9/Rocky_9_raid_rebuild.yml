@@ -209,7 +209,8 @@
         ################################################################
 
         - name: Save mdadm configuration
-          shell: mdadm --detail --scan > /etc/mdadm.conf
+          shell: |
+            mdadm --detail --scan | tee /etc/mdadm.conf >/dev/null
 
         - name: Verify mdadm configuration
           command: cat /etc/mdadm.conf
@@ -233,6 +234,13 @@
         - debug:
             var: raid_status.stdout_lines
 
+        - name: Flush filesystem buffers
+          command: sync
+
+        - name: Unmount secondary EFI
+          mount:
+            path: /boot/efi2
+            state: unmounted
       when: software_raid
 
     ####################################################################
