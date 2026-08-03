@@ -370,6 +370,95 @@
           Review /var/log/leapp/leapp-report.txt before continuing.
       when: preupgrade_pass2.rc != 0
 
+####################################################################
+# Detect Software RAID
+####################################################################
+
+- name: Check if md0 exists
+  stat:
+    path: /dev/md0
+  register: md0_device
+
+- name: Check if md1 exists
+  stat:
+    path: /dev/md1
+  register: md1_device
+
+- name: Determine if host is using software RAID
+  set_fact:
+    software_raid: "{{ md0_device.stat.exists or md1_device.stat.exists }}"
+
+- name: Display RAID detection
+  debug:
+    msg: >-
+      {{
+        'Software RAID detected. Preparing degraded RAID for Leapp upgrade.'
+        if software_raid
+        else
+        'Software RAID not detected. Skipping RAID preparation.'
+      }}
+
+####################################################################
+# Prepare RAID for Leapp Upgrade (TEST WORKAROUND)
+####################################################################
+
+- block:
+
+    - name: Ensure secondary EFI mount point exists
+      file:
+        path: /boot/efi2
+        state: directory
+
+    - name: Unmount secondary EFI if mounted
+      mount:
+        path: /boot/efi2
+        state: unmounted
+      ignore_errors: yes
+
+    - name: Fail and remove sdb2 from md0
+      shell: |
+        if mdadm --detail /dev/md0 | grep -q "/dev/sdb2"; then
+          mdadm /dev/md0 --fail /dev/sdb2
+          mdadm /dev/md0 --remove /dev/sdb2
+        fi
+      args:
+        executable: /bin/bash
+
+    - name: Fail and remove sdb3 from md1
+      shell: |
+        if mdadm --detail /dev/md1 | grep -q "/dev/sdb3"; then
+          mdadm /dev/md1 --fail /dev/sdb3
+          mdadm /dev/md1 --remove /dev/sdb3
+        fi
+      args:
+        executable: /bin/bash
+
+    - name: Clear RAID metadata
+      shell: |
+        mdadm --zero-superblock /dev/sdb1 || true
+        mdadm --zero-superblock /dev/sdb2 || true
+        mdadm --zero-superblock /dev/sdb3 || true
+      args:
+        executable: /bin/bash
+
+    - name: Wipe secondary disk signatures
+      shell: |
+        wipefs -a /dev/sdb || true
+        sgdisk --zap-all /dev/sdb || true
+        partprobe /dev/sdb || true
+      args:
+        executable: /bin/bash
+
+    - name: Display RAID status
+      command: cat /proc/mdstat
+      register: mdstat_after
+      changed_when: false
+
+    - debug:
+        var: mdstat_after.stdout_lines
+
+  when: software_raid
+
     ####################################################################
     # Upgrade
     ####################################################################
@@ -426,6 +515,95 @@
 
     - name: Gather facts after upgrade
       setup:
+
+####################################################################
+# Rebuild RAID1 (Only for Software RAID Hosts)
+####################################################################
+
+- block:
+
+    - name: Clone partition table from sda to sdb
+      command: sgdisk -R=/dev/sdb /dev/sda
+
+    - name: Generate new GPT GUID for sdb
+      command: sgdisk -G /dev/sdb
+
+    - name: Reload partition table
+      command: partprobe /dev/sdb
+
+    - name: Wait for sdb partitions
+      wait_for:
+        path: /dev/sdb3
+        timeout: 60
+
+    - name: Add sdb2 back to md0
+      command: mdadm --add /dev/md0 /dev/sdb2
+
+    - name: Add sdb3 back to md1
+      command: mdadm --add /dev/md1 /dev/sdb3
+
+    - name: Wait for md0 rebuild to complete
+      shell: |
+        while grep -qE 'recovery|resync' /proc/mdstat; do
+          sleep 15
+        done
+      args:
+        executable: /bin/bash
+
+    - name: Create EFI filesystem
+      filesystem:
+        fstype: vfat
+        dev: /dev/sdb1
+
+    - name: Create secondary EFI mount point
+      file:
+        path: /boot/efi2
+        state: directory
+
+    - name: Mount secondary EFI
+      mount:
+        path: /boot/efi2
+        src: /dev/sdb1
+        fstype: vfat
+        state: mounted
+
+    - name: Synchronize EFI contents
+      synchronize:
+        src: /boot/efi/
+        dest: /boot/efi2/
+        archive: yes
+        delete: yes
+      delegate_to: "{{ inventory_hostname }}"
+
+    - name: Create second EFI boot entry
+      shell: |
+        if ! efibootmgr -v | grep -q "Rocky RAID1 Disk2"; then
+          efibootmgr \
+            -c \
+            -d /dev/sdb \
+            -p 1 \
+            -L "Rocky RAID1 Disk2" \
+            -l '\EFI\rocky\shimx64.efi'
+        fi
+      args:
+        executable: /bin/bash
+
+    - name: Save current mdadm configuration
+      shell: |
+        mdadm --detail --scan > /etc/mdadm.conf
+
+    - name: Rebuild initramfs
+      command: dracut -f
+
+    - name: Display final RAID status
+      command: cat /proc/mdstat
+      register: raid_status
+      changed_when: false
+
+    - debug:
+        var: raid_status.stdout_lines
+
+  when: software_raid
 
     ####################################################################
     # Verify Upgrade
