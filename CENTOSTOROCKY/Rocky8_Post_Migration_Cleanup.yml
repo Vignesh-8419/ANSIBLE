@@ -335,6 +335,20 @@
       mount:
         path: /boot/efi
         state: unmounted
+
+    ####################################################################
+    # Update Login Banner
+    ####################################################################
+
+    - name: Update MOTD banner
+      copy:
+        dest: /etc/motd
+        mode: "0644"
+        content: |
+          ==================================================
+           Rocky Linux 8 Enterprise Golden Image
+           UEFI + GPT + RAID1 + LVM
+          ==================================================
     
     ####################################################################
     # Final Reboot
@@ -352,7 +366,6 @@
     
     - name: Gather facts after reboot
       setup:
-
 
     ####################################################################
     # Final Validation
