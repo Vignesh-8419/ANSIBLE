@@ -538,6 +538,103 @@
       when: software_raid
 
     ####################################################################
+    # Verify Primary EFI Before Leapp Upgrade
+    ####################################################################
+
+    - name: Create EFI mount points
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /boot/efi
+        - /mnt/efi2
+
+    - name: Mount primary EFI
+      mount:
+        path: /boot/efi
+        src: /dev/sda1
+        fstype: vfat
+        state: mounted
+
+    - name: Check if primary EFI grub.cfg exists
+      stat:
+        path: /boot/efi/EFI/rocky/grub.cfg
+      register: primary_grub
+
+    - block:
+
+        - name: Unmount primary EFI
+          mount:
+            path: /boot/efi
+            state: unmounted
+
+        - name: Format primary EFI
+          filesystem:
+            dev: /dev/sda1
+            fstype: vfat
+
+        - name: Mount primary EFI
+          mount:
+            path: /boot/efi
+            src: /dev/sda1
+            fstype: vfat
+            state: mounted
+
+        - name: Mount secondary EFI
+          mount:
+            path: /mnt/efi2
+            src: /dev/sdb1
+            fstype: vfat
+            state: mounted
+
+        - name: Restore EFI
+          command: rsync -aH /mnt/efi2/ /boot/efi/
+
+        - name: Sync disks
+          command: sync
+
+        - name: Unmount secondary EFI
+          mount:
+            path: /mnt/efi2
+            state: unmounted
+
+      when:
+        - software_raid
+        - not primary_grub.stat.exists
+
+    - name: Get UUID of sda1
+      command: blkid -s UUID -o value /dev/sda1
+      register: efi_uuid
+      changed_when: false
+
+    - name: Ensure /boot/efi exists in fstab
+      mount:
+        path: /boot/efi
+        src: "UUID={{ efi_uuid.stdout }}"
+        fstype: vfat
+        opts: "umask=0077,shortname=winnt"
+        state: mounted
+
+    - name: Verify grub.cfg
+      stat:
+        path: /boot/efi/EFI/rocky/grub.cfg
+      register: grub_cfg
+
+    - name: Fail if grub.cfg is missing
+      fail:
+        msg: "Primary EFI partition is missing /EFI/rocky/grub.cfg"
+      when: not grub_cfg.stat.exists
+
+    - name: Verify grubby
+      command: grubby --info=ALL
+      changed_when: false
+
+    - name: Verify default kernel
+      command: grubby --default-kernel
+      changed_when: false
+
+    ####################################################################
     # Prepare Final Upgrade
     ####################################################################
 
@@ -593,7 +690,7 @@
         var: leapp_upgrade.stdout_lines
 
     ####################################################################
-    # Verify Upgrade Environment
+    # Verify Upgrade Kernel
     ####################################################################
 
     - name: Verify upgrade initramfs exists
@@ -601,55 +698,14 @@
         path: "/boot/initramfs-{{ ansible_kernel }}.img"
       register: initramfs_check
 
-    - name: Display initramfs status
-      debug:
-        msg: "Leapp upgrade initramfs generated successfully."
-      when: initramfs_check.stat.exists
+    - name: Fail if upgrade initramfs is missing
+      fail:
+        msg: "Upgrade initramfs was not generated."
+      when: not initramfs_check.stat.exists
 
-    ####################################################################
-    # Sync EFI Partitions (Only for RAID)
-    ####################################################################
-
-    - block:
-
-        - name: Create EFI mount points
-          file:
-            path: "{{ item }}"
-            state: directory
-            mode: "0755"
-          loop:
-            - /boot/efi
-            - /boot/efi2
-
-        - name: Mount primary EFI
-          mount:
-            path: /boot/efi
-            src: /dev/sda1
-            fstype: vfat
-            state: mounted
-
-        - name: Create FAT32 filesystem on sdb1
-          filesystem:
-            fstype: vfat
-            dev: /dev/sdb1
-
-        - name: Mount secondary EFI
-          mount:
-            path: /boot/efi2
-            src: /dev/sdb1
-            fstype: vfat
-            state: mounted
-
-        - name: Regenerate GRUB
-          command: grub2-mkconfig -o /boot/grub2/grub.cfg
-
-        - name: Synchronize EFI partitions
-          command: rsync -aH --delete /boot/efi/ /boot/efi2/
-
-        - name: Flush filesystem buffers
-          command: sync
-
-      when: software_raid
+    - name: Display default kernel
+      command: grubby --default-kernel
+      changed_when: false
 
     ####################################################################
     # Reboot into Upgrade Environment
