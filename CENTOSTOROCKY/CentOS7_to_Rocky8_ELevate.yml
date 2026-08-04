@@ -318,12 +318,28 @@
       debug:
         var: preupgrade_pass2.stdout_lines
 
-    - name: Fail if second preupgrade still failed
+    ####################################################################
+    # Validate Leapp Report
+    ####################################################################
+    
+    - name: Check for Leapp inhibitors
+      shell: |
+        grep -q "Risk Factor: high (inhibitor)" /var/log/leapp/leapp-report.txt
+      register: leapp_inhibitors
+      changed_when: false
+      failed_when: false
+    
+    - name: Stop migration if Leapp report contains inhibitors
       fail:
         msg: |
-          Leapp preupgrade still failed.
-          Review /var/log/leapp/leapp-report.txt before continuing.
-      when: preupgrade_pass2.rc != 0
+          Leapp preupgrade report contains inhibitors.
+          Resolve them before continuing with RAID preparation.
+    
+          Report:
+            /var/log/leapp/leapp-report.txt
+      when:
+        - preupgrade_pass2.rc != 0
+          or leapp_inhibitors.rc == 0
 
     ####################################################################
     # Detect Software RAID
