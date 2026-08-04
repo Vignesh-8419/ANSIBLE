@@ -149,7 +149,7 @@ leapp answer --section authselect_check.confirm=True
 leapp answer --section remove_pam_pkcs11_module_check.confirm=True
 
 # Run second preupgrade
-#leapp preupgrade
+leapp preupgrade
 
 # Review report
 cat /var/log/leapp/leapp-report.txt
@@ -195,14 +195,32 @@ partprobe /dev/sdb
 
 cat /proc/mdstat
 
-####################################################################
+###############################################################################
 # Verify Primary EFI Partition Before Leapp Upgrade
-####################################################################
+###############################################################################
 
 mkdir -p /boot/efi
 mkdir -p /mnt/efi2
 
-mountpoint -q /boot/efi || mount /dev/sda1 /boot/efi
+###############################################################################
+# Make sure only ONE EFI partition is mounted
+###############################################################################
+
+while mountpoint -q /boot/efi; do
+    umount /boot/efi
+done
+
+###############################################################################
+# Mount ONLY the primary EFI
+###############################################################################
+
+mount /dev/sda1 /boot/efi
+
+###############################################################################
+# Verify correct mount
+###############################################################################
+
+findmnt /boot/efi
 
 ###############################################################################
 # Verify grub.cfg exists
@@ -212,7 +230,7 @@ if [ ! -f /boot/efi/EFI/centos/grub.cfg ]; then
 
     echo "Primary EFI bootloader missing. Restoring from secondary EFI..."
 
-    umount /boot/efi 2>/dev/null || true
+    umount /boot/efi
 
     mkfs.vfat -F32 /dev/sda1
 
@@ -238,7 +256,7 @@ test -f /boot/efi/EFI/centos/grub.cfg || {
 }
 
 ###############################################################################
-# Mount using UUID (temporary)
+# Temporary fstab entry
 ###############################################################################
 
 UUID=$(blkid -s UUID -o value /dev/sda1)
@@ -252,7 +270,10 @@ mount -a
 # Verify bootloader
 ###############################################################################
 
+findmnt /boot/efi
+
 ls -l /boot/grub2/grub.cfg
+
 ls -l /boot/efi/EFI/centos/grub.cfg
 
 grubby --default-kernel
@@ -280,7 +301,6 @@ ls -l /boot/initramfs-upgrade.x86_64.img
 grubby --default-kernel
 
 grubby --info=ALL
-
 
 
 # ============================================================
