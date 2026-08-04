@@ -93,6 +93,17 @@
           args:
             executable: /bin/bash
 
+        - name: Verify RAID is healthy
+          shell: |
+            grep '\[UU\]' /proc/mdstat
+          register: raid_health
+          changed_when: false
+        
+        - name: Fail if RAID rebuild is incomplete
+          fail:
+            msg: RAID rebuild did not complete successfully.
+          when: raid_health.rc != 0
+
         ################################################################
         # EFI
         ################################################################
@@ -114,28 +125,68 @@
             fstype: vfat
             state: mounted
 
+        ################################################################
+        # Mount Primary EFI
+        ################################################################
+
+        - name: Ensure primary EFI mount point exists
+          file:
+            path: /boot/efi
+            state: directory
+
+        - name: Unmount existing EFI
+          mount:
+            path: /boot/efi
+            state: unmounted
+          ignore_errors: yes
+
+        - name: Mount primary EFI
+          mount:
+            path: /boot/efi
+            src: /dev/sda1
+            fstype: vfat
+            opts: "umask=0077,shortname=winnt"
+            state: mounted
+
+        - name: Verify primary EFI mount
+          command: findmnt /boot/efi
+          changed_when: false
+
+        ################################################################
+        # Synchronize EFI
+        ################################################################
+
         - name: Synchronize EFI
           command: rsync -aH --delete /boot/efi/ /boot/efi2/
+
+        - name: Verify copied EFI files
+          command: find /boot/efi2/EFI -maxdepth 2 -type f
+          register: efi_files
+          changed_when: false
+
+        - debug:
+            var: efi_files.stdout_lines
 
         ################################################################
         # Recreate UEFI Boot Entries
         ################################################################
-        
+
         - name: Get current EFI boot entries
           command: efibootmgr
           register: efi_boot_entries
           changed_when: false
-        
-        - name: Remove old CentOS and Rocky EFI entries
+
+        - name: Remove old EFI entries
           shell: |
-            for id in $(efibootmgr | \
-              awk '/CentOS|Rocky/{print $1}' | \
-              sed 's/Boot//;s/*//'); do
-              efibootmgr -b "$id" -B
+            efibootmgr | \
+            awk '/CentOS|Rocky Linux|Rocky RAID1 Disk/{print $1}' | \
+            sed 's/Boot//;s/*//' | \
+            while read id; do
+              [ -n "$id" ] && efibootmgr -b "$id" -B
             done
           args:
             executable: /bin/bash
-        
+
         - name: Remove old CentOS EFI directories
           file:
             path: "{{ item }}"
@@ -144,7 +195,7 @@
             - /boot/efi/EFI/centos
             - /boot/efi2/EFI/centos
           ignore_errors: yes
-        
+
         - name: Create Rocky RAID1 Disk 1 EFI entry
           command:
             argv:
@@ -158,7 +209,7 @@
               - "Rocky RAID1 Disk 1"
               - -l
               - '\EFI\rocky\shimx64.efi'
-        
+
         - name: Create Rocky RAID1 Disk 2 EFI entry
           command:
             argv:
@@ -172,35 +223,35 @@
               - "Rocky RAID1 Disk 2"
               - -l
               - '\EFI\rocky\shimx64.efi'
-        
+
         - name: Get new EFI boot entries
           command: efibootmgr
           register: new_efi_entries
           changed_when: false
-        
+
         - name: Extract Rocky boot numbers
           set_fact:
             rocky_boot_order: >-
               {{
                 new_efi_entries.stdout_lines
-                | select('search','Rocky RAID1 Disk')
-                | map('regex_replace','Boot([0-9A-F]{4}).*','\\1')
+                | select('search', 'Rocky RAID1 Disk')
+                | map('regex_replace', 'Boot([0-9A-F]{4}).*', '\\1')
                 | list
               }}
-        
+
         - name: Set Rocky boot order
           command:
-            argv:
               - efibootmgr
               - -o
+            argv:
               - "{{ rocky_boot_order | join(',') }}"
           when: rocky_boot_order | length >= 2
-        
+
         - name: Verify EFI boot entries
           command: efibootmgr -v
           register: final_efi
           changed_when: false
-        
+
         - debug:
             var: final_efi.stdout_lines
 
