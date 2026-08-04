@@ -149,7 +149,7 @@ leapp answer --section authselect_check.confirm=True
 leapp answer --section remove_pam_pkcs11_module_check.confirm=True
 
 # Run second preupgrade
-leapp preupgrade
+#leapp preupgrade
 
 # Review report
 cat /var/log/leapp/leapp-report.txt
@@ -195,6 +195,74 @@ partprobe /dev/sdb
 
 cat /proc/mdstat
 
+####################################################################
+# Verify Primary EFI Partition Before Leapp Upgrade
+####################################################################
+
+mkdir -p /boot/efi
+mkdir -p /mnt/efi2
+
+mountpoint -q /boot/efi || mount /dev/sda1 /boot/efi
+
+###############################################################################
+# Verify grub.cfg exists
+###############################################################################
+
+if [ ! -f /boot/efi/EFI/centos/grub.cfg ]; then
+
+    echo "Primary EFI bootloader missing. Restoring from secondary EFI..."
+
+    umount /boot/efi 2>/dev/null || true
+
+    mkfs.vfat -F32 /dev/sda1
+
+    mount /dev/sda1 /boot/efi
+
+    mount /dev/sdb1 /mnt/efi2
+
+    rsync -aH /mnt/efi2/ /boot/efi/
+
+    sync
+
+    umount /mnt/efi2
+
+fi
+
+###############################################################################
+# Verify grub.cfg now exists
+###############################################################################
+
+test -f /boot/efi/EFI/centos/grub.cfg || {
+    echo "ERROR: /boot/efi/EFI/centos/grub.cfg not found"
+    exit 1
+}
+
+###############################################################################
+# Mount using UUID (temporary)
+###############################################################################
+
+UUID=$(blkid -s UUID -o value /dev/sda1)
+
+grep -q "/boot/efi" /etc/fstab || \
+echo "UUID=${UUID} /boot/efi vfat umask=0077,shortname=winnt 0 2" >> /etc/fstab
+
+mount -a
+
+###############################################################################
+# Verify bootloader
+###############################################################################
+
+ls -l /boot/grub2/grub.cfg
+ls -l /boot/efi/EFI/centos/grub.cfg
+
+grubby --default-kernel
+
+grubby --info=ALL
+
+find /boot/efi/EFI -maxdepth 2 -type f
+
+sync
+
 # ============================================================
 # Run Upgrade
 # ============================================================
@@ -212,6 +280,8 @@ ls -l /boot/initramfs-upgrade.x86_64.img
 grubby --default-kernel
 
 grubby --info=ALL
+
+
 
 # ============================================================
 # Reboot into Upgrade Environment
