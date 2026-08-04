@@ -784,41 +784,17 @@
           register: efi_boot_entries
           changed_when: false
 
-        - name: Remove old CentOS EFI entry
+        - name: Remove all existing CentOS/Rocky EFI entries
           shell: |
-            for id in $(efibootmgr | awk '/CentOS/{print $1}' | sed 's/Boot//;s/*//'); do
-              efibootmgr -b $id -B
+            efibootmgr | \
+            awk '/CentOS|Rocky Linux|Rocky RAID1 Disk/ {print $1}' | \
+            sed 's/Boot//;s/*//' | \
+            while read id; do
+              [ -n "$id" ] && efibootmgr -b "$id" -B
             done
           args:
             executable: /bin/bash
-          when: "'CentOS' in efi_boot_entries.stdout"
-
-        - name: Remove old Rocky Linux entry
-          shell: |
-            for id in $(efibootmgr | awk '/Rocky Linux/{print $1}' | sed 's/Boot//;s/*//'); do
-              efibootmgr -b $id -B
-            done
-          args:
-            executable: /bin/bash
-          when: "'Rocky Linux' in efi_boot_entries.stdout"
-
-        - name: Remove old Rocky RAID1 Disk 1 entry
-          shell: |
-            for id in $(efibootmgr | awk '/Rocky RAID1 Disk 1/{print $1}' | sed 's/Boot//;s/*//'); do
-              efibootmgr -b $id -B
-            done
-          args:
-            executable: /bin/bash
-          when: "'Rocky RAID1 Disk 1' in efi_boot_entries.stdout"
-
-        - name: Remove old Rocky RAID1 Disk 2 entry
-          shell: |
-            for id in $(efibootmgr | awk '/Rocky RAID1 Disk 2/{print $1}' | sed 's/Boot//;s/*//'); do
-              efibootmgr -b $id -B
-            done
-          args:
-            executable: /bin/bash
-          when: "'Rocky RAID1 Disk 2' in efi_boot_entries.stdout"
+          changed_when: false
 
         - name: Create Rocky RAID1 Disk 1 EFI entry
           command:
@@ -848,29 +824,27 @@
               - -l
               - '\EFI\rocky\shimx64.efi'
 
-        - name: Get new EFI boot entries
+        - name: Get all EFI entries
           command: efibootmgr
-          register: new_efi_entries
+          register: final_boot_entries
           changed_when: false
-
-        - name: Extract Rocky boot numbers
+        
+        - name: Build preferred boot order
           set_fact:
-            rocky_boot_order: >-
+            boot_order: >-
               {{
-                new_efi_entries.stdout_lines
-                | select('search','Rocky RAID1 Disk')
+                final_boot_entries.stdout_lines
+                | select('match','^Boot[0-9A-F]{4}')
                 | map('regex_replace','Boot([0-9A-F]{4}).*','\\1')
                 | list
               }}
-
-        - name: Set Rocky boot order
+        
+        - name: Set EFI boot order
           command:
             argv:
               - efibootmgr
               - -o
-              - "{{ rocky_boot_order | join(',') }}"
-          when: rocky_boot_order | length >= 2
-
+              - "{{ boot_order | join(',') }}"
         - name: Verify EFI boot entries
           command: efibootmgr -v
           register: final_efi
