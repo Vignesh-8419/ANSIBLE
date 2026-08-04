@@ -1,0 +1,1019 @@
+# ============================================================
+# CentOS 7 -> Rocky Linux 8 (ELevate)
+# Manual Commands - Part 1
+# ============================================================
+
+# Verify OS
+cat /etc/centos-release
+cat /etc/os-release
+uname -r
+
+# Backup existing repositories
+mkdir -p /etc/yum.repos.d/backup
+mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/
+
+# Create ELevate repository
+cat >/etc/yum.repos.d/elevate.repo <<'EOF'
+[elevate]
+name=ELevate Repository
+baseurl=http://192.168.253.136/repo/elevate/
+enabled=1
+gpgcheck=0
+
+[baseos]
+name=CentOS Base Repository
+baseurl=http://192.168.253.136/repo/centos/
+enabled=1
+gpgcheck=0
+
+[patch]
+name=Installed EL7 Repository
+baseurl=http://192.168.253.136/repo/installed_rhel7/
+enabled=1
+gpgcheck=0
+EOF
+
+cat /etc/yum.repos.d/elevate.repo
+
+# Complete pending yum transaction
+yum-complete-transaction --cleanup-only --quiet --skip-broken
+yum-complete-transaction -y
+
+# Install deltarpm if missing
+which applydeltarpm
+wget http://vault.centos.org/7.9.2009/os/x86_64/Packages/deltarpm-3.6-3.el7.x86_64.rpm -O /tmp/deltarpm.rpm
+rpm -ivh /tmp/deltarpm.rpm
+rpm -q deltarpm
+
+# Remove previous Leapp installation
+yum remove -y \
+leapp \
+python2-leapp \
+leapp-upgrade-el7toel8 \
+leapp-upgrade-el7toel8-deps \
+leapp-data-rocky \
+leapp-deps
+
+rm -rf /etc/leapp
+rm -rf /usr/share/leapp
+rm -rf /usr/share/leapp-repository
+rm -rf /var/lib/leapp
+rm -rf /var/log/leapp
+rm -rf /var/tmp/leapp*
+rm -f /var/tmp/system-upgrade.state
+rm -f /etc/yum.repos.d/leapp.repo
+
+# Clean yum
+yum clean all
+rm -rf /var/cache/yum
+yum makecache
+
+# Install fresh Leapp packages
+yum install -y \
+leapp \
+python2-leapp \
+leapp-upgrade-el7toel8 \
+leapp-upgrade-el7toel8-deps \
+leapp-data-rocky \
+leapp-deps
+
+# Verify installation
+leapp --version
+
+rpm -q leapp
+rpm -q python2-leapp
+rpm -q leapp-upgrade-el7toel8
+rpm -q leapp-upgrade-el7toel8-deps
+rpm -q leapp-data-rocky
+rpm -q leapp-deps
+
+# Configure Leapp repositories
+mkdir -p /etc/leapp/files
+
+cp -a \
+/etc/leapp/files/leapp_upgrade_repositories.repo \
+/etc/leapp/files/leapp_upgrade_repositories.repo.bak 2>/dev/null || true
+
+cat >/etc/leapp/files/leapp_upgrade_repositories.repo <<'EOF'
+[rocky8-baseos]
+name=Rocky Linux 8 BaseOS
+baseurl=http://192.168.253.136/repo/rocky8/BaseOS/
+enabled=1
+gpgcheck=0
+
+[rocky8-appstream]
+name=Rocky Linux 8 AppStream
+baseurl=http://192.168.253.136/repo/rocky8/AppStream/
+enabled=1
+gpgcheck=0
+EOF
+
+cat /etc/leapp/files/leapp_upgrade_repositories.repo
+
+# Enable root SSH login
+sed -ri \
+'s/^#?PermitRootLogin.*/PermitRootLogin yes/' \
+/etc/ssh/sshd_config
+
+systemctl restart sshd
+
+grep PermitRootLogin /etc/ssh/sshd_config
+
+# First preupgrade
+leapp preupgrade
+
+# Review report
+cat /var/log/leapp/leapp-report.txt
+
+# Review answer file
+cat /var/log/leapp/answerfile
+
+# ============================================================
+# CentOS 7 -> Rocky Linux 8 (ELevate)
+# Manual Commands - Part 2
+# Apply Leapp Fixes + RAID Preparation + Upgrade
+# ============================================================
+
+# Remove perl-libs
+yum remove -y perl-libs
+
+# Set SELinux to permissive
+setenforce 0
+
+# Remove unsupported kernel modules
+modprobe -r floppy
+modprobe -r pata_acpi
+
+# Answer Leapp questions
+leapp answer --section authselect_check.confirm=True
+leapp answer --section remove_pam_pkcs11_module_check.confirm=True
+
+# Run second preupgrade
+leapp preupgrade
+
+# Review report
+cat /var/log/leapp/leapp-report.txt
+
+# Check for inhibitors
+grep "Risk Factor: high (inhibitor)" /var/log/leapp/leapp-report.txt
+
+# ============================================================
+# Verify RAID
+# ============================================================
+
+ls /dev/md0
+ls /dev/md1
+
+cat /proc/mdstat
+
+mdadm --detail /dev/md0
+mdadm --detail /dev/md1
+
+# ============================================================
+# Prepare RAID for Upgrade
+# ============================================================
+
+mkdir -p /boot/efi2
+
+umount /boot/efi2
+
+mdadm /dev/md0 --fail /dev/sdb2
+mdadm /dev/md0 --remove /dev/sdb2
+
+mdadm /dev/md1 --fail /dev/sdb3
+mdadm /dev/md1 --remove /dev/sdb3
+
+mdadm --zero-superblock /dev/sdb1
+mdadm --zero-superblock /dev/sdb2
+mdadm --zero-superblock /dev/sdb3
+
+wipefs -a /dev/sdb
+
+sgdisk --zap-all /dev/sdb
+
+partprobe /dev/sdb
+
+cat /proc/mdstat
+
+# ============================================================
+# Run Upgrade
+# ============================================================
+
+leapp upgrade
+
+# ============================================================
+# Verify Upgrade Kernel Created
+# ============================================================
+
+ls -l /boot/vmlinuz-upgrade.x86_64
+
+ls -l /boot/initramfs-upgrade.x86_64.img
+
+grubby --default-kernel
+
+grubby --info=ALL
+
+# ============================================================
+# Reboot into Upgrade Environment
+# ============================================================
+
+reboot
+
+# ============================================================
+# CentOS 7 -> Rocky Linux 8 (ELevate)
+# Manual Commands - Part 3
+# After Upgrade Reboot (Rocky Linux 8)
+# RAID1 Rebuild + EFI Synchronization + Boot Entries
+# ============================================================
+
+# Verify upgrade
+cat /etc/os-release
+uname -r
+python3 --version
+
+# Verify RAID
+cat /proc/mdstat
+lsblk
+
+# Clone partition table
+sgdisk -R=/dev/sdb /dev/sda
+
+# Generate new GPT GUID
+sgdisk -G /dev/sdb
+
+# Reload partition table
+partprobe /dev/sdb
+
+# Verify partitions
+lsblk
+ls /dev/sdb1
+ls /dev/sdb2
+ls /dev/sdb3
+
+# Add disk back into RAID
+mdadm --add /dev/md0 /dev/sdb2
+mdadm --add /dev/md1 /dev/sdb3
+
+# Monitor rebuild
+watch cat /proc/mdstat
+
+# (Wait until rebuild reaches 100%, then press Ctrl+C)
+
+cat /proc/mdstat
+mdadm --detail /dev/md0
+mdadm --detail /dev/md1
+
+# ============================================================
+# Recreate Secondary EFI
+# ============================================================
+
+mkfs.vfat -F32 /dev/sdb1
+
+mkdir -p /boot/efi2
+
+mount /dev/sdb1 /boot/efi2
+
+# Copy EFI contents
+rsync -aH --delete /boot/efi/ /boot/efi2/
+
+sync
+
+# Remove old CentOS bootloader
+rm -rf /boot/efi/EFI/centos
+rm -rf /boot/efi2/EFI/centos
+
+# Verify EFI files
+find /boot/efi/EFI -maxdepth 2 -type f
+find /boot/efi2/EFI -maxdepth 2 -type f
+
+# ============================================================
+# Recreate UEFI Boot Entries
+# ============================================================
+
+efibootmgr
+
+# Remove old entries (replace XXXX with actual boot numbers)
+
+efibootmgr -b XXXX -B
+efibootmgr -b YYYY -B
+
+# Create new entry for Disk 1
+
+efibootmgr \
+-c \
+-d /dev/sda \
+-p 1 \
+-L "Rocky RAID1 Disk 1" \
+-l '\EFI\rocky\shimx64.efi'
+
+# Create new entry for Disk 2
+
+efibootmgr \
+-c \
+-d /dev/sdb \
+-p 1 \
+-L "Rocky RAID1 Disk 2" \
+-l '\EFI\rocky\shimx64.efi'
+
+# View entries
+
+efibootmgr
+
+# Set boot order
+# Replace XXXX,YYYY with the Rocky boot IDs shown above
+
+efibootmgr -o XXXX,YYYY
+
+# Verify
+
+efibootmgr -v
+
+# ============================================================
+# Regenerate RAID Configuration
+# ============================================================
+
+mdadm --detail --scan > /etc/mdadm.conf
+
+cat /etc/mdadm.conf
+
+# ============================================================
+# Rebuild Initramfs
+# ============================================================
+
+dracut -f
+
+# ============================================================
+# Regenerate GRUB
+# ============================================================
+
+grub2-mkconfig -o /boot/grub2/grub.cfg
+
+# Flush writes
+
+sync
+
+# ============================================================
+# Cleanup
+# ============================================================
+
+umount /boot/efi2
+
+sed -i '\|/boot/efi|d' /etc/fstab
+
+cat /etc/fstab
+
+# ============================================================
+# Final Verification
+# ============================================================
+
+cat /proc/mdstat
+
+mdadm --detail /dev/md0
+
+mdadm --detail /dev/md1
+
+efibootmgr -v
+
+find /boot/efi/EFI -maxdepth 2 -type f
+
+grubby --default-kernel
+
+cat /etc/os-release
+
+uname -r
+
+getenforce
+
+lsblk
+
+mount
+
+echo "====================================================="
+echo " CentOS 7 -> Rocky Linux 8 Migration Complete"
+echo "====================================================="
+
+
+
+###############################################################################
+# Rocky Linux 8 Post Migration Cleanup
+# PART 1 - Repository & RPM Database Cleanup
+###############################################################################
+
+# Verify operating system
+cat /etc/os-release
+
+# Install Python 3 if missing
+dnf -y install python3
+
+###############################################################################
+# Backup existing repositories
+###############################################################################
+
+mkdir -p /etc/yum.repos.d/backup
+
+find /etc/yum.repos.d \
+  -maxdepth 1 \
+  -name "*.repo" \
+  -exec mv {} /etc/yum.repos.d/backup/ \;
+
+###############################################################################
+# Create Rocky Linux repository
+###############################################################################
+
+cat > /etc/yum.repos.d/base.repo <<'EOF'
+[rocky8-baseos]
+name=Rocky Linux 8 BaseOS
+baseurl=http://192.168.253.136/repo/rocky8/BaseOS/
+enabled=1
+gpgcheck=0
+
+[rocky8-appstream]
+name=Rocky Linux 8 AppStream
+baseurl=http://192.168.253.136/repo/rocky8/AppStream/
+enabled=1
+gpgcheck=0
+EOF
+
+###############################################################################
+# Backup RPM Database
+###############################################################################
+
+mv /var/lib/rpm /var/lib/rpm.bak
+
+mkdir -p /var/lib/rpm
+
+chmod 755 /var/lib/rpm
+
+###############################################################################
+# Initialize RPM Database
+###############################################################################
+
+rpm --initdb
+
+###############################################################################
+# Restore Packages Database
+###############################################################################
+
+cp -av /var/lib/rpm.bak/Packages /var/lib/rpm/
+
+###############################################################################
+# Remove RPM Locks
+###############################################################################
+
+rm -f /var/lib/rpm/__db.*
+
+###############################################################################
+# Rebuild RPM Database
+###############################################################################
+
+rpm --rebuilddb
+
+###############################################################################
+# Clean DNF Cache
+###############################################################################
+
+dnf clean all
+
+###############################################################################
+# Rebuild Metadata
+###############################################################################
+
+dnf makecache
+
+###############################################################################
+# Verify RPM Database
+###############################################################################
+
+dnf list installed
+
+###############################################################################
+# Display RPM Version
+###############################################################################
+
+rpm --version
+
+###############################################################################
+# Verify Database
+###############################################################################
+
+rpm -qa | head
+
+###############################################################################
+# Verify Repository Configuration
+###############################################################################
+
+cat /etc/yum.repos.d/base.repo
+
+###############################################################################
+# List Enabled Repositories
+###############################################################################
+
+dnf repolist
+
+###############################################################################
+# Verify DNF Can Read Metadata
+###############################################################################
+
+dnf check-update || true
+
+###############################################################################
+# End of Part 1
+###############################################################################
+
+###############################################################################
+# Rocky Linux 8 Post Migration Cleanup
+# PART 2 - Kernel Cleanup & EL7 Package Removal
+###############################################################################
+
+###############################################################################
+# List old EL7 kernel directories
+###############################################################################
+
+ls -d /lib/modules/*.el7* 2>/dev/null
+
+###############################################################################
+# Remove weak-modules (run for each EL7 kernel found above)
+# Example shown - replace with your actual kernel version(s)
+###############################################################################
+
+/usr/sbin/weak-modules --remove-kernel 3.10.0-1160.el7.x86_64
+
+###############################################################################
+# Remove kernel-install entry (replace kernel version if different)
+###############################################################################
+
+/bin/kernel-install remove \
+3.10.0-1160.el7.x86_64 \
+/lib/modules/3.10.0-1160.el7.x86_64/vmlinuz
+
+###############################################################################
+# Remove old EL7 module directories
+# (Repeat for every EL7 directory listed earlier)
+###############################################################################
+
+rm -rf /lib/modules/3.10.0-1160.el7.x86_64
+
+###############################################################################
+# Find remaining EL7 RPMs
+###############################################################################
+
+rpm -qa | grep '\.el7'
+
+###############################################################################
+# Save package list
+###############################################################################
+
+rpm -qa | \
+grep '\.el7' | \
+grep -vE '^(gpg-pubkey|libmoduled|katello-ca-consumer)' | \
+sort > /tmp/rhel7.txt
+
+###############################################################################
+# View package list
+###############################################################################
+
+cat /tmp/rhel7.txt
+
+###############################################################################
+# Remove EL7 packages
+# Execute ONE command per package listed in /tmp/rhel7.txt
+# Examples:
+###############################################################################
+
+rpm -e --nodeps package-name-1
+rpm -e --nodeps package-name-2
+rpm -e --nodeps package-name-3
+rpm -e --nodeps package-name-4
+
+###############################################################################
+# Verify EL7 packages removed
+###############################################################################
+
+rpm -qa | grep '\.el7'
+
+###############################################################################
+# Remove remaining Leapp packages
+###############################################################################
+
+dnf -y remove \
+leapp-pp \
+leapp-deps-el8 \
+leapp-repository-deps-el8
+
+###############################################################################
+# Remove Leapp directories
+###############################################################################
+
+rm -rf /var/log/leapp
+
+rm -rf /root/tmp_leapp_py3
+
+rm -rf /var/lib/leapp
+
+###############################################################################
+# Verify removal
+###############################################################################
+
+rpm -qa | grep leapp
+
+ls -ld /var/log/leapp
+
+ls -ld /var/lib/leapp
+
+###############################################################################
+# Reinstall current kernel-core
+###############################################################################
+
+CURRENT_KERNEL=$(uname -r)
+
+dnf -y reinstall kernel-core-$CURRENT_KERNEL
+
+###############################################################################
+# Verify no EL7 grub entries
+###############################################################################
+
+grubby --info=ALL
+
+###############################################################################
+# Search for EL7 entries
+###############################################################################
+
+grubby --info=ALL | grep '\.el7'
+
+###############################################################################
+# End of Part 2
+###############################################################################
+
+###############################################################################
+# Rocky Linux 8 Post Migration Cleanup
+# PART 3 - Rescue Image, GRUB & EFI Synchronization
+###############################################################################
+
+###############################################################################
+# Determine Current Kernel
+###############################################################################
+
+uname -r
+
+CURRENT_KERNEL=$(uname -r)
+
+###############################################################################
+# Reinstall Current Kernel
+###############################################################################
+
+dnf -y reinstall kernel-core-${CURRENT_KERNEL}
+
+###############################################################################
+# Verify No EL7 Kernels Exist in GRUB
+###############################################################################
+
+grubby --info=ALL
+
+grubby --info=ALL | grep '\.el7'
+
+###############################################################################
+# Remove Existing Rescue Images
+###############################################################################
+
+rm -f /boot/vmlinuz-*rescue*
+
+rm -f /boot/initramfs-*rescue*
+
+###############################################################################
+# Verify Rescue Images Removed
+###############################################################################
+
+ls -lh /boot/*rescue* 2>/dev/null
+
+###############################################################################
+# Regenerate Rescue Image
+###############################################################################
+
+/usr/lib/kernel/install.d/51-dracut-rescue.install \
+add \
+${CURRENT_KERNEL} \
+/boot \
+/boot/vmlinuz-${CURRENT_KERNEL}
+
+###############################################################################
+# Verify Rescue Images
+###############################################################################
+
+ls -lh /boot/*rescue*
+
+###############################################################################
+# Validate Rescue Initramfs
+###############################################################################
+
+lsinitrd /boot/initramfs-*rescue*.img
+
+###############################################################################
+# Verify Current Kernel Exists Inside Rescue Image
+###############################################################################
+
+lsinitrd /boot/initramfs-*rescue*.img | grep "${CURRENT_KERNEL}"
+
+###############################################################################
+# Display Rescue GRUB Entry
+###############################################################################
+
+RESCUE=$(ls /boot/vmlinuz-*rescue* | head -1)
+
+grubby --info "${RESCUE}"
+
+###############################################################################
+# Clean DNF Cache
+###############################################################################
+
+dnf clean all
+
+###############################################################################
+# Remove Temporary EL7 Package List
+###############################################################################
+
+rm -f /tmp/rhel7.txt
+
+###############################################################################
+# Create EFI Mount Points
+###############################################################################
+
+mkdir -p /boot/efi
+
+mkdir -p /boot/efi2
+
+###############################################################################
+# Mount EFI Partitions
+###############################################################################
+
+mount /dev/sda1 /boot/efi
+
+mount /dev/sdb1 /boot/efi2
+
+###############################################################################
+# Verify Mounts
+###############################################################################
+
+mount | grep efi
+
+###############################################################################
+# Regenerate GRUB
+###############################################################################
+
+grub2-mkconfig -o /boot/grub2/grub.cfg
+
+###############################################################################
+# Synchronize Both EFI Partitions
+###############################################################################
+
+rsync -aH --delete /boot/efi/ /boot/efi2/
+
+###############################################################################
+# Flush Disk Buffers
+###############################################################################
+
+sync
+
+###############################################################################
+# Verify EFI Contents
+###############################################################################
+
+find /boot/efi/EFI
+
+find /boot/efi2/EFI
+
+###############################################################################
+# Unmount EFI Partitions
+###############################################################################
+
+umount /boot/efi2
+
+umount /boot/efi
+
+###############################################################################
+# Verify Unmounted
+###############################################################################
+
+mount | grep efi
+
+###############################################################################
+# End of Part 3
+###############################################################################
+
+###############################################################################
+# Rocky Linux 8 Post Migration Cleanup
+# PART 4 - Final Reboot & Validation
+###############################################################################
+
+###############################################################################
+# Reboot
+###############################################################################
+
+reboot
+
+###############################################################################
+# Wait for system to boot
+###############################################################################
+
+###############################################################################
+# Verify Operating System
+###############################################################################
+
+cat /etc/os-release
+
+###############################################################################
+# Verify Kernel
+###############################################################################
+
+uname -r
+
+###############################################################################
+# Verify Distribution
+###############################################################################
+
+hostnamectl
+
+###############################################################################
+# Verify Remaining EL7 Packages
+###############################################################################
+
+rpm -qa | \
+grep '\.el7' | \
+grep -vE '^(gpg-pubkey|katello-ca-consumer|libmoduled)'
+
+###############################################################################
+# Verify Remaining EL7 Kernel Modules
+###############################################################################
+
+ls -d /lib/modules/*.el7*
+
+###############################################################################
+# Verify GRUB Entries
+###############################################################################
+
+grubby --info=ALL
+
+###############################################################################
+# Search for EL7 Boot Entries
+###############################################################################
+
+grubby --info=ALL | grep '\.el7'
+
+###############################################################################
+# Verify Rescue Images
+###############################################################################
+
+ls -lh /boot/*rescue*
+
+###############################################################################
+# Verify Rescue Initramfs
+###############################################################################
+
+lsinitrd /boot/initramfs-*rescue*.img
+
+###############################################################################
+# Verify Default Boot Kernel
+###############################################################################
+
+grubby --default-kernel
+
+###############################################################################
+# Verify Running Kernel Matches Default
+###############################################################################
+
+uname -r
+
+grubby --default-kernel
+
+###############################################################################
+# Verify EFI Boot Entries
+###############################################################################
+
+efibootmgr -v
+
+###############################################################################
+# Verify Primary EFI Contents
+###############################################################################
+
+find /boot/efi/EFI -maxdepth 2 -type f
+
+###############################################################################
+# Verify Secondary EFI Contents
+###############################################################################
+
+mkdir -p /boot/efi2
+
+mount /dev/sdb1 /boot/efi2
+
+find /boot/efi2/EFI -maxdepth 2 -type f
+
+umount /boot/efi2
+
+###############################################################################
+# Verify RAID Status
+###############################################################################
+
+cat /proc/mdstat
+
+###############################################################################
+# Verify mdadm Configuration
+###############################################################################
+
+cat /etc/mdadm.conf
+
+###############################################################################
+# Verify Block Devices
+###############################################################################
+
+lsblk -f
+
+###############################################################################
+# Verify Mounted Filesystems
+###############################################################################
+
+mount
+
+###############################################################################
+# Verify SELinux Status
+###############################################################################
+
+getenforce
+
+###############################################################################
+# Verify Installed Rocky Kernel Packages
+###############################################################################
+
+rpm -qa | grep '^kernel'
+
+###############################################################################
+# Verify DNF Repository Configuration
+###############################################################################
+
+dnf repolist
+
+###############################################################################
+# Verify No EL7 Packages Remain
+###############################################################################
+
+rpm -qa | grep '\.el7'
+
+###############################################################################
+# Verify No EL7 Kernel Directories Remain
+###############################################################################
+
+find /lib/modules -name "*.el7*"
+
+###############################################################################
+# Verify No EL7 Boot Entries Remain
+###############################################################################
+
+grubby --info=ALL | grep el7
+
+###############################################################################
+# Display System Summary
+###############################################################################
+
+echo "==================== SUMMARY ===================="
+
+echo "Operating System:"
+cat /etc/os-release
+
+echo
+
+echo "Kernel:"
+uname -r
+
+echo
+
+echo "Default Boot Kernel:"
+grubby --default-kernel
+
+echo
+
+echo "SELinux:"
+getenforce
+
+echo
+
+echo "Repositories:"
+dnf repolist
+
+echo
+
+echo "RAID:"
+cat /proc/mdstat
+
+echo
+
+echo "EFI Entries:"
+efibootmgr -v
+
+echo
+
+echo "Block Devices:"
+lsblk -f
+
+echo "================================================="
+
+###############################################################################
+# End of Rocky Linux 8 Post Migration Cleanup
+###############################################################################
