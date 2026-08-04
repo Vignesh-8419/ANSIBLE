@@ -447,6 +447,47 @@
       when: upgrade_result is defined
 
     ####################################################################
+    # Prepare Primary EFI Before Reboot
+    ####################################################################
+
+    - name: Create EFI mount point
+      file:
+        path: /boot/efi
+        state: directory
+        mode: "0755"
+
+    - name: Unmount current EFI
+      mount:
+        path: /boot/efi
+        state: unmounted
+      ignore_errors: yes
+
+    - name: Create FAT32 filesystem on sda1
+      filesystem:
+        dev: /dev/sda1
+        fstype: vfat
+
+    - name: Mount primary EFI
+      mount:
+        path: /boot/efi
+        src: /dev/sda1
+        fstype: vfat
+        state: mounted
+
+    - name: Get UUID of sda1
+      command: blkid -s UUID -o value /dev/sda1
+      register: sda1_uuid
+      changed_when: false
+
+    - name: Configure /boot/efi in fstab
+      mount:
+        path: /boot/efi
+        src: "UUID={{ sda1_uuid.stdout }}"
+        fstype: vfat
+        opts: "umask=0077,shortname=winnt"
+        state: mounted
+
+    ####################################################################
     # Verify Upgrade Kernel
     ####################################################################
 
@@ -470,7 +511,7 @@
         msg: "Upgrade initramfs (/boot/initramfs-upgrade.x86_64.img) was not created."
       when: not upgrade_initramfs.stat.exists
 
-    - name: Display upgrade kernel
+    - name: Display default kernel
       command: grubby --default-kernel
       register: default_kernel
       changed_when: false
