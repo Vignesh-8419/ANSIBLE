@@ -426,34 +426,27 @@
         leapp_report_text: "{{ leapp_report.content | b64decode }}"
 
     ####################################################################
-    # Detect Inhibitors
+    # Validate Leapp Report
     ####################################################################
-
-    - name: Detect inhibitors
-      set_fact:
-        inhibitors_found: "{{ 'Risk Factor: high (inhibitor)' in leapp_report_text }}"
-
-    - name: Display inhibitor status
-      debug:
-        msg: >-
-          {{
-            'No inhibitors detected.'
-            if not inhibitors_found
-            else
-            'Leapp inhibitors detected.'
-          }}
-
-    - name: Stop migration when inhibitors exist
+    
+    - name: Check for Leapp inhibitors
+      shell: |
+        grep -q "Risk Factor: high (inhibitor)" /var/log/leapp/leapp-report.txt
+      register: leapp_inhibitors
+      changed_when: false
+      failed_when: false
+    
+    - name: Stop migration if Leapp report contains inhibitors
       fail:
         msg: |
-          Leapp inhibitors detected.
-
-          Review:
-
+          Leapp preupgrade report contains inhibitors.
+          Resolve them before continuing with RAID preparation.
+    
+          Report:
             /var/log/leapp/leapp-report.txt
-
-          Resolve all inhibitors before rerunning this playbook.
-      when: inhibitors_found
+      when:
+        - preupgrade.rc != 0
+          or leapp_inhibitors.rc == 0
 
     ####################################################################
     # Detect Software RAID
