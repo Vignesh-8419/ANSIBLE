@@ -414,8 +414,8 @@
 
         - name: Wipe secondary disk
           shell: |
-            wipefs -a /dev/sdb || true
             sgdisk --zap-all /dev/sdb || true
+            wipefs -a -f /dev/sdb || true
             partprobe /dev/sdb || true
           args:
             executable: /bin/bash
@@ -433,7 +433,7 @@
     ####################################################################
     # Verify Primary EFI Before Leapp Upgrade
     ####################################################################
-
+    
     - name: Create EFI mount points
       file:
         path: "{{ item }}"
@@ -442,14 +442,37 @@
       loop:
         - /boot/efi
         - /mnt/efi2
-
+    
+    - name: Unmount existing EFI mount
+      mount:
+        path: /boot/efi
+        state: unmounted
+      ignore_errors: yes
+    
+    - name: Ensure only one EFI mount exists
+      shell: |
+        while mountpoint -q /boot/efi; do
+          umount /boot/efi
+        done
+      args:
+        executable: /bin/bash
+      ignore_errors: yes
+    
     - name: Mount primary EFI
       mount:
         path: /boot/efi
         src: /dev/sda1
         fstype: vfat
         state: mounted
-
+    
+    - name: Verify primary EFI mount
+      command: findmnt /boot/efi
+      register: efi_mount
+      changed_when: false
+    
+    - debug:
+        var: efi_mount.stdout_lines
+    
     - name: Check if primary EFI grub.cfg exists
       stat:
         path: /boot/efi/EFI/centos/grub.cfg
@@ -499,13 +522,13 @@
       register: efi_uuid
       changed_when: false
 
-    - name: Ensure /boot/efi exists in fstab
-      mount:
-        path: /boot/efi
-        src: "UUID={{ efi_uuid.stdout }}"
-        fstype: vfat
-        opts: "umask=0077,shortname=winnt"
-        state: mounted
+     - name: Mount EFI temporarily
+       mount:
+         path: /boot/efi
+         src: "UUID={{ efi_uuid.stdout }}"
+         fstype: vfat
+         opts: "umask=0077,shortname=winnt"
+         state: ephemeral
 
     - name: Verify grub.cfg
       stat:
