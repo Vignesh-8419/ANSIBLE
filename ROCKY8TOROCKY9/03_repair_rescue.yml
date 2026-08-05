@@ -196,6 +196,21 @@
         state: unmounted
       ignore_errors: yes
 
+    - name: Verify EFI is unmounted
+      command: findmnt /boot/efi
+      register: efi_mount
+      failed_when: false
+      changed_when: false
+    
+    - debug:
+        msg: >-
+          {{
+            'EFI successfully unmounted'
+            if efi_mount.rc != 0
+            else
+            'EFI is still mounted'
+          }}
+
     ####################################################################
     # Validate
     ####################################################################
