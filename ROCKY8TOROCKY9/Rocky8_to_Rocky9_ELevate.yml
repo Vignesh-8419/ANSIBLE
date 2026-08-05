@@ -639,14 +639,6 @@
         opts: "umask=0077,shortname=winnt"
         state: mounted
 
-    - name: Mount EFI temporarily
-      mount:
-        path: /boot/efi
-        src: "UUID={{ efi_uuid.stdout }}"
-        fstype: vfat
-        opts: "umask=0077,shortname=winnt"
-        state: ephemeral
-
     - name: Verify grub.cfg
       stat:
         path: /boot/efi/EFI/rocky/grub.cfg
