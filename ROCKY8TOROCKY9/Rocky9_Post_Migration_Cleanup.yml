@@ -189,7 +189,37 @@
         name: "{{ el8_kernels.stdout_lines }}"
         state: absent
       when: el8_kernels.stdout != ""
-
+    ####################################################################
+    # Remove Stale Boot Loader Entries
+    ####################################################################
+    
+    - name: Find boot loader entries
+      find:
+        paths: /boot/loader/entries
+        patterns: "*.conf"
+      register: boot_entries
+    
+    - name: Display boot loader entries before cleanup
+      debug:
+        var: boot_entries.files
+    
+    - name: Remove obsolete boot loader entries
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ boot_entries.files }}"
+      when:
+        - el8_kernels.stdout != ""
+        - "'0-rescue' not in item.path"
+        - running_kernel.stdout not in item.path
+    
+    - name: Display remaining boot loader entries
+      command: ls -1 /boot/loader/entries
+      register: remaining_boot_entries
+      changed_when: false
+    
+    - debug:
+        var: remaining_boot_entries.stdout_lines
     ####################################################################
     # Remove ELevate Packages
     ####################################################################
