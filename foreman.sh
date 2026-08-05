@@ -144,7 +144,6 @@ yum install -y rh-redis5-redis
 sudo systemctl enable rh-redis5-redis
 sudo systemctl start rh-redis5-redis
 
-
 echo "🔧 Setting JAVA path..."
 export PATH="$JAVA_PATH:$PATH"
 
@@ -204,6 +203,56 @@ if ! systemctl is-active foreman &>/dev/null; then
 else
   echo "⏭️ Foreman already running."
 fi
+
+echo "📦 Relocating Pulp storage to /home..."
+
+if ! mountpoint -q /var/lib/pulp; then
+
+    foreman-maintain service stop
+
+    mkdir -p /home/pulp
+
+    if [ ! -d /var/lib/pulp.old ]; then
+        echo "📁 Copying Pulp data..."
+        yum install -y rsync   # install earlier with your packages
+        rsync -aHAX --numeric-ids /var/lib/pulp/ /home/pulp/
+
+        echo "📁 Backing up original Pulp directory..."
+        mv /var/lib/pulp /var/lib/pulp.old
+
+        mkdir -p /var/lib/pulp
+    fi
+
+    mount --bind /home/pulp /var/lib/pulp
+
+    grep -q "^/home/pulp[[:space:]]\+/var/lib/pulp" /etc/fstab || \
+        echo "/home/pulp /var/lib/pulp none bind 0 0" >> /etc/fstab
+
+    restorecon -RF /home/pulp >/dev/null 2>&1 || true
+    restorecon -RF /var/lib/pulp >/dev/null 2>&1 || true
+
+    foreman-maintain service start
+
+echo "🧪 Verifying Pulp bind mount..."
+
+touch /var/lib/pulp/.migration-test
+test -f /home/pulp/.migration-test
+rm -f /var/lib/pulp/.migration-test
+
+OLD=$(du -sb /var/lib/pulp.old | awk '{print $1}')
+NEW=$(du -sb /home/pulp | awk '{print $1}')
+
+if [ "$OLD" != "$NEW" ]; then
+    echo "❌ Pulp copy verification failed."
+    exit 1
+fi
+
+echo "🧹 Removing old Pulp directory..."
+rm -rf /var/lib/pulp.old
+
+fi
+
+echo "✅ Pulp storage relocated."
 
 # -------------------------------
 # STEP 7: Configure Foreman Proxies (TFTP, DNS, DHCP)
