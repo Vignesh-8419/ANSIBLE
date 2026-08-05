@@ -137,9 +137,32 @@
     - name: Display remaining boot loader entries
       debug:
         var: remaining_boot_entries.files
+
+    ####################################################################
+    # Mount EFI Temporarily
+    ####################################################################
+    
+    - name: Get EFI UUID
+      command: blkid -s UUID -o value /dev/sda1
+      register: efi_uuid
+      changed_when: false
+
+    - name: Create EFI mount point
+      file:
+        path: /boot/efi
+        state: directory
+        mode: "0755"
+    
+    - name: Mount EFI temporarily
+      mount:
+        path: /boot/efi
+        src: "UUID={{ efi_uuid.stdout }}"
+        fstype: vfat
+        opts: "umask=0077,shortname=winnt"
+        state: ephemeral
     
     ####################################################################
-    # Regenerate GRUB
+    # Verify EFI
     ####################################################################
     
     - name: Verify EFI mount
@@ -156,8 +179,22 @@
         msg: EFI partition is not mounted or grub.cfg is missing.
       when: not efi_grub.stat.exists
     
+    ####################################################################
+    # Regenerate GRUB
+    ####################################################################
+    
     - name: Regenerate GRUB configuration
       command: grub2-mkconfig -o /boot/grub2/grub.cfg
+    
+    ####################################################################
+    # Unmount EFI
+    ####################################################################
+    
+    - name: Unmount EFI
+      mount:
+        path: /boot/efi
+        state: unmounted
+      ignore_errors: yes
 
     ####################################################################
     # Validate
