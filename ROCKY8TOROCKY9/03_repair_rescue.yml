@@ -16,9 +16,9 @@
     - name: Verify Rocky Linux 9
       fail:
         msg: This playbook only supports Rocky Linux 9.
-      when:
-        - ansible_distribution != "Rocky"
-        - ansible_distribution_major_version != "9"
+      when: >
+        ansible_distribution != "Rocky" or
+        ansible_distribution_major_version != "9"
 
     - name: Get running kernel
       command: uname -r
@@ -108,13 +108,17 @@
     ####################################################################
     # Remove stale boot loader entries
     ####################################################################
-
+    
     - name: Find boot loader entries
       find:
         paths: /boot/loader/entries
         patterns: "*.conf"
       register: boot_entries
-
+    
+    - name: Display boot loader entries before cleanup
+      debug:
+        var: boot_entries.files
+    
     - name: Remove obsolete boot loader entries
       file:
         path: "{{ item.path }}"
@@ -123,17 +127,37 @@
       when:
         - "'0-rescue' not in item.path"
         - running_kernel.stdout not in item.path
-
+    
+    - name: Find remaining boot loader entries
+      find:
+        paths: /boot/loader/entries
+        patterns: "*.conf"
+      register: remaining_boot_entries
+    
+    - name: Display remaining boot loader entries
+      debug:
+        var: remaining_boot_entries.files
+    
+    ####################################################################
+    # Regenerate GRUB
+    ####################################################################
+    
+    - name: Verify EFI mount
+      command: findmnt /boot/efi
+      changed_when: false
+    
+    - name: Verify EFI grub.cfg
+      stat:
+        path: /boot/efi/EFI/rocky/grub.cfg
+      register: efi_grub
+    
+    - name: Fail if EFI grub.cfg is missing
+      fail:
+        msg: EFI partition is not mounted or grub.cfg is missing.
+      when: not efi_grub.stat.exists
+    
     - name: Regenerate GRUB configuration
       command: grub2-mkconfig -o /boot/grub2/grub.cfg
-
-    - name: Display remaining boot loader entries
-      command: ls -1 /boot/loader/entries
-      register: remaining_entries
-      changed_when: false
-
-    - debug:
-        var: remaining_entries.stdout_lines
 
     ####################################################################
     # Validate
