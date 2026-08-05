@@ -630,7 +630,7 @@
       command: blkid -s UUID -o value /dev/sda1
       register: efi_uuid
       changed_when: false
-
+    
     - name: Ensure /boot/efi exists in fstab
       mount:
         path: /boot/efi
@@ -638,21 +638,21 @@
         fstype: vfat
         opts: "umask=0077,shortname=winnt"
         state: mounted
-
+    
     - name: Verify grub.cfg
       stat:
         path: /boot/efi/EFI/rocky/grub.cfg
       register: grub_cfg
-
+    
     - name: Fail if grub.cfg is missing
       fail:
         msg: "Primary EFI partition is missing /EFI/rocky/grub.cfg"
       when: not grub_cfg.stat.exists
-
+    
     - name: Verify grubby
       command: grubby --info=ALL
       changed_when: false
-
+    
     - name: Verify default kernel
       command: grubby --default-kernel
       changed_when: false
