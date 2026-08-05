@@ -125,8 +125,8 @@
         state: absent
       loop: "{{ boot_entries.files }}"
       when:
+        - item.path != "/boot/loader/entries/{{ ansible_machine_id }}-{{ running_kernel.stdout }}.conf"
         - "'0-rescue' not in item.path"
-        - running_kernel.stdout not in item.path
     
     - name: Find remaining boot loader entries
       find:
