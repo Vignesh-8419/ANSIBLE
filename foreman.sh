@@ -230,7 +230,7 @@ if ! mountpoint -q /var/lib/pulp; then
 
     restorecon -RF /home/pulp >/dev/null 2>&1 || true
     restorecon -RF /var/lib/pulp >/dev/null 2>&1 || true
-
+    systemctl daemon-reload
     foreman-maintain service start
 
 echo "🧪 Verifying Pulp bind mount..."
