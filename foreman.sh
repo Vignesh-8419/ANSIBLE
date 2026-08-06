@@ -61,7 +61,7 @@ enabled=1
 gpgcheck=0
 priority=1
 EOF
-yum install -y gtk2 gtk3
+yum install -y gtk2 gtk3 mesa-libEGL*
 
 echo "📝 Creating patch.repo..."
 cat <<EOF > /etc/yum.repos.d/patch.repo
@@ -115,7 +115,7 @@ gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 EOF
 
 echo "🧠 Installing SSH PASS..."
-yum install -y sshpass mesa-libEGL* gtk*
+yum install -y sshpass*
 
 
 # -------------------------------
