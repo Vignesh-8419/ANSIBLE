@@ -421,12 +421,6 @@ kubectl wait \
     -n "$NAMESPACE" \
     --timeout=60m
 
-echo "⏳ Waiting for migration pod to terminate..."
-
-while kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null | grep -q "awx-server-migration"; do
-    sleep 5
-done
-
 echo -e "${GREEN}✅ Background:${NC} Database migration completed successfully."
 
 # -----------------------------
