@@ -123,12 +123,6 @@ chmod +x foreman-memory-tuning-production.sh
 ```
 
 ```text
-curl -L -o foreman-bootstrap.sh \
-"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap.sh?$(date +%s)" && \
-chmod +x foreman-bootstrap.sh
-```
-
-```text
 curl -L -o frontbackend.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/frontbackend.sh?$(date +%s)" && \
 chmod +x frontbackend.sh
