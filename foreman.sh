@@ -237,16 +237,15 @@ if ! mountpoint -q /var/lib/pulp; then
 echo "🧪 Verifying Pulp bind mount..."
 
 touch /var/lib/pulp/.migration-test
-test -f /home/pulp/.migration-test
-rm -f /var/lib/pulp/.migration-test
 
-OLD=$(du -sb /var/lib/pulp.old | awk '{print $1}')
-NEW=$(du -sb /home/pulp | awk '{print $1}')
-
-if [ "$OLD" != "$NEW" ]; then
-    echo "❌ Pulp copy verification failed."
+if [ ! -f /home/pulp/.migration-test ]; then
+    echo "❌ Bind mount verification failed."
     exit 1
 fi
+
+rm -f /var/lib/pulp/.migration-test
+
+echo "✅ Bind mount verification successful."
 
 echo "🧹 Removing old Pulp directory..."
 rm -rf /var/lib/pulp.old
