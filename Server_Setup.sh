@@ -53,13 +53,42 @@ read -p "$(echo -e ${YELLOW}"Please provide IP address with netmask (e.g., 192.1
 read -p "$(echo -e ${YELLOW}"Please provide gateway (e.g., 192.168.253.2): "${NC})" GATEWAY
 read -p "$(echo -e ${YELLOW}"Please provide dns server (e.g., 192.168.253.1): "${NC})" DNS_SERVER
 
-# Extract pure IP address and Subnet Prefix (e.g., 24) from CIDR
-JUST_IP=$(echo "$FULL_IP_CIDR" | cut -d'/' -f1)
-PREFIX=$(echo "$FULL_IP_CIDR" | cut -s -d'/' -f2)
+# ------------------------------------------
+# Validate and Parse IP Address / CIDR
+# ------------------------------------------
 
-# Default to prefix 24 if user forgot to provide the slash notation
-if [ -z "$PREFIX" ]; then
+# Check if CIDR notation was provided
+if [[ "$FULL_IP_CIDR" == */* ]]; then
+    JUST_IP="${FULL_IP_CIDR%/*}"
+    PREFIX="${FULL_IP_CIDR#*/}"
+else
+    JUST_IP="$FULL_IP_CIDR"
     PREFIX="24"
+fi
+
+# Validate IPv4 address format
+if ! [[ "$JUST_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    echo -e "${RED}❌ Invalid IP address format.${NC}"
+    echo "Example: 192.168.253.151/24"
+    exit 1
+fi
+
+# Validate each IP octet (0-255)
+IFS='.' read -r OCT1 OCT2 OCT3 OCT4 <<< "$JUST_IP"
+
+for OCTET in "$OCT1" "$OCT2" "$OCT3" "$OCT4"; do
+    if ! [[ "$OCTET" =~ ^[0-9]+$ ]] || [ "$OCTET" -gt 255 ]; then
+        echo -e "${RED}❌ Invalid IP address.${NC}"
+        echo "Example: 192.168.253.151/24"
+        exit 1
+    fi
+done
+
+# Validate subnet prefix (0-32)
+if ! [[ "$PREFIX" =~ ^([0-9]|[1-2][0-9]|3[0-2])$ ]]; then
+    echo -e "${RED}❌ Invalid subnet prefix '/$PREFIX'.${NC}"
+    echo "Valid range: /0 to /32"
+    exit 1
 fi
 
 print_header
@@ -123,6 +152,13 @@ EOF
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✔ Step 2 Success: Configuration written to $CONFIG_FILE with domain.${NC}"
+
+    # Reload NetworkManager configuration if it is running
+    if systemctl is-active --quiet NetworkManager; then
+        nmcli connection reload >/dev/null 2>&1
+        nmcli connection load "$CONFIG_FILE" >/dev/null 2>&1 || true
+    fi
+
     echo "Changes will take full effect after the reboot."
 else
     echo -e "${RED}❌ Step 2 Failed: Could not write to $CONFIG_FILE. Exiting.${NC}"
