@@ -22,7 +22,7 @@ group_by:
 
 # 3. Use your verified filter
 query_filters:
-  - cluster_id: 1
+  - cluster_id: 2
   - status: active
   - status: staged
 
