@@ -395,26 +395,39 @@ done
 echo -e "${GREEN}✅ Background:${NC} Applied the AWX CRD and waited until the operator reconciled it into a Deployment."
 
 # -----------------------------
-# 14a. Stream migration logs
+# 14a. Wait for AWX Migration
 # -----------------------------
-echo -e "${BLUE}# 14a. Stream migration logs${NC}"
-echo "📜 Streaming AWX migration logs..."
-MIGRATION_POD=$(kubectl get pods -n "$NAMESPACE" \
-  -l app.kubernetes.io/name=awx-server-migration \
-  -o name | head -1 | cut -d/ -f2)
+echo -e "${BLUE}# 14a. Wait for AWX Migration${NC}"
 
-if [ -n "$MIGRATION_POD" ]; then
-  echo "✅ Found migration pod: $MIGRATION_POD"
-  echo "⏳ Streaming logs until migrations finish..."
-  # Stream logs and save them to a file
-  kubectl logs -n "$NAMESPACE" "$MIGRATION_POD" -f | tee /tmp/awx-migration.log
-  # After stream ends, print the last line
-  echo "✅ Migration finished. Last line was:"
-  tail -n 1 /tmp/awx-migration.log
-else
-  echo "⚠️ No migration pod found yet. Continuing..."
-fi
-echo -e "${GREEN}✅ Background:${NC} Streamed database migration logs. The final line confirms schema upgrades completed successfully."
+echo "⏳ Waiting for migration Job to be created..."
+
+until kubectl get jobs -n "$NAMESPACE" --no-headers 2>/dev/null | grep -q "awx-server-migration"; do
+    sleep 5
+done
+
+JOB=$(kubectl get jobs -n "$NAMESPACE" -o name | grep "awx-server-migration" | head -1)
+
+echo "✅ Migration job found: ${JOB##*/}"
+
+echo "📜 Streaming migration logs..."
+kubectl logs -f -n "$NAMESPACE" "$JOB"
+
+echo
+echo "⏳ Waiting for migration job to complete..."
+
+kubectl wait \
+    --for=condition=complete \
+    "$JOB" \
+    -n "$NAMESPACE" \
+    --timeout=60m
+
+echo "⏳ Waiting for migration pod to terminate..."
+
+while kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null | grep -q "awx-server-migration"; do
+    sleep 5
+done
+
+echo -e "${GREEN}✅ Background:${NC} Database migration completed successfully."
 
 # -----------------------------
 # 15. Create Ingress
