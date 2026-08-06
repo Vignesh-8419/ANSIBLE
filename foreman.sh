@@ -207,15 +207,17 @@ fi
 
 echo "📦 Relocating Pulp storage to /home..."
 
-if ! mountpoint -q /var/lib/pulp; then
+if mountpoint -q /var/lib/pulp; then
+    echo "✅ Pulp is already using a bind mount. Skipping relocation."
 
+else
     foreman-maintain service stop
 
     mkdir -p /home/pulp
 
     if [ ! -d /var/lib/pulp.old ]; then
         echo "📁 Copying Pulp data..."
-        yum install -y rsync   # install earlier with your packages
+        yum install -y rsync
         rsync -aHAX --numeric-ids /var/lib/pulp/ /home/pulp/
 
         echo "📁 Backing up original Pulp directory..."
@@ -231,25 +233,32 @@ if ! mountpoint -q /var/lib/pulp; then
 
     restorecon -RF /home/pulp >/dev/null 2>&1 || true
     restorecon -RF /var/lib/pulp >/dev/null 2>&1 || true
+
     systemctl daemon-reload
+
+    echo "🧪 Verifying Pulp bind mount..."
+
+    mountpoint -q /var/lib/pulp || {
+        echo "❌ /var/lib/pulp is not a mount point."
+        exit 1
+    }
+
+    touch /var/lib/pulp/.migration-test
+
+    if [ ! -f /home/pulp/.migration-test ]; then
+        echo "❌ Bind mount verification failed."
+        exit 1
+    fi
+
+    rm -f /var/lib/pulp/.migration-test
+
+    echo "✅ Bind mount verification successful."
+
+    echo "🚀 Starting Foreman services..."
     foreman-maintain service start
 
-echo "🧪 Verifying Pulp bind mount..."
-
-touch /var/lib/pulp/.migration-test
-
-if [ ! -f /home/pulp/.migration-test ]; then
-    echo "❌ Bind mount verification failed."
-    exit 1
-fi
-
-rm -f /var/lib/pulp/.migration-test
-
-echo "✅ Bind mount verification successful."
-
-echo "🧹 Removing old Pulp directory..."
-rm -rf /var/lib/pulp.old
-
+    echo "🧹 Removing old Pulp directory..."
+    rm -rf /var/lib/pulp.old
 fi
 
 echo "✅ Pulp storage relocated."
