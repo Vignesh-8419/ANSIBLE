@@ -61,7 +61,7 @@ enabled=1
 gpgcheck=0
 priority=1
 EOF
-yum install -y gtk3*
+yum install -y gtk3
 
 echo "📝 Creating patch.repo..."
 cat <<EOF > /etc/yum.repos.d/patch.repo
