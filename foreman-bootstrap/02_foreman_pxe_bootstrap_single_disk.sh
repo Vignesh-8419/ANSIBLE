@@ -7,6 +7,33 @@ FOREMAN_USER="${FOREMAN_USER:-admin}"
 FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
 HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
 
+###############################################################################
+# Select Rocky Version
+###############################################################################
+
+TARGET_VERSION="${TARGET_VERSION:-9.8}"
+
+case "$TARGET_VERSION" in
+    9.2)
+        ROCKY_TEMPLATE_NAME="PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart"
+        ROCKY_TEMPLATE_FILE="/tmp/rocky92-singledisk.erb"
+        ROCKY_OS_TITLE="RockyLinux 9.2"
+        ;;
+    9.8)
+        ROCKY_TEMPLATE_NAME="PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart"
+        ROCKY_TEMPLATE_FILE="/tmp/rocky98-singledisk.erb"
+        ROCKY_OS_TITLE="RockyLinux 9.8"
+        ;;
+    *)
+        echo "Unsupported TARGET_VERSION: $TARGET_VERSION"
+        exit 1
+        ;;
+esac
+
+###############################################################################
+# CentOS 7 Template
+###############################################################################
+
 cat >/tmp/centos-singledisk.erb <<'EOF'
 <%#
 name: PXEGrub2 CentOS UEFI SingleDisk Kickstart
@@ -21,6 +48,10 @@ menuentry 'Install CentOS 7 (Single Disk)' {
  initrdefi /centos/initrd.img
 }
 EOF
+
+###############################################################################
+# Rocky 8 Template
+###############################################################################
 
 cat >/tmp/rocky8-singledisk.erb <<'EOF'
 <%#
@@ -37,6 +68,10 @@ menuentry 'Install Rocky Linux 8.10 (Single Disk)' {
 }
 EOF
 
+###############################################################################
+# Rocky 9.8 Template
+###############################################################################
+
 cat >/tmp/rocky98-singledisk.erb <<'EOF'
 <%#
 name: PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart
@@ -51,6 +86,10 @@ menuentry 'Install Rocky Linux 9.8 (Single Disk)' {
  initrdefi /rocky9/initrd.img
 }
 EOF
+
+###############################################################################
+# Rocky 9.2 Template
+###############################################################################
 
 cat >/tmp/rocky92-singledisk.erb <<'EOF'
 <%#
@@ -67,14 +106,39 @@ menuentry 'Install Rocky Linux 9.2 (Single Disk)' {
 }
 EOF
 
-$HAMMER template create --name "PXEGrub2 CentOS UEFI SingleDisk Kickstart" --type PXEGrub2 --file /tmp/centos-singledisk.erb 2>/dev/null || true
-$HAMMER template create --name "PXEGrub2 Rocky8 UEFI SingleDisk Kickstart" --type PXEGrub2 --file /tmp/rocky8-singledisk.erb 2>/dev/null || true
-$HAMMER template create --name "PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart" --type PXEGrub2 --file /tmp/rocky98-singledisk.erb 2>/dev/null || true
-$HAMMER template create --name "PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart" --type PXEGrub2 --file /tmp/rocky92-singledisk.erb 2>/dev/null || true
+###############################################################################
+# Create Templates
+###############################################################################
 
-$HAMMER os add-provisioning-template --title "CentOSLinux 7" --provisioning-template "PXEGrub2 CentOS UEFI SingleDisk Kickstart" 2>/dev/null || true
-$HAMMER os add-provisioning-template --title "RockyLinux 8.10" --provisioning-template "PXEGrub2 Rocky8 UEFI SingleDisk Kickstart" 2>/dev/null || true
-$HAMMER os add-provisioning-template --title "RockyLinux 9.8" --provisioning-template "PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart" 2>/dev/null || true
-$HAMMER os add-provisioning-template --title "RockyLinux 9.2" --provisioning-template "PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart" 2>/dev/null || true
+$HAMMER template create \
+    --name "PXEGrub2 CentOS UEFI SingleDisk Kickstart" \
+    --type PXEGrub2 \
+    --file /tmp/centos-singledisk.erb 2>/dev/null || true
+
+$HAMMER template create \
+    --name "PXEGrub2 Rocky8 UEFI SingleDisk Kickstart" \
+    --type PXEGrub2 \
+    --file /tmp/rocky8-singledisk.erb 2>/dev/null || true
+
+$HAMMER template create \
+    --name "$ROCKY_TEMPLATE_NAME" \
+    --type PXEGrub2 \
+    --file "$ROCKY_TEMPLATE_FILE" 2>/dev/null || true
+
+###############################################################################
+# Associate Templates
+###############################################################################
+
+$HAMMER os add-provisioning-template \
+    --title "CentOSLinux 7" \
+    --provisioning-template "PXEGrub2 CentOS UEFI SingleDisk Kickstart" 2>/dev/null || true
+
+$HAMMER os add-provisioning-template \
+    --title "RockyLinux 8.10" \
+    --provisioning-template "PXEGrub2 Rocky8 UEFI SingleDisk Kickstart" 2>/dev/null || true
+
+$HAMMER os add-provisioning-template \
+    --title "$ROCKY_OS_TITLE" \
+    --provisioning-template "$ROCKY_TEMPLATE_NAME" 2>/dev/null || true
 
 echo "Single Disk PXE templates created."
