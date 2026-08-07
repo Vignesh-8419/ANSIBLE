@@ -158,10 +158,15 @@ PRODUCT_NAME="CentOS 7"
 
 
 BASE_REPO="CentOS-07-BaseOS"
+BASE_URL="http://192.168.253.136/repo/centos/BaseOS"
 
-UPDATE_REPO="CentOS-07-Updates"
+UPDATE_URL="http://192.168.253.136/repo/centos/Updates"
+
+ELEVATE_URL="http://192.168.253.136/repo/elevate/el7toel8"
+
 
 ELEVATE_REPO="CentOS-07-ELevate"
+ELEVATE_URL="http://192.168.253.136/repo/elevate/el7toel8"
 
 
 CONTENT_VIEW="EL7toEL8-CV"
@@ -279,7 +284,60 @@ fi
 
 }
 
+###############################################################################
+# Update Existing Repository URL
+###############################################################################
 
+update_repository_url()
+{
+
+REPO_NAME="$1"
+REPO_URL="$2"
+
+
+echo
+echo "Updating Repository URL : ${REPO_NAME}"
+
+
+$HAMMER repository update \
+--organization "$ORG" \
+--product "$PRODUCT_NAME" \
+--name "$REPO_NAME" \
+--url "$REPO_URL"
+
+
+
+if [ $? -eq 0 ]
+then
+
+    ok "${REPO_NAME} URL updated."
+
+else
+
+    error "${REPO_NAME} URL update failed."
+
+    record_failure "${REPO_NAME} URL"
+
+fi
+
+
+}
+
+
+
+if [ $? -eq 0 ]
+then
+
+    ok "${REPO_NAME} URL updated."
+
+else
+
+    warn "${REPO_NAME} URL update skipped."
+
+fi
+
+
+}
 
 ###############################################################################
 # Create EL7 Repositories
@@ -291,30 +349,46 @@ create_el7_repositories()
 header "Creating EL7 Repositories"
 
 
-
 create_repo \
 "${BASE_REPO}" \
-"http://192.168.253.136/repo/centos/BaseOS" \
+"${BASE_URL}" \
 "yum"
-
 
 
 create_repo \
 "${UPDATE_REPO}" \
-"http://192.168.253.136/repo/centos/Updates" \
+"${UPDATE_URL}" \
 "yum"
-
 
 
 create_repo \
 "${ELEVATE_REPO}" \
-"http://192.168.253.136/repo/elevate/el7toel8" \
+"${ELEVATE_URL}" \
 "yum"
+
+
+
+header "Updating Existing Repository URLs"
+
+
+update_repository_url \
+"${BASE_REPO}" \
+"${BASE_URL}"
+
+
+update_repository_url \
+"${UPDATE_REPO}" \
+"${UPDATE_URL}"
+
+
+update_repository_url \
+"${ELEVATE_REPO}" \
+"${ELEVATE_URL}"
 
 
 }
 
-###############################################################################
+#####################################a##########################################
 # Sync Repository
 ###############################################################################
 
@@ -324,90 +398,50 @@ sync_repository()
 REPO_NAME="$1"
 
 
-header "Sync Repository : ${REPO_NAME}"
+echo
+echo "Checking Sync Status : ${REPO_NAME}"
 
 
-TASK_ID=$(
-$HAMMER repository synchronize \
+STATUS=$(
+$HAMMER repository info \
 --organization "$ORG" \
 --product "$PRODUCT_NAME" \
---name "$REPO_NAME" \
---async 2>/dev/null |
-grep -i "Task ID" |
-awk '{print $NF}'
+--name "$REPO_NAME" 2>/dev/null |
+grep -Ei "Sync State|Last Sync|Sync Status" |
+awk -F':' '{print $2}' |
+xargs
 )
 
 
-
-if [ -z "$TASK_ID" ]
+if echo "$STATUS" | grep -qi "Complete"
 then
 
-    warn "Repository sync already running or failed."
-    record_failure "Sync ${REPO_NAME}"
+    skip "${REPO_NAME} already synced."
+
+    return 0
+
+fi
+
+
+echo "Starting sync : ${REPO_NAME}"
+
+
+$HAMMER repository synchronize \
+--organization "$ORG" \
+--product "$PRODUCT_NAME" \
+--name "$REPO_NAME"
+
+
+if [ $? -eq 0 ]
+then
+
+    ok "${REPO_NAME} sync completed."
 
 else
 
-    echo "Sync Task : ${TASK_ID}"
+    error "${REPO_NAME} sync failed."
 
-
-    for i in {1..30}
-    do
-
-
-        STATE=$(
-        $HAMMER task info \
-        --id "$TASK_ID" 2>/dev/null |
-        grep "State" |
-        awk -F':' '{print $2}' |
-        tr -d ' '
-        )
-
-
-        case "$STATE" in
-
-            stopped)
-
-                ok "${REPO_NAME} sync completed."
-
-                return 0
-                ;;
-
-
-            paused)
-
-                warn "${REPO_NAME} sync paused."
-
-                $HAMMER task resume \
-                --id "$TASK_ID"
-
-                ;;
-
-
-            error|failed)
-
-                error "${REPO_NAME} sync failed."
-
-                record_failure "Sync ${REPO_NAME}"
-
-                return 1
-                ;;
-
-
-            *)
-
-                echo "Waiting... State=${STATE}"
-
-                sleep 20
-
-                ;;
-
-        esac
-
-
-    done
-
-
-    warn "${REPO_NAME} sync timeout."
+    record_failure "Sync ${REPO_NAME}"
 
 fi
 
