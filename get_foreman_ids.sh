@@ -24,9 +24,8 @@ FOREMAN_USER="admin"
 FOREMAN_PASS="zqs977dXzqfEvTML"
 
 
-
 ###############################################################################
-# RAID Hostgroup Names
+# Hostgroups
 ###############################################################################
 
 declare -A HOSTGROUP_NAMES
@@ -43,19 +42,14 @@ HOSTGROUP_NAMES["4"]="RockyLinux 9.8 RAID"
 ###############################################################################
 
 declare -A RAID_HOSTGROUP_IDS
-
 declare -A SINGLE_HOSTGROUP_IDS
 
-
-# RAID
 
 RAID_HOSTGROUP_IDS["1"]=5
 RAID_HOSTGROUP_IDS["2"]=6
 RAID_HOSTGROUP_IDS["3"]=8
 RAID_HOSTGROUP_IDS["4"]=7
 
-
-# Single Disk
 
 SINGLE_HOSTGROUP_IDS["1"]=9
 SINGLE_HOSTGROUP_IDS["2"]=10
@@ -69,87 +63,90 @@ SINGLE_HOSTGROUP_IDS["4"]=12
 ###############################################################################
 
 declare -A OS_IDS
-
 declare -A MEDIUM_IDS
-
 declare -A PTABLE_IDS
 
 
 
 ###############################################################################
-# Lookup OS and Medium
+# Lookup OS and Media
 ###############################################################################
 
 for IDX in 1 2 3 4
 do
 
-    HG="${HOSTGROUP_NAMES[$IDX]}"
+
+HG="${HOSTGROUP_NAMES[$IDX]}"
 
 
-    echo
-    echo "Checking Hostgroup : ${HG}"
+echo
+echo "Checking Hostgroup : ${HG}"
 
 
-    INFO=$(
-    hammer \
-    --server "$FOREMAN_SERVER" \
-    --username "$FOREMAN_USER" \
-    --password "$FOREMAN_PASS" \
-    hostgroup info \
-    --name "$HG" 2>/dev/null
-    )
-
-
-    OS_NAME=$(echo "$INFO" | awk -F': *' '/Operating System:/ {print $2}')
-
-
-    MEDIUM_NAME=$(echo "$INFO" | awk -F': *' '/Medium:/ {print $2}')
-
-
-    echo "OS     : ${OS_NAME}"
-
-    echo "Medium : ${MEDIUM_NAME}"
+INFO=$(
+hammer \
+--server "$FOREMAN_SERVER" \
+--username "$FOREMAN_USER" \
+--password "$FOREMAN_PASS" \
+hostgroup info \
+--name "$HG" 2>/dev/null
+)
 
 
 
-    OS_IDS[$IDX]=$(
-    hammer \
-    --server "$FOREMAN_SERVER" \
-    --username "$FOREMAN_USER" \
-    --password "$FOREMAN_PASS" \
-    os list |
-    awk -F'|' -v os="$OS_NAME" '
-    {
-        gsub(/^ +| +$/, "", $1)
-        gsub(/^ +| +$/, "", $2)
+OS_NAME=$(echo "$INFO" |
+awk -F': *' '/Operating System:/ {print $2}')
 
-        if($2==os)
-            print $1
-    }'
-    )
+
+MEDIUM_NAME=$(echo "$INFO" |
+awk -F': *' '/Medium:/ {print $2}')
+
+
+echo "OS     : ${OS_NAME}"
+
+echo "Medium : ${MEDIUM_NAME}"
 
 
 
-    MEDIUM_IDS[$IDX]=$(
-    hammer \
-    --server "$FOREMAN_SERVER" \
-    --username "$FOREMAN_USER" \
-    --password "$FOREMAN_PASS" \
-    medium list |
-    awk -F'|' -v m="$MEDIUM_NAME" '
-    {
-        gsub(/^ +| +$/, "", $1)
-        gsub(/^ +| +$/, "", $2)
+OS_IDS[$IDX]=$(
+hammer \
+--server "$FOREMAN_SERVER" \
+--username "$FOREMAN_USER" \
+--password "$FOREMAN_PASS" \
+os list |
+awk -F'|' -v os="$OS_NAME" '
+{
+gsub(/^ +| +$/, "", $1)
+gsub(/^ +| +$/, "", $2)
 
-        if($2==m)
-            print $1
-    }'
-    )
+if($2==os)
+print $1
+}'
+)
 
 
-    echo "OS ID    : ${OS_IDS[$IDX]}"
 
-    echo "Medium ID: ${MEDIUM_IDS[$IDX]}"
+MEDIUM_IDS[$IDX]=$(
+hammer \
+--server "$FOREMAN_SERVER" \
+--username "$FOREMAN_USER" \
+--password "$FOREMAN_PASS" \
+medium list |
+awk -F'|' -v m="$MEDIUM_NAME" '
+{
+gsub(/^ +| +$/, "", $1)
+gsub(/^ +| +$/, "", $2)
+
+if($2==m)
+print $1
+}'
+)
+
+
+
+echo "OS ID     : ${OS_IDS[$IDX]}"
+
+echo "Medium ID : ${MEDIUM_IDS[$IDX]}"
 
 
 done
@@ -163,6 +160,7 @@ done
 echo
 
 echo "Checking Partition Tables"
+
 
 
 PTABLE_OUTPUT=$(
@@ -180,38 +178,39 @@ echo "$PTABLE_OUTPUT"
 
 
 ###############################################################################
-# RAID Partition Table
+# Find Kickstart Default
 ###############################################################################
 
-PTABLE_IDS["raid"]=$(
+DEFAULT_PTABLE_ID=$(
 echo "$PTABLE_OUTPUT" |
 awk -F'|' '
 {
-    gsub(/^ +| +$/, "", $1)
-    gsub(/^ +| +$/, "", $2)
+gsub(/^ +| +$/, "", $1)
+gsub(/^ +| +$/, "", $2)
 
-    if(tolower($2) ~ /raid/)
-        print $1
+if($2=="Kickstart default")
+print $1
 }'
 )
 
 
 
-###############################################################################
-# Single Disk Partition Table
-###############################################################################
+if [ -z "$DEFAULT_PTABLE_ID" ]
+then
 
-PTABLE_IDS["single"]=$(
-echo "$PTABLE_OUTPUT" |
-awk -F'|' '
-{
-    gsub(/^ +| +$/, "", $1)
-    gsub(/^ +| +$/, "", $2)
+echo
 
-    if(tolower($2) ~ /single/)
-        print $1
-}'
-)
+echo "ERROR: Kickstart default partition table not found"
+
+exit 1
+
+fi
+
+
+
+PTABLE_IDS["raid"]="$DEFAULT_PTABLE_ID"
+
+PTABLE_IDS["single"]="$DEFAULT_PTABLE_ID"
 
 
 
@@ -231,7 +230,9 @@ cat <<EOF
 
 
 ###########################################################################
+
 # Host Group
+
 ###########################################################################
 
 hostgroup: "{{ hostgroup | default('1', true) }}"
@@ -241,7 +242,9 @@ disk_layout: "{{ disk_layout | default('raid', true) }}"
 
 
 ###########################################################################
+
 # Subnet Mapping
+
 ###########################################################################
 
 subnet_id: >-
@@ -257,7 +260,9 @@ subnet_id: >-
 
 
 ###########################################################################
+
 # Hostgroup Mapping
+
 ###########################################################################
 
 hostgroup_id: >-
@@ -279,7 +284,9 @@ hostgroup_id: >-
 
 
 ###########################################################################
+
 # Operating System Mapping
+
 ###########################################################################
 
 operatingsystem_id: >-
@@ -295,7 +302,9 @@ operatingsystem_id: >-
 
 
 ###########################################################################
-# Medium Mapping
+
+# Installation Media Mapping
+
 ###########################################################################
 
 medium_id: >-
@@ -311,7 +320,9 @@ medium_id: >-
 
 
 ###########################################################################
-# Partition Table Mapping
+
+# Partition Table
+
 ###########################################################################
 
 ptable_id: >-
@@ -319,13 +330,16 @@ ptable_id: >-
     {
       'raid': ${PTABLE_IDS[raid]},
       'single': ${PTABLE_IDS[single]}
+
     }[disk_layout]
   }}
 
 
 
 ###########################################################################
+
 # Architecture
+
 ###########################################################################
 
 architecture_id: 1
