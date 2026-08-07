@@ -39,6 +39,8 @@ DOMAIN="vgs.com"
 
 LOCATION="Default Location"
 ORGANIZATION="Default Organization"
+CENTOS_SUBNET="vgs-subnet-centos"
+ROCKY_SUBNET="vgs-subnet-rockyos"
 
 TARGET_VERSION="${TARGET_VERSION:-9.8}"
 
@@ -176,6 +178,8 @@ else
     --name "${HOSTGROUP}" \
     --organization "${ORGANIZATION}" \
     --location "${LOCATION}" \
+    --subnet "${CENTOS_SUBNET}" \
+    --domain "${DOMAIN}" \
     --operatingsystem "CentOSLinux 7" \
     --architecture x86_64 \
     --medium "CentOS 7 Remote" \
@@ -228,6 +232,8 @@ else
     --name "${HOSTGROUP}" \
     --organization "${ORGANIZATION}" \
     --location "${LOCATION}" \
+    --subnet "${ROCKY_SUBNET}" \
+    --domain "${DOMAIN}" \
     --operatingsystem "RockyLinux 8.10" \
     --architecture x86_64 \
     --medium "Rocky 8 Remote" \
@@ -283,6 +289,8 @@ else
     --name "${HOSTGROUP}" \
     --organization "${ORGANIZATION}" \
     --location "${LOCATION}" \
+    --subnet "${ROCKY_SUBNET}" \
+    --domain "${DOMAIN}" \
     --operatingsystem "${ROCKY_BASE_OS}" \
     --architecture x86_64 \
     --medium "${ROCKY_MEDIA}" \
