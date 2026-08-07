@@ -3400,15 +3400,11 @@ jt.credentials.add(credential)
 
 
 
-###############################################################################
-# AWX Survey
-###############################################################################
-
 survey_spec = {
 
     "name": "Provision_Hosts_el7",
 
-    "description": "Provision EL7 / EL8 / EL9 Hosts with RAID or Single Disk",
+    "description": "Provision CentOS Linux 7 RAID or SingleDisk Hosts",
 
     "spec": [
 
@@ -3418,8 +3414,7 @@ survey_spec = {
             "question_name": "Target Hosts",
 
             "question_description":
-            "Hostname(s) or wildcard "
-            "(example: cent-07-01,cent-07-05 or cent-07-*)",
+            "Hostname(s) or wildcard (example: cent-07-01,cent-07-05 or cent-07-*)",
 
             "variable": "target_hosts",
 
@@ -3436,35 +3431,11 @@ survey_spec = {
         {
             "type": "integer",
 
-            "question_name": "Foreman Server",
-
-            "question_description":
-            "1 = Frontend (rocky-08-01), "
-            "2 = Backend (cent-07-01)",
-
-            "variable": "foreman_server",
-
-            "required": False,
-
-            "default": 1,
-
-            "min": 1,
-
-            "max": 2
-        },
-
-
-        {
-            "type": "integer",
-
             "question_name": "Operating System",
 
             "question_description":
             """
 1 = CentOS Linux 7
-2 = Rocky Linux 8.10
-3 = Rocky Linux 9.2
-4 = Rocky Linux 9.8
 """,
 
             "variable": "hostgroup",
@@ -3475,7 +3446,7 @@ survey_spec = {
 
             "min": 1,
 
-            "max": 4
+            "max": 1
         },
 
 
@@ -3486,8 +3457,8 @@ survey_spec = {
 
             "question_description":
             """
-raid   = RAID1 Installation
-single = Single Disk Installation
+raid   = CentOS Linux 7 RAID
+single = CentOS Linux 7 SingleDisk
 """,
 
             "variable": "disk_layout",
@@ -3500,10 +3471,29 @@ single = Single Disk Installation
                 "raid",
                 "single"
             ]
+        },
+
+
+        {
+            "type": "integer",
+
+            "question_name": "Foreman Server",
+
+            "question_description":
+            "1 = Frontend (rocky-08-01), 2 = Backend (cent-07-01)",
+
+            "variable": "foreman_server",
+
+            "required": False,
+
+            "default": 1,
+
+            "min": 1,
+
+            "max": 2
         }
 
     ]
-
 }
 
 
@@ -3522,21 +3512,17 @@ print(
     f"{'created' if created else 'updated'} successfully."
 )
 
-
 print(
     f"Credential assigned: {credential.name}"
 )
-
 
 print(
     "Default Limit: localhost"
 )
 
-
 print(
     "Survey enabled."
 )
-
 
 EOF
 
@@ -3549,9 +3535,7 @@ EOF
 
 awx-manage shell <<'EOF'
 
-
 from awx.main.models import JobTemplate
-
 
 
 jt = JobTemplate.objects.get(
@@ -3562,59 +3546,31 @@ jt = JobTemplate.objects.get(
 
 print()
 
-print(
-    "Template :",
-    jt.name
-)
+print("Template :", jt.name)
 
+print("Playbook :", jt.playbook)
 
-print(
-    "Playbook :",
-    jt.playbook
-)
+print("Inventory:", jt.inventory.name)
 
+print("Limit    :", jt.limit)
 
-print(
-    "Inventory:",
-    jt.inventory.name
-)
-
-
-print(
-    "Limit    :",
-    jt.limit
-)
-
-
-print(
-    "Survey   :",
-    jt.survey_enabled
-)
+print("Survey   :", jt.survey_enabled)
 
 
 
 print()
 
-print(
-    "Credentials"
-)
-
+print("Credentials")
 
 for c in jt.credentials.all():
 
-    print(
-        " -",
-        c.name
-    )
+    print(" -", c.name)
 
 
 
 print()
 
-print(
-    "Survey Variables"
-)
-
+print("Survey Variables")
 
 for q in jt.survey_spec["spec"]:
 
@@ -3622,7 +3578,6 @@ for q in jt.survey_spec["spec"]:
         f" - {q['variable']} "
         f"(default={q.get('default')})"
     )
-
 
 EOF
 
@@ -3650,6 +3605,7 @@ from awx.main.models import (
     JobTemplate,
     Credential
 )
+
 
 
 project = Project.objects.get(
@@ -3703,15 +3659,13 @@ jt.credentials.add(credential)
 
 
 
-###############################################################################
-# AWX Survey
-###############################################################################
-
 survey_spec = {
 
     "name": "Provision_Hosts_el8",
 
-    "description": "Provision EL8 Hosts with RAID or Single Disk",
+    "description":
+    "Provision Rocky Linux 8.10 RAID or SingleDisk Hosts",
+
 
     "spec": [
 
@@ -3721,8 +3675,7 @@ survey_spec = {
             "question_name": "Target Hosts",
 
             "question_description":
-            "Hostname(s) or wildcard "
-            "(example: rocky-08-01,rocky-08-03 or rocky-08-*)",
+            "Hostname(s) or wildcard (example: rocky-08-01,rocky-08-* )",
 
             "variable": "target_hosts",
 
@@ -3739,35 +3692,11 @@ survey_spec = {
         {
             "type": "integer",
 
-            "question_name": "Foreman Server",
-
-            "question_description":
-            "1 = Frontend (rocky-08-01), "
-            "2 = Backend (cent-07-01)",
-
-            "variable": "foreman_server",
-
-            "required": False,
-
-            "default": 1,
-
-            "min": 1,
-
-            "max": 2
-        },
-
-
-        {
-            "type": "integer",
-
-            "question_name": "Host Group",
+            "question_name": "Operating System",
 
             "question_description":
             """
-1 = CentOS Linux 7
 2 = Rocky Linux 8.10
-3 = Rocky Linux 9.2
-4 = Rocky Linux 9.8
 """,
 
             "variable": "hostgroup",
@@ -3776,9 +3705,9 @@ survey_spec = {
 
             "default": 2,
 
-            "min": 1,
+            "min": 2,
 
-            "max": 4
+            "max": 2
         },
 
 
@@ -3789,8 +3718,8 @@ survey_spec = {
 
             "question_description":
             """
-raid   = RAID1 Installation
-single = Single Disk Installation
+raid   = Rocky Linux 8.10 RAID
+single = Rocky Linux 8.10 SingleDisk
 """,
 
             "variable": "disk_layout",
@@ -3803,10 +3732,29 @@ single = Single Disk Installation
                 "raid",
                 "single"
             ]
+        },
+
+
+        {
+            "type": "integer",
+
+            "question_name": "Foreman Server",
+
+            "question_description":
+            "1 = Frontend (rocky-08-01), 2 = Backend (cent-07-01)",
+
+            "variable": "foreman_server",
+
+            "required": False,
+
+            "default": 1,
+
+            "min": 1,
+
+            "max": 2
         }
 
     ]
-
 }
 
 
@@ -3825,21 +3773,17 @@ print(
     f"{'created' if created else 'updated'} successfully."
 )
 
-
 print(
     f"Credential assigned: {credential.name}"
 )
-
 
 print(
     "Default Limit: localhost"
 )
 
-
 print(
     "Survey enabled."
 )
-
 
 EOF
 
@@ -3852,9 +3796,7 @@ EOF
 
 awx-manage shell <<'EOF'
 
-
 from awx.main.models import JobTemplate
-
 
 
 jt = JobTemplate.objects.get(
@@ -3865,51 +3807,31 @@ jt = JobTemplate.objects.get(
 
 print()
 
-print(
-    "Template :",
-    jt.name
-)
+print("Template :", jt.name)
 
+print("Playbook :", jt.playbook)
 
-print(
-    "Playbook :",
-    jt.playbook
-)
+print("Inventory:", jt.inventory.name)
 
+print("Limit    :", jt.limit)
 
-print(
-    "Inventory:",
-    jt.inventory.name
-)
-
-
-print(
-    "Limit    :",
-    jt.limit
-)
-
-
-print(
-    "Survey   :",
-    jt.survey_enabled
-)
+print("Survey   :", jt.survey_enabled)
 
 
 
-print("\nCredentials")
+print()
 
+print("Credentials")
 
 for c in jt.credentials.all():
 
-    print(
-        " -",
-        c.name
-    )
+    print(" -", c.name)
 
 
 
-print("\nSurvey Variables")
+print()
 
+print("Survey Variables")
 
 for q in jt.survey_spec["spec"]:
 
@@ -3917,7 +3839,6 @@ for q in jt.survey_spec["spec"]:
         f" - {q['variable']} "
         f"(default={q.get('default')})"
     )
-
 
 EOF
 
@@ -3945,6 +3866,7 @@ from awx.main.models import (
     JobTemplate,
     Credential
 )
+
 
 
 project = Project.objects.get(
@@ -3998,16 +3920,13 @@ jt.credentials.add(credential)
 
 
 
-###############################################################################
-# AWX Survey
-###############################################################################
-
 survey_spec = {
 
     "name": "Provision_Hosts_el9",
 
     "description":
-    "Provision EL9 Hosts with RAID or Single Disk",
+    "Provision Rocky Linux 9.2 and Rocky Linux 9.8 RAID or SingleDisk Hosts",
+
 
     "spec": [
 
@@ -4017,8 +3936,7 @@ survey_spec = {
             "question_name": "Target Hosts",
 
             "question_description":
-            "Hostname(s) or wildcard "
-            "(example: rocky-09-01,rocky-09-03 or rocky-09-*)",
+            "Hostname(s) or wildcard (example: rocky-09-01,rocky-09-* )",
 
             "variable": "target_hosts",
 
@@ -4035,33 +3953,10 @@ survey_spec = {
         {
             "type": "integer",
 
-            "question_name": "Foreman Server",
-
-            "question_description":
-            "1 = Frontend (rocky-08-01), "
-            "2 = Backend (cent-07-01)",
-
-            "variable": "foreman_server",
-
-            "required": False,
-
-            "default": 1,
-
-            "min": 1,
-
-            "max": 2
-        },
-
-
-        {
-            "type": "integer",
-
-            "question_name": "Host Group",
+            "question_name": "Operating System",
 
             "question_description":
             """
-1 = CentOS Linux 7
-2 = Rocky Linux 8.10
 3 = Rocky Linux 9.2
 4 = Rocky Linux 9.8
 """,
@@ -4072,7 +3967,7 @@ survey_spec = {
 
             "default": 4,
 
-            "min": 1,
+            "min": 3,
 
             "max": 4
         },
@@ -4085,8 +3980,8 @@ survey_spec = {
 
             "question_description":
             """
-raid   = RAID1 Installation
-single = Single Disk Installation
+raid   = RAID1 EFI + RAID /boot + LVM
+single = Single Disk EFI + LVM
 """,
 
             "variable": "disk_layout",
@@ -4099,10 +3994,29 @@ single = Single Disk Installation
                 "raid",
                 "single"
             ]
+        },
+
+
+        {
+            "type": "integer",
+
+            "question_name": "Foreman Server",
+
+            "question_description":
+            "1 = Frontend (rocky-08-01), 2 = Backend (cent-07-01)",
+
+            "variable": "foreman_server",
+
+            "required": False,
+
+            "default": 1,
+
+            "min": 1,
+
+            "max": 2
         }
 
     ]
-
 }
 
 
@@ -4121,21 +4035,17 @@ print(
     f"{'created' if created else 'updated'} successfully."
 )
 
-
 print(
     f"Credential assigned: {credential.name}"
 )
-
 
 print(
     "Default Limit: localhost"
 )
 
-
 print(
     "Survey enabled."
 )
-
 
 EOF
 
@@ -4148,9 +4058,7 @@ EOF
 
 awx-manage shell <<'EOF'
 
-
 from awx.main.models import JobTemplate
-
 
 
 jt = JobTemplate.objects.get(
@@ -4161,51 +4069,31 @@ jt = JobTemplate.objects.get(
 
 print()
 
-print(
-    "Template :",
-    jt.name
-)
+print("Template :", jt.name)
 
+print("Playbook :", jt.playbook)
 
-print(
-    "Playbook :",
-    jt.playbook
-)
+print("Inventory:", jt.inventory.name)
 
+print("Limit    :", jt.limit)
 
-print(
-    "Inventory:",
-    jt.inventory.name
-)
-
-
-print(
-    "Limit    :",
-    jt.limit
-)
-
-
-print(
-    "Survey   :",
-    jt.survey_enabled
-)
+print("Survey   :", jt.survey_enabled)
 
 
 
-print("\nCredentials")
+print()
 
+print("Credentials")
 
 for c in jt.credentials.all():
 
-    print(
-        " -",
-        c.name
-    )
+    print(" -", c.name)
 
 
 
-print("\nSurvey Variables")
+print()
 
+print("Survey Variables")
 
 for q in jt.survey_spec["spec"]:
 
@@ -4214,7 +4102,6 @@ for q in jt.survey_spec["spec"]:
         f"(default={q.get('default')})"
     )
 
-
 EOF
 
 
@@ -4222,6 +4109,7 @@ EOF
 echo
 
 echo "Provision_Hosts_el9 completed successfully."
+
 # ==============================================================================
 # Workflow : Provision_Hosts_el7_Subscription_Patching_EL7
 # ==============================================================================
