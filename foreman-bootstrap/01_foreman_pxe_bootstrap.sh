@@ -637,7 +637,7 @@ create_subnet() {
     $HAMMER subnet update \
         --name "${SUBNET_NAME}" \
         --tftp-id "$(
-            $hammer proxy list |
+            $HAMMER proxy list |
             awk -F'|' "/${TFTP_PROXY}/ {gsub(/ /,\"\",\$1);print \$1}"
         )" >/dev/null 2>&1
 
@@ -645,7 +645,7 @@ create_subnet() {
     $HAMMER subnet update \
         --name "${SUBNET_NAME}" \
         --dhcp-id "$(
-            $hammer proxy list |
+            $HAMMER proxy list |
             awk -F'|' "/${DHCP_PROXY}/ {gsub(/ /,\"\",\$1);print \$1}"
         )" >/dev/null 2>&1
 
