@@ -2,26 +2,37 @@
 ###############################################################################
 # 02 - Foreman PXE Bootstrap (Single Disk)
 #
-# Supports:
-#   - CentOS Linux 7 SingleDisk
-#   - Rocky Linux 8.10 SingleDisk
-#   - Rocky Linux 9.2 SingleDisk
-#   - Rocky Linux 9.8 SingleDisk
+# Purpose:
+#   Create Single Disk PXE templates
+#   Attach templates to existing Operating Systems
 #
-# Usage:
+# Supported:
+#   - CentOS Linux 7
+#   - Rocky Linux 8.10
+#   - Rocky Linux 9.2
+#   - Rocky Linux 9.8
 #
-#   TARGET_VERSION=9.8 ./02_foreman_pxe_bootstrap_single_disk.sh
-#   TARGET_VERSION=9.2 ./02_foreman_pxe_bootstrap_single_disk.sh
-#
+# NOTE:
+#   OS objects are NOT created here.
+#   RAID and SingleDisk share the same OS.
 ###############################################################################
 
 set +e
 
+
+###############################################################################
+# Failure Tracking
+###############################################################################
+
 FAILED_STEPS=()
 
-record_failure() {
+
+record_failure()
+{
     FAILED_STEPS+=("$1")
 }
+
+
 
 ###############################################################################
 # Colors
@@ -35,112 +46,154 @@ CYAN='\033[1;36m'
 WHITE='\033[1;37m'
 NC='\033[0m'
 
+
+
 ###############################################################################
 # Logging
 ###############################################################################
 
-info() {
+info()
+{
     echo -e "${CYAN}$1${NC}"
 }
 
-ok() {
+
+ok()
+{
     echo -e "${GREEN}[OK]${NC} $1"
 }
 
-skip() {
+
+skip()
+{
     echo -e "${YELLOW}[SKIP]${NC} $1"
 }
 
-warn() {
+
+warn()
+{
     echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
-error() {
+
+error()
+{
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-header() {
+
+header()
+{
     echo
     echo -e "${BLUE}============================================================${NC}"
     echo -e "${WHITE}$1${NC}"
     echo -e "${BLUE}============================================================${NC}"
 }
 
+
+
 header "02 - Foreman PXE Bootstrap (Single Disk)"
 
-echo
+
 
 ###############################################################################
 # Variables
 ###############################################################################
 
 FOREMAN_USER="${FOREMAN_USER:-admin}"
+
 FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
+
 
 HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
 
+
 TARGET_VERSION="${TARGET_VERSION:-9.8}"
+
+
+
+###############################################################################
+# Existing Operating Systems
+###############################################################################
+
+CENTOS_OS="CentOSLinux 7"
+
+ROCKY8_OS="RockyLinux 8.10"
+
+ROCKY92_OS="RockyLinux 9.2"
+
+ROCKY98_OS="RockyLinux 9.8"
+
+
+
+###############################################################################
+# Select Rocky Version
+###############################################################################
 
 case "$TARGET_VERSION" in
 
-    9.2)
 
-        ROCKY_SINGLE_OS="RockyLinux 9.2 SingleDisk"
-        ROCKY_SINGLE_TEMPLATE="PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart"
+9.2)
 
-        ROCKY_TEMPLATE_FILE="/tmp/rocky92-singledisk.erb"
+    ROCKY_OS="${ROCKY92_OS}"
 
-        ROCKY_KERNEL="/rocky92/vmlinuz"
-        ROCKY_INITRD="/rocky92/initrd.img"
+    ROCKY_TEMPLATE="PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart"
 
-        ROCKY_REPO="http://192.168.253.136/repo/rocky9.2/"
-        ROCKY_KS="http://192.168.253.136/repo/Foreman-Kickstarts/rocky9-kickstart/Rocky9_2_Golden_SingleDisk_Minimal.cfg"
+    ROCKY_TEMPLATE_FILE="/tmp/rocky92-singledisk.erb"
 
-        ;;
+    ROCKY_KERNEL="/rocky92/vmlinuz"
 
-    9.8)
+    ROCKY_INITRD="/rocky92/initrd.img"
 
-        ROCKY_SINGLE_OS="RockyLinux 9.8 SingleDisk"
-        ROCKY_SINGLE_TEMPLATE="PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart"
+    ROCKY_REPO="http://192.168.253.136/repo/rocky9.2/"
 
-        ROCKY_TEMPLATE_FILE="/tmp/rocky98-singledisk.erb"
+    ROCKY_KS="http://192.168.253.136/repo/Foreman-Kickstarts/rocky9-kickstart/Rocky9_2_Golden_SingleDisk_Minimal.cfg"
 
-        ROCKY_KERNEL="/rocky9/vmlinuz"
-        ROCKY_INITRD="/rocky9/initrd.img"
+;;
 
-        ROCKY_REPO="http://192.168.253.136/repo/rocky9/"
-        ROCKY_KS="http://192.168.253.136/repo/Foreman-Kickstarts/rocky9_8-kickstart/Rocky9_Golden_SingleDisk_Minimal.cfg"
+9.8)
 
-        ;;
+    ROCKY_OS="${ROCKY98_OS}"
 
-    *)
+    ROCKY_TEMPLATE="PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart"
 
-        error "Unsupported TARGET_VERSION : ${TARGET_VERSION}"
-        exit 1
+    ROCKY_TEMPLATE_FILE="/tmp/rocky98-singledisk.erb"
 
-        ;;
+    ROCKY_KERNEL="/rocky9/vmlinuz"
+
+    ROCKY_INITRD="/rocky9/initrd.img"
+
+    ROCKY_REPO="http://192.168.253.136/repo/rocky9/"
+
+    ROCKY_KS="http://192.168.253.136/repo/Foreman-Kickstarts/rocky9_8-kickstart/Rocky9_Golden_SingleDisk_Minimal.cfg"
+
+;;
+
+
+*)
+
+    error "Unsupported TARGET_VERSION ${TARGET_VERSION}"
+
+    exit 1
+
+;;
 
 esac
 
 ###############################################################################
-# Common Operating Systems
-###############################################################################
-
-CENTOS_SINGLE_OS="CentOSLinux 7 SingleDisk"
-
-ROCKY8_SINGLE_OS="RockyLinux 8.10 SingleDisk"
-
-###############################################################################
-# [1/4] Creating Single Disk PXE Templates
+# [1/4] Create Single Disk PXE Templates
 ###############################################################################
 
 header "[1/4] Creating Single Disk PXE Templates"
+
+
 
 ###############################################################################
 # CentOS 7 Single Disk Template
 ###############################################################################
 
 info "Generating CentOS 7 Single Disk template..."
+
 
 cat > /tmp/centos-singledisk.erb <<'EOF'
 <%#
@@ -153,7 +206,8 @@ oses:
 set default=0
 set timeout=5
 
-menuentry 'Install CentOS 7 (Single Disk)' {
+
+menuentry 'Install CentOS 7 Single Disk' {
 
     linuxefi /centos/vmlinuz \
         inst.stage2=http://192.168.253.136/repo/centos/ \
@@ -163,19 +217,26 @@ menuentry 'Install CentOS 7 (Single Disk)' {
         BOOTIF=01-${net_default_mac} \
         hostname=<%= @host.name %>
 
+
     initrdefi /centos/initrd.img
+
 }
 EOF
 
-ok "CentOS template generated."
+
+ok "CentOS Single Disk template generated."
+
 
 echo
+
+
 
 ###############################################################################
 # Rocky Linux 8 Single Disk Template
 ###############################################################################
 
 info "Generating Rocky Linux 8 Single Disk template..."
+
 
 cat > /tmp/rocky8-singledisk.erb <<'EOF'
 <%#
@@ -185,10 +246,13 @@ oses:
 - RockyLinux
 %>
 
+
 set default=0
 set timeout=5
 
-menuentry 'Install Rocky Linux 8.10 (Single Disk)' {
+
+menuentry 'Install Rocky Linux 8.10 Single Disk' {
+
 
     linuxefi /rocky8/vmlinuz \
         inst.stage2=http://192.168.253.136/repo/rocky8/ \
@@ -198,32 +262,42 @@ menuentry 'Install Rocky Linux 8.10 (Single Disk)' {
         BOOTIF=01-${net_default_mac} \
         hostname=<%= @host.name %>
 
+
     initrdefi /rocky8/initrd.img
+
 }
 EOF
 
-ok "Rocky Linux 8 template generated."
+
+ok "Rocky Linux 8 Single Disk template generated."
+
 
 echo
 
+
+
 ###############################################################################
-# Selected Rocky Single Disk Template
+# Rocky Linux 9 Single Disk Template
 ###############################################################################
 
-info "Generating ${ROCKY_SINGLE_TEMPLATE}..."
+info "Generating ${ROCKY_TEMPLATE}..."
+
 
 cat > "${ROCKY_TEMPLATE_FILE}" <<EOF
 <%#
-name: ${ROCKY_SINGLE_TEMPLATE}
+name: ${ROCKY_TEMPLATE}
 kind: PXEGrub2
 oses:
 - RockyLinux
 %>
 
+
 set default=0
 set timeout=5
 
-menuentry 'Install ${ROCKY_SINGLE_OS} (Single Disk)' {
+
+menuentry 'Install ${ROCKY_OS} Single Disk' {
+
 
     linuxefi ${ROCKY_KERNEL} \
         ip=dhcp \
@@ -234,322 +308,332 @@ menuentry 'Install ${ROCKY_SINGLE_OS} (Single Disk)' {
         inst.ks.device=bootif \
         hostname=<%= @host.name %>
 
+
     initrdefi ${ROCKY_INITRD}
+
 }
 EOF
 
-ok "Selected Rocky template generated."
+
+ok "${ROCKY_TEMPLATE} generated."
+
 
 echo
 
-###############################################################################
-# [2/4] Import Templates
-###############################################################################
 
-header "[2/4] Importing Single Disk Templates"
 
 ###############################################################################
-# Function : Import Template
+# Import Template Function
 ###############################################################################
 
-import_template() {
+import_template()
+{
 
-    local TEMPLATE_NAME="$1"
-    local TEMPLATE_FILE="$2"
+TEMPLATE_NAME="$1"
 
-    info "Checking ${TEMPLATE_NAME}..."
+TEMPLATE_FILE="$2"
 
-    if $HAMMER template info \
-        --name "${TEMPLATE_NAME}" >/dev/null 2>&1; then
 
-        skip "Template already exists."
+info "Checking template : ${TEMPLATE_NAME}"
+
+
+if $HAMMER template info \
+    --name "${TEMPLATE_NAME}" >/dev/null 2>&1
+
+then
+
+    skip "Template already exists."
+
+else
+
+    info "Importing template..."
+
+
+    $HAMMER template create \
+        --name "${TEMPLATE_NAME}" \
+        --type PXEGrub2 \
+        --file "${TEMPLATE_FILE}"
+
+
+    if [ $? -eq 0 ]
+
+    then
+
+        ok "Template imported."
 
     else
 
-        info "Importing template..."
+        error "Template import failed."
 
-        $HAMMER template create \
-            --name "${TEMPLATE_NAME}" \
-            --type PXEGrub2 \
-            --file "${TEMPLATE_FILE}"
-
-        if [ $? -eq 0 ]; then
-            ok "Template imported."
-        else
-            error "Failed to import ${TEMPLATE_NAME}"
-            record_failure "${TEMPLATE_NAME}"
-        fi
+        record_failure "${TEMPLATE_NAME"
 
     fi
 
-    echo
+fi
+
+
+echo
 
 }
+
+
 
 ###############################################################################
 # Import Templates
 ###############################################################################
 
-import_template \
-    "PXEGrub2 CentOS UEFI SingleDisk Kickstart" \
-    "/tmp/centos-singledisk.erb"
+header "[2/4] Importing Single Disk Templates"
+
 
 import_template \
-    "PXEGrub2 Rocky8 UEFI SingleDisk Kickstart" \
-    "/tmp/rocky8-singledisk.erb"
+"PXEGrub2 CentOS UEFI SingleDisk Kickstart" \
+"/tmp/centos-singledisk.erb"
+
+
 
 import_template \
-    "${ROCKY_SINGLE_TEMPLATE}" \
-    "${ROCKY_TEMPLATE_FILE}"
+"PXEGrub2 Rocky8 UEFI SingleDisk Kickstart" \
+"/tmp/rocky8-singledisk.erb"
+
+
+
+import_template \
+"${ROCKY_TEMPLATE}" \
+"${ROCKY_TEMPLATE_FILE}"
+
+
+
+echo
+
+###############################################################################
+# [3/4] Associate Single Disk Templates
+###############################################################################
+
+header "[3/4] Associating Single Disk Templates"
+
+
+
+###############################################################################
+# Function : Associate Template With Existing OS
+###############################################################################
+
+associate_template()
+{
+
+OS_TITLE="$1"
+
+TEMPLATE_NAME="$2"
+
+
+info "Checking ${TEMPLATE_NAME} on ${OS_TITLE}..."
+
+
+if $HAMMER os info \
+    --title "${OS_TITLE}" 2>/dev/null |
+    awk '/Templates:/,/Parameters:/' |
+    grep -q "${TEMPLATE_NAME}"
+
+then
+
+    skip "Template already assigned."
+
+else
+
+    info "Assigning template..."
+
+
+    $HAMMER os add-provisioning-template \
+        --title "${OS_TITLE}" \
+        --provisioning-template "${TEMPLATE_NAME}"
+
+
+    if [ $? -eq 0 ]
+
+    then
+
+        ok "Template assigned."
+
+    else
+
+        error "Failed to assign template."
+
+        record_failure "${OS_TITLE} -> ${TEMPLATE_NAME}"
+
+    fi
+
+fi
+
+
+echo
+
+}
+
+
+
+###############################################################################
+# Assign CentOS Single Disk Template
+###############################################################################
+
+associate_template \
+"CentOSLinux 7" \
+"PXEGrub2 CentOS UEFI SingleDisk Kickstart"
+
+
+
+###############################################################################
+# Assign Rocky 8 Single Disk Template
+###############################################################################
+
+associate_template \
+"RockyLinux 8.10" \
+"PXEGrub2 Rocky8 UEFI SingleDisk Kickstart"
+
+
+
+###############################################################################
+# Assign Rocky 9.2 / 9.8 Single Disk Template
+###############################################################################
+
+associate_template \
+"${ROCKY_OS}" \
+"${ROCKY_TEMPLATE}"
+
+
+
 
 ###############################################################################
 # Verification
 ###############################################################################
 
-header "Single Disk PXE Templates"
+header "Single Disk Template Verification"
+
+
+
+verify_os_templates()
+{
+
+OS="$1"
+
+
+echo
+info "${OS}"
+
+
+$HAMMER os info \
+    --title "${OS}" |
+    awk '/Templates:/,/Parameters:/'
+
+echo
+
+}
+
+
+
+verify_os_templates "CentOSLinux 7"
+
+
+verify_os_templates "RockyLinux 8.10"
+
+
+verify_os_templates "${ROCKY_OS}"
+
+
+
+###############################################################################
+# Important:
+# Do NOT set default template here.
+#
+# RAID remains default.
+# Hostgroup selects SingleDisk template.
+###############################################################################
+
+
+header "Single Disk PXE Configuration Completed"
+
+
+echo
+
+info "Single Disk Templates Available:"
+
 
 $HAMMER template list | grep "SingleDisk"
 
-echo
-
-###############################################################################
-# Function : Associate Template
-###############################################################################
-
-associate_template() {
-
-    local OS_TITLE="$1"
-    local TEMPLATE_NAME="$2"
-
-    info "Checking template assignment for ${OS_TITLE}..."
-
-    if $HAMMER os info \
-        --title "${OS_TITLE}" | \
-        grep -q "${TEMPLATE_NAME}"; then
-
-        skip "Template already assigned."
-
-    else
-
-        info "Assigning template..."
-
-        $HAMMER os add-provisioning-template \
-            --title "${OS_TITLE}" \
-            --provisioning-template "${TEMPLATE_NAME}"
-
-        if [ $? -eq 0 ]; then
-            ok "Template assigned."
-        else
-            error "Failed to assign template."
-            record_failure "${OS_TITLE}"
-        fi
-
-    fi
-
-    echo
-
-}
-
-###############################################################################
-# Associate Templates
-###############################################################################
-
-associate_template \
-    "${CENTOS_SINGLE_OS}" \
-    "PXEGrub2 CentOS UEFI SingleDisk Kickstart"
-
-associate_template \
-    "${ROCKY8_SINGLE_OS}" \
-    "PXEGrub2 Rocky8 UEFI SingleDisk Kickstart"
-
-associate_template \
-    "${ROCKY_SINGLE_OS}" \
-    "${ROCKY_SINGLE_TEMPLATE}"
-
-###############################################################################
-# Verification
-###############################################################################
-
-echo
-
-info "${CENTOS_SINGLE_OS}"
-
-$HAMMER os info \
-    --title "${CENTOS_SINGLE_OS}" | \
-    awk '/Templates:/,/Parameters:/'
-
-echo
-
-info "${ROCKY8_SINGLE_OS}"
-
-$HAMMER os info \
-    --title "${ROCKY8_SINGLE_OS}" | \
-    awk '/Templates:/,/Parameters:/'
-
-echo
-
-info "${ROCKY_SINGLE_OS}"
-
-$HAMMER os info \
-    --title "${ROCKY_SINGLE_OS}" | \
-    awk '/Templates:/,/Parameters:/'
 
 echo
 
 ###############################################################################
-# [3/4] Setting Default PXE Templates
+# Final Summary
 ###############################################################################
 
-header "[3/4] Setting Default PXE Templates"
+header "[4/4] Single Disk PXE Bootstrap Summary"
+
+
 
 ###############################################################################
-# Function : Set Default Template
+# Template List
 ###############################################################################
 
-set_default_template() {
-
-    local OS_TITLE="$1"
-    local TEMPLATE_NAME="$2"
-
-    info "Checking ${OS_TITLE}..."
-
-    OS_ID=$(
-        $HAMMER os list |
-        awk -F'|' -v os="$OS_TITLE" '
-            $2 ~ os {
-                gsub(/ /,"",$1)
-                print $1
-            }'
-    )
-
-    TEMPLATE_ID=$(
-        $HAMMER template list |
-        awk -F'|' -v tpl="$TEMPLATE_NAME" '
-            $2 ~ tpl {
-                gsub(/ /,"",$1)
-                print $1
-            }'
-    )
-
-    if [ -z "$OS_ID" ] || [ -z "$TEMPLATE_ID" ]; then
-
-        error "Unable to locate ${OS_TITLE} or ${TEMPLATE_NAME}"
-        record_failure "${OS_TITLE}"
-        echo
-        return
-
-    fi
-
-    if $HAMMER os info --id "$OS_ID" |
-        awk '/Default templates:/,/Architectures:/' |
-        grep -q "${TEMPLATE_NAME}"; then
-
-        skip "Default template already configured."
-
-    else
-
-        info "Setting default template..."
-
-        $HAMMER os set-default-template \
-            --id "$OS_ID" \
-            --provisioning-template-id "$TEMPLATE_ID"
-
-        if [ $? -eq 0 ]; then
-            ok "Default template configured."
-        else
-            error "Failed to configure default template."
-            record_failure "${OS_TITLE}"
-        fi
-
-    fi
-
-    echo
-
-}
-
-###############################################################################
-# Configure Single Disk Default Templates
-###############################################################################
-
-set_default_template \
-    "${CENTOS_SINGLE_OS}" \
-    "PXEGrub2 CentOS UEFI SingleDisk Kickstart"
-
-set_default_template \
-    "${ROCKY8_SINGLE_OS}" \
-    "PXEGrub2 Rocky8 UEFI SingleDisk Kickstart"
-
-set_default_template \
-    "${ROCKY_SINGLE_OS}" \
-    "${ROCKY_SINGLE_TEMPLATE}"
-
-###############################################################################
-# Verification
-###############################################################################
-
-header "Default Single Disk PXE Templates"
-
-echo
-info "${CENTOS_SINGLE_OS}"
-
-$HAMMER os info \
-    --title "${CENTOS_SINGLE_OS}" |
-    awk '/Default templates:/,/Architectures:/'
-
-echo
-
-info "${ROCKY8_SINGLE_OS}"
-
-$HAMMER os info \
-    --title "${ROCKY8_SINGLE_OS}" |
-    awk '/Default templates:/,/Architectures:/'
-
-echo
-
-info "${ROCKY_SINGLE_OS}"
-
-$HAMMER os info \
-    --title "${ROCKY_SINGLE_OS}" |
-    awk '/Default templates:/,/Architectures:/'
-
-echo
-
-###############################################################################
-# [4/4] Summary
-###############################################################################
-
-header "Single Disk PXE Provisioning Summary"
-
-echo
 info "PXE Templates"
 
-$HAMMER template list | grep "SingleDisk"
+
+$HAMMER template list | grep "PXEGrub2"
+
 
 echo
+
+
+
+###############################################################################
+# Operating System Verification
+###############################################################################
 
 info "Operating Systems"
 
-$HAMMER os list | grep "SingleDisk"
+
+$HAMMER os list |
+egrep "CentOSLinux 7|RockyLinux 8.10|RockyLinux 9.2|RockyLinux 9.8"
+
 
 echo
+
+
+
+###############################################################################
+# Selected Configuration
+###############################################################################
 
 header "Selected Single Disk Configuration"
 
-echo "TARGET_VERSION      : ${TARGET_VERSION}"
-echo "Operating System    : ${ROCKY_SINGLE_OS}"
-echo "PXE Template        : ${ROCKY_SINGLE_TEMPLATE}"
-echo "Repository          : ${ROCKY_REPO}"
-echo "Kickstart           : ${ROCKY_KS}"
+
 
 echo
 
+echo "TARGET_VERSION       : ${TARGET_VERSION}"
+
+echo "Operating System     : ${ROCKY_OS}"
+
+echo "PXE Template         : ${ROCKY_TEMPLATE}"
+
+echo "Repository           : ${ROCKY_REPO}"
+
+echo "Kickstart            : ${ROCKY_KS}"
+
+
+echo
+
+
+
 ###############################################################################
-# Summary
+# Final Status
 ###############################################################################
 
 header "02 - Foreman PXE Bootstrap (Single Disk) Completed"
 
-if [ ${#FAILED_STEPS[@]} -eq 0 ]; then
+
+
+if [ ${#FAILED_STEPS[@]} -eq 0 ]
+
+then
 
     ok "Single Disk PXE Bootstrap completed successfully."
 
@@ -557,12 +641,20 @@ else
 
     warn "Bootstrap completed with ${#FAILED_STEPS[@]} failure(s)."
 
-    for step in "${FAILED_STEPS[@]}"; do
-        error "$step"
+
+    for step in "${FAILED_STEPS[@]}"
+
+    do
+
+        error "${step}"
+
     done
 
 fi
 
+
+
 echo
+
 
 exit 0
