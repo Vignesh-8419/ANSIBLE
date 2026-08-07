@@ -158,16 +158,15 @@ PRODUCT_NAME="CentOS 7"
 
 
 BASE_REPO="CentOS-07-BaseOS"
-BASE_URL="http://192.168.253.136/repo/centos/BaseOS"
+BASE_URL="http://192.168.253.136/repo/centos"
 
-UPDATE_URL="http://192.168.253.136/repo/centos/Updates"
 
-ELEVATE_URL="http://192.168.253.136/repo/elevate/el7toel8"
+UPDATE_REPO="CentOS-07-Updates"
+UPDATE_URL="http://192.168.253.136/repo/installed_rhel7"
 
 
 ELEVATE_REPO="CentOS-07-ELevate"
-ELEVATE_URL="http://192.168.253.136/repo/elevate/el7toel8"
-
+ELEVATE_URL="http://192.168.253.136/repo/elevate"
 
 CONTENT_VIEW="EL7toEL8-CV"
 
