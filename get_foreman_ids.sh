@@ -10,6 +10,7 @@
 # 3 = Rocky Linux 9.2
 # 4 = Rocky Linux 9.8
 #
+#
 # Disk Layout:
 #
 # raid
@@ -25,7 +26,7 @@ FOREMAN_PASS="zqs977dXzqfEvTML"
 
 
 ###############################################################################
-# Hostgroups
+# Hostgroup Names
 ###############################################################################
 
 declare -A HOSTGROUP_NAMES
@@ -45,11 +46,15 @@ declare -A RAID_HOSTGROUP_IDS
 declare -A SINGLE_HOSTGROUP_IDS
 
 
+# RAID
+
 RAID_HOSTGROUP_IDS["1"]=5
 RAID_HOSTGROUP_IDS["2"]=6
 RAID_HOSTGROUP_IDS["3"]=8
 RAID_HOSTGROUP_IDS["4"]=7
 
+
+# Single Disk
 
 SINGLE_HOSTGROUP_IDS["1"]=9
 SINGLE_HOSTGROUP_IDS["2"]=10
@@ -64,161 +69,83 @@ SINGLE_HOSTGROUP_IDS["4"]=12
 
 declare -A OS_IDS
 declare -A MEDIUM_IDS
-declare -A PTABLE_IDS
 
 
 
 ###############################################################################
-# Lookup OS and Media
+# Lookup Operating System and Medium
 ###############################################################################
 
 for IDX in 1 2 3 4
 do
 
+    HG="${HOSTGROUP_NAMES[$IDX]}"
 
-HG="${HOSTGROUP_NAMES[$IDX]}"
-
-
-echo
-echo "Checking Hostgroup : ${HG}"
+    echo
+    echo "Checking Hostgroup : ${HG}"
 
 
-INFO=$(
-hammer \
---server "$FOREMAN_SERVER" \
---username "$FOREMAN_USER" \
---password "$FOREMAN_PASS" \
-hostgroup info \
---name "$HG" 2>/dev/null
-)
+    INFO=$(
+    hammer \
+    --server "$FOREMAN_SERVER" \
+    --username "$FOREMAN_USER" \
+    --password "$FOREMAN_PASS" \
+    hostgroup info \
+    --name "$HG" 2>/dev/null
+    )
 
 
+    OS_NAME=$(echo "$INFO" | awk -F': *' '/Operating System:/ {print $2}')
 
-OS_NAME=$(echo "$INFO" |
-awk -F': *' '/Operating System:/ {print $2}')
-
-
-MEDIUM_NAME=$(echo "$INFO" |
-awk -F': *' '/Medium:/ {print $2}')
+    MEDIUM_NAME=$(echo "$INFO" | awk -F': *' '/Medium:/ {print $2}')
 
 
-echo "OS     : ${OS_NAME}"
+    echo "OS     : ${OS_NAME}"
 
-echo "Medium : ${MEDIUM_NAME}"
+    echo "Medium : ${MEDIUM_NAME}"
 
 
 
-OS_IDS[$IDX]=$(
-hammer \
---server "$FOREMAN_SERVER" \
---username "$FOREMAN_USER" \
---password "$FOREMAN_PASS" \
-os list |
-awk -F'|' -v os="$OS_NAME" '
-{
-gsub(/^ +| +$/, "", $1)
-gsub(/^ +| +$/, "", $2)
+    OS_IDS[$IDX]=$(
+    hammer \
+    --server "$FOREMAN_SERVER" \
+    --username "$FOREMAN_USER" \
+    --password "$FOREMAN_PASS" \
+    os list |
+    awk -F'|' -v os="$OS_NAME" '
+    {
+        gsub(/^ +| +$/, "", $1)
+        gsub(/^ +| +$/, "", $2)
 
-if($2==os)
-print $1
-}'
-)
-
-
-
-MEDIUM_IDS[$IDX]=$(
-hammer \
---server "$FOREMAN_SERVER" \
---username "$FOREMAN_USER" \
---password "$FOREMAN_PASS" \
-medium list |
-awk -F'|' -v m="$MEDIUM_NAME" '
-{
-gsub(/^ +| +$/, "", $1)
-gsub(/^ +| +$/, "", $2)
-
-if($2==m)
-print $1
-}'
-)
+        if($2==os)
+            print $1
+    }'
+    )
 
 
 
-echo "OS ID     : ${OS_IDS[$IDX]}"
+    MEDIUM_IDS[$IDX]=$(
+    hammer \
+    --server "$FOREMAN_SERVER" \
+    --username "$FOREMAN_USER" \
+    --password "$FOREMAN_PASS" \
+    medium list |
+    awk -F'|' -v m="$MEDIUM_NAME" '
+    {
+        gsub(/^ +| +$/, "", $1)
+        gsub(/^ +| +$/, "", $2)
 
-echo "Medium ID : ${MEDIUM_IDS[$IDX]}"
+        if($2==m)
+            print $1
+    }'
+    )
 
+
+    echo "OS ID     : ${OS_IDS[$IDX]}"
+
+    echo "Medium ID : ${MEDIUM_IDS[$IDX]}"
 
 done
-
-
-
-###############################################################################
-# Partition Table Lookup
-###############################################################################
-
-echo
-
-echo "Checking Partition Tables"
-
-
-
-PTABLE_OUTPUT=$(
-hammer \
---server "$FOREMAN_SERVER" \
---username "$FOREMAN_USER" \
---password "$FOREMAN_PASS" \
-partition-table list
-)
-
-
-
-echo "$PTABLE_OUTPUT"
-
-
-
-###############################################################################
-# Find Kickstart Default
-###############################################################################
-
-DEFAULT_PTABLE_ID=$(
-echo "$PTABLE_OUTPUT" |
-awk -F'|' '
-{
-gsub(/^ +| +$/, "", $1)
-gsub(/^ +| +$/, "", $2)
-
-if($2=="Kickstart default")
-print $1
-}'
-)
-
-
-
-if [ -z "$DEFAULT_PTABLE_ID" ]
-then
-
-echo
-
-echo "ERROR: Kickstart default partition table not found"
-
-exit 1
-
-fi
-
-
-
-PTABLE_IDS["raid"]="$DEFAULT_PTABLE_ID"
-
-PTABLE_IDS["single"]="$DEFAULT_PTABLE_ID"
-
-
-
-echo
-
-echo "RAID Partition Table ID   : ${PTABLE_IDS[raid]}"
-
-echo "Single Partition Table ID : ${PTABLE_IDS[single]}"
 
 
 
@@ -230,10 +157,21 @@ cat <<EOF
 
 
 ###########################################################################
-
-# Host Group
-
+# Host Group Selection
+#
+# 1 = CentOS Linux 7
+# 2 = Rocky Linux 8.10
+# 3 = Rocky Linux 9.2
+# 4 = Rocky Linux 9.8
+#
+#
+# Disk Layout:
+#
+# raid   = RAID1 Installation
+# single = Single Disk Installation
+#
 ###########################################################################
+
 
 hostgroup: "{{ hostgroup | default('1', true) }}"
 
@@ -242,9 +180,7 @@ disk_layout: "{{ disk_layout | default('raid', true) }}"
 
 
 ###########################################################################
-
 # Subnet Mapping
-
 ###########################################################################
 
 subnet_id: >-
@@ -260,10 +196,25 @@ subnet_id: >-
 
 
 ###########################################################################
-
 # Hostgroup Mapping
-
+#
+# RAID
+#
+# 1-raid = CentOS Linux 7 RAID
+# 2-raid = Rocky Linux 8.10 RAID
+# 3-raid = Rocky Linux 9.2 RAID
+# 4-raid = Rocky Linux 9.8 RAID
+#
+#
+# SINGLE
+#
+# 1-single = CentOS Linux 7 SingleDisk
+# 2-single = Rocky Linux 8.10 SingleDisk
+# 3-single = Rocky Linux 9.2 SingleDisk
+# 4-single = Rocky Linux 9.8 SingleDisk
+#
 ###########################################################################
+
 
 hostgroup_id: >-
   {{
@@ -284,10 +235,9 @@ hostgroup_id: >-
 
 
 ###########################################################################
-
 # Operating System Mapping
-
 ###########################################################################
+
 
 operatingsystem_id: >-
   {{
@@ -302,10 +252,9 @@ operatingsystem_id: >-
 
 
 ###########################################################################
-
 # Installation Media Mapping
-
 ###########################################################################
+
 
 medium_id: >-
   {{
@@ -320,27 +269,23 @@ medium_id: >-
 
 
 ###########################################################################
-
 # Partition Table
-
+#
+# Kickstart default
+#
+# RAID and Single Disk use same Foreman partition table
+#
 ###########################################################################
 
-ptable_id: >-
-  {{
-    {
-      'raid': ${PTABLE_IDS[raid]},
-      'single': ${PTABLE_IDS[single]}
 
-    }[disk_layout]
-  }}
+ptable_id: 126
 
 
 
 ###########################################################################
-
 # Architecture
-
 ###########################################################################
+
 
 architecture_id: 1
 
