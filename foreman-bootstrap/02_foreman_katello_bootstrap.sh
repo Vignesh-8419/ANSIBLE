@@ -4,8 +4,9 @@
 # Supports CentOS 7, Rocky Linux 8.10, Rocky Linux 9.2 and Rocky Linux 9.8
 ###############################################################################
 
-#TARGET_VERSION=9.8 ./02_foreman_katello_bootstrap.sh
-#TARGET_VERSION=9.2 ./02_foreman_katello_bootstrap.sh
+# Usage:
+# TARGET_VERSION=9.8 ./02_foreman_katello_bootstrap.sh
+# TARGET_VERSION=9.2 ./02_foreman_katello_bootstrap.sh
 
 set +e
 
@@ -62,6 +63,10 @@ summary_ok() {
     printf "%-35s ${GREEN}[OK]${NC}\n" "$1"
 }
 
+###############################################################################
+# Resume Paused Foreman Tasks
+###############################################################################
+
 resume_paused_tasks() {
 
     header "Recovering Paused Foreman Tasks"
@@ -83,25 +88,25 @@ resume_paused_tasks() {
         --search "state = paused"
 
     for i in {1..6}; do
-    
+
         COUNT=$($HAMMER task list \
             --search "state = paused" 2>/dev/null | \
             grep -c paused || true)
-    
+
         if [ "$COUNT" -eq 0 ]; then
             ok "Paused tasks cleared."
             return 0
         fi
-    
+
         warn "$COUNT paused task(s) still remain. Waiting..."
-    
+
         sleep 10
-    
+
     done
-    
+
     warn "Some paused tasks still remain."
     warn "Continuing because the required repository lock may already be released."
-    
+
     return 0
 }
 
@@ -113,10 +118,6 @@ FOREMAN_USER="${FOREMAN_USER:-admin}"
 FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
 
 HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
-
-
-header "[1/6] Creating Katello Products"
-
 
 TARGET_VERSION="${TARGET_VERSION:-9.8}"
 
@@ -140,6 +141,12 @@ case "$TARGET_VERSION" in
 esac
 
 ###############################################################################
+# [1/6] Create Products
+###############################################################################
+
+header "[1/6] Creating Katello Products"
+
+###############################################################################
 # Rocky Linux 8 Product
 ###############################################################################
 
@@ -158,7 +165,7 @@ else
     $HAMMER product create \
         --organization "Default Organization" \
         --name "Rocky Linux 8"
-    
+
     if [ $? -eq 0 ]; then
         ok "Product created."
     else
@@ -189,7 +196,7 @@ else
     $HAMMER product create \
         --organization "Default Organization" \
         --name "CentOS 7"
-    
+
     if [ $? -eq 0 ]; then
         ok "Product created."
     else
@@ -202,7 +209,7 @@ fi
 echo
 
 ###############################################################################
-# Rocky 9 Product
+# Rocky Linux 9 Product
 ###############################################################################
 
 info "Checking Product : $PRODUCT_NAME"
@@ -217,17 +224,16 @@ else
 
     info "Creating Product : $PRODUCT_NAME"
 
-        $HAMMER product create \
-            --organization "Default Organization" \
-            --name "$PRODUCT_NAME"
-        
-        if [ $? -eq 0 ]; then
-            ok "Product created."
-        else
-            error "Product creation failed."
-            record_failure "$PRODUCT_NAME Product"
-        fi
-        
+    $HAMMER product create \
+        --organization "Default Organization" \
+        --name "$PRODUCT_NAME"
+
+    if [ $? -eq 0 ]; then
+        ok "Product created."
+    else
+        error "Product creation failed."
+        record_failure "$PRODUCT_NAME Product"
+    fi
 
 fi
 
@@ -245,7 +251,7 @@ $HAMMER product list \
 echo
 
 ###############################################################################
-# 2. Create Repositories
+# [2/6] Creating Repositories
 ###############################################################################
 
 header "[2/6] Creating Repositories"
@@ -255,7 +261,6 @@ header "[2/6] Creating Repositories"
 ###############################################################################
 
 header "Creating CentOS 7 Repositories"
-
 
 ###############################################################################
 # CentOS-07-BaseOS
@@ -285,7 +290,7 @@ else
         ok "Repository created."
     else
         error "Repository creation failed."
-        record_failure "$PRODUCT -> $REPO"
+        record_failure "CentOS 7 -> CentOS-07-BaseOS"
     fi
 
 fi
@@ -320,7 +325,7 @@ else
         ok "Repository created."
     else
         error "Repository creation failed."
-        record_failure "$PRODUCT -> $REPO"
+        record_failure "CentOS 7 -> CentOS-07-Updates"
     fi
 
 fi
@@ -331,9 +336,7 @@ echo
 # Rocky Linux 8 Repositories
 ###############################################################################
 
-
 header "Creating Rocky Linux 8 Repositories"
-
 
 ###############################################################################
 # Rocky-08-BaseOS
@@ -357,13 +360,13 @@ else
         --product "Rocky Linux 8" \
         --name "Rocky-08-BaseOS" \
         --content-type yum \
-        --url "http://192.168.253.136/repo/rocky8/BaseOS"
-
+        --url "http://192.168.253.136/repo/rocky8/BaseOS/"
+		
     if [ $? -eq 0 ]; then
         ok "Repository created."
     else
         error "Repository creation failed."
-        record_failure "$PRODUCT -> $REPO"
+        record_failure "Rocky Linux 8 -> Rocky-08-BaseOS"
     fi
 
 fi
@@ -392,8 +395,8 @@ else
         --product "Rocky Linux 8" \
         --name "Rocky-08-AppStream" \
         --content-type yum \
-        --url "http://192.168.253.136/repo/rocky8/AppStream"
-    
+        --url "http://192.168.253.136/repo/rocky8/AppStream/"
+
     if [ $? -eq 0 ]; then
         ok "Repository created."
     else
@@ -427,18 +430,24 @@ else
         --product "Rocky Linux 8" \
         --name "Rocky-08-RHEL-Installed" \
         --content-type yum \
-        --url "http://192.168.253.136/repo/installed_rhel8"
+        --url "http://192.168.253.136/repo/installed_rhel8/"
 
-    
     if [ $? -eq 0 ]; then
         ok "Repository created."
     else
         error "Repository creation failed."
         record_failure "Rocky Linux 8 -> Rocky-08-RHEL-Installed"
     fi
+
 fi
 
 echo
+
+###############################################################################
+# Rocky Linux 9 Repositories
+###############################################################################
+
+header "Creating $PRODUCT_NAME Repositories"
 
 ###############################################################################
 # Rocky-09-BaseOS
@@ -457,21 +466,20 @@ else
 
     info "Creating Repository..."
 
-
     $HAMMER repository create \
         --organization "Default Organization" \
         --product "$PRODUCT_NAME" \
         --name "Rocky-09-BaseOS" \
         --content-type yum \
-        --url "http://192.168.253.136/repo/${REPO_PATH}/BaseOS"
+        --url "http://192.168.253.136/repo/${REPO_PATH}/BaseOS/"
 
-    
     if [ $? -eq 0 ]; then
         ok "Repository created."
     else
         error "Repository creation failed."
         record_failure "$PRODUCT_NAME -> Rocky-09-BaseOS"
     fi
+
 fi
 
 echo
@@ -498,9 +506,8 @@ else
         --product "$PRODUCT_NAME" \
         --name "Rocky-09-AppStream" \
         --content-type yum \
-        --url "http://192.168.253.136/repo/${REPO_PATH}/AppStream"
+        --url "http://192.168.253.136/repo/${REPO_PATH}/AppStream/"
 
-    
     if [ $? -eq 0 ]; then
         ok "Repository created."
     else
@@ -534,21 +541,21 @@ else
         --product "$PRODUCT_NAME" \
         --name "Rocky-09-RHEL-Installed" \
         --content-type yum \
-        --url "http://192.168.253.136/repo/installed_rhel9"
+        --url "http://192.168.253.136/repo/installed_rhel9/"
 
-    
     if [ $? -eq 0 ]; then
         ok "Repository created."
     else
         error "Repository creation failed."
         record_failure "$PRODUCT_NAME -> Rocky-09-RHEL-Installed"
     fi
+
 fi
 
 echo
 
 ###############################################################################
-# Verification
+# Repository Verification
 ###############################################################################
 
 header "Repositories"
@@ -568,7 +575,6 @@ $HAMMER repository list \
     --product "Rocky Linux 8"
 
 echo
-
 info "$PRODUCT_NAME"
 
 $HAMMER repository list \
@@ -576,6 +582,10 @@ $HAMMER repository list \
     --product "$PRODUCT_NAME"
 
 echo
+
+###############################################################################
+# [3/6] Synchronizing Repositories
+###############################################################################
 
 header "[3/6] Synchronizing Repositories"
 
@@ -619,58 +629,58 @@ sync_repository() {
     fi
 
     if echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
-    
+
         warn "Repository lock detected."
-    
+
         for TRY in 1 2 3
         do
-    
+
             warn "Recovery attempt $TRY..."
-    
+
             resume_paused_tasks
-            
+
             sleep 5
-            
+			
             info "Retrying synchronization..."
-            
+
             OUTPUT=$(
                 $HAMMER repository synchronize \
                     --organization "Default Organization" \
                     --product "$PRODUCT" \
                     --name "$REPO" 2>&1
             )
-            
+
             RC=$?
-    
+
             echo "$OUTPUT"
-    
+
             if [ $RC -eq 0 ]; then
                 ok "Synchronization started."
                 return
             fi
-    
+
             if ! echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
                 break
             fi
-    
+
         done
-    
+
     fi
-    
+
     error "Synchronization failed."
-    
+
     record_failure "$PRODUCT -> $REPO"
 }
 
 ###############################################################################
-# CentOS 7
+# Synchronize CentOS 7 Repositories
 ###############################################################################
 
 sync_repository "CentOS 7" "CentOS-07-BaseOS"
 sync_repository "CentOS 7" "CentOS-07-Updates"
 
 ###############################################################################
-# Rocky Linux 8
+# Synchronize Rocky Linux 8 Repositories
 ###############################################################################
 
 sync_repository "Rocky Linux 8" "Rocky-08-BaseOS"
@@ -678,7 +688,7 @@ sync_repository "Rocky Linux 8" "Rocky-08-AppStream"
 sync_repository "Rocky Linux 8" "Rocky-08-RHEL-Installed"
 
 ###############################################################################
-# --name "$PRODUCT_NAME"
+# Synchronize Rocky Linux 9 Repositories
 ###############################################################################
 
 sync_repository "$PRODUCT_NAME" "Rocky-09-BaseOS"
@@ -690,6 +700,7 @@ sync_repository "$PRODUCT_NAME" "Rocky-09-RHEL-Installed"
 ###############################################################################
 
 echo
+
 header "Repository Synchronization"
 
 echo
@@ -707,20 +718,22 @@ $HAMMER repository list \
     --product "Rocky Linux 8"
 
 echo
-
-echo
 info "$PRODUCT_NAME"
 
 $HAMMER repository list \
     --organization "Default Organization" \
     --product "$PRODUCT_NAME"
+
 echo
 
-header "[4/6] Creating Content Views & Activation Keys"
+###############################################################################
+# [4/6] Creating Content Views
+###############################################################################
 
+header "[4/6] Creating Content Views"
 
 ###############################################################################
-# Function : Create Content View if Missing
+# Function : Create Content View
 ###############################################################################
 
 create_content_view() {
@@ -742,7 +755,7 @@ create_content_view() {
         $HAMMER content-view create \
             --organization "Default Organization" \
             --name "$CV_NAME"
-        
+
         if [ $? -eq 0 ]; then
             ok "Content View created."
         else
@@ -790,7 +803,7 @@ add_repository_to_cv() {
             --name "$CV" \
             --product "$PRODUCT" \
             --repository "$REPO"
-        
+
         if [ $? -eq 0 ]; then
             ok "Repository added."
         else
@@ -804,15 +817,23 @@ add_repository_to_cv() {
 }
 
 ###############################################################################
-# Add Repositories
+# Add CentOS 7 Repositories
 ###############################################################################
 
 add_repository_to_cv "CentOS7-CV" "CentOS 7" "CentOS-07-BaseOS"
 add_repository_to_cv "CentOS7-CV" "CentOS 7" "CentOS-07-Updates"
 
+###############################################################################
+# Add Rocky Linux 8 Repositories
+###############################################################################
+
 add_repository_to_cv "Rocky8-CV" "Rocky Linux 8" "Rocky-08-BaseOS"
 add_repository_to_cv "Rocky8-CV" "Rocky Linux 8" "Rocky-08-AppStream"
 add_repository_to_cv "Rocky8-CV" "Rocky Linux 8" "Rocky-08-RHEL-Installed"
+
+###############################################################################
+# Add Rocky Linux 9 Repositories
+###############################################################################
 
 add_repository_to_cv "$CONTENT_VIEW" "$PRODUCT_NAME" "Rocky-09-BaseOS"
 add_repository_to_cv "$CONTENT_VIEW" "$PRODUCT_NAME" "Rocky-09-AppStream"
@@ -828,77 +849,77 @@ publish_cv() {
 
     info "Checking Content View : $CV"
 
-OUTPUT=$(
-$HAMMER content-view publish \
-    --organization "Default Organization" \
-    --name "$CV" \
-    --description "Bootstrap Publish $(date '+%F %T')" 2>&1
-)
+    OUTPUT=$(
+        $HAMMER content-view publish \
+            --organization "Default Organization" \
+            --name "$CV" \
+            --description "Bootstrap Publish $(date '+%F %T')" 2>&1
+    )
 
-RC=$?
+    RC=$?
 
-echo "$OUTPUT"
+    echo "$OUTPUT"
 
-if [ $RC -eq 0 ]; then
-    ok "Content View published."
-    return
-fi
+    if [ $RC -eq 0 ]; then
+        ok "Content View published."
+        return
+    fi
 
-if echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
+    if echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
 
-    warn "Publish task locked."
+        warn "Publish task locked."
 
-    for TRY in 1 2 3
-    do
-    
-        warn "Recovery attempt $TRY..."
-    
-        LOCK_TASK=$(echo "$OUTPUT" | grep -oE '[0-9a-f-]{36}' | head -1)
-    
-        if [ -n "$LOCK_TASK" ]; then
-        
-            warn "Cancelling conflicting task $LOCK_TASK"
-        
-            $HAMMER task cancel \
-                --search "id = $LOCK_TASK" >/dev/null 2>&1 || true
-        
-            sleep 10
-        
-        else
-        
-            resume_paused_tasks
-        
-        fi
-    
-        info "Retrying publish..."
-    
-        OUTPUT=$(
-            $HAMMER content-view publish \
-                --organization "Default Organization" \
-                --name "$CV" \
-                --description "Bootstrap Publish $(date '+%F %T')" 2>&1
-        )
-    
-        RC=$?
-    
-        echo "$OUTPUT"
-    
-        if [ $RC -eq 0 ]; then
-            ok "Content View published."
-            return
-        fi
-    
-        if ! echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
-            break
-        fi
-    
-    done
-fi
+        for TRY in 1 2 3
+        do
 
-error "Content View publish failed."
+            warn "Recovery attempt $TRY..."
 
-record_failure "Publish : $CV"
+            LOCK_TASK=$(echo "$OUTPUT" | grep -oE '[0-9a-f-]{36}' | head -1)
 
+            if [ -n "$LOCK_TASK" ]; then
+
+                warn "Cancelling conflicting task $LOCK_TASK"
+
+                $HAMMER task cancel \
+                    --search "id = $LOCK_TASK" >/dev/null 2>&1 || true
+
+                sleep 10
+
+            else
+
+                resume_paused_tasks
+
+            fi
+
+            info "Retrying publish..."
+
+            OUTPUT=$(
+                $HAMMER content-view publish \
+                    --organization "Default Organization" \
+                    --name "$CV" \
+                    --description "Bootstrap Publish $(date '+%F %T')" 2>&1
+            )
+
+            RC=$?
+
+            echo "$OUTPUT"
+
+            if [ $RC -eq 0 ]; then
+                ok "Content View published."
+                return
+            fi
+
+            if ! echo "$OUTPUT" | grep -qi "Required lock is already taken"; then
+                break
+            fi
+
+        done
+
+    fi
+
+    error "Content View publish failed."
+
+    record_failure "Publish : $CV"
 }
 
 ###############################################################################
@@ -910,7 +931,7 @@ publish_cv "Rocky8-CV"
 publish_cv "$CONTENT_VIEW"
 
 ###############################################################################
-# Create Activation Keys
+# Function : Create / Update Activation Key
 ###############################################################################
 
 create_activation_key() {
@@ -924,29 +945,31 @@ create_activation_key() {
         --organization "Default Organization" \
         --name "$KEY" >/dev/null 2>&1; then
 
-    info "Activation Key already exists. Updating Content View..."
-    
-    $HAMMER activation-key update \
-        --organization "Default Organization" \
-        --name "$KEY" \
-        --content-view "$CV" \
-        --lifecycle-environment "Library"
-    
-    if [ $? -eq 0 ]; then
-        ok "Activation Key updated."
-    else
-        error "Activation Key update failed."
-        record_failure "Activation Key : $KEY"
-    fi
+        info "Activation Key already exists. Updating Content View..."
+
+        $HAMMER activation-key update \
+            --organization "Default Organization" \
+            --name "$KEY" \
+            --content-view "$CV" \
+            --lifecycle-environment "Library"
+
+        if [ $? -eq 0 ]; then
+            ok "Activation Key updated."
+        else
+            error "Activation Key update failed."
+            record_failure "Activation Key : $KEY"
+        fi
 
     else
+
+        info "Creating Activation Key..."
 
         $HAMMER activation-key create \
             --organization "Default Organization" \
             --name "$KEY" \
             --lifecycle-environment "Library" \
             --content-view "$CV"
-        
+
         if [ $? -eq 0 ]; then
             ok "Activation Key created."
         else
@@ -968,14 +991,10 @@ create_activation_key "rocky8-prod-key" "Rocky8-CV"
 create_activation_key "$ACTIVATION_KEY" "$CONTENT_VIEW"
 
 ###############################################################################
-# Attach Subscriptions to Activation Keys
+# Attach Subscriptions
 ###############################################################################
 
 header "Attaching Subscriptions"
-
-###############################################################################
-# Get Subscription IDs
-###############################################################################
 
 CENTOS_SUB_ID=$(
 $HAMMER subscription list \
@@ -1009,7 +1028,7 @@ awk -F'|' -v product="$PRODUCT_NAME" '
 )
 
 ###############################################################################
-# Function to Attach Subscription
+# Function : Attach Subscription
 ###############################################################################
 
 attach_subscription() {
@@ -1028,10 +1047,10 @@ attach_subscription() {
     fi
 
     OUTPUT=$(
-    $HAMMER activation-key add-subscription \
-        --organization "Default Organization" \
-        --name "$KEY" \
-        --subscription-id "$SUB_ID" 2>&1
+        $HAMMER activation-key add-subscription \
+            --organization "Default Organization" \
+            --name "$KEY" \
+            --subscription-id "$SUB_ID" 2>&1
     )
 
     RC=$?
@@ -1070,23 +1089,15 @@ attach_subscription \
     "$PRODUCT_NAME"
 
 ###############################################################################
-# Verification
+# [5/6] Verification
 ###############################################################################
 
 header "[5/6] Verification"
-
-###############################################################################
-# Content Views
-###############################################################################
 
 echo
 header "Content Views"
 
 $HAMMER content-view list || true
-
-###############################################################################
-# Activation Keys
-###############################################################################
 
 echo
 header "Activation Keys"
@@ -1094,21 +1105,12 @@ header "Activation Keys"
 $HAMMER activation-key list \
     --organization "Default Organization" || true
 
-###############################################################################
-# CentOS7-CV
-###############################################################################
-
 echo
 header "CentOS7-CV"
-
 
 $HAMMER content-view info \
     --organization "Default Organization" \
     --name "CentOS7-CV" || true
-
-###############################################################################
-# Rocky8-CV
-###############################################################################
 
 echo
 header "Rocky8-CV"
@@ -1116,50 +1118,44 @@ header "Rocky8-CV"
 $HAMMER content-view info \
     --organization "Default Organization" \
     --name "Rocky8-CV" || true
-
+	
 ###############################################################################
-# CentOS Repositories
+# Repository Verification
 ###############################################################################
 
 echo
 header "CentOS Repositories"
 
-
 $HAMMER repository list \
     --organization "Default Organization" \
     --product "CentOS 7" || true
 
-###############################################################################
-# Rocky 9 Repositories
-###############################################################################
-
 echo
-header "$CONTENT_VIEW"
-
-$HAMMER content-view info \
-    --organization "Default Organization" \
-    --name "$CONTENT_VIEW"
-echo
-header "$PRODUCT_NAME Repositories"
-
-$HAMMER repository list \
-    --organization "Default Organization" \
-    --product "$PRODUCT_NAME"
-
-###############################################################################
-# Rocky Repositories
-###############################################################################
-
-echo
-header "Rocky Repositories"
+header "Rocky Linux 8 Repositories"
 
 $HAMMER repository list \
     --organization "Default Organization" \
     --product "Rocky Linux 8" || true
 
 echo
-ok "Verification completed."
+header "$PRODUCT_NAME Repositories"
+
+$HAMMER repository list \
+    --organization "Default Organization" \
+    --product "$PRODUCT_NAME" || true
+
 echo
+header "$CONTENT_VIEW"
+
+$HAMMER content-view info \
+    --organization "Default Organization" \
+    --name "$CONTENT_VIEW" || true
+
+echo
+
+###############################################################################
+# [6/6] Registration Commands
+###############################################################################
 
 header "[6/6] Registration Commands"
 
@@ -1178,8 +1174,6 @@ echo "  --org=\"Default_Organization\" \\"
 echo "  --activationkey=\"rocky8-prod-key\""
 
 echo
-
-echo
 info "$PRODUCT_NAME"
 
 echo "subscription-manager register \\"
@@ -1187,6 +1181,7 @@ echo "  --org=\"Default_Organization\" \\"
 echo "  --activationkey=\"${ACTIVATION_KEY}\""
 
 echo
+
 ###############################################################################
 # Summary
 ###############################################################################
