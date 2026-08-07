@@ -539,7 +539,7 @@ else
     info "Adding ${REPO} to ${CONTENT_VIEW}..."
 
 
-    $HAMMER content-view repository add \
+    $HAMMER content-view add-repository \
         --organization "Default Organization" \
         --name "${CONTENT_VIEW}" \
         --product "${ROCKY_PRODUCT}" \
