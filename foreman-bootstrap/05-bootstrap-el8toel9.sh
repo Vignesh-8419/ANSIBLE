@@ -156,7 +156,7 @@ case "$TARGET_VERSION" in
 
         ROCKY_PRODUCT="Rocky Linux 8"
 
-        EL8TOEL9_REPO_NAME="Rocky-08-ELevate-9.2"
+        EL8TOEL9_REPO_NAME="Rocky-08-EL8toEL9-9.2"
 
         EL8TOEL9_REPO_URL="http://192.168.253.136/repo/leapp/9.2/el8toel9"
 
@@ -171,7 +171,7 @@ case "$TARGET_VERSION" in
 
         ROCKY_PRODUCT="Rocky Linux 8"
 
-        EL8TOEL9_REPO_NAME="Rocky-08-ELevate-9.8"
+       EL8TOEL9_REPO_NAME="Rocky-08-EL8toEL9-9.8"
 
         EL8TOEL9_REPO_URL="http://192.168.253.136/repo/leapp/9/el8toel9"
 
@@ -330,25 +330,24 @@ echo
 
 
 ###############################################################################
-# Rocky 8 BaseOS
+# Rocky Linux 8 BaseOS
 ###############################################################################
 
 create_repository \
 "${ROCKY_PRODUCT}" \
-"Rocky8-BaseOS" \
+"Rocky-08-BaseOS" \
 "http://192.168.253.136/repo/rocky8/BaseOS"
 
 
 
 ###############################################################################
-# Rocky 8 AppStream
+# Rocky Linux 8 AppStream
 ###############################################################################
 
 create_repository \
 "${ROCKY_PRODUCT}" \
-"Rocky8-AppStream" \
+"Rocky-08-AppStream" \
 "http://192.168.253.136/repo/rocky8/AppStream"
-
 
 
 ###############################################################################
@@ -433,7 +432,7 @@ fi
 ###############################################################################
 
 sync_repository \
-"Rocky8-BaseOS"
+"Rocky-08-BaseOS"
 
 
 
@@ -442,7 +441,7 @@ sync_repository \
 ###############################################################################
 
 sync_repository \
-"Rocky8-AppStream"
+"Rocky-08-AppStream"
 
 
 
@@ -578,11 +577,11 @@ header "Configuring Content View Repositories"
 
 
 add_repository_to_cv \
-"Rocky8-BaseOS"
+"Rocky-08-BaseOS"
 
 
 add_repository_to_cv \
-"Rocky8-AppStream"
+"Rocky-08-AppStream"
 
 
 add_repository_to_cv \
@@ -735,8 +734,8 @@ header "Configuring Activation Key Repositories"
 
 
 for REPO in \
-"Rocky8-BaseOS" \
-"Rocky8-AppStream" \
+"Rocky-08-BaseOS" \
+"Rocky-08-AppStream" \
 "${EL8TOEL9_REPO_NAME}"
 
 do
@@ -903,12 +902,11 @@ echo
 
 echo "Repositories        :"
 
-echo "  - Rocky8-BaseOS"
+echo "  - Rocky-08-BaseOS"
 
-echo "  - Rocky8-AppStream"
+echo "  - Rocky-08-AppStream"
 
 echo "  - ${EL8TOEL9_REPO_NAME}"
-
 
 
 }
