@@ -1,7 +1,16 @@
 #!/bin/bash
 ###############################################################################
-# 03 - Foreman HostGroup Bootstrap
-# Supports CentOS 7, Rocky Linux 8.10, Rocky Linux 9.2 and Rocky Linux 9.8
+# 03 - Foreman Hostgroup Bootstrap (Single Disk)
+#
+# Supports:
+#   - CentOS Linux 7
+#   - Rocky Linux 8.10
+#   - Rocky Linux 9.2
+#   - Rocky Linux 9.8
+#
+# Usage:
+#   TARGET_VERSION=9.8 ./03_foreman_hostgroup_bootstrap_single_disk.sh
+#   TARGET_VERSION=9.2 ./03_foreman_hostgroup_bootstrap_single_disk.sh
 ###############################################################################
 
 set +e
@@ -25,7 +34,7 @@ WHITE='\033[1;37m'
 NC='\033[0m'
 
 ###############################################################################
-# Logging Functions
+# Logging
 ###############################################################################
 
 info() {
@@ -55,7 +64,9 @@ header() {
     echo -e "${BLUE}============================================================${NC}"
 }
 
-header "03 - Foreman HostGroup Bootstrap"
+header "03 - Foreman Hostgroup Bootstrap (Single Disk)"
+
+echo
 
 ###############################################################################
 # Variables
@@ -69,152 +80,124 @@ HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
 TARGET_VERSION="${TARGET_VERSION:-9.8}"
 
 case "$TARGET_VERSION" in
+
     9.2)
-        ROCKY_OS="RockyLinux 9.2"
-        ROCKY_HOSTGROUP="VGS HOSTS ROCKY 9.2"
+
+        ROCKY_OS="RockyLinux 9.2 SingleDisk"
         ROCKY_MEDIUM="Rocky 9.2 Remote"
-        ROCKY_CONTENT_VIEW="Rocky9.2-CV"
+        ROCKY_HOSTGROUP="Rocky-9.2-SingleDisk"
+
         ;;
+
     9.8)
-        ROCKY_OS="RockyLinux 9.8"
-        ROCKY_HOSTGROUP="VGS HOSTS ROCKY 9.8"
+
+        ROCKY_OS="RockyLinux 9.8 SingleDisk"
         ROCKY_MEDIUM="Rocky 9 Remote"
-        ROCKY_CONTENT_VIEW="Rocky9.8-CV"
+        ROCKY_HOSTGROUP="Rocky-9.8-SingleDisk"
+
         ;;
+
     *)
-        echo "Unsupported TARGET_VERSION: $TARGET_VERSION"
+
+        error "Unsupported TARGET_VERSION: $TARGET_VERSION"
         exit 1
+
         ;;
+
 esac
 
-echo
-
 ###############################################################################
-# [1/2] Create Host Groups
+# Common Hostgroups
 ###############################################################################
 
-header "[1/2] Creating Host Groups"
+CENTOS_HOSTGROUP="CentOS-7-SingleDisk"
+ROCKY8_HOSTGROUP="Rocky-8.10-SingleDisk"
 
 ###############################################################################
-# CentOS 7 Host Group
+# [1/2] Create Hostgroups
 ###############################################################################
 
-info "Checking CentOS 7 Host Group..."
+header "[1/2] Creating Single Disk Hostgroups"
 
-if $HAMMER hostgroup info \
-    --organization "Default Organization" \
-    --name "VGS HOSTS CENTOS 7" >/dev/null 2>&1; then
+create_hostgroup() {
 
-    skip "Host Group 'VGS HOSTS CENTOS 7' already exists."
+    local HG_NAME="$1"
+    local OS_TITLE="$2"
+    local MEDIUM="$3"
+    local SUBNET="$4"
 
-else
+    info "Checking Hostgroup : ${HG_NAME}"
 
-    info "Creating CentOS 7 Host Group..."
+    if $HAMMER hostgroup info \
+        --name "${HG_NAME}" >/dev/null 2>&1; then
 
-    $HAMMER hostgroup create \
-        --organization "Default Organization" \
-        --name "VGS HOSTS CENTOS 7" \
-        --architecture x86_64 \
-        --operatingsystem "CentOSLinux 7" \
-        --medium "CentOS 7 Remote" \
-        --partition-table "Kickstart default" \
-        --pxe-loader "Grub2 UEFI" \
-        --domain "vgs.com" \
-        --subnet "vgs-subnet-centos" \
-        --content-source "cent-07-01.vgs.com" \
-        --content-view "CentOS7-CV" \
-        --lifecycle-environment "Library"
+        skip "Hostgroup already exists."
 
-    if [ $? -eq 0 ]; then
-        ok "CentOS 7 Host Group created."
     else
-        error "Host Group creation failed."
-        record_failure "VGS HOSTS CENTOS 7"
+
+        info "Creating Hostgroup..."
+
+        $HAMMER hostgroup create \
+            --name "${HG_NAME}" \
+            --organizations "Default Organization" \
+            --locations "Default Location" \
+            --operatingsystem "${OS_TITLE}" \
+            --architecture x86_64 \
+            --medium "${MEDIUM}" \
+            --domain vgs.com \
+            --subnet "${SUBNET}" \
+            --root-pass "changeme" \
+            --pxe-loader "Grub2 UEFI"
+
+        if [ $? -eq 0 ]; then
+            ok "Hostgroup created."
+        else
+            error "Hostgroup creation failed."
+            record_failure "${HG_NAME}"
+        fi
+
     fi
 
-fi
-
-echo
-
-###############################################################################
-# Rocky Linux 8 Host Group
-###############################################################################
-
-info "Checking Rocky Linux 8 Host Group..."
-
-if $HAMMER hostgroup info \
-    --organization "Default Organization" \
-    --name "VGS HOSTS ROCKY 8" >/dev/null 2>&1; then
-
-    skip "Host Group 'VGS HOSTS ROCKY 8' already exists."
-
-else
-
-    info "Creating Rocky Linux 8 Host Group..."
-
-    $HAMMER hostgroup create \
-        --organization "Default Organization" \
-        --name "VGS HOSTS ROCKY 8" \
-        --architecture x86_64 \
-        --operatingsystem "RockyLinux 8.10" \
-        --medium "Rocky 8 Remote" \
-        --partition-table "Kickstart default" \
-        --pxe-loader "Grub2 UEFI" \
-        --domain "vgs.com" \
-        --subnet "vgs-subnet-rockyos" \
-        --content-source "cent-07-01.vgs.com" \
-        --content-view "Rocky8-CV" \
-        --lifecycle-environment "Library"
-
-    if [ $? -eq 0 ]; then
-        ok "Rocky Linux 8 Host Group created."
-    else
-        error "Host Group creation failed."
-        record_failure "VGS HOSTS ROCKY 8"
-    fi
-
-fi
-
-echo
+    echo
+}
 
 ###############################################################################
-# Rocky Linux 9 Host Group (9.2 or 9.8)
+# CentOS 7
 ###############################################################################
 
-info "Checking ${ROCKY_HOSTGROUP} Host Group..."
+create_hostgroup \
+    "${CENTOS_HOSTGROUP}" \
+    "CentOSLinux 7 SingleDisk" \
+    "CentOS 7 Remote" \
+    "vgs-subnet-centos"
 
-if $HAMMER hostgroup info \
-    --organization "Default Organization" \
-    --name "${ROCKY_HOSTGROUP}" >/dev/null 2>&1; then
+###############################################################################
+# Rocky Linux 8.10
+###############################################################################
 
-    skip "Host Group '${ROCKY_HOSTGROUP}' already exists."
+create_hostgroup \
+    "${ROCKY8_HOSTGROUP}" \
+    "RockyLinux 8.10 SingleDisk" \
+    "Rocky 8 Remote" \
+    "vgs-subnet-rockyos"
 
-else
+###############################################################################
+# Rocky Linux (Selected Version)
+###############################################################################
 
-    info "Creating ${ROCKY_HOSTGROUP}..."
+create_hostgroup \
+    "${ROCKY_HOSTGROUP}" \
+    "${ROCKY_OS}" \
+    "${ROCKY_MEDIUM}" \
+    "vgs-subnet-rockyos"
 
-    $HAMMER hostgroup create \
-        --organization "Default Organization" \
-        --name "${ROCKY_HOSTGROUP}" \
-        --architecture x86_64 \
-        --operatingsystem "${ROCKY_OS}" \
-        --medium "${ROCKY_MEDIUM}" \
-        --partition-table "Kickstart default" \
-        --pxe-loader "Grub2 UEFI" \
-        --domain "vgs.com" \
-        --subnet "vgs-subnet-rockyos" \
-        --content-source "cent-07-01.vgs.com" \
-        --content-view "${ROCKY_CONTENT_VIEW}" \
-        --lifecycle-environment "Library"
+###############################################################################
+# Verification
+###############################################################################
 
-    if [ $? -eq 0 ]; then
-        ok "${ROCKY_HOSTGROUP} created."
-    else
-        error "Host Group creation failed."
-        record_failure "${ROCKY_HOSTGROUP}"
-    fi
+header "Hostgroups"
 
-fi
+$HAMMER hostgroup list
 
 echo
 
@@ -225,46 +208,43 @@ echo
 header "[2/2] Verification"
 
 echo
-info "Host Groups"
+info "Hostgroups"
 
 $HAMMER hostgroup list
 
 echo
 
-###############################################################################
-# CentOS 7 Host Group
-###############################################################################
-
-echo
-info "CentOS 7 Host Group"
+info "CentOSLinux 7 SingleDisk"
 
 $HAMMER hostgroup info \
-    --organization "Default Organization" \
-    --name "VGS HOSTS CENTOS 7"
+    --name "${CENTOS_HOSTGROUP}"
 
 echo
 
-###############################################################################
-# Rocky Linux 8 Host Group
-###############################################################################
-
-info "Rocky Linux 8 Host Group"
+info "RockyLinux 8.10 SingleDisk"
 
 $HAMMER hostgroup info \
-    --organization "Default Organization" \
-    --name "VGS HOSTS ROCKY 8"
+    --name "${ROCKY8_HOSTGROUP}"
 
 echo
 
-###############################################################################
-# Selected Rocky Linux 9 Host Group
-###############################################################################
-
-info "${ROCKY_HOSTGROUP}"
+info "${ROCKY_OS}"
 
 $HAMMER hostgroup info \
-    --organization "Default Organization" \
     --name "${ROCKY_HOSTGROUP}"
+
+echo
+
+###############################################################################
+# Selected Configuration
+###############################################################################
+
+header "Selected Single Disk Configuration"
+
+echo "TARGET_VERSION : ${TARGET_VERSION}"
+echo "Operating System : ${ROCKY_OS}"
+echo "Installation Media : ${ROCKY_MEDIUM}"
+echo "Hostgroup : ${ROCKY_HOSTGROUP}"
 
 echo
 
@@ -272,11 +252,11 @@ echo
 # Summary
 ###############################################################################
 
-header "03 - Foreman HostGroup Bootstrap Completed"
+header "03 - Foreman Hostgroup Bootstrap (Single Disk) Completed"
 
 if [ ${#FAILED_STEPS[@]} -eq 0 ]; then
 
-    ok "Foreman HostGroup Bootstrap completed successfully."
+    ok "Single Disk Hostgroup Bootstrap completed successfully."
 
 else
 
@@ -289,3 +269,6 @@ else
 fi
 
 echo
+
+exit 0
+
