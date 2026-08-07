@@ -3338,7 +3338,9 @@ echo -e "${YELLOW}--------------------------------------------------------------
 echo -e "${WHITE} Creating Provision_Hosts_el7${NC}"
 echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
 
+
 awx-manage shell <<'EOF'
+
 from awx.main.models import (
     Inventory,
     Project,
@@ -3346,9 +3348,22 @@ from awx.main.models import (
     Credential
 )
 
-project = Project.objects.get(name="Inventory-Git-Repo")
-inventory = Inventory.objects.get(name="centos-07-servers")
-credential = Credential.objects.get(name="Linux Admin Credential")
+
+project = Project.objects.get(
+    name="Inventory-Git-Repo"
+)
+
+
+inventory = Inventory.objects.get(
+    name="centos-07-servers"
+)
+
+
+credential = Credential.objects.get(
+    name="Linux Admin Credential"
+)
+
+
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Provision_Hosts_el7",
@@ -3362,95 +3377,259 @@ jt, created = JobTemplate.objects.get_or_create(
     }
 )
 
+
+
 jt.project = project
+
 jt.inventory = inventory
+
 jt.playbook = "provision_hosts_el7/Foreman_provision_hosts_el7.yml"
 
+
 jt.ask_inventory_on_launch = False
+
 jt.ask_limit_on_launch = False
+
 jt.limit = "localhost"
 
+
+
 jt.credentials.clear()
+
 jt.credentials.add(credential)
 
+
+
+###############################################################################
+# AWX Survey
+###############################################################################
+
 survey_spec = {
+
     "name": "Provision_Hosts_el7",
-    "description": "Provision EL7 Hosts",
+
+    "description": "Provision EL7 / EL8 / EL9 Hosts with RAID or Single Disk",
+
     "spec": [
+
         {
             "type": "text",
+
             "question_name": "Target Hosts",
-            "question_description": "Hostname(s) or wildcard (example: cent-07-01,cent-07-05 or cent-07-*)",
+
+            "question_description":
+            "Hostname(s) or wildcard "
+            "(example: cent-07-01,cent-07-05 or cent-07-*)",
+
             "variable": "target_hosts",
+
             "required": True,
+
             "default": "cent-07-*",
+
             "min": 1,
+
             "max": 1024
         },
+
+
         {
             "type": "integer",
+
             "question_name": "Foreman Server",
-            "question_description": "1 = Frontend (rocky-08-01), 2 = Backend (cent-07-01)",
+
+            "question_description":
+            "1 = Frontend (rocky-08-01), "
+            "2 = Backend (cent-07-01)",
+
             "variable": "foreman_server",
+
             "required": False,
+
             "default": 1,
+
             "min": 1,
+
             "max": 2
         },
+
+
         {
             "type": "integer",
-            "question_name": "Host Group",
-            "question_description": "1 = CentOS (Default), 2 = Rocky 8, 3 = Rocky 9.2, 4 = Rocky 9.8",
+
+            "question_name": "Operating System",
+
+            "question_description":
+            """
+1 = CentOS Linux 7
+2 = Rocky Linux 8.10
+3 = Rocky Linux 9.2
+4 = Rocky Linux 9.8
+""",
+
             "variable": "hostgroup",
-            "required": False,
+
+            "required": True,
+
             "default": 1,
+
             "min": 1,
+
             "max": 4
+        },
+
+
+        {
+            "type": "multiplechoice",
+
+            "question_name": "Disk Layout",
+
+            "question_description":
+            """
+raid   = RAID1 Installation
+single = Single Disk Installation
+""",
+
+            "variable": "disk_layout",
+
+            "required": True,
+
+            "default": "raid",
+
+            "choices": [
+                "raid",
+                "single"
+            ]
         }
+
     ]
+
 }
 
+
+
 jt.survey_enabled = True
+
 jt.survey_spec = survey_spec
 
+
 jt.save()
+
+
 
 print(
     f"Provision_Hosts_el7 "
     f"{'created' if created else 'updated'} successfully."
 )
-print(f"Credential assigned: {credential.name}")
-print("Default Limit: localhost")
-print("Survey enabled.")
+
+
+print(
+    f"Credential assigned: {credential.name}"
+)
+
+
+print(
+    "Default Limit: localhost"
+)
+
+
+print(
+    "Survey enabled."
+)
+
+
 EOF
 
 
-# ==============================================================
+
+# ==============================================================================
 # Verify Provision_Hosts_el7
-# ==============================================================
+# ==============================================================================
+
 
 awx-manage shell <<'EOF'
+
+
 from awx.main.models import JobTemplate
 
-jt = JobTemplate.objects.get(name="Provision_Hosts_el7")
+
+
+jt = JobTemplate.objects.get(
+    name="Provision_Hosts_el7"
+)
+
+
 
 print()
-print("Template :", jt.name)
-print("Playbook :", jt.playbook)
-print("Inventory:", jt.inventory.name)
-print("Limit    :", jt.limit)
-print("Survey   :", jt.survey_enabled)
 
-print("\nCredentials")
+print(
+    "Template :",
+    jt.name
+)
+
+
+print(
+    "Playbook :",
+    jt.playbook
+)
+
+
+print(
+    "Inventory:",
+    jt.inventory.name
+)
+
+
+print(
+    "Limit    :",
+    jt.limit
+)
+
+
+print(
+    "Survey   :",
+    jt.survey_enabled
+)
+
+
+
+print()
+
+print(
+    "Credentials"
+)
+
+
 for c in jt.credentials.all():
-    print(" -", c.name)
 
-print("\nSurvey Variables")
+    print(
+        " -",
+        c.name
+    )
+
+
+
+print()
+
+print(
+    "Survey Variables"
+)
+
+
 for q in jt.survey_spec["spec"]:
-    print(f" - {q['variable']} (default={q.get('default')})")
+
+    print(
+        f" - {q['variable']} "
+        f"(default={q.get('default')})"
+    )
+
+
 EOF
 
+
+
 echo
+
 echo "Provision_Hosts_el7 completed successfully."
 
 # ==============================================================================
@@ -3462,7 +3641,9 @@ echo -e "${YELLOW}--------------------------------------------------------------
 echo -e "${WHITE} Creating Provision_Hosts_el8${NC}"
 echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
 
+
 awx-manage shell <<'EOF'
+
 from awx.main.models import (
     Inventory,
     Project,
@@ -3470,9 +3651,22 @@ from awx.main.models import (
     Credential
 )
 
-project = Project.objects.get(name="Inventory-Git-Repo")
-inventory = Inventory.objects.get(name="rocky-8-servers")
-credential = Credential.objects.get(name="Linux Admin Credential")
+
+project = Project.objects.get(
+    name="Inventory-Git-Repo"
+)
+
+
+inventory = Inventory.objects.get(
+    name="rocky-8-servers"
+)
+
+
+credential = Credential.objects.get(
+    name="Linux Admin Credential"
+)
+
+
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Provision_Hosts_el8",
@@ -3486,95 +3680,251 @@ jt, created = JobTemplate.objects.get_or_create(
     }
 )
 
+
+
 jt.project = project
+
 jt.inventory = inventory
+
 jt.playbook = "provision_hosts_el8/Foreman_provision_hosts_el8.yml"
 
+
 jt.ask_inventory_on_launch = False
+
 jt.ask_limit_on_launch = False
+
 jt.limit = "localhost"
 
+
+
 jt.credentials.clear()
+
 jt.credentials.add(credential)
 
+
+
+###############################################################################
+# AWX Survey
+###############################################################################
+
 survey_spec = {
+
     "name": "Provision_Hosts_el8",
-    "description": "Provision EL8 Hosts",
+
+    "description": "Provision EL8 Hosts with RAID or Single Disk",
+
     "spec": [
+
         {
             "type": "text",
+
             "question_name": "Target Hosts",
-            "question_description": "Hostname(s) or wildcard (example: rocky-08-01,rocky-08-03 or rocky-08-*)",
+
+            "question_description":
+            "Hostname(s) or wildcard "
+            "(example: rocky-08-01,rocky-08-03 or rocky-08-*)",
+
             "variable": "target_hosts",
+
             "required": True,
+
             "default": "rocky-08-*",
+
             "min": 1,
+
             "max": 1024
         },
+
+
         {
             "type": "integer",
+
             "question_name": "Foreman Server",
-            "question_description": "1 = Frontend (rocky-08-01), 2 = Backend (cent-07-01)",
+
+            "question_description":
+            "1 = Frontend (rocky-08-01), "
+            "2 = Backend (cent-07-01)",
+
             "variable": "foreman_server",
+
             "required": False,
+
             "default": 1,
+
             "min": 1,
+
             "max": 2
         },
+
+
         {
             "type": "integer",
+
             "question_name": "Host Group",
-            "question_description": "1 = CentOS (Default), 2 = Rocky 8, 3 = Rocky 9.2, 4 = Rocky 9.8",
+
+            "question_description":
+            """
+1 = CentOS Linux 7
+2 = Rocky Linux 8.10
+3 = Rocky Linux 9.2
+4 = Rocky Linux 9.8
+""",
+
             "variable": "hostgroup",
-            "required": False,
-            "default": 1,
+
+            "required": True,
+
+            "default": 2,
+
             "min": 1,
+
             "max": 4
+        },
+
+
+        {
+            "type": "multiplechoice",
+
+            "question_name": "Disk Layout",
+
+            "question_description":
+            """
+raid   = RAID1 Installation
+single = Single Disk Installation
+""",
+
+            "variable": "disk_layout",
+
+            "required": True,
+
+            "default": "raid",
+
+            "choices": [
+                "raid",
+                "single"
+            ]
         }
+
     ]
+
 }
 
+
+
 jt.survey_enabled = True
+
 jt.survey_spec = survey_spec
 
+
 jt.save()
+
+
 
 print(
     f"Provision_Hosts_el8 "
     f"{'created' if created else 'updated'} successfully."
 )
-print(f"Credential assigned: {credential.name}")
-print("Default Limit: localhost")
-print("Survey enabled.")
+
+
+print(
+    f"Credential assigned: {credential.name}"
+)
+
+
+print(
+    "Default Limit: localhost"
+)
+
+
+print(
+    "Survey enabled."
+)
+
+
 EOF
 
 
-# ==============================================================
+
+# ==============================================================================
 # Verify Provision_Hosts_el8
-# ==============================================================
+# ==============================================================================
+
 
 awx-manage shell <<'EOF'
+
+
 from awx.main.models import JobTemplate
 
-jt = JobTemplate.objects.get(name="Provision_Hosts_el8")
+
+
+jt = JobTemplate.objects.get(
+    name="Provision_Hosts_el8"
+)
+
+
 
 print()
-print("Template :", jt.name)
-print("Playbook :", jt.playbook)
-print("Inventory:", jt.inventory.name)
-print("Limit    :", jt.limit)
-print("Survey   :", jt.survey_enabled)
+
+print(
+    "Template :",
+    jt.name
+)
+
+
+print(
+    "Playbook :",
+    jt.playbook
+)
+
+
+print(
+    "Inventory:",
+    jt.inventory.name
+)
+
+
+print(
+    "Limit    :",
+    jt.limit
+)
+
+
+print(
+    "Survey   :",
+    jt.survey_enabled
+)
+
+
 
 print("\nCredentials")
+
+
 for c in jt.credentials.all():
-    print(" -", c.name)
+
+    print(
+        " -",
+        c.name
+    )
+
+
 
 print("\nSurvey Variables")
+
+
 for q in jt.survey_spec["spec"]:
-    print(f" - {q['variable']} (default={q.get('default')})")
+
+    print(
+        f" - {q['variable']} "
+        f"(default={q.get('default')})"
+    )
+
+
 EOF
 
+
+
 echo
+
 echo "Provision_Hosts_el8 completed successfully."
 
 # ==============================================================================
@@ -3586,7 +3936,9 @@ echo -e "${YELLOW}--------------------------------------------------------------
 echo -e "${WHITE} Creating Provision_Hosts_el9${NC}"
 echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
 
+
 awx-manage shell <<'EOF'
+
 from awx.main.models import (
     Inventory,
     Project,
@@ -3594,9 +3946,22 @@ from awx.main.models import (
     Credential
 )
 
-project = Project.objects.get(name="Inventory-Git-Repo")
-inventory = Inventory.objects.get(name="rocky-9-servers")
-credential = Credential.objects.get(name="Linux Admin Credential")
+
+project = Project.objects.get(
+    name="Inventory-Git-Repo"
+)
+
+
+inventory = Inventory.objects.get(
+    name="rocky-9-servers"
+)
+
+
+credential = Credential.objects.get(
+    name="Linux Admin Credential"
+)
+
+
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Provision_Hosts_el9",
@@ -3610,97 +3975,253 @@ jt, created = JobTemplate.objects.get_or_create(
     }
 )
 
+
+
 jt.project = project
+
 jt.inventory = inventory
+
 jt.playbook = "provision_hosts_el9/Foreman_provision_hosts_el9.yml"
 
+
 jt.ask_inventory_on_launch = False
+
 jt.ask_limit_on_launch = False
+
 jt.limit = "localhost"
 
+
+
 jt.credentials.clear()
+
 jt.credentials.add(credential)
 
+
+
+###############################################################################
+# AWX Survey
+###############################################################################
+
 survey_spec = {
+
     "name": "Provision_Hosts_el9",
-    "description": "Provision EL9 Hosts",
+
+    "description":
+    "Provision EL9 Hosts with RAID or Single Disk",
+
     "spec": [
+
         {
             "type": "text",
+
             "question_name": "Target Hosts",
-            "question_description": "Hostname(s) or wildcard (example: rocky-09-01,rocky-09-03 or rocky-09-*)",
+
+            "question_description":
+            "Hostname(s) or wildcard "
+            "(example: rocky-09-01,rocky-09-03 or rocky-09-*)",
+
             "variable": "target_hosts",
+
             "required": True,
+
             "default": "rocky-09-*",
+
             "min": 1,
+
             "max": 1024
         },
+
+
         {
             "type": "integer",
+
             "question_name": "Foreman Server",
-            "question_description": "1 = Frontend (rocky-08-01), 2 = Backend (cent-07-01)",
+
+            "question_description":
+            "1 = Frontend (rocky-08-01), "
+            "2 = Backend (cent-07-01)",
+
             "variable": "foreman_server",
+
             "required": False,
+
             "default": 1,
+
             "min": 1,
+
             "max": 2
         },
+
+
         {
             "type": "integer",
+
             "question_name": "Host Group",
-            "question_description": "1 = CentOS (Default), 2 = Rocky 8, 3 = Rocky 9.2, 4 = Rocky 9.8",
+
+            "question_description":
+            """
+1 = CentOS Linux 7
+2 = Rocky Linux 8.10
+3 = Rocky Linux 9.2
+4 = Rocky Linux 9.8
+""",
+
             "variable": "hostgroup",
-            "required": False,
-            "default": 1,
+
+            "required": True,
+
+            "default": 4,
+
             "min": 1,
+
             "max": 4
+        },
+
+
+        {
+            "type": "multiplechoice",
+
+            "question_name": "Disk Layout",
+
+            "question_description":
+            """
+raid   = RAID1 Installation
+single = Single Disk Installation
+""",
+
+            "variable": "disk_layout",
+
+            "required": True,
+
+            "default": "raid",
+
+            "choices": [
+                "raid",
+                "single"
+            ]
         }
+
     ]
+
 }
 
+
+
 jt.survey_enabled = True
+
 jt.survey_spec = survey_spec
 
+
 jt.save()
+
+
 
 print(
     f"Provision_Hosts_el9 "
     f"{'created' if created else 'updated'} successfully."
 )
-print(f"Credential assigned: {credential.name}")
-print("Default Limit: localhost")
-print("Survey enabled.")
+
+
+print(
+    f"Credential assigned: {credential.name}"
+)
+
+
+print(
+    "Default Limit: localhost"
+)
+
+
+print(
+    "Survey enabled."
+)
+
+
 EOF
 
 
-# ==============================================================
+
+# ==============================================================================
 # Verify Provision_Hosts_el9
-# ==============================================================
+# ==============================================================================
+
 
 awx-manage shell <<'EOF'
+
+
 from awx.main.models import JobTemplate
 
-jt = JobTemplate.objects.get(name="Provision_Hosts_el9")
+
+
+jt = JobTemplate.objects.get(
+    name="Provision_Hosts_el9"
+)
+
+
 
 print()
-print("Template :", jt.name)
-print("Playbook :", jt.playbook)
-print("Inventory:", jt.inventory.name)
-print("Limit    :", jt.limit)
-print("Survey   :", jt.survey_enabled)
+
+print(
+    "Template :",
+    jt.name
+)
+
+
+print(
+    "Playbook :",
+    jt.playbook
+)
+
+
+print(
+    "Inventory:",
+    jt.inventory.name
+)
+
+
+print(
+    "Limit    :",
+    jt.limit
+)
+
+
+print(
+    "Survey   :",
+    jt.survey_enabled
+)
+
+
 
 print("\nCredentials")
+
+
 for c in jt.credentials.all():
-    print(" -", c.name)
+
+    print(
+        " -",
+        c.name
+    )
+
+
 
 print("\nSurvey Variables")
+
+
 for q in jt.survey_spec["spec"]:
-    print(f" - {q['variable']} (default={q.get('default')})")
+
+    print(
+        f" - {q['variable']} "
+        f"(default={q.get('default')})"
+    )
+
+
 EOF
 
-echo
-echo "Provision_Hosts_el9 completed successfully."
 
+
+echo
+
+echo "Provision_Hosts_el9 completed successfully."
 # ==============================================================================
 # Workflow : Provision_Hosts_el7_Subscription_Patching_EL7
 # ==============================================================================
