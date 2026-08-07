@@ -155,6 +155,7 @@ curl -L -o 05-bootstrap-el8toel9.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap/05-bootstrap-el8toel9.sh?$(date +%s)" && \
 chmod +x 01_foreman_pxe_bootstrap.sh \
          02_foreman_katello_bootstrap.sh \
+         02_foreman_pxe_bootstrap_single_disk.sh \
          03_foreman_hostgroup_bootstrap.sh \
          04-bootstrap-el7toel8.sh \
          05-bootstrap-el8toel9.sh
