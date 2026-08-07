@@ -62,59 +62,6 @@
     disk_layout: "{{ disk_layout | default('raid', true) }}"
     
     
-    ###########################################################################
-    # Subnet Mapping
-    #
-    # CentOS 7          -> vgs-subnet-centos  (ID: 1)
-    # Rocky 8/9         -> vgs-subnet-rockyos (ID: 2)
-    #
-    ###########################################################################
-    
-    subnet_id: >-
-      {{
-        {
-          '1': 1,
-          '2': 2,
-          '3': 2,
-          '4': 2
-        }[hostgroup | string]
-      }}
-    
-    
-    ###########################################################################
-    # Hostgroup Mapping
-    #
-    # RAID Hostgroups
-    # -------------------------------
-    # 1-raid = CentOS Linux 7 RAID
-    #          Hostgroup ID: 5
-    #
-    # 2-raid = Rocky Linux 8.10 RAID
-    #          Hostgroup ID: 6
-    #
-    # 3-raid = Rocky Linux 9.2 RAID
-    #          Hostgroup ID: 8
-    #
-    # 4-raid = Rocky Linux 9.8 RAID
-    #          Hostgroup ID: 7
-    #
-    #
-    # Single Disk Hostgroups
-    # -------------------------------
-    # 1-single = CentOS Linux 7 SingleDisk
-    #            Hostgroup ID: 9
-    #
-    # 2-single = Rocky Linux 8.10 SingleDisk
-    #            Hostgroup ID: 10
-    #
-    # 3-single = Rocky Linux 9.2 SingleDisk
-    #            Hostgroup ID: 11
-    #
-    # 4-single = Rocky Linux 9.8 SingleDisk
-    #            Hostgroup ID: 12
-    #
-    ###########################################################################
-    
     hostgroup_id: >-
       {{
         {
@@ -132,23 +79,6 @@
       }}
     
     
-    ###########################################################################
-    # Operating System Mapping
-    #
-    # 1 = CentOS Linux 7
-    #     OS ID: 7
-    #
-    # 2 = Rocky Linux 8.10
-    #     OS ID: 8
-    #
-    # 3 = Rocky Linux 9.2
-    #     OS ID: 10
-    #
-    # 4 = Rocky Linux 9.8
-    #     OS ID: 9
-    #
-    ###########################################################################
-    
     operatingsystem_id: >-
       {{
         {
@@ -159,23 +89,6 @@
         }[hostgroup | string]
       }}
     
-    
-    ###########################################################################
-    # Installation Media Mapping
-    #
-    # 1 = CentOS 7 Remote
-    #     Media ID: 15
-    #
-    # 2 = Rocky 8 Remote
-    #     Media ID: 16
-    #
-    # 3 = Rocky 9.2 Remote
-    #     Media ID: 18
-    #
-    # 4 = Rocky 9 Remote (9.8)
-    #     Media ID: 17
-    #
-    ###########################################################################
     
     medium_id: >-
       {{
@@ -188,24 +101,7 @@
       }}
     
     
-    ###########################################################################
-    # Partition Table Mapping
-    #
-    # RAID:
-    #   Uses RAID1 Kickstart partition table
-    #
-    # Single Disk:
-    #   Uses normal single disk partition table
-    #
-    ###########################################################################
-    
-    ptable_id: >-
-      {{
-        {
-          'raid': 126,
-          'single': 127
-        }[disk_layout]
-      }}
+    ptable_id: 126
 
   tasks:
 
