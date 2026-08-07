@@ -365,7 +365,7 @@ else
 
         error "Template import failed."
 
-        record_failure "${TEMPLATE_NAME"
+        record_failure "${TEMPLATE_NAME}"
 
     fi
 
