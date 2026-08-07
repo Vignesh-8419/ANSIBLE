@@ -1,23 +1,25 @@
 #!/bin/bash
 ###############################################################################
-# 03 - Foreman Hostgroup Bootstrap - RAID
+# 03 - Foreman Hostgroup Bootstrap RAID
 #
-# Creates Hostgroups:
+# Creates:
+#   - CentOS7 RAID Hostgroup
+#   - Rocky8 RAID Hostgroup
+#   - Rocky9.2 RAID Hostgroup
+#   - Rocky9.8 RAID Hostgroup
 #
-#   CentOS7-RAID
-#   Rocky8-RAID
-#   Rocky9.2-RAID
-#   Rocky9.8-RAID
-#
-# RAID vs SingleDisk is controlled by Hostgroup.
-# Operating Systems remain standard Foreman OS objects.
+# RAID provisioning is controlled by Hostgroup
+# OS objects remain single per release
 ###############################################################################
 
 set +e
 
+
 FAILED_STEPS=()
 
-record_failure() {
+
+record_failure()
+{
     FAILED_STEPS+=("$1")
 }
 
@@ -39,32 +41,44 @@ NC='\033[0m'
 # Logging
 ###############################################################################
 
-info() {
+info()
+{
     echo -e "${CYAN}$1${NC}"
 }
 
-ok() {
+
+ok()
+{
     echo -e "${GREEN}[OK]${NC} $1"
 }
 
-skip() {
+
+skip()
+{
     echo -e "${YELLOW}[SKIP]${NC} $1"
 }
 
-warn() {
+
+warn()
+{
     echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
-error() {
+
+error()
+{
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-header() {
+
+header()
+{
     echo
     echo -e "${BLUE}============================================================${NC}"
     echo -e "${WHITE}$1${NC}"
     echo -e "${BLUE}============================================================${NC}"
 }
+
 
 
 ###############################################################################
@@ -74,55 +88,302 @@ header() {
 FOREMAN_USER="${FOREMAN_USER:-admin}"
 FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
 
+
 HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
 
 
-ORGANIZATION="Default Organization"
-LOCATION="Default Location"
+header "03 - Foreman RAID Hostgroup Bootstrap"
 
 
 
 ###############################################################################
-# Function : Check Hostgroup
+# Verify Required Objects
 ###############################################################################
 
-check_hostgroup()
+verify_required()
 {
 
-HG="$1"
+TYPE="$1"
+NAME="$2"
+
+
+case "$TYPE" in
+
+
+os)
+
+    if $HAMMER os info \
+        --title "$NAME" >/dev/null 2>&1
+    then
+        ok "Operating System exists : $NAME"
+    else
+        error "Operating System missing : $NAME"
+        record_failure "$NAME OS missing"
+    fi
+
+;;
+
+
+medium)
+
+    if $HAMMER medium info \
+        --name "$NAME" >/dev/null 2>&1
+    then
+        ok "Installation Media exists : $NAME"
+    else
+        error "Installation Media missing : $NAME"
+        record_failure "$NAME Media missing"
+    fi
+
+;;
+
+
+template)
+
+    if $HAMMER template info \
+        --name "$NAME" >/dev/null 2>&1
+    then
+        ok "PXE Template exists : $NAME"
+    else
+        error "PXE Template missing : $NAME"
+        record_failure "$NAME Template missing"
+    fi
+
+;;
+
+
+partition)
+
+    if $HAMMER partition-table list | grep -q "$NAME"
+    then
+        ok "Partition Table exists : $NAME"
+    else
+        error "Partition Table missing : $NAME"
+        record_failure "$NAME Partition missing"
+    fi
+
+;;
+
+
+esac
+
+}
+
+
+###############################################################################
+# Verify RAID Dependencies
+###############################################################################
+
+header "Checking RAID Dependencies"
+
+
+verify_required os "CentOSLinux 7"
+verify_required os "RockyLinux 8.10"
+verify_required os "RockyLinux 9.2"
+verify_required os "RockyLinux 9.8"
+
+
+verify_required medium "CentOS 7 Remote"
+verify_required medium "Rocky 8 Remote"
+verify_required medium "Rocky 9.2 Remote"
+verify_required medium "Rocky 9 Remote"
+
+
+verify_required template \
+"PXEGrub2 CentOS UEFI Static Kickstart"
+
+
+verify_required template \
+"PXEGrub2 RockyOS UEFI Static Kickstart"
+
+
+verify_required template \
+"PXEGrub2 Rocky9.2 UEFI Static Kickstart"
+
+
+verify_required template \
+"PXEGrub2 Rocky9.8 UEFI Static Kickstart"
+
+
+echo
+
+###############################################################################
+# Hostgroup Create / Update Function
+###############################################################################
+
+create_hostgroup()
+{
+
+HG_NAME="$1"
+PARENT="$2"
+OS="$3"
+MEDIA="$4"
+PARTITION="$5"
+PXE_TEMPLATE="$6"
+
+
+header "Configuring Hostgroup : ${HG_NAME}"
+
+
+###############################################################################
+# Check Hostgroup
+###############################################################################
+
+info "Checking Hostgroup ${HG_NAME}"
 
 
 if $HAMMER hostgroup info \
-    --name "${HG}" >/dev/null 2>&1; then
+    --name "${HG_NAME}" >/dev/null 2>&1
+then
 
-    skip "Hostgroup ${HG} already exists."
+    skip "Hostgroup already exists."
 
 else
 
-    info "Creating Hostgroup ${HG}..."
+    info "Creating Hostgroup..."
 
     $HAMMER hostgroup create \
-        --name "${HG}" \
-        --organization "${ORGANIZATION}" \
-        --location "${LOCATION}"
+        --name "${HG_NAME}" \
+        --parent "${PARENT}" \
+        --organization "Default Organization" \
+        --location "Default Location"
 
 
     if [ $? -eq 0 ]; then
 
-        ok "Hostgroup ${HG} created."
+        ok "Hostgroup created."
 
     else
 
-        error "Failed creating ${HG}."
+        error "Hostgroup creation failed."
+        record_failure "${HG_NAME}"
 
-        record_failure "${HG}"
+        return
 
     fi
 
 fi
 
 
+
+###############################################################################
+# Assign Operating System
+###############################################################################
+
+info "Assigning Operating System : ${OS}"
+
+
+$HAMMER hostgroup set-parameter \
+    --hostgroup "${HG_NAME}" \
+    --name "os_title" \
+    --value "${OS}" \
+    >/dev/null 2>&1 || true
+
+
+
+###############################################################################
+# Assign Installation Media
+###############################################################################
+
+info "Assigning Installation Media : ${MEDIA}"
+
+
+$HAMMER hostgroup update \
+    --name "${HG_NAME}" \
+    --medium "${MEDIA}" \
+    >/dev/null 2>&1
+
+
+if [ $? -eq 0 ]; then
+
+    ok "Installation Media assigned."
+
+else
+
+    warn "Installation Media assignment failed."
+
+fi
+
+
+
+###############################################################################
+# Assign Partition Table
+###############################################################################
+
+info "Assigning Partition Table : ${PARTITION}"
+
+
+$HAMMER hostgroup update \
+    --name "${HG_NAME}" \
+    --partition-table "${PARTITION}" \
+    >/dev/null 2>&1
+
+
+if [ $? -eq 0 ]; then
+
+    ok "Partition Table assigned."
+
+else
+
+    warn "Partition Table assignment failed."
+
+fi
+
+
+
+###############################################################################
+# Assign PXE Template
+###############################################################################
+
+info "Assigning PXE Template : ${PXE_TEMPLATE}"
+
+
+$HAMMER os add-provisioning-template \
+    --title "${OS}" \
+    --provisioning-template "${PXE_TEMPLATE}" \
+    >/dev/null 2>&1
+
+
+if [ $? -eq 0 ]; then
+
+    ok "PXE Template assigned."
+
+else
+
+    warn "PXE Template assignment failed."
+
+fi
+
+
+
+###############################################################################
+# RAID Parameters
+###############################################################################
+
+info "Setting RAID parameters"
+
+
+$HAMMER hostgroup set-parameter \
+    --hostgroup "${HG_NAME}" \
+    --name "storage_layout" \
+    --value "raid1" \
+    >/dev/null 2>&1 || true
+
+
+
+$HAMMER hostgroup set-parameter \
+    --hostgroup "${HG_NAME}" \
+    --name "disk_mode" \
+    --value "RAID" \
+    >/dev/null 2>&1 || true
+
+
+
+ok "${HG_NAME} configuration completed."
+
+
 echo
+
 
 }
 
@@ -135,211 +396,64 @@ echo
 header "Creating RAID Hostgroups"
 
 
-check_hostgroup "CentOS7-RAID"
-
-check_hostgroup "Rocky8-RAID"
-
-check_hostgroup "Rocky9.2-RAID"
-
-check_hostgroup "Rocky9.8-RAID"
-
-
-###############################################################################
-# Verification
-###############################################################################
-
-header "Hostgroups"
-
-$HAMMER hostgroup list
-
-echo
-
-###############################################################################
-# Hostgroup Configuration Function
-###############################################################################
-
-configure_hostgroup()
-{
-
-HG="$1"
-OS="$2"
-MEDIA="$3"
-PXE_TEMPLATE="$4"
-PARTITION="$5"
-
-
-###############################################################################
-# Verify Hostgroup
-###############################################################################
-
-info "Configuring Hostgroup : ${HG}"
-
-
-###############################################################################
-# Operating System
-###############################################################################
-
-info "Setting Operating System : ${OS}"
-
-
-$HAMMER hostgroup set-parameter \
-    --hostgroup "${HG}" \
-    --name "os_name" \
-    --value "${OS}" 2>/dev/null || true
-
-
-
-###############################################################################
-# Installation Media
-###############################################################################
-
-info "Setting Installation Media : ${MEDIA}"
-
-
-$HAMMER hostgroup update \
-    --name "${HG}" \
-    --medium "${MEDIA}" 2>/dev/null
-
-
-if [ $? -eq 0 ]; then
-
-    ok "Installation media assigned."
-
-else
-
-    warn "Unable to assign installation media."
-
-fi
-
-
-
-###############################################################################
-# Partition Table
-###############################################################################
-
-info "Setting Partition Table : ${PARTITION}"
-
-
-$HAMMER hostgroup update \
-    --name "${HG}" \
-    --partition-table "${PARTITION}" 2>/dev/null
-
-
-if [ $? -eq 0 ]; then
-
-    ok "Partition table assigned."
-
-else
-
-    warn "Partition table assignment failed."
-
-fi
-
-
-
-###############################################################################
-# PXE Template
-###############################################################################
-
-info "Setting PXE Template : ${PXE_TEMPLATE}"
-
-
-$HAMMER os add-provisioning-template \
-    --title "${OS}" \
-    --provisioning-template "${PXE_TEMPLATE}" \
-    2>/dev/null || true
-
-
-
-###############################################################################
-# Hostgroup Parameters
-###############################################################################
-
-info "Adding RAID parameters"
-
-
-$HAMMER hostgroup set-parameter \
-    --hostgroup "${HG}" \
-    --name "disk_layout" \
-    --value "raid1" \
-    2>/dev/null || true
-
-
-$HAMMER hostgroup set-parameter \
-    --hostgroup "${HG}" \
-    --name "storage_type" \
-    --value "RAID1" \
-    2>/dev/null || true
-
-
-
-ok "${HG} configured."
-
-echo
-
-
-}
-
-
-
-###############################################################################
-# RAID Partition Tables
-###############################################################################
-
-header "Configuring RAID Hostgroups"
-
-
 
 ###############################################################################
 # CentOS 7 RAID
 ###############################################################################
 
-configure_hostgroup \
+create_hostgroup \
 "CentOS7-RAID" \
+"" \
 "CentOSLinux 7" \
 "CentOS 7 Remote" \
-"PXEGrub2 CentOS UEFI Static Kickstart" \
-"CentOS7 RAID"
+"CentOS7 RAID" \
+"PXEGrub2 CentOS UEFI Static Kickstart"
 
 
 
 ###############################################################################
-# Rocky Linux 8 RAID
+# Rocky 8 RAID
 ###############################################################################
 
-configure_hostgroup \
+create_hostgroup \
 "Rocky8-RAID" \
+"" \
 "RockyLinux 8.10" \
 "Rocky 8 Remote" \
-"PXEGrub2 RockyOS UEFI Static Kickstart" \
-"Rocky8 RAID"
+"Rocky8 RAID" \
+"PXEGrub2 RockyOS UEFI Static Kickstart"
 
 
 
 ###############################################################################
-# Rocky Linux 9.2 RAID
+# Rocky 9.2 RAID
 ###############################################################################
 
-configure_hostgroup \
+create_hostgroup \
 "Rocky9.2-RAID" \
+"" \
 "RockyLinux 9.2" \
 "Rocky 9.2 Remote" \
-"PXEGrub2 Rocky9.2 UEFI Static Kickstart" \
-"Rocky9.2 RAID"
+"Rocky9.2 RAID" \
+"PXEGrub2 Rocky9.2 UEFI Static Kickstart"
 
 
 
 ###############################################################################
-# Rocky Linux 9.8 RAID
+# Rocky 9.8 RAID
 ###############################################################################
 
-configure_hostgroup \
+create_hostgroup \
 "Rocky9.8-RAID" \
+"" \
 "RockyLinux 9.8" \
 "Rocky 9 Remote" \
-"PXEGrub2 Rocky9.8 UEFI Static Kickstart" \
-"Rocky9.8 RAID"
+"Rocky9.8 RAID" \
+"PXEGrub2 Rocky9.8 UEFI Static Kickstart"
 
+
+
+echo
 
 ###############################################################################
 # Verification
@@ -361,8 +475,9 @@ $HAMMER hostgroup list
 echo
 
 
+
 ###############################################################################
-# Detailed Verification
+# Detailed Hostgroup Verification
 ###############################################################################
 
 verify_hostgroup()
@@ -400,58 +515,121 @@ verify_hostgroup "Rocky9.8-RAID"
 
 
 ###############################################################################
-# PXE Template Verification
+# Verify RAID Parameters
 ###############################################################################
 
-header "RAID PXE Template Verification"
+header "RAID Parameter Verification"
 
 
-$HAMMER template list | grep -i "RAID" || true
+
+check_parameter()
+{
+
+HG="$1"
+PARAM="$2"
+
+
+info "Checking ${PARAM} on ${HG}"
+
+
+$HAMMER hostgroup info \
+    --name "${HG}" |
+    grep "${PARAM}" || true
 
 
 echo
 
+}
+
+
+
+check_parameter \
+"CentOS7-RAID" \
+"storage_layout"
+
+
+check_parameter \
+"Rocky8-RAID" \
+"storage_layout"
+
+
+check_parameter \
+"Rocky9.2-RAID" \
+"storage_layout"
+
+
+check_parameter \
+"Rocky9.8-RAID" \
+"storage_layout"
+
 
 
 ###############################################################################
-# Operating System Template Verification
+# PXE Template Mapping Verification
 ###############################################################################
 
-header "Operating System PXE Mapping"
+header "RAID PXE Template Mapping"
+
 
 
 verify_os_template()
 {
 
 OS="$1"
+TEMPLATE="$2"
 
-
-echo
 
 info "${OS}"
 
 
-$HAMMER os info \
+if $HAMMER os info \
     --title "${OS}" |
-    awk '/Default templates:/,/Architectures:/'
+    grep -q "${TEMPLATE}"
 
+then
+
+    ok "${TEMPLATE} mapped."
+
+else
+
+    warn "${TEMPLATE} not mapped."
+
+fi
+
+
+echo
 
 }
 
 
 
-verify_os_template "CentOSLinux 7"
+verify_os_template \
+"CentOSLinux 7" \
+"PXEGrub2 CentOS UEFI Static Kickstart"
 
-verify_os_template "RockyLinux 8.10"
 
-verify_os_template "RockyLinux 9.2"
 
-verify_os_template "RockyLinux 9.8"
+verify_os_template \
+"RockyLinux 8.10" \
+"PXEGrub2 RockyOS UEFI Static Kickstart"
+
+
+
+verify_os_template \
+"RockyLinux 9.2" \
+"PXEGrub2 Rocky9.2 UEFI Static Kickstart"
+
+
+
+verify_os_template \
+"RockyLinux 9.8" \
+"PXEGrub2 Rocky9.8 UEFI Static Kickstart"
+
 
 
 
 ###############################################################################
-# Hostgroup Summary
+# RAID Hostgroup Summary
 ###############################################################################
 
 header "RAID Hostgroup Summary"
@@ -459,7 +637,7 @@ header "RAID Hostgroup Summary"
 
 echo
 
-printf "%-25s %-30s %-35s\n" \
+printf "%-20s %-25s %-45s\n" \
 "HOSTGROUP" \
 "OPERATING SYSTEM" \
 "PXE TEMPLATE"
@@ -469,28 +647,28 @@ echo "--------------------------------------------------------------------------
 
 
 
-printf "%-25s %-30s %-35s\n" \
+printf "%-20s %-25s %-45s\n" \
 "CentOS7-RAID" \
 "CentOSLinux 7" \
 "PXEGrub2 CentOS UEFI Static Kickstart"
 
 
 
-printf "%-25s %-30s %-35s\n" \
+printf "%-20s %-25s %-45s\n" \
 "Rocky8-RAID" \
 "RockyLinux 8.10" \
 "PXEGrub2 RockyOS UEFI Static Kickstart"
 
 
 
-printf "%-25s %-30s %-35s\n" \
+printf "%-20s %-25s %-45s\n" \
 "Rocky9.2-RAID" \
 "RockyLinux 9.2" \
 "PXEGrub2 Rocky9.2 UEFI Static Kickstart"
 
 
 
-printf "%-25s %-30s %-35s\n" \
+printf "%-20s %-25s %-45s\n" \
 "Rocky9.8-RAID" \
 "RockyLinux 9.8" \
 "PXEGrub2 Rocky9.8 UEFI Static Kickstart"
@@ -501,6 +679,7 @@ echo
 
 
 
+
 ###############################################################################
 # Final Summary
 ###############################################################################
@@ -508,7 +687,9 @@ echo
 header "03 - RAID Hostgroup Bootstrap Completed"
 
 
-if [ ${#FAILED_STEPS[@]} -eq 0 ]; then
+
+if [ ${#FAILED_STEPS[@]} -eq 0 ]
+then
 
     ok "RAID Hostgroup Bootstrap completed successfully."
 
@@ -517,9 +698,11 @@ else
     warn "Completed with ${#FAILED_STEPS[@]} failure(s)."
 
 
-    for step in "${FAILED_STEPS[@]}";
+    for step in "${FAILED_STEPS[@]}"
     do
-        error "$step"
+
+        error "${step}"
+
     done
 
 fi
@@ -528,10 +711,6 @@ fi
 
 echo
 
-
-###############################################################################
-# Script Completed
-###############################################################################
 
 ok "03_foreman_hostgroup_bootstrap_raid.sh finished."
 
