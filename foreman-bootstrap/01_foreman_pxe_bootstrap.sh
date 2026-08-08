@@ -609,15 +609,14 @@ create_subnet() {
 
         info "Creating subnet ${SUBNET_NAME}..."
 
-        $HAMMER subnet create \
-            --name "${SUBNET_NAME}" \
-            --network "${NETWORK}" \
-            --mask "${MASK}" \
-            --gateway "${GATEWAY}" \
-            --dns-primary "${DNS}" \
-            --domain "${DOMAIN}" \
-            --boot-mode DHCP \
-            --ipam DHCP
+    $HAMMER subnet create \
+        --name "${SUBNET_NAME}" \
+        --network "${NETWORK}" \
+        --mask "${MASK}" \
+        --gateway "${GATEWAY}" \
+        --dns-primary "${DNS}" \
+        --boot-mode DHCP \
+        --ipam DHCP
 
         if [ $? -eq 0 ]; then
             ok "${SUBNET_NAME} created."
@@ -628,6 +627,37 @@ create_subnet() {
 
     fi
 
+###########################################################################
+# Assign Domain
+###########################################################################
+
+DOMAIN_ID=$(
+$HAMMER domain list |
+awk -F'|' -v d="${DOMAIN}" '
+{
+ gsub(/^ +| +$/, "",$1)
+ gsub(/^ +| +$/, "",$2)
+
+ if($2==d)
+    print $1
+}'
+)
+
+
+if [ -n "${DOMAIN_ID}" ]
+then
+
+    $HAMMER subnet update \
+        --name "${SUBNET_NAME}" \
+        --domain-ids "${DOMAIN_ID}"
+
+    ok "Domain ${DOMAIN} assigned to ${SUBNET_NAME}"
+
+else
+
+    warn "Domain ${DOMAIN} not found"
+
+fi
 
     ###########################################################################
     # Assign Smart Proxies
