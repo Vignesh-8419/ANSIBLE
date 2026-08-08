@@ -1,16 +1,43 @@
 #!/bin/bash
+
 ###############################################################################
-# Foreman Katello Bootstrap
+# 04 - Foreman Katello Bootstrap
+#
 # EL7 -> EL8 Upgrade Bootstrap
+#
+# Purpose:
+#
+#   - Create CentOS 7 migration product
+#   - Create BaseOS / Updates / ELevate repositories
+#   - Sync repositories
+#   - Create Content View
+#   - Publish Content View
+#   - Create Activation Key
+#   - Generate bootstrap command
+#
+# Supports:
+#
+#   CentOS Linux 7
+#   ELevate migration repositories
+#
 ###############################################################################
 
 set +e
 
+
+###############################################################################
+# Failure Tracking
+###############################################################################
+
 FAILED_STEPS=()
 
-record_failure() {
+
+record_failure()
+{
     FAILED_STEPS+=("$1")
 }
+
+
 
 ###############################################################################
 # Colors
@@ -24,118 +51,196 @@ CYAN='\033[1;36m'
 WHITE='\033[1;37m'
 NC='\033[0m'
 
+
+
 ###############################################################################
-# Logging Functions
+# Logging
 ###############################################################################
 
-info() {
+info()
+{
     echo -e "${CYAN}$1${NC}"
 }
 
-ok() {
+
+ok()
+{
     echo -e "${GREEN}[OK]${NC} $1"
 }
 
-skip() {
+
+skip()
+{
     echo -e "${YELLOW}[SKIP]${NC} $1"
 }
 
-warn() {
+
+warn()
+{
     echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
-error() {
+
+error()
+{
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-header() {
+
+header()
+{
     echo
     echo -e "${BLUE}============================================================${NC}"
     echo -e "${WHITE}$1${NC}"
     echo -e "${BLUE}============================================================${NC}"
 }
 
+
+
 ###############################################################################
-# Variables
+# Foreman Configuration
 ###############################################################################
 
 FOREMAN_USER="${FOREMAN_USER:-admin}"
+
 FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
+
 
 HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
 
+
 ORG="Default Organization"
+
+
 LOCATION="Default Location"
 
+
+
+###############################################################################
+# EL7 Migration Configuration
+###############################################################################
+
 PRODUCT_NAME="CentOS 7"
+
+
+
+CONTENT_VIEW="EL7toEL8-CV"
+
+
+ACTIVATION_KEY="el7toel8-key"
+
+
 
 ###############################################################################
 # Repository Configuration
 ###############################################################################
 
 BASE_REPO="CentOS-07-BaseOS"
-BASE_REPO_ID="1"
+
 BASE_URL="http://192.168.253.136/repo/centos"
 
+
+
 UPDATE_REPO="CentOS-07-Updates"
-UPDATE_REPO_ID="2"
+
 UPDATE_URL="http://192.168.253.136/repo/installed_rhel7"
 
+
+
 ELEVATE_REPO="CentOS-07-ELevate"
-ELEVATE_REPO_ID="25"
+
 ELEVATE_URL="http://192.168.253.136/repo/elevate"
 
-CONTENT_VIEW="EL7toEL8-CV"
-ACTIVATION_KEY="el7toel8-key"
+
 
 ###############################################################################
-# Resume Paused Tasks
+# Resume Paused Foreman Tasks
 ###############################################################################
 
 resume_paused_tasks()
 {
-    header "Recovering Paused Foreman Tasks"
 
-    local COUNT
+header "Recovering Paused Foreman Tasks"
 
-    COUNT=$(
-        $HAMMER task list \
-            --search "state = paused" 2>/dev/null |
-            grep -c paused || true
-    )
 
-    if [ "$COUNT" -eq 0 ]; then
-        ok "No paused tasks found."
-        return 0
-    fi
+COUNT=$(
+$HAMMER task list \
+--search "state = paused" 2>/dev/null |
+grep -c paused || true
+)
 
-    warn "Found ${COUNT} paused task(s)."
 
-    $HAMMER task resume \
-        --search "state = paused"
 
-    for i in {1..6}; do
+if [ "$COUNT" -eq 0 ]
 
-        COUNT=$(
-            $HAMMER task list \
-                --search "state = paused" 2>/dev/null |
-                grep -c paused || true
-        )
+then
 
-        if [ "$COUNT" -eq 0 ]; then
-            ok "Paused tasks cleared."
-            return 0
-        fi
-
-        warn "${COUNT} paused task(s) still remain. Waiting..."
-        sleep 10
-    done
-
-    warn "Some paused tasks still remain."
-    warn "Continuing because the repository lock may already be released."
+    ok "No paused tasks found."
 
     return 0
+
+fi
+
+
+
+warn "Found ${COUNT} paused task(s)."
+
+
+
+$HAMMER task resume \
+--search "state = paused"
+
+
+
+sleep 10
+
+
+
+COUNT=$(
+$HAMMER task list \
+--search "state = paused" 2>/dev/null |
+grep -c paused || true
+)
+
+
+
+if [ "$COUNT" -eq 0 ]
+
+then
+
+    ok "Paused tasks cleared."
+
+else
+
+    warn "${COUNT} paused task(s) still remain."
+
+fi
+
+
 }
+
+
+
+###############################################################################
+# Get Repository ID
+###############################################################################
+
+get_repo_id()
+{
+
+REPO="$1"
+
+
+$HAMMER repository info \
+--organization "${ORG}" \
+--product "${PRODUCT_NAME}" \
+--name "${REPO}" 2>/dev/null |
+awk -F':' '/^Id/ {gsub(/ /,"",$2);print $2}'
+
+
+}
+
+
 
 ###############################################################################
 # Create Product
@@ -143,30 +248,50 @@ resume_paused_tasks()
 
 create_product()
 {
-    header "Creating Product"
 
-    if $HAMMER product list \
-        --organization "$ORG" |
-        grep -q "$PRODUCT_NAME"
+header "Creating Product"
+
+
+
+if $HAMMER product info \
+--organization "${ORG}" \
+--name "${PRODUCT_NAME}" >/dev/null 2>&1
+
+then
+
+    skip "Product ${PRODUCT_NAME} already exists."
+
+else
+
+
+    info "Creating Product ${PRODUCT_NAME}"
+
+
+
+    $HAMMER product create \
+    --organization "${ORG}" \
+    --name "${PRODUCT_NAME}"
+
+
+
+    if [ $? -eq 0 ]
+
     then
 
-        skip "Product ${PRODUCT_NAME} already exists."
+        ok "Product created."
 
     else
 
-        echo "Creating Product ${PRODUCT_NAME}..."
+        error "Product creation failed."
 
-        $HAMMER product create \
-            --organization "$ORG" \
-            --name "$PRODUCT_NAME"
+        record_failure "Product ${PRODUCT_NAME}"
 
-        if [ $? -eq 0 ]; then
-            ok "Product created."
-        else
-            error "Product creation failed."
-            record_failure "Product ${PRODUCT_NAME}"
-        fi
     fi
+
+
+fi
+
+
 }
 
 ###############################################################################
@@ -175,190 +300,418 @@ create_product()
 
 create_repo()
 {
-    REPO_NAME="$1"
-    REPO_URL="$2"
-    REPO_TYPE="$3"
 
-    echo
-    echo "Checking Repository : ${REPO_NAME}"
+REPO_NAME="$1"
 
-    if $HAMMER repository list \
-        --organization "$ORG" \
-        --product "$PRODUCT_NAME" |
-        grep -q "$REPO_NAME"
+REPO_URL="$2"
+
+
+
+echo
+
+info "Checking Repository : ${REPO_NAME}"
+
+
+
+if $HAMMER repository info \
+--organization "${ORG}" \
+--product "${PRODUCT_NAME}" \
+--name "${REPO_NAME}" >/dev/null 2>&1
+
+then
+
+    skip "${REPO_NAME} already exists."
+
+else
+
+
+    info "Creating Repository : ${REPO_NAME}"
+
+
+
+    $HAMMER repository create \
+    --organization "${ORG}" \
+    --product "${PRODUCT_NAME}" \
+    --name "${REPO_NAME}" \
+    --content-type yum \
+    --url "${REPO_URL}"
+
+
+
+    if [ $? -eq 0 ]
+
     then
 
-        skip "${REPO_NAME} already exists."
+        ok "${REPO_NAME} created."
 
     else
 
-        echo "Creating ${REPO_NAME}..."
+        error "${REPO_NAME} creation failed."
 
-        $HAMMER repository create \
-            --organization "$ORG" \
-            --product "$PRODUCT_NAME" \
-            --name "$REPO_NAME" \
-            --content-type "$REPO_TYPE" \
-            --url "$REPO_URL"
+        record_failure "${REPO_NAME}"
 
-        if [ $? -eq 0 ]; then
-            ok "${REPO_NAME} created."
-        else
-            error "${REPO_NAME} creation failed."
-            record_failure "${REPO_NAME}"
-        fi
     fi
+
+
+fi
+
+
 }
+
+
 
 ###############################################################################
 # Update Repository URL
 ###############################################################################
 
-update_repository_url()
+update_repo_url()
 {
-    REPO_NAME="$1"
-    REPO_URL="$2"
 
-    echo
-    echo "Updating Repository URL : ${REPO_NAME}"
+REPO_NAME="$1"
 
-    $HAMMER repository update \
-        --organization "$ORG" \
-        --product "$PRODUCT_NAME" \
-        --name "$REPO_NAME" \
-        --url "$REPO_URL"
+REPO_URL="$2"
 
-    if [ $? -eq 0 ]; then
-        ok "${REPO_NAME} URL updated."
-    else
-        error "${REPO_NAME} URL update failed."
-        record_failure "${REPO_NAME} URL"
-    fi
+
+
+info "Checking Repository URL : ${REPO_NAME}"
+
+
+
+CURRENT_URL=$(
+$HAMMER repository info \
+--organization "${ORG}" \
+--product "${PRODUCT_NAME}" \
+--name "${REPO_NAME}" 2>/dev/null |
+awk -F':' '/Relative Path|URL/ {print $2}' |
+xargs
+)
+
+
+
+info "Configured URL : ${REPO_URL}"
+
+
+
+$HAMMER repository update \
+--organization "${ORG}" \
+--product "${PRODUCT_NAME}" \
+--name "${REPO_NAME}" \
+--url "${REPO_URL}"
+
+
+
+if [ $? -eq 0 ]
+
+then
+
+    ok "${REPO_NAME} URL updated."
+
+else
+
+    error "${REPO_NAME} URL update failed."
+
+    record_failure "${REPO_NAME} URL"
+
+fi
+
+
 }
 
+
+
 ###############################################################################
-# Create EL7 Repositories
+# Create EL7 Migration Repositories
 ###############################################################################
 
 create_el7_repositories()
 {
-    header "Creating EL7 Repositories"
 
-    create_repo \
-        "${BASE_REPO}" \
-        "${BASE_URL}" \
-        "yum"
+header "Creating EL7 Migration Repositories"
 
-    create_repo \
-        "${UPDATE_REPO}" \
-        "${UPDATE_URL}" \
-        "yum"
 
-    create_repo \
-        "${ELEVATE_REPO}" \
-        "${ELEVATE_URL}" \
-        "yum"
 
-    header "Updating Existing Repository URLs"
+create_repo \
+"${BASE_REPO}" \
+"${BASE_URL}"
 
-    update_repository_url \
-        "${BASE_REPO}" \
-        "${BASE_URL}"
 
-    update_repository_url \
-        "${UPDATE_REPO}" \
-        "${UPDATE_URL}"
 
-    update_repository_url \
-        "${ELEVATE_REPO}" \
-        "${ELEVATE_URL}"
+create_repo \
+"${UPDATE_REPO}" \
+"${UPDATE_URL}"
+
+
+
+create_repo \
+"${ELEVATE_REPO}" \
+"${ELEVATE_URL}"
+
+
+
+header "Updating Repository URLs"
+
+
+
+update_repo_url \
+"${BASE_REPO}" \
+"${BASE_URL}"
+
+
+
+update_repo_url \
+"${UPDATE_REPO}" \
+"${UPDATE_URL}"
+
+
+
+update_repo_url \
+"${ELEVATE_REPO}" \
+"${ELEVATE_URL}"
+
+
+
 }
 
+
+
 ###############################################################################
-# Sync Repository
+# Repository Sync With Lock Recovery
 ###############################################################################
 
 sync_repository()
 {
-    REPO_NAME="$1"
 
-    echo
-    echo "Checking Sync Status : ${REPO_NAME}"
+REPO_NAME="$1"
 
-    STATUS=$(
-        $HAMMER repository info \
-            --organization "$ORG" \
-            --product "$PRODUCT_NAME" \
-            --name "$REPO_NAME" 2>/dev/null |
-            grep -Ei "Sync State|Last Sync|Sync Status" |
-            awk -F':' '{print $2}' |
-            xargs
-    )
 
-    if echo "$STATUS" | grep -qi "Complete"; then
 
-        skip "${REPO_NAME} already synced."
-        return 0
-    fi
+echo
 
-    echo "Starting sync : ${REPO_NAME}"
+info "Checking Sync Status : ${REPO_NAME}"
 
-    $HAMMER repository synchronize \
-        --organization "$ORG" \
-        --product "$PRODUCT_NAME" \
-        --name "$REPO_NAME"
 
-    if [ $? -eq 0 ]; then
-        ok "${REPO_NAME} sync completed."
-    else
-        error "${REPO_NAME} sync failed."
-        record_failure "Sync ${REPO_NAME}"
-    fi
-}
+
+STATUS=$(
+$HAMMER repository info \
+--organization "${ORG}" \
+--product "${PRODUCT_NAME}" \
+--name "${REPO_NAME}" 2>/dev/null |
+grep -Ei "Sync State|Sync Status" |
+awk -F':' '{print $2}' |
+xargs
+)
+
+
+
+if echo "${STATUS}" | grep -qi "Complete"
+
+then
+
+    skip "${REPO_NAME} already synced."
+
+    return 0
+
+fi
+
+
+
+info "Starting synchronization : ${REPO_NAME}"
+
+
+
+OUTPUT=$(
+$HAMMER repository synchronize \
+--organization "${ORG}" \
+--product "${PRODUCT_NAME}" \
+--name "${REPO_NAME}" 2>&1
+)
+
+
+
+RC=$?
+
+
+
+echo "${OUTPUT}"
+
+
+
+if [ ${RC} -eq 0 ]
+
+then
+
+    ok "${REPO_NAME} synchronization started."
+
+    return 0
+
+fi
+
+
 
 ###############################################################################
-# Sync EL7 Repositories
+# Repository Lock Recovery
+###############################################################################
+
+if echo "${OUTPUT}" | grep -qi "Required lock is already taken"
+
+then
+
+
+    warn "Repository lock detected."
+
+
+
+    for TRY in 1 2 3
+
+    do
+
+
+        warn "Recovery attempt ${TRY}"
+
+
+
+        resume_paused_tasks
+
+
+
+        sleep 10
+
+
+
+        info "Retrying synchronization..."
+
+
+
+        OUTPUT=$(
+        $HAMMER repository synchronize \
+        --organization "${ORG}" \
+        --product "${PRODUCT_NAME}" \
+        --name "${REPO_NAME}" 2>&1
+        )
+
+
+
+        RC=$?
+
+
+
+        echo "${OUTPUT}"
+
+
+
+        if [ ${RC} -eq 0 ]
+
+        then
+
+            ok "${REPO_NAME} synchronization started."
+
+            return 0
+
+        fi
+
+
+
+        if ! echo "${OUTPUT}" | grep -qi "Required lock is already taken"
+
+        then
+
+            break
+
+        fi
+
+
+    done
+
+
+fi
+
+
+
+error "${REPO_NAME} synchronization failed."
+
+record_failure "Sync ${REPO_NAME}"
+
+
+}
+
+
+
+###############################################################################
+# Sync All EL7 Repositories
 ###############################################################################
 
 sync_el7_repositories()
 {
-    header "Synchronizing EL7 Repositories"
 
-    sync_repository "${BASE_REPO}"
-    sync_repository "${UPDATE_REPO}"
-    sync_repository "${ELEVATE_REPO}"
+header "Synchronizing EL7 Repositories"
+
+
+
+sync_repository "${BASE_REPO}"
+
+
+
+sync_repository "${UPDATE_REPO}"
+
+
+
+sync_repository "${ELEVATE_REPO}"
+
+
 }
+
+
 
 ###############################################################################
 # Create Content View
 ###############################################################################
 
-publish_content_view()
+create_content_view()
 {
-    header "Checking Content View"
 
-    if $HAMMER content-view list \
-        --organization "$ORG" |
-        grep -q "$CONTENT_VIEW"
+header "Creating Content View"
+
+
+
+if $HAMMER content-view info \
+--organization "${ORG}" \
+--name "${CONTENT_VIEW}" >/dev/null 2>&1
+
+then
+
+    skip "Content View ${CONTENT_VIEW} already exists."
+
+else
+
+
+    info "Creating Content View ${CONTENT_VIEW}"
+
+
+
+    $HAMMER content-view create \
+    --organization "${ORG}" \
+    --name "${CONTENT_VIEW}"
+
+
+
+    if [ $? -eq 0 ]
+
     then
 
-        skip "Content View ${CONTENT_VIEW} already exists."
+        ok "Content View created."
 
     else
 
-        echo "Creating Content View ${CONTENT_VIEW}..."
+        error "Content View creation failed."
 
-        $HAMMER content-view create \
-            --organization "$ORG" \
-            --name "$CONTENT_VIEW"
+        record_failure "${CONTENT_VIEW}"
 
-        if [ $? -eq 0 ]; then
-            ok "Content View created."
-        else
-            error "Content View creation failed."
-            record_failure "$CONTENT_VIEW"
-        fi
     fi
+
+
+fi
+
+
 }
 
 ###############################################################################
@@ -367,58 +720,93 @@ publish_content_view()
 
 add_repository_to_cv()
 {
-    REPO_NAME="$1"
-    REPO_ID="$2"
 
-    echo
-    echo "Checking Content View Repository : ${REPO_NAME}"
+REPO_NAME="$1"
 
-    info "Repository ID : ${REPO_ID}"
 
-    ###########################################################################
-    # Check whether repository is already associated
-    ###########################################################################
+REPO_ID=$(get_repo_id "${REPO_NAME}")
 
-    EXISTING=$(
-        $HAMMER content-view info \
-            --organization "$ORG" \
-            --name "$CONTENT_VIEW" 2>/dev/null |
-            grep -F "$REPO_NAME" || true
-    )
 
-    if [ -n "$EXISTING" ]; then
+echo
 
-        skip "${REPO_NAME} already added to ${CONTENT_VIEW}."
+info "Checking Content View Repository : ${REPO_NAME}"
 
-        return 0
-    fi
+info "Repository ID : ${REPO_ID}"
 
-    ###########################################################################
-    # Add repository
-    ###########################################################################
 
-    echo "Adding ${REPO_NAME} to ${CONTENT_VIEW}..."
 
-    $HAMMER content-view add-repository \
-        --organization "$ORG" \
-        --name "$CONTENT_VIEW" \
-        --repository-id "$REPO_ID"
+if [ -z "${REPO_ID}" ]
 
-    if [ $? -eq 0 ]; then
+then
 
-        ok "${REPO_NAME} added to ${CONTENT_VIEW}."
+    error "Unable to find repository ID for ${REPO_NAME}"
 
-        return 0
+    record_failure "${REPO_NAME} ID"
 
-    else
+    return 1
 
-        error "Failed adding ${REPO_NAME} to ${CONTENT_VIEW}"
+fi
 
-        record_failure "${REPO_NAME} Content View"
 
-        return 1
-    fi
+
+###############################################################################
+# Check Existing Assignment
+###############################################################################
+
+EXISTING=$(
+$HAMMER content-view info \
+--organization "${ORG}" \
+--name "${CONTENT_VIEW}" 2>/dev/null |
+grep -F "${REPO_NAME}" || true
+)
+
+
+
+if [ -n "${EXISTING}" ]
+
+then
+
+    skip "${REPO_NAME} already assigned."
+
+    return 0
+
+fi
+
+
+
+###############################################################################
+# Add Repository
+###############################################################################
+
+info "Adding ${REPO_NAME} to ${CONTENT_VIEW}"
+
+
+
+$HAMMER content-view add-repository \
+--organization "${ORG}" \
+--name "${CONTENT_VIEW}" \
+--repository-id "${REPO_ID}"
+
+
+
+if [ $? -eq 0 ]
+
+then
+
+    ok "${REPO_NAME} added."
+
+else
+
+    error "Failed adding ${REPO_NAME}"
+
+    record_failure "${REPO_NAME} Content View"
+
+fi
+
+
 }
+
+
 
 ###############################################################################
 # Configure Content View
@@ -426,221 +814,440 @@ add_repository_to_cv()
 
 configure_content_view()
 {
-    header "Configuring Content View"
 
-    add_repository_to_cv \
-        "${BASE_REPO}" \
-        "${BASE_REPO_ID}"
+header "Configuring Content View"
 
-    add_repository_to_cv \
-        "${UPDATE_REPO}" \
-        "${UPDATE_REPO_ID}"
 
-    add_repository_to_cv \
-        "${ELEVATE_REPO}" \
-        "${ELEVATE_REPO_ID}"
+
+add_repository_to_cv \
+"${BASE_REPO}"
+
+
+
+add_repository_to_cv \
+"${UPDATE_REPO}"
+
+
+
+add_repository_to_cv \
+"${ELEVATE_REPO}"
+
+
 }
 
+
+
 ###############################################################################
-# Check Content View Repositories
+# Verify Content View Repository Mapping
 ###############################################################################
 
 verify_content_view()
 {
-    header "Verifying Content View"
 
-    local FAILED=0
+header "Verifying Content View"
 
-    for REPO in \
-        "${BASE_REPO}" \
-        "${UPDATE_REPO}" \
-        "${ELEVATE_REPO}"
+
+
+FAILED=0
+
+
+
+for REPO in \
+"${BASE_REPO}" \
+"${UPDATE_REPO}" \
+"${ELEVATE_REPO}"
+
+do
+
+
+if $HAMMER content-view info \
+--organization "${ORG}" \
+--name "${CONTENT_VIEW}" 2>/dev/null |
+grep -Fq "${REPO}"
+
+then
+
+
+    ok "${REPO} attached to ${CONTENT_VIEW}"
+
+
+else
+
+
+    error "${REPO} missing from ${CONTENT_VIEW}"
+
+    FAILED=1
+
+
+fi
+
+
+done
+
+
+
+if [ ${FAILED} -eq 1 ]
+
+then
+
+    record_failure "Content View Repository Verification"
+
+    return 1
+
+fi
+
+
+
+ok "All repositories verified."
+
+
+}
+
+
+
+###############################################################################
+# Publish Content View
+###############################################################################
+
+publish_content_view()
+{
+
+header "Publishing Content View"
+
+
+
+verify_content_view
+
+
+
+if [ $? -ne 0 ]
+
+then
+
+    error "Content View validation failed."
+
+    error "Publish skipped."
+
+    return 1
+
+fi
+
+
+
+###############################################################################
+# Check running publish task
+###############################################################################
+
+ACTIVE_TASK=$(
+$HAMMER task list \
+--search "state = running" 2>/dev/null |
+grep -F "${CONTENT_VIEW}" || true
+)
+
+
+
+if [ -n "${ACTIVE_TASK}" ]
+
+then
+
+    skip "Publish already running."
+
+    return 0
+
+fi
+
+
+
+###############################################################################
+# Publish
+###############################################################################
+
+info "Publishing ${CONTENT_VIEW}"
+
+
+
+OUTPUT=$(
+$HAMMER content-view publish \
+--organization "${ORG}" \
+--name "${CONTENT_VIEW}" \
+--description "EL7 Migration Publish $(date '+%F %T')" 2>&1
+)
+
+
+
+RC=$?
+
+
+
+echo "${OUTPUT}"
+
+
+
+if [ ${RC} -eq 0 ]
+
+then
+
+    ok "${CONTENT_VIEW} publish started."
+
+    return 0
+
+fi
+
+
+
+###############################################################################
+# Publish Lock Recovery
+###############################################################################
+
+if echo "${OUTPUT}" | grep -qi "Required lock is already taken"
+
+then
+
+
+    warn "Publish lock detected."
+
+
+
+    for TRY in 1 2 3
+
     do
 
-        if $HAMMER content-view info \
-            --organization "$ORG" \
-            --name "$CONTENT_VIEW" 2>/dev/null |
-            grep -Fq "$REPO"
+
+        warn "Publish recovery attempt ${TRY}"
+
+
+
+        resume_paused_tasks
+
+
+
+        sleep 10
+
+
+
+        info "Retrying publish..."
+
+
+
+        OUTPUT=$(
+        $HAMMER content-view publish \
+        --organization "${ORG}" \
+        --name "${CONTENT_VIEW}" \
+        --description "EL7 Migration Publish $(date '+%F %T')" 2>&1
+        )
+
+
+
+        RC=$?
+
+
+
+        echo "${OUTPUT}"
+
+
+
+        if [ ${RC} -eq 0 ]
+
         then
 
-            ok "${REPO} is associated with ${CONTENT_VIEW}."
+            ok "Publish started."
 
-        else
+            return 0
 
-            error "${REPO} is NOT associated with ${CONTENT_VIEW}."
-
-            FAILED=1
         fi
+
+
+
+        if ! echo "${OUTPUT}" | grep -qi "Required lock is already taken"
+
+        then
+
+            break
+
+        fi
+
 
     done
 
-    if [ "$FAILED" -eq 1 ]; then
 
-        error "Content View repository verification failed."
+fi
 
-        record_failure "Content View repository verification"
 
-        return 1
-    fi
 
-    ok "All EL7 repositories are associated with ${CONTENT_VIEW}."
+error "Content View publish failed."
 
-    return 0
+record_failure "${CONTENT_VIEW} publish"
+
+
 }
 
-###############################################################################
-# Publish Content View Version
-###############################################################################
 
-publish_content_view_version()
-{
-    header "Publishing Content View Version"
-
-    ###########################################################################
-    # Verify repositories before publishing
-    ###########################################################################
-
-    verify_content_view
-
-    if [ $? -ne 0 ]; then
-
-        error "Repositories are not correctly associated."
-
-        error "Content View will NOT be published."
-
-        record_failure "${CONTENT_VIEW} publish blocked"
-
-        return 1
-    fi
-
-    ###########################################################################
-    # Check for an active publish task
-    ###########################################################################
-
-    ACTIVE_TASK=$(
-        $HAMMER task list \
-            --search "name ~ Publish and state = running" 2>/dev/null |
-            grep -F "$CONTENT_VIEW" || true
-    )
-
-    if [ -n "$ACTIVE_TASK" ]; then
-
-        skip "Content View ${CONTENT_VIEW} already has an active publish task."
-
-        return 0
-    fi
-
-    ###########################################################################
-    # Always publish a new version after repository association
-    ###########################################################################
-
-    echo "Publishing new version of ${CONTENT_VIEW}..."
-
-    $HAMMER content-view publish \
-        --organization "$ORG" \
-        --name "$CONTENT_VIEW" \
-        --async
-
-    if [ $? -eq 0 ]; then
-
-        ok "Content View ${CONTENT_VIEW} publish started."
-
-    else
-
-        error "Content View ${CONTENT_VIEW} publish failed."
-
-        record_failure "${CONTENT_VIEW} publish"
-
-        return 1
-    fi
-}
 
 ###############################################################################
-# Create Activation Key
+# Create / Update Activation Key
 ###############################################################################
 
 create_activation_key()
 {
-    header "Creating Activation Key"
 
-    if $HAMMER activation-key list \
-        --organization "$ORG" |
-        grep -q "$ACTIVATION_KEY"
+header "Creating Activation Key"
+
+
+
+if $HAMMER activation-key info \
+--organization "${ORG}" \
+--name "${ACTIVATION_KEY}" >/dev/null 2>&1
+
+then
+
+
+    skip "Activation Key ${ACTIVATION_KEY} already exists."
+
+
+
+    info "Updating Activation Key Content View"
+
+
+
+    $HAMMER activation-key update \
+    --organization "${ORG}" \
+    --name "${ACTIVATION_KEY}" \
+    --content-view "${CONTENT_VIEW}" \
+    --lifecycle-environment "Library"
+
+
+
+    if [ $? -eq 0 ]
+
     then
 
-        skip "Activation Key ${ACTIVATION_KEY} already exists."
+        ok "Activation Key updated."
 
     else
 
-        echo "Creating Activation Key ${ACTIVATION_KEY}..."
+        error "Activation Key update failed."
 
-        $HAMMER activation-key create \
-            --organization "$ORG" \
-            --name "$ACTIVATION_KEY" \
-            --content-view "$CONTENT_VIEW" \
-            --lifecycle-environment "Library"
+        record_failure "${ACTIVATION_KEY}"
 
-        if [ $? -eq 0 ]; then
-
-            ok "Activation Key created."
-
-        else
-
-            error "Activation Key creation failed."
-
-            record_failure "${ACTIVATION_KEY}"
-        fi
     fi
+
+
+
+else
+
+
+    info "Creating Activation Key ${ACTIVATION_KEY}"
+
+
+
+    $HAMMER activation-key create \
+    --organization "${ORG}" \
+    --name "${ACTIVATION_KEY}" \
+    --content-view "${CONTENT_VIEW}" \
+    --lifecycle-environment "Library"
+
+
+
+    if [ $? -eq 0 ]
+
+    then
+
+        ok "Activation Key created."
+
+    else
+
+        error "Activation Key creation failed."
+
+        record_failure "${ACTIVATION_KEY}"
+
+    fi
+
+
+fi
+
+
 }
 
 ###############################################################################
-# Configure Activation Key
+# Activation Key Verification
 ###############################################################################
 
-configure_activation_key()
+verify_activation_key()
 {
-    header "Configuring Activation Key"
 
-    echo "Activation Key : ${ACTIVATION_KEY}"
-    echo "Content View   : ${CONTENT_VIEW}"
+header "Verifying Activation Key"
 
-    ###########################################################################
-    # Do not use repository names as content labels here.
-    #
-    # First show current activation-key content configuration.
-    ###########################################################################
 
-    $HAMMER activation-key content \
-        --organization "$ORG" \
-        --name "$ACTIVATION_KEY"
 
-    if [ $? -eq 0 ]; then
-        ok "Activation Key content configuration displayed."
-    else
-        warn "Unable to display Activation Key content configuration."
-    fi
+$HAMMER activation-key info \
+--organization "${ORG}" \
+--name "${ACTIVATION_KEY}"
+
+
+
+if [ $? -eq 0 ]
+
+then
+
+    ok "Activation Key verification completed."
+
+else
+
+    error "Activation Key verification failed."
+
+    record_failure "${ACTIVATION_KEY} verification"
+
+fi
+
+
 }
 
+
+
 ###############################################################################
-# Create Bootstrap Command
+# Generate Bootstrap Registration Command
 ###############################################################################
 
 generate_bootstrap_command()
 {
-    header "Generating Host Bootstrap Command"
 
-    echo
-    echo "Run this command on CentOS 7 systems:"
-    echo
+header "Generating Bootstrap Command"
 
-    echo "------------------------------------------------------------"
 
-    echo "subscription-manager register \\"
-    echo "--org=\"${ORG}\" \\"
-    echo "--activationkey=\"${ACTIVATION_KEY}\""
 
-    echo "------------------------------------------------------------"
+echo
+
+echo "Run this command on CentOS Linux 7 system:"
+
+echo
+
+echo "------------------------------------------------------------"
+
+
+
+echo "rpm -Uvh http://192.168.253.136/pub/katello-ca-consumer-latest.noarch.rpm"
+
+
+
+echo
+
+
+
+echo "subscription-manager register \\"
+
+echo "  --org=\"${ORG}\" \\"
+
+echo "  --activationkey=\"${ACTIVATION_KEY}\""
+
+
+
+echo "------------------------------------------------------------"
+
+
+
 }
+
+
 
 ###############################################################################
 # Summary
@@ -648,105 +1255,277 @@ generate_bootstrap_command()
 
 summary()
 {
-    header "EL7 To EL8 Bootstrap Summary"
 
-    echo
-    echo "Product"
-    echo "------------------------------------------------------------"
+header "EL7 To EL8 Bootstrap Summary"
 
-    $HAMMER product list \
-        --organization "$ORG" |
-        grep "$PRODUCT_NAME"
 
-    echo
-    echo "Repositories"
-    echo "------------------------------------------------------------"
 
-    $HAMMER repository list \
-        --organization "$ORG" \
-        --product "$PRODUCT_NAME"
+echo
 
-    echo
-    echo "Content View"
-    echo "------------------------------------------------------------"
+echo "============================================================"
 
-    $HAMMER content-view list \
-        --organization "$ORG" |
-        grep "$CONTENT_VIEW"
+echo "Product"
 
-    echo
-    echo "Content View Repositories"
-    echo "------------------------------------------------------------"
+echo "============================================================"
 
-    $HAMMER content-view info \
-        --organization "$ORG" \
-        --name "$CONTENT_VIEW"
 
-    echo
-    echo "Activation Key"
-    echo "------------------------------------------------------------"
 
-    $HAMMER activation-key list \
-        --organization "$ORG" |
-        grep "$ACTIVATION_KEY"
+$HAMMER product info \
+--organization "${ORG}" \
+--name "${PRODUCT_NAME}"
 
-    echo
-    echo "Migration Configuration"
-    echo "------------------------------------------------------------"
 
-    echo "Product             : ${PRODUCT_NAME}"
-    echo "Content View        : ${CONTENT_VIEW}"
-    echo "Activation Key      : ${ACTIVATION_KEY}"
 
-    echo
-    echo "Repositories        :"
-    echo "  - ${BASE_REPO} [ID ${BASE_REPO_ID}]"
-    echo "  - ${UPDATE_REPO} [ID ${UPDATE_REPO_ID}]"
-    echo "  - ${ELEVATE_REPO} [ID ${ELEVATE_REPO_ID}]"
+echo
+
+echo "============================================================"
+
+echo "Repositories"
+
+echo "============================================================"
+
+
+
+$HAMMER repository list \
+--organization "${ORG}" \
+--product "${PRODUCT_NAME}"
+
+
+
+echo
+
+echo "============================================================"
+
+echo "Content View"
+
+echo "============================================================"
+
+
+
+$HAMMER content-view info \
+--organization "${ORG}" \
+--name "${CONTENT_VIEW}"
+
+
+
+echo
+
+echo "============================================================"
+
+echo "Activation Key"
+
+echo "============================================================"
+
+
+
+$HAMMER activation-key info \
+--organization "${ORG}" \
+--name "${ACTIVATION_KEY}"
+
+
+
+echo
+
+echo "============================================================"
+
+echo "Migration Configuration"
+
+echo "============================================================"
+
+
+
+echo "Product          : ${PRODUCT_NAME}"
+
+echo "Content View     : ${CONTENT_VIEW}"
+
+echo "Activation Key   : ${ACTIVATION_KEY}"
+
+
+
+echo
+
+echo "Repositories"
+
+echo "------------------------------------------------------------"
+
+echo " - ${BASE_REPO}"
+
+echo "   ${BASE_URL}"
+
+echo
+
+echo " - ${UPDATE_REPO}"
+
+echo "   ${UPDATE_URL}"
+
+echo
+
+echo " - ${ELEVATE_REPO}"
+
+echo "   ${ELEVATE_URL}"
+
+
+
 }
 
+
+
 ###############################################################################
-# Main
+# Main Execution
 ###############################################################################
 
 header "04 - Foreman Katello Bootstrap EL7 To EL8"
 
+
+
+###############################################################################
+# Recover Foreman Tasks
+###############################################################################
+
 resume_paused_tasks
+
+
+
+###############################################################################
+# Product
+###############################################################################
 
 create_product
 
+
+
+###############################################################################
+# Repositories
+###############################################################################
+
 create_el7_repositories
+
+
+
+###############################################################################
+# Sync
+###############################################################################
 
 sync_el7_repositories
 
-publish_content_view
+
+
+###############################################################################
+# Content View
+###############################################################################
+
+create_content_view
+
+
 
 configure_content_view
 
-publish_content_view_version
+
+
+publish_content_view
+
+
+
+###############################################################################
+# Activation Key
+###############################################################################
 
 create_activation_key
 
-configure_activation_key
+
+
+verify_activation_key
+
+
+
+###############################################################################
+# Bootstrap Command
+###############################################################################
 
 generate_bootstrap_command
 
+
+
+###############################################################################
+# Summary
+###############################################################################
+
 summary
+
+
+
+###############################################################################
+# Final Status
+###############################################################################
 
 header "04 - EL7 To EL8 Bootstrap Completed"
 
-if [ ${#FAILED_STEPS[@]} -eq 0 ]; then
+
+
+if [ ${#FAILED_STEPS[@]} -eq 0 ]
+
+then
 
     echo
+
     ok "EL7 To EL8 Bootstrap completed successfully."
 
 else
 
+
     echo
+
     warn "Bootstrap completed with ${#FAILED_STEPS[@]} failure(s)."
 
+
+
     for ITEM in "${FAILED_STEPS[@]}"
+
     do
+
         error "${ITEM}"
+
     done
+
+
 fi
+
+
+
+###############################################################################
+# Manual Verification
+###############################################################################
+
+echo
+
+echo "Manual Verification Commands"
+
+echo "------------------------------------------------------------"
+
+
+
+echo
+
+echo 'hammer product info --organization "Default Organization" --name "CentOS 7"'
+
+
+
+echo
+
+echo 'hammer repository list --organization "Default Organization" --product "CentOS 7"'
+
+
+
+echo
+
+echo 'hammer content-view info --organization "Default Organization" --name "EL7toEL8-CV"'
+
+
+
+echo
+
+echo 'hammer activation-key info --organization "Default Organization" --name "el7toel8-key"'
+
+
+
+exit 0
