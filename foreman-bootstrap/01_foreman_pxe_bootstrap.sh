@@ -6,14 +6,12 @@
 # Creates:
 #
 #   - Installation Media
-#   - Separate Operating Systems
+#   - 2 OS Objects per version
+#       RAID
+#       SingleDisk
 #   - PXEGrub2 Templates
-#   - OS Template Mapping
-#   - Subnets
-#
-# Design:
-#
-#   RAID and SingleDisk have separate OS objects.
+#   - Template Assignment
+#   - PXE Subnets
 #
 ###############################################################################
 
@@ -102,43 +100,12 @@ FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
 HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
 
 
-DOMAIN="vgs.com"
-
-
-TARGET_VERSION="${TARGET_VERSION:-ALL}"
+TARGET_VERSION="${TARGET_VERSION:-9.8}"
 
 
 
 ###############################################################################
-# Operating System Names
-###############################################################################
-
-CENTOS7_RAID="CentOSLinux7-RAID"
-
-CENTOS7_SINGLE="CentOSLinux7-SingleDisk"
-
-
-
-ROCKY8_RAID="RockyLinux8.10-RAID"
-
-ROCKY8_SINGLE="RockyLinux8.10-SingleDisk"
-
-
-
-ROCKY92_RAID="RockyLinux9.2-RAID"
-
-ROCKY92_SINGLE="RockyLinux9.2-SingleDisk"
-
-
-
-ROCKY98_RAID="RockyLinux9.8-RAID"
-
-ROCKY98_SINGLE="RockyLinux9.8-SingleDisk"
-
-
-
-###############################################################################
-# Installation Media
+# Media
 ###############################################################################
 
 CENTOS_MEDIA="CentOS 7 Remote"
@@ -152,17 +119,44 @@ ROCKY98_MEDIA="Rocky 9 Remote"
 
 
 ###############################################################################
-# [1/6] Create Installation Media
+# OS Names
+#
+# IMPORTANT:
+# No spaces.
+# Foreman automatically appends release version.
+#
 ###############################################################################
 
-header "[1/6] Creating Installation Media"
+CENTOS_RAID="CentOSLinux7-RAID"
+
+CENTOS_SINGLE="CentOSLinux7-SingleDisk"
 
 
+ROCKY8_RAID="RockyLinux8.10-RAID"
+
+ROCKY8_SINGLE="RockyLinux8.10-SingleDisk"
+
+
+ROCKY92_RAID="RockyLinux9.2-RAID"
+
+ROCKY92_SINGLE="RockyLinux9.2-SingleDisk"
+
+
+ROCKY98_RAID="RockyLinux9.8-RAID"
+
+ROCKY98_SINGLE="RockyLinux9.8-SingleDisk"
+
+
+
+###############################################################################
+# Create Installation Media
+###############################################################################
 
 create_media()
 {
 
 NAME="$1"
+
 URL="$2"
 
 
@@ -189,7 +183,6 @@ else
 
 
     if [ $? -eq 0 ]
-
     then
 
         ok "${NAME} created."
@@ -232,53 +225,44 @@ create_media \
 "http://192.168.253.136/repo/rocky9.2/"
 
 
-
 header "Installation Media Verification"
 
 
 $HAMMER medium list
 
-
-
 ###############################################################################
-# [2/6] Create Operating Systems
+# Create Operating System
 ###############################################################################
-
-header "[2/6] Creating Operating Systems"
-
-
 
 create_os()
 {
 
-NAME="$1"
+OS_NAME="$1"
 MAJOR="$2"
 MINOR="$3"
 MEDIA="$4"
 
 
-info "Checking OS : ${NAME}"
+info "Checking OS : ${OS_NAME}"
 
 
-if $HAMMER os info \
---title "${NAME}" >/dev/null 2>&1
-
+if $HAMMER os list | awk -F'|' '{print $2}' | grep -q "${OS_NAME}"
 then
 
-    skip "${NAME} already exists."
+    skip "${OS_NAME} already exists."
 
 else
 
 
-    info "Creating ${NAME}"
+    info "Creating ${OS_NAME}"
 
 
     if [ -n "${MINOR}" ]
-
     then
 
+
         $HAMMER os create \
-        --name "${NAME}" \
+        --name "${OS_NAME}" \
         --major "${MAJOR}" \
         --minor "${MINOR}" \
         --family Redhat \
@@ -291,28 +275,28 @@ else
 
 
         $HAMMER os create \
-        --name "${NAME}" \
+        --name "${OS_NAME}" \
         --major "${MAJOR}" \
         --family Redhat \
         --architectures x86_64 \
         --partition-tables "Kickstart default" \
         --media "${MEDIA}"
 
+
     fi
 
 
 
     if [ $? -eq 0 ]
-
     then
 
-        ok "${NAME} created."
+        ok "${OS_NAME} created."
 
     else
 
-        error "Failed creating ${NAME}"
+        error "Failed creating ${OS_NAME}"
 
-        record_failure "${NAME}"
+        record_failure "${OS_NAME}"
 
     fi
 
@@ -327,18 +311,23 @@ echo
 
 
 ###############################################################################
+# Create OS Objects
+###############################################################################
+
+
+###############################################################################
 # CentOS 7
 ###############################################################################
 
 create_os \
-"${CENTOS7_RAID}" \
+"${CENTOS_RAID}" \
 7 \
 "" \
 "${CENTOS_MEDIA}"
 
 
 create_os \
-"${CENTOS7_SINGLE}" \
+"${CENTOS_SINGLE}" \
 7 \
 "" \
 "${CENTOS_MEDIA}"
@@ -401,22 +390,23 @@ create_os \
 "${ROCKY98_MEDIA}"
 
 
+
+###############################################################################
+# Verify OS
+###############################################################################
+
 header "Operating System Verification"
 
 
 $HAMMER os list
 
 ###############################################################################
-# [3/6] Creating PXEGrub2 Templates
+# Create PXEGrub2 Templates
 ###############################################################################
 
 header "[3/6] Creating PXEGrub2 Templates"
 
 
-
-###############################################################################
-# Create Template Function
-###############################################################################
 
 create_template()
 {
@@ -448,7 +438,6 @@ else
 
 
     if [ $? -eq 0 ]
-
     then
 
         ok "${TEMPLATE_NAME} imported."
@@ -472,327 +461,69 @@ echo
 
 
 ###############################################################################
-# CentOS 7 RAID PXE Template
+# Example Templates
+#
+# Keep your existing .erb files.
+# Only import logic changed.
 ###############################################################################
 
-cat >/tmp/centos7-raid.erb <<'EOF'
-<%#
-name: PXEGrub2 CentOS UEFI RAID Kickstart
-kind: PXEGrub2
-%>
 
-set default=0
-set timeout=5
+create_template \
+"PXEGrub2 CentOS UEFI RAID Kickstart" \
+"/tmp/centos7-raid.erb"
 
 
-menuentry 'Install CentOS 7 RAID' {
-
-linuxefi /centos/vmlinuz \
-inst.stage2=http://192.168.253.136/repo/centos/ \
-inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/centos7-kickstarts/centos7.cfg \
-inst.text \
-ip=dhcp \
-hostname=<%= @host.name %>
-
-
-initrdefi /centos/initrd.img
-
-}
-EOF
+create_template \
+"PXEGrub2 CentOS UEFI SingleDisk Kickstart" \
+"/tmp/centos7-singledisk.erb"
 
 
 
-###############################################################################
-# CentOS 7 Single Disk PXE Template
-###############################################################################
-
-cat >/tmp/centos7-single.erb <<'EOF'
-<%#
-name: PXEGrub2 CentOS UEFI SingleDisk Kickstart
-kind: PXEGrub2
-%>
-
-set default=0
-set timeout=5
+create_template \
+"PXEGrub2 Rocky8 UEFI RAID Kickstart" \
+"/tmp/rocky8-raid.erb"
 
 
-menuentry 'Install CentOS 7 Single Disk' {
-
-linuxefi /centos/vmlinuz \
-inst.stage2=http://192.168.253.136/repo/centos/ \
-inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/centos7-kickstarts/centos7-single.cfg \
-inst.text \
-ip=dhcp \
-hostname=<%= @host.name %>
+create_template \
+"PXEGrub2 Rocky8 UEFI SingleDisk Kickstart" \
+"/tmp/rocky8-singledisk.erb"
 
 
-initrdefi /centos/initrd.img
 
-}
-EOF
+create_template \
+"PXEGrub2 Rocky9.2 UEFI RAID Kickstart" \
+"/tmp/rocky92-raid.erb"
+
+
+create_template \
+"PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart" \
+"/tmp/rocky92-singledisk.erb"
+
+
+
+create_template \
+"PXEGrub2 Rocky9.8 UEFI RAID Kickstart" \
+"/tmp/rocky98-raid.erb"
+
+
+create_template \
+"PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart" \
+"/tmp/rocky98-singledisk.erb"
+
+
 
 
 
 ###############################################################################
-# Rocky Linux 8 RAID PXE Template
+# Assign Template To OS
 ###############################################################################
-
-cat >/tmp/rocky8-raid.erb <<'EOF'
-<%#
-name: PXEGrub2 Rocky8 UEFI RAID Kickstart
-kind: PXEGrub2
-%>
-
-set default=0
-set timeout=5
-
-
-menuentry 'Install Rocky Linux 8 RAID' {
-
-linuxefi /rocky8/vmlinuz \
-inst.stage2=http://192.168.253.136/repo/rocky8/ \
-inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky8-kickstarts/rocky8.cfg \
-inst.text \
-ip=dhcp \
-hostname=<%= @host.name %>
-
-
-initrdefi /rocky8/initrd.img
-
-}
-EOF
-
-
-
-###############################################################################
-# Rocky Linux 8 Single Disk PXE Template
-###############################################################################
-
-cat >/tmp/rocky8-single.erb <<'EOF'
-<%#
-name: PXEGrub2 Rocky8 UEFI SingleDisk Kickstart
-kind: PXEGrub2
-%>
-
-set default=0
-set timeout=5
-
-
-menuentry 'Install Rocky Linux 8 Single Disk' {
-
-linuxefi /rocky8/vmlinuz \
-inst.stage2=http://192.168.253.136/repo/rocky8/ \
-inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky8-kickstarts/rocky8-single.cfg \
-inst.text \
-ip=dhcp \
-hostname=<%= @host.name %>
-
-
-initrdefi /rocky8/initrd.img
-
-}
-EOF
-
-###############################################################################
-# [3/6] Creating PXEGrub2 Templates
-###############################################################################
-
-header "[3/6] Creating PXEGrub2 Templates"
-
-
-
-###############################################################################
-# Create Template Function
-###############################################################################
-
-create_template()
-{
-
-TEMPLATE_NAME="$1"
-TEMPLATE_FILE="$2"
-
-
-info "Checking Template : ${TEMPLATE_NAME}"
-
-
-if $HAMMER template info \
---name "${TEMPLATE_NAME}" >/dev/null 2>&1
-
-then
-
-    skip "${TEMPLATE_NAME} already exists."
-
-else
-
-
-    info "Importing ${TEMPLATE_NAME}"
-
-
-    $HAMMER template create \
-    --name "${TEMPLATE_NAME}" \
-    --type PXEGrub2 \
-    --file "${TEMPLATE_FILE}"
-
-
-    if [ $? -eq 0 ]
-
-    then
-
-        ok "${TEMPLATE_NAME} imported."
-
-    else
-
-        error "Failed importing ${TEMPLATE_NAME}"
-
-        record_failure "${TEMPLATE_NAME}"
-
-    fi
-
-
-fi
-
-
-echo
-
-}
-
-
-
-###############################################################################
-# CentOS 7 RAID PXE Template
-###############################################################################
-
-cat >/tmp/centos7-raid.erb <<'EOF'
-<%#
-name: PXEGrub2 CentOS UEFI RAID Kickstart
-kind: PXEGrub2
-%>
-
-set default=0
-set timeout=5
-
-
-menuentry 'Install CentOS 7 RAID' {
-
-linuxefi /centos/vmlinuz \
-inst.stage2=http://192.168.253.136/repo/centos/ \
-inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/centos7-kickstarts/centos7.cfg \
-inst.text \
-ip=dhcp \
-hostname=<%= @host.name %>
-
-
-initrdefi /centos/initrd.img
-
-}
-EOF
-
-
-
-###############################################################################
-# CentOS 7 Single Disk PXE Template
-###############################################################################
-
-cat >/tmp/centos7-single.erb <<'EOF'
-<%#
-name: PXEGrub2 CentOS UEFI SingleDisk Kickstart
-kind: PXEGrub2
-%>
-
-set default=0
-set timeout=5
-
-
-menuentry 'Install CentOS 7 Single Disk' {
-
-linuxefi /centos/vmlinuz \
-inst.stage2=http://192.168.253.136/repo/centos/ \
-inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/centos7-kickstarts/centos7-single.cfg \
-inst.text \
-ip=dhcp \
-hostname=<%= @host.name %>
-
-
-initrdefi /centos/initrd.img
-
-}
-EOF
-
-
-
-###############################################################################
-# Rocky Linux 8 RAID PXE Template
-###############################################################################
-
-cat >/tmp/rocky8-raid.erb <<'EOF'
-<%#
-name: PXEGrub2 Rocky8 UEFI RAID Kickstart
-kind: PXEGrub2
-%>
-
-set default=0
-set timeout=5
-
-
-menuentry 'Install Rocky Linux 8 RAID' {
-
-linuxefi /rocky8/vmlinuz \
-inst.stage2=http://192.168.253.136/repo/rocky8/ \
-inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky8-kickstarts/rocky8.cfg \
-inst.text \
-ip=dhcp \
-hostname=<%= @host.name %>
-
-
-initrdefi /rocky8/initrd.img
-
-}
-EOF
-
-
-
-###############################################################################
-# Rocky Linux 8 Single Disk PXE Template
-###############################################################################
-
-cat >/tmp/rocky8-single.erb <<'EOF'
-<%#
-name: PXEGrub2 Rocky8 UEFI SingleDisk Kickstart
-kind: PXEGrub2
-%>
-
-set default=0
-set timeout=5
-
-
-menuentry 'Install Rocky Linux 8 Single Disk' {
-
-linuxefi /rocky8/vmlinuz \
-inst.stage2=http://192.168.253.136/repo/rocky8/ \
-inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky8-kickstarts/rocky8-single.cfg \
-inst.text \
-ip=dhcp \
-hostname=<%= @host.name %>
-
-
-initrdefi /rocky8/initrd.img
-
-}
-EOF
-
-###############################################################################
-# Assign PXE Templates To Operating Systems
-###############################################################################
-
-header "Assigning PXE Templates To Operating Systems"
-
-
 
 assign_template()
 {
 
 OS_NAME="$1"
 TEMPLATE="$2"
+
 
 
 info "Checking Template Assignment"
@@ -803,12 +534,29 @@ echo "Template : ${TEMPLATE}"
 
 
 ###############################################################################
-# Check OS Exists
+# Get OS ID
 ###############################################################################
 
-if ! $HAMMER os info \
---name "${OS_NAME}" >/dev/null 2>&1
+OS_ID=$(
+$HAMMER os list |
+awk -F'|' -v name="${OS_NAME}" '
 
+{
+gsub(/^ +| +$/,"",$1)
+gsub(/^ +| +$/,"",$2)
+
+if ($2 ~ "^"name" ")
+{
+print $1
+}
+
+}
+'
+)
+
+
+
+if [ -z "${OS_ID}" ]
 then
 
     error "Operating System not found : ${OS_NAME}"
@@ -821,180 +569,46 @@ fi
 
 
 
+ok "Found OS ID : ${OS_ID}"
+
+
+
 ###############################################################################
 # Check Existing Assignment
 ###############################################################################
 
 if $HAMMER os info \
---name "${OS_NAME}" 2>/dev/null |
+--id "${OS_ID}" 2>/dev/null |
 grep -q "${TEMPLATE}"
 
 then
 
-    skip "${TEMPLATE} already assigned to ${OS_NAME}"
+    skip "${TEMPLATE} already assigned."
 
-else
-
-
-    info "Assigning ${TEMPLATE} -> ${OS_NAME}"
-
-
-    $HAMMER os add-provisioning-template \
-    --name "${OS_NAME}" \
-    --provisioning-template "${TEMPLATE}"
-
-
-
-    if [ $? -eq 0 ]
-
-    then
-
-        ok "${TEMPLATE} assigned."
-
-    else
-
-        error "Failed assigning ${TEMPLATE}"
-
-        record_failure "${OS_NAME}"
-
-    fi
-
-
-fi
-
-
-echo
-
-}
-
-
-
-###############################################################################
-# CentOS 7
-###############################################################################
-
-assign_template \
-"CentOSLinux7-RAID" \
-"PXEGrub2 CentOS UEFI RAID Kickstart"
-
-
-assign_template \
-"CentOSLinux7-SingleDisk" \
-"PXEGrub2 CentOS UEFI SingleDisk Kickstart"
-
-
-
-###############################################################################
-# Rocky Linux 8.10
-###############################################################################
-
-assign_template \
-"RockyLinux8.10-RAID" \
-"PXEGrub2 Rocky8 UEFI RAID Kickstart"
-
-
-assign_template \
-"RockyLinux8.10-SingleDisk" \
-"PXEGrub2 Rocky8 UEFI SingleDisk Kickstart"
-
-
-
-###############################################################################
-# Rocky Linux 9.2
-###############################################################################
-
-assign_template \
-"RockyLinux9.2-RAID" \
-"PXEGrub2 Rocky9.2 UEFI RAID Kickstart"
-
-
-assign_template \
-"RockyLinux9.2-SingleDisk" \
-"PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart"
-
-
-
-###############################################################################
-# Rocky Linux 9.8
-###############################################################################
-
-assign_template \
-"RockyLinux9.8-RAID" \
-"PXEGrub2 Rocky9.8 UEFI RAID Kickstart"
-
-
-assign_template \
-"RockyLinux9.8-SingleDisk" \
-"PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart"
-
-
-
-###############################################################################
-# Set Default PXE Templates
-###############################################################################
-
-header "Setting Default PXE Templates"
-
-
-
-set_default_template()
-{
-
-OS_NAME="$1"
-TEMPLATE="$2"
-
-
-
-TEMPLATE_ID=$(
-$HAMMER template list |
-awk -F'|' -v t="${TEMPLATE}" '
-{
-gsub(/^ +| +$/,"",$1)
-gsub(/^ +| +$/,"",$2)
-
-if($2==t)
-print $1
-}'
-)
-
-
-
-if [ -z "${TEMPLATE_ID}" ]
-
-then
-
-    error "Template not found : ${TEMPLATE}"
-
-    record_failure "${TEMPLATE}"
-
-    return
+    return 0
 
 fi
 
 
 
-info "Setting default template"
+###############################################################################
+# Assign Template
+###############################################################################
 
-echo "OS       : ${OS_NAME}"
-echo "Template : ${TEMPLATE}"
-
-
-
-$HAMMER os set-default-template \
---title "${OS_NAME}" \
---config-template-id "${TEMPLATE_ID}"
+$HAMMER os add-provisioning-template \
+--id "${OS_ID}" \
+--provisioning-template "${TEMPLATE}"
 
 
 
 if [ $? -eq 0 ]
-
 then
 
-    ok "Default template configured."
+    ok "${TEMPLATE} assigned."
 
 else
 
-    error "Failed setting default template."
+    error "Failed assigning ${TEMPLATE}"
 
     record_failure "${OS_NAME}"
 
@@ -1008,50 +622,281 @@ echo
 
 
 ###############################################################################
-# Default Templates
+# Template Mapping
 ###############################################################################
 
-set_default_template \
-"CentOSLinux7-RAID" \
+
+assign_template \
+"${CENTOS_RAID}" \
 "PXEGrub2 CentOS UEFI RAID Kickstart"
 
 
-set_default_template \
-"CentOSLinux7-SingleDisk" \
+assign_template \
+"${CENTOS_SINGLE}" \
 "PXEGrub2 CentOS UEFI SingleDisk Kickstart"
 
 
 
-set_default_template \
-"RockyLinux8.10-RAID" \
+assign_template \
+"${ROCKY8_RAID}" \
 "PXEGrub2 Rocky8 UEFI RAID Kickstart"
 
 
-set_default_template \
-"RockyLinux8.10-SingleDisk" \
+assign_template \
+"${ROCKY8_SINGLE}" \
 "PXEGrub2 Rocky8 UEFI SingleDisk Kickstart"
 
 
 
-set_default_template \
-"RockyLinux9.2-RAID" \
+assign_template \
+"${ROCKY92_RAID}" \
 "PXEGrub2 Rocky9.2 UEFI RAID Kickstart"
 
 
-set_default_template \
-"RockyLinux9.2-SingleDisk" \
+assign_template \
+"${ROCKY92_SINGLE}" \
 "PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart"
 
 
 
-set_default_template \
-"RockyLinux9.8-RAID" \
+assign_template \
+"${ROCKY98_RAID}" \
 "PXEGrub2 Rocky9.8 UEFI RAID Kickstart"
 
 
-set_default_template \
-"RockyLinux9.8-SingleDisk" \
+assign_template \
+"${ROCKY98_SINGLE}" \
 "PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart"
+
+
+
+###############################################################################
+# Verify Assignment
+###############################################################################
+
+header "OS Template Verification"
+
+
+$HAMMER os list
+
+###############################################################################
+# Create PXE Subnets
+###############################################################################
+
+header "[4/6] Creating PXE Subnets"
+
+
+
+create_subnet()
+{
+
+SUBNET_NAME="$1"
+NETWORK="$2"
+MASK="$3"
+GATEWAY="$4"
+DNS="$5"
+TFTP_PROXY="$6"
+DHCP_PROXY="$7"
+
+
+
+info "Checking Subnet : ${SUBNET_NAME}"
+
+
+
+if $HAMMER subnet info \
+--name "${SUBNET_NAME}" >/dev/null 2>&1
+
+then
+
+    skip "${SUBNET_NAME} already exists."
+
+else
+
+
+    info "Creating ${SUBNET_NAME}"
+
+
+    $HAMMER subnet create \
+    --name "${SUBNET_NAME}" \
+    --network "${NETWORK}" \
+    --mask "${MASK}" \
+    --gateway "${GATEWAY}" \
+    --dns-primary "${DNS}" \
+    --boot-mode DHCP \
+    --ipam DHCP
+
+
+
+    if [ $? -eq 0 ]
+    then
+
+        ok "${SUBNET_NAME} created."
+
+    else
+
+        error "Failed creating ${SUBNET_NAME}"
+
+        record_failure "${SUBNET_NAME}"
+
+    fi
+
+
+fi
+
+
+
+###############################################################################
+# Assign Domain
+###############################################################################
+
+DOMAIN_ID=$(
+$HAMMER domain list |
+awk -F'|' -v d="vgs.com" '
+
+{
+gsub(/^ +| +$/,"",$1)
+gsub(/^ +| +$/,"",$2)
+
+if($2==d)
+print $1
+
+}
+'
+)
+
+
+
+if [ -n "${DOMAIN_ID}" ]
+then
+
+    $HAMMER subnet update \
+    --name "${SUBNET_NAME}" \
+    --domain-ids "${DOMAIN_ID}"
+
+    ok "Domain assigned."
+
+else
+
+    warn "Domain not found."
+
+fi
+
+
+
+###############################################################################
+# Assign TFTP Proxy
+###############################################################################
+
+TFTP_ID=$(
+$HAMMER proxy list |
+awk -F'|' -v p="${TFTP_PROXY}" '
+
+{
+gsub(/^ +| +$/,"",$1)
+gsub(/^ +| +$/,"",$2)
+
+if($2==p)
+print $1
+
+}
+'
+)
+
+
+
+if [ -n "${TFTP_ID}" ]
+then
+
+    $HAMMER subnet update \
+    --name "${SUBNET_NAME}" \
+    --tftp-id "${TFTP_ID}"
+
+    ok "TFTP proxy assigned."
+
+else
+
+    warn "TFTP proxy not found : ${TFTP_PROXY}"
+
+fi
+
+
+
+###############################################################################
+# Assign DHCP Proxy
+###############################################################################
+
+DHCP_ID=$(
+$HAMMER proxy list |
+awk -F'|' -v p="${DHCP_PROXY}" '
+
+{
+gsub(/^ +| +$/,"",$1)
+gsub(/^ +| +$/,"",$2)
+
+if($2==p)
+print $1
+
+}
+'
+)
+
+
+
+if [ -n "${DHCP_ID}" ]
+then
+
+    $HAMMER subnet update \
+    --name "${SUBNET_NAME}" \
+    --dhcp-id "${DHCP_ID}"
+
+    ok "DHCP proxy assigned."
+
+else
+
+    warn "DHCP proxy not found : ${DHCP_PROXY}"
+
+fi
+
+
+
+echo
+
+}
+
+
+
+
+
+###############################################################################
+# CentOS PXE Subnet
+###############################################################################
+
+create_subnet \
+"vgs-subnet-centos" \
+"192.168.253.0" \
+"255.255.255.0" \
+"192.168.253.2" \
+"192.168.253.1" \
+"cent-07-01.vgs.com" \
+"cent-07-01.vgs.com"
+
+
+
+
+###############################################################################
+# Rocky PXE Subnet
+###############################################################################
+
+create_subnet \
+"vgs-subnet-rockyos" \
+"192.168.253.0" \
+"255.255.255.0" \
+"192.168.253.2" \
+"192.168.253.1" \
+"cent-07-02.vgs.com" \
+"cent-07-02.vgs.com"
+
 
 
 
@@ -1059,14 +904,14 @@ set_default_template \
 # Final Verification
 ###############################################################################
 
-header "Final PXE Bootstrap Verification"
+header "[5/6] PXE Bootstrap Verification"
+
 
 
 echo
 echo "==============================="
 echo "Operating Systems"
 echo "==============================="
-
 
 $HAMMER os list
 
@@ -1077,39 +922,18 @@ echo "==============================="
 echo "PXE Templates"
 echo "==============================="
 
-
 $HAMMER template list | grep PXEGrub2
 
 
 
 echo
 echo "==============================="
-echo "Provisioning Template Mapping"
+echo "Subnets"
 echo "==============================="
 
-
-for OS in \
-"CentOSLinux7-RAID" \
-"CentOSLinux7-SingleDisk" \
-"RockyLinux8.10-RAID" \
-"RockyLinux8.10-SingleDisk" \
-"RockyLinux9.2-RAID" \
-"RockyLinux9.2-SingleDisk" \
-"RockyLinux9.8-RAID" \
-"RockyLinux9.8-SingleDisk"
-
-do
-
-echo
-echo "--------------------------------"
-echo "OS : ${OS}"
-echo "--------------------------------"
-
-$HAMMER os info \
---title "${OS}"
+$HAMMER subnet list
 
 
-done
 
 
 
@@ -1117,36 +941,49 @@ done
 # Final Status
 ###############################################################################
 
-header "01 - Foreman PXE Bootstrap Completed"
+header "[6/6] PXE Bootstrap Completed"
 
 
 
 if [ ${#FAILED_STEPS[@]} -eq 0 ]
-
 then
 
     ok "PXE Bootstrap completed successfully."
 
 else
 
-
-    warn "Bootstrap completed with ${#FAILED_STEPS[@]} failure(s)."
+    warn "Completed with ${#FAILED_STEPS[@]} failure(s)."
 
 
     for ITEM in "${FAILED_STEPS[@]}"
-
     do
 
         error "${ITEM}"
 
     done
 
-
 fi
+
 
 
 echo
 
-ok "Bootstrap finished."
+echo "Manual Verification:"
+echo "------------------------------------------------------------"
+
+echo
+
+echo "hammer os list"
+
+echo
+
+echo "hammer template list | grep PXEGrub2"
+
+echo
+
+echo "hammer subnet list"
+
+echo
+
 
 exit 0
