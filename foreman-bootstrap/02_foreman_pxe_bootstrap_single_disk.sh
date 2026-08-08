@@ -1,5 +1,4 @@
 #!/bin/bash
-
 ###############################################################################
 # 02 - Foreman PXE Bootstrap (Single Disk)
 #
@@ -14,6 +13,15 @@
 #   RockyLinux9.2-SingleDisk
 #   RockyLinux9.8-SingleDisk
 #
+# NOTE:
+#   Hostgroup names and Operating System names are different.
+#
+#   Hostgroup:
+#       CentOSLinux 7 SingleDisk
+#
+#   Operating System:
+#       CentOSLinux7-SingleDisk
+#
 ###############################################################################
 
 set +e
@@ -24,7 +32,6 @@ set +e
 ###############################################################################
 
 FAILED_STEPS=()
-
 
 record_failure()
 {
@@ -96,7 +103,7 @@ header "02 - Foreman PXE Bootstrap (Single Disk)"
 
 
 ###############################################################################
-# Variables
+# Foreman Credentials
 ###############################################################################
 
 FOREMAN_USER="${FOREMAN_USER:-admin}"
@@ -107,25 +114,23 @@ FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
 HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
 
 
+
+###############################################################################
+# Target Version
+###############################################################################
+
 TARGET_VERSION="${TARGET_VERSION:-9.8}"
 
 
 
 ###############################################################################
-# Existing Operating Systems
+# Existing Operating System Objects
+###############################################################################
 #
 # IMPORTANT:
-# Foreman OS name and title are different.
+# These are Foreman OS object titles.
+# They are NOT Hostgroup names.
 #
-# Example:
-#
-# Name:
-#   CentOSLinux7-SingleDisk
-#
-# Title:
-#   CentOSLinux7-SingleDisk 7
-#
-# Therefore use OS ID lookup.
 ###############################################################################
 
 CENTOS_SINGLE_OS="CentOSLinux7-SingleDisk"
@@ -135,33 +140,6 @@ ROCKY8_SINGLE_OS="RockyLinux8.10-SingleDisk"
 ROCKY92_SINGLE_OS="RockyLinux9.2-SingleDisk"
 
 ROCKY98_SINGLE_OS="RockyLinux9.8-SingleDisk"
-
-
-
-###############################################################################
-# Function : Get Operating System ID
-###############################################################################
-
-get_os_id()
-{
-
-OS_NAME="$1"
-
-
-$HAMMER os list \
-    --search "name=${OS_NAME}" 2>/dev/null |
-awk -F'|' -v name="${OS_NAME}" '
-{
-    gsub(/^ +| +$/, "", $2)
-
-    if ($2 == name)
-    {
-        gsub(/^ +| +$/, "", $1)
-        print $1
-    }
-}'
-
-}
 
 
 
@@ -220,6 +198,8 @@ case "$TARGET_VERSION" in
 
 esac
 
+
+
 ###############################################################################
 # [1/4] Create Single Disk PXE Templates
 ###############################################################################
@@ -240,7 +220,7 @@ cat > /tmp/centos-singledisk.erb <<'EOF'
 name: PXEGrub2 CentOS UEFI SingleDisk Kickstart
 kind: PXEGrub2
 oses:
-- CentOSLinux7
+- CentOSLinux
 %>
 
 set default=0
@@ -268,8 +248,6 @@ ok "CentOS Single Disk template generated."
 
 echo
 
-
-
 ###############################################################################
 # Rocky Linux 8 Single Disk Template
 ###############################################################################
@@ -282,7 +260,7 @@ cat > /tmp/rocky8-singledisk.erb <<'EOF'
 name: PXEGrub2 Rocky8 UEFI SingleDisk Kickstart
 kind: PXEGrub2
 oses:
-- RockyLinux8
+- RockyLinux
 %>
 
 
@@ -310,6 +288,7 @@ EOF
 
 ok "Rocky Linux 8 Single Disk template generated."
 
+
 echo
 
 
@@ -326,7 +305,7 @@ cat > "${ROCKY_TEMPLATE_FILE}" <<EOF
 name: ${ROCKY_TEMPLATE}
 kind: PXEGrub2
 oses:
-- RockyLinux9
+- RockyLinux
 %>
 
 
@@ -384,6 +363,7 @@ then
 
 else
 
+
     info "Importing template..."
 
 
@@ -417,7 +397,7 @@ echo
 
 
 ###############################################################################
-# [2/4] Import Templates
+# [2/4] Import Single Disk Templates
 ###############################################################################
 
 header "[2/4] Importing Single Disk Templates"
@@ -441,12 +421,41 @@ import_template \
 "${ROCKY_TEMPLATE_FILE}"
 
 
+echo
 
 ###############################################################################
 # [3/4] Associate Single Disk Templates
 ###############################################################################
 
 header "[3/4] Associating Single Disk Templates"
+
+
+
+###############################################################################
+# Function : Get Operating System ID
+###############################################################################
+
+get_os_id()
+{
+
+OS_NAME="$1"
+
+
+$HAMMER os list \
+    --fields "Id,Title" 2>/dev/null |
+awk -F'|' -v name="${OS_NAME}" '
+{
+    gsub(/^ +| +$/,"",$1)
+    gsub(/^ +| +$/,"",$2)
+
+    if ($2 == name)
+    {
+        print $1
+        exit
+    }
+}'
+
+}
 
 
 
@@ -462,12 +471,13 @@ OS_NAME="$1"
 TEMPLATE_NAME="$2"
 
 
+
 info "Checking ${TEMPLATE_NAME} on ${OS_NAME}..."
 
 
 
 ###############################################################################
-# Get OS ID
+# Find OS ID
 ###############################################################################
 
 OS_ID=$(get_os_id "${OS_NAME}")
@@ -488,13 +498,16 @@ fi
 
 
 
+ok "Found Operating System ID : ${OS_ID}"
+
+
+
 ###############################################################################
 # Check Existing Template Assignment
 ###############################################################################
 
 if $HAMMER os info \
     --id "${OS_ID}" |
-    awk '/Templates\:/,/Parameters\:/' |
     grep -q "${TEMPLATE_NAME}"
 
 then
@@ -521,7 +534,7 @@ else
 
     else
 
-        error "Failed assigning template."
+        error "Failed assigning ${TEMPLATE_NAME}"
 
         record_failure "${OS_NAME} -> ${TEMPLATE_NAME}"
 
@@ -538,7 +551,7 @@ echo
 
 
 ###############################################################################
-# Assign Templates
+# CentOS 7 Single Disk
 ###############################################################################
 
 associate_template \
@@ -547,23 +560,33 @@ associate_template \
 
 
 
+###############################################################################
+# Rocky Linux 8.10 Single Disk
+###############################################################################
+
 associate_template \
 "RockyLinux8.10-SingleDisk" \
 "PXEGrub2 Rocky8 UEFI SingleDisk Kickstart"
 
 
 
+###############################################################################
+# Rocky Linux 9.2 / 9.8 Single Disk
+###############################################################################
+
 associate_template \
 "${ROCKY_OS}" \
 "${ROCKY_TEMPLATE}"
 
+
+
+echo
+
+
+
 ###############################################################################
-# Verification
+# Verification Function
 ###############################################################################
-
-header "Single Disk Template Verification"
-
-
 
 verify_os_templates()
 {
@@ -576,9 +599,7 @@ echo
 info "${OS_NAME}"
 
 
-
 OS_ID=$(get_os_id "${OS_NAME}")
-
 
 
 if [ -z "${OS_ID}" ]
@@ -587,9 +608,7 @@ then
 
     error "Operating System not found : ${OS_NAME}"
 
-    record_failure "${OS_NAME}"
-
-    return 1
+    return
 
 fi
 
@@ -597,7 +616,7 @@ fi
 
 $HAMMER os info \
     --id "${OS_ID}" |
-    awk '/Templates\:/,/Parameters\:/'
+awk '/Templates\:/,/Parameters\:/'
 
 echo
 
@@ -606,8 +625,12 @@ echo
 
 
 ###############################################################################
-# Verify OS Template Mapping
+# Verify Assigned Templates
 ###############################################################################
+
+header "Single Disk Template Verification"
+
+
 
 verify_os_templates "CentOSLinux7-SingleDisk"
 
@@ -617,36 +640,29 @@ verify_os_templates "${ROCKY_OS}"
 
 
 
-###############################################################################
-# Important:
-#
-# RAID remains default.
-# Hostgroup selects SingleDisk template.
-#
-###############################################################################
+echo
 
+###############################################################################
+# Single Disk PXE Configuration Summary
+###############################################################################
 
 header "Single Disk PXE Configuration Completed"
 
 
 
-echo
+###############################################################################
+# Available Single Disk Templates
+###############################################################################
 
 info "Single Disk Templates Available:"
 
 
-$HAMMER template list | grep "SingleDisk"
+$HAMMER template list |
+grep "SingleDisk"
+
 
 
 echo
-
-
-
-###############################################################################
-# [4/4] Single Disk PXE Bootstrap Summary
-###############################################################################
-
-header "[4/4] Single Disk PXE Bootstrap Summary"
 
 
 
@@ -654,10 +670,12 @@ header "[4/4] Single Disk PXE Bootstrap Summary"
 # PXE Templates
 ###############################################################################
 
-info "PXE Templates"
+header "PXE Templates"
 
 
-$HAMMER template list | grep "PXEGrub2"
+$HAMMER template list |
+grep "PXEGrub2"
+
 
 
 echo
@@ -665,14 +683,16 @@ echo
 
 
 ###############################################################################
-# Operating Systems
+# Operating System Verification
 ###############################################################################
 
-info "Operating Systems"
+header "Operating Systems"
+
 
 
 $HAMMER os list |
 egrep "CentOSLinux7-SingleDisk|RockyLinux8.10-SingleDisk|RockyLinux9.2-SingleDisk|RockyLinux9.8-SingleDisk"
+
 
 
 echo
@@ -718,24 +738,24 @@ then
 
     ok "Single Disk PXE Bootstrap completed successfully."
 
+
 else
+
 
     warn "Bootstrap completed with ${#FAILED_STEPS[@]} failure(s)."
 
 
-    for step in "${FAILED_STEPS[@]}"
+
+    for STEP in "${FAILED_STEPS[@]}"
 
     do
 
-        error "${step}"
+        error "${STEP}"
 
     done
 
+
 fi
-
-
-
-echo
 
 
 
@@ -749,41 +769,41 @@ header "Manual Verification Commands"
 
 echo
 
-echo "CentOS 7 SingleDisk"
+echo "CentOS 7 Single Disk"
 
 echo "------------------------------------------------------------"
 
-echo 'hammer os info --id $(hammer os list --search "name=CentOSLinux7-SingleDisk" | awk -F"|" "{print \$1}")'
+echo 'hammer os info --title "CentOSLinux7-SingleDisk"'
 
 
 
 echo
 
-echo "Rocky Linux 8.10 SingleDisk"
+echo "Rocky Linux 8.10 Single Disk"
 
 echo "------------------------------------------------------------"
 
-echo 'hammer os info --id $(hammer os list --search "name=RockyLinux8.10-SingleDisk" | awk -F"|" "{print \$1}")'
+echo 'hammer os info --title "RockyLinux8.10-SingleDisk"'
 
 
 
 echo
 
-echo "Rocky Linux 9.2 SingleDisk"
+echo "Rocky Linux 9.2 Single Disk"
 
 echo "------------------------------------------------------------"
 
-echo 'hammer os info --id $(hammer os list --search "name=RockyLinux9.2-SingleDisk" | awk -F"|" "{print \$1}")'
+echo 'hammer os info --title "RockyLinux9.2-SingleDisk"'
 
 
 
 echo
 
-echo "Rocky Linux 9.8 SingleDisk"
+echo "Rocky Linux 9.8 Single Disk"
 
 echo "------------------------------------------------------------"
 
-echo 'hammer os info --id $(hammer os list --search "name=RockyLinux9.8-SingleDisk" | awk -F"|" "{print \$1}")'
+echo 'hammer os info --title "RockyLinux9.8-SingleDisk"'
 
 
 
@@ -795,7 +815,7 @@ echo
 # Expected Configuration
 ###############################################################################
 
-header "Expected Single Disk PXE Configuration"
+header "Expected Single Disk Configuration"
 
 
 
@@ -803,30 +823,28 @@ cat <<EOF
 
 Operating Systems:
 
-
 CentOSLinux7-SingleDisk
-    |
-    +-- PXEGrub2 CentOS UEFI SingleDisk Kickstart
+|
++-- PXEGrub2 CentOS UEFI SingleDisk Kickstart
 
 
 RockyLinux8.10-SingleDisk
-    |
-    +-- PXEGrub2 Rocky8 UEFI SingleDisk Kickstart
+|
++-- PXEGrub2 Rocky8 UEFI SingleDisk Kickstart
 
 
 RockyLinux9.2-SingleDisk
-    |
-    +-- PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart
+|
++-- PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart
 
 
 RockyLinux9.8-SingleDisk
-    |
-    +-- PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart
+|
++-- PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart
 
 
 
 Hostgroups:
-
 
 CentOSLinux 7 SingleDisk
 
@@ -839,7 +857,6 @@ RockyLinux 9.8 SingleDisk
 
 
 Disk Layout:
-
 
 Single Disk
 
