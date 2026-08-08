@@ -195,3 +195,8 @@ curl -L -o enable-verbose-boot.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/enable-verbose-boot.sh?$(date +%s)" && \
 chmod +x enable-verbose-boot.sh
 ```
+
+```text
+wget -r -np -nH --cut-dirs=4 \
+  https://1407433742.rsc.cdn77.org/c7.2009.u.x86_64/cyrus-sasl/20220224132553/2.1.26-24.el7_9.x86_64/
+```
