@@ -3,25 +3,18 @@
 ###############################################################################
 # 03 - Foreman Hostgroup Bootstrap (RAID)
 #
-# Creates Hostgroups:
+# Creates RAID Hostgroups:
 #
-#   CentOSLinux 7 RAID
-#   RockyLinux 8.10 RAID
-#   RockyLinux 9.2 RAID
-#   RockyLinux 9.8 RAID
+#   CentOSLinux7-RAID
+#   RockyLinux8.10-RAID
+#   RockyLinux9.2-RAID
+#   RockyLinux9.8-RAID
 #
-# Design:
+# OS objects are created by:
+#   01_foreman_pxe_bootstrap.sh
 #
-#   RAID and SingleDisk use separate Operating System objects.
-#
-#   RAID OS:
-#       CentOSLinux 7 RAID
-#       RockyLinux 8.10 RAID
-#       RockyLinux 9.2 RAID
-#       RockyLinux 9.8 RAID
-#
-#   SingleDisk OS:
-#       Created by script 04
+# Content is created by:
+#   02_foreman_katello_bootstrap.sh
 #
 ###############################################################################
 
@@ -38,7 +31,6 @@ FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
 
 
 HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
-
 
 
 ###############################################################################
@@ -61,7 +53,6 @@ TARGET_VERSION="${TARGET_VERSION:-ALL}"
 
 
 FAILED_STEPS=()
-
 
 
 record_failure()
@@ -134,7 +125,7 @@ header "03 - Foreman RAID Hostgroup Bootstrap"
 
 
 ###############################################################################
-# RAID Template Mapping
+# RAID PXE Template Mapping
 ###############################################################################
 
 CENTOS_RAID_TEMPLATE="PXEGrub2 CentOS UEFI RAID Kickstart"
@@ -149,15 +140,17 @@ ROCKY98_RAID_TEMPLATE="PXEGrub2 Rocky9.8 UEFI RAID Kickstart"
 
 ###############################################################################
 # RAID Operating System Mapping
+#
+# MUST match Script 01 exactly
 ###############################################################################
 
-CENTOS_RAID_OS="CentOSLinux 7 RAID"
+CENTOS_RAID_OS="CentOSLinux7-RAID"
 
-ROCKY8_RAID_OS="RockyLinux 8.10 RAID"
+ROCKY8_RAID_OS="RockyLinux8.10-RAID"
 
-ROCKY92_RAID_OS="RockyLinux 9.2 RAID"
+ROCKY92_RAID_OS="RockyLinux9.2-RAID"
 
-ROCKY98_RAID_OS="RockyLinux 9.8 RAID"
+ROCKY98_RAID_OS="RockyLinux9.8-RAID"
 
 
 
@@ -173,19 +166,16 @@ ROCKY92_MEDIA="Rocky 9.2 Remote"
 
 ROCKY98_MEDIA="Rocky 9 Remote"
 
-
-
 ###############################################################################
 # Select Rocky Version
 ###############################################################################
 
 case "${TARGET_VERSION}" in
 
-
 9.2)
 
     ROCKY_HOSTGROUPS=(
-        "RockyLinux 9.2 RAID"
+        "RockyLinux9.2-RAID"
     )
 
     ROCKY_OS_LIST=(
@@ -198,12 +188,10 @@ case "${TARGET_VERSION}" in
 
 ;;
 
-
-
 9.8)
 
     ROCKY_HOSTGROUPS=(
-        "RockyLinux 9.8 RAID"
+        "RockyLinux9.8-RAID"
     )
 
     ROCKY_OS_LIST=(
@@ -215,16 +203,14 @@ case "${TARGET_VERSION}" in
     )
 
 ;;
-
-
 
 ALL)
 
     ROCKY_HOSTGROUPS=(
 
-        "RockyLinux 9.2 RAID"
+        "RockyLinux9.2-RAID"
 
-        "RockyLinux 9.8 RAID"
+        "RockyLinux9.8-RAID"
 
     )
 
@@ -247,8 +233,6 @@ ALL)
     )
 
 ;;
-
-
 
 *)
 
@@ -263,13 +247,13 @@ esac
 
 
 ###############################################################################
-# Create CentOS Linux 7 RAID Hostgroup
+# Create CentOS 7 RAID Hostgroup
 ###############################################################################
 
 create_centos_raid_hostgroup()
 {
 
-HOSTGROUP="CentOSLinux 7 RAID"
+HOSTGROUP="CentOSLinux7-RAID"
 
 
 info "Checking Hostgroup : ${HOSTGROUP}"
@@ -333,7 +317,7 @@ echo
 create_rocky8_raid_hostgroup()
 {
 
-HOSTGROUP="RockyLinux 8.10 RAID"
+HOSTGROUP="RockyLinux8.10-RAID"
 
 
 info "Checking Hostgroup : ${HOSTGROUP}"
@@ -389,7 +373,7 @@ echo
 }
 
 ###############################################################################
-# Create Rocky Linux 9 RAID Hostgroups
+# Create Rocky Linux 9.x RAID Hostgroups
 ###############################################################################
 
 create_rocky9_raid_hostgroups()
@@ -408,6 +392,7 @@ MEDIA="${ROCKY_MEDIA_LIST[$IDX]}"
 
 
 info "Checking Hostgroup : ${HOSTGROUP}"
+
 
 
 if $HAMMER hostgroup info \
@@ -468,6 +453,42 @@ done
 
 
 ###############################################################################
+# Create All RAID Hostgroups
+###############################################################################
+
+create_raid_hostgroups()
+{
+
+header "Creating RAID Hostgroups"
+
+
+
+###############################################################################
+# CentOS 7 RAID
+###############################################################################
+
+create_centos_raid_hostgroup
+
+
+
+###############################################################################
+# Rocky 8.10 RAID
+###############################################################################
+
+create_rocky8_raid_hostgroup
+
+
+
+###############################################################################
+# Rocky 9.x RAID
+###############################################################################
+
+create_rocky9_raid_hostgroups
+
+
+}
+
+###############################################################################
 # Assign RAID Provisioning Templates
 ###############################################################################
 
@@ -508,11 +529,26 @@ fi
 
 
 ###############################################################################
-# Verify OS Exists
+# Verify Operating System Exists
 ###############################################################################
 
-if ! $HAMMER os info \
-    --title "${OS_NAME}" >/dev/null 2>&1
+OS_ID=$(
+$HAMMER os list |
+awk -F'|' -v NAME="${OS_NAME}" '
+{
+    gsub(/^ +| +$/, "", $2)
+
+    if ($2 == NAME)
+    {
+        gsub(/^ +| +$/, "", $1)
+        print $1
+    }
+}'
+)
+
+
+
+if [ -z "${OS_ID}" ]
 
 then
 
@@ -527,11 +563,11 @@ fi
 
 
 ###############################################################################
-# Check Existing Assignment
+# Check Existing Template Assignment
 ###############################################################################
 
 if $HAMMER os info \
-    --title "${OS_NAME}" |
+    --id "${OS_ID}" |
     grep -q "${TEMPLATE}"
 
 then
@@ -546,7 +582,7 @@ else
 
 
     $HAMMER os add-provisioning-template \
-        --title "${OS_NAME}" \
+        --id "${OS_ID}" \
         --provisioning-template "${TEMPLATE}"
 
 
@@ -622,26 +658,20 @@ OS_NAME="${ROCKY_OS_LIST[$IDX]}"
 case "${OS_NAME}" in
 
 
+"RockyLinux9.2-RAID")
 
-"RockyLinux 9.2 RAID")
-
-
-assign_template \
-"${OS_NAME}" \
-"${ROCKY92_RAID_TEMPLATE}"
-
+    assign_template \
+    "${OS_NAME}" \
+    "${ROCKY92_RAID_TEMPLATE}"
 
 ;;
 
 
+"RockyLinux9.8-RAID")
 
-"RockyLinux 9.8 RAID")
-
-
-assign_template \
-"${OS_NAME}" \
-"${ROCKY98_RAID_TEMPLATE}"
-
+    assign_template \
+    "${OS_NAME}" \
+    "${ROCKY98_RAID_TEMPLATE}"
 
 ;;
 
@@ -653,492 +683,3 @@ done
 
 
 }
-
-
-
-###############################################################################
-# Create All RAID Hostgroups
-###############################################################################
-
-create_raid_hostgroups()
-{
-
-header "Creating RAID Hostgroups"
-
-
-
-###############################################################################
-# CentOS 7
-###############################################################################
-
-create_centos_raid_hostgroup
-
-
-
-###############################################################################
-# Rocky 8.10
-###############################################################################
-
-create_rocky8_raid_hostgroup
-
-
-
-###############################################################################
-# Rocky 9.x
-###############################################################################
-
-create_rocky9_raid_hostgroups
-
-
-}
-
-
-
-###############################################################################
-# Verify Hostgroups
-###############################################################################
-
-verify_hostgroups()
-{
-
-header "RAID Hostgroup Verification"
-
-
-
-HOSTGROUPS=(
-
-"CentOSLinux 7 RAID"
-
-"RockyLinux 8.10 RAID"
-
-"RockyLinux 9.2 RAID"
-
-"RockyLinux 9.8 RAID"
-
-)
-
-
-
-for HG in "${HOSTGROUPS[@]}"
-do
-
-
-echo
-
-echo "------------------------------------------------------------"
-
-echo "Hostgroup : ${HG}"
-
-echo "------------------------------------------------------------"
-
-
-
-$HAMMER hostgroup info \
-    --name "${HG}" || true
-
-
-done
-
-
-}
-
-
-
-###############################################################################
-# Main Execution
-###############################################################################
-
-header "Starting RAID Hostgroup Creation"
-
-
-
-create_raid_hostgroups
-
-
-
-configure_raid_templates
-
-
-
-verify_hostgroups
-
-###############################################################################
-# RAID Hostgroup Summary
-###############################################################################
-
-raid_summary()
-{
-
-header "RAID Hostgroup Summary"
-
-
-
-echo
-
-echo "============================================================"
-
-echo "RAID Hostgroups"
-
-echo "============================================================"
-
-
-
-$HAMMER hostgroup list \
-    --search "RAID" || true
-
-
-
-echo
-
-echo "============================================================"
-
-echo "RAID Operating Systems"
-
-echo "============================================================"
-
-
-
-$HAMMER os list |
-egrep "CentOSLinux 7 RAID|RockyLinux 8.10 RAID|RockyLinux 9.2 RAID|RockyLinux 9.8 RAID" \
-|| true
-
-
-
-echo
-
-echo "============================================================"
-
-echo "RAID PXE Templates"
-
-echo "============================================================"
-
-
-
-echo
-
-echo "CentOS 7"
-
-echo " -> ${CENTOS_RAID_TEMPLATE}"
-
-
-
-echo
-
-echo "Rocky Linux 8.10"
-
-echo " -> ${ROCKY8_RAID_TEMPLATE}"
-
-
-
-echo
-
-echo "Rocky Linux 9.2"
-
-echo " -> ${ROCKY92_RAID_TEMPLATE}"
-
-
-
-echo
-
-echo "Rocky Linux 9.8"
-
-echo " -> ${ROCKY98_RAID_TEMPLATE}"
-
-
-
-}
-
-
-
-###############################################################################
-# Detailed Hostgroup Verification
-###############################################################################
-
-verify_details()
-{
-
-header "Detailed RAID Hostgroup Verification"
-
-
-
-HOSTGROUPS=(
-
-"CentOSLinux 7 RAID"
-
-"RockyLinux 8.10 RAID"
-
-"RockyLinux 9.2 RAID"
-
-"RockyLinux 9.8 RAID"
-
-)
-
-
-
-for HG in "${HOSTGROUPS[@]}"
-do
-
-
-echo
-
-echo "############################################################"
-
-echo "Hostgroup : ${HG}"
-
-echo "############################################################"
-
-
-
-if $HAMMER hostgroup info \
-    --name "${HG}" >/dev/null 2>&1
-
-then
-
-    $HAMMER hostgroup info \
-        --name "${HG}"
-
-else
-
-    warn "${HG} not found."
-
-fi
-
-
-done
-
-
-}
-
-
-
-###############################################################################
-# Template Verification
-###############################################################################
-
-verify_templates()
-{
-
-header "RAID Template Verification"
-
-
-
-echo
-
-info "CentOS RAID Template"
-
-$HAMMER template info \
-    --name "${CENTOS_RAID_TEMPLATE}" || true
-
-
-
-echo
-
-info "Rocky 8 RAID Template"
-
-$HAMMER template info \
-    --name "${ROCKY8_RAID_TEMPLATE}" || true
-
-
-
-echo
-
-info "Rocky 9.2 RAID Template"
-
-$HAMMER template info \
-    --name "${ROCKY92_RAID_TEMPLATE}" || true
-
-
-
-echo
-
-info "Rocky 9.8 RAID Template"
-
-$HAMMER template info \
-    --name "${ROCKY98_RAID_TEMPLATE}" || true
-
-
-}
-
-
-
-###############################################################################
-# Final Execution
-###############################################################################
-
-header "03 - Foreman RAID Hostgroup Bootstrap Completed"
-
-
-
-raid_summary
-
-
-
-verify_templates
-
-
-
-echo
-
-
-###############################################################################
-# Failure Summary
-###############################################################################
-
-header "Execution Status"
-
-
-
-if [ ${#FAILED_STEPS[@]} -eq 0 ]
-
-then
-
-
-    ok "RAID Hostgroup Bootstrap completed successfully."
-
-
-else
-
-
-    warn "Bootstrap completed with ${#FAILED_STEPS[@]} failure(s)."
-
-
-
-    for ITEM in "${FAILED_STEPS[@]}"
-
-    do
-
-        error "${ITEM}"
-
-    done
-
-
-fi
-
-
-
-###############################################################################
-# Manual Verification Commands
-###############################################################################
-
-header "Manual Verification Commands"
-
-
-
-echo
-
-echo "CentOS RAID"
-
-echo "------------------------------------------------------------"
-
-echo 'hammer hostgroup info --name "CentOSLinux 7 RAID"'
-
-
-
-echo
-
-echo "Rocky 8 RAID"
-
-echo "------------------------------------------------------------"
-
-echo 'hammer hostgroup info --name "RockyLinux 8.10 RAID"'
-
-
-
-echo
-
-echo "Rocky 9.2 RAID"
-
-echo "------------------------------------------------------------"
-
-echo 'hammer hostgroup info --name "RockyLinux 9.2 RAID"'
-
-
-
-echo
-
-echo "Rocky 9.8 RAID"
-
-echo "------------------------------------------------------------"
-
-echo 'hammer hostgroup info --name "RockyLinux 9.8 RAID"'
-
-
-
-echo
-
-
-###############################################################################
-# Expected Configuration
-###############################################################################
-
-header "Expected RAID Configuration"
-
-
-
-cat <<EOF
-
-Operating Systems:
-
-CentOSLinux 7 RAID
-    |
-    +-- PXEGrub2 CentOS UEFI RAID Kickstart
-
-
-RockyLinux 8.10 RAID
-    |
-    +-- PXEGrub2 Rocky8 UEFI RAID Kickstart
-
-
-RockyLinux 9.2 RAID
-    |
-    +-- PXEGrub2 Rocky9.2 UEFI RAID Kickstart
-
-
-RockyLinux 9.8 RAID
-    |
-    +-- PXEGrub2 Rocky9.8 UEFI RAID Kickstart
-
-
-
-Hostgroups:
-
-CentOSLinux 7 RAID
-RockyLinux 8.10 RAID
-RockyLinux 9.2 RAID
-RockyLinux 9.8 RAID
-
-
-Disk Layout:
-
-Disk 1 + Disk 2
-
-EFI
- |
- +-- /boot RAID1
- |
- +-- LVM RAID1
-        |
-        +-- /
-        +-- swap
-        +-- /home
-
-
-EOF
-
-
-
-###############################################################################
-# Exit
-###############################################################################
-
-if [ ${#FAILED_STEPS[@]} -eq 0 ]
-
-then
-
-    exit 0
-
-else
-
-    exit 1
-
-fi
