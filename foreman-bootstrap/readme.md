@@ -28,8 +28,8 @@ TARGET_VERSION=9.2 ./01_foreman_pxe_bootstrap.sh
 #   - Activation Keys
 ###############################################################################
 
-./02_foreman_katello_bootstrap.sh
-
+TARGET_VERSION=9.8 ./02_foreman_katello_bootstrap.sh
+TARGET_VERSION=9.2 ./02_foreman_katello_bootstrap.sh
 
 ###############################################################################
 # 02 - Single Disk PXE Bootstrap
