@@ -669,3 +669,54 @@ $HAMMER repository list \
 $HAMMER repository list \
 --organization "${ORGANIZATION}" \
 --product "${PRODUCT_NAME}"
+###############################################################################
+#Registration Commands
+###############################################################################
+header "Registration Commands"
+echo
+info "CentOS 7"
+echo "subscription-manager register \\"
+echo "  --org=\"Default_Organization\" \\"
+echo "  --activationkey=\"centos7-prod-key\""
+echo
+info "Rocky Linux 8"
+echo "subscription-manager register \\"
+echo "  --org=\"Default_Organization\" \\"
+echo "  --activationkey=\"rocky8-prod-key\""
+echo
+info "${PRODUCT_NAME}"
+echo "subscription-manager register \\"
+echo "  --org=\"Default_Organization\" \\"
+echo "  --activationkey=\"${ACTIVATION_KEY}\""
+echo
+###############################################################################
+#Final Summary
+###############################################################################
+header "02 - Foreman Katello Bootstrap Completed"
+if [ ${#FAILED_STEPS[@]} -eq 0 ]
+then
+ok "Foreman Katello Bootstrap completed successfully."
+else
+warn "Bootstrap completed with ${#FAILED_STEPS[@]} failure(s)."
+for STEP in "${FAILED_STEPS[@]}"
+do
+error "${STEP}"
+done
+fi
+echo
+###############################################################################
+#Manual Verification
+###############################################################################
+header "Manual Verification Commands"
+echo
+echo "hammer product list"
+echo
+echo "hammer repository list --organization \"${ORGANIZATION}\""
+echo
+echo "hammer content-view list --organization \"${ORGANIZATION}\""
+echo
+echo "hammer activation-key list --organization \"${ORGANIZATION}\""
+echo
+echo "hammer subscription list --organization \"${ORGANIZATION}\""
+echo
+exit 0
