@@ -61,7 +61,7 @@ enabled=1
 gpgcheck=0
 priority=1
 EOF
-yum install -y gtk2 gtk3 mesa-libEGL* tomcat* ruby* apache*
+yum install -y gtk2 gtk3 mesa-libEGL* tomcat* ruby* apache* rpm-build*
 
 echo "📝 Creating patch.repo..."
 cat <<EOF > /etc/yum.repos.d/patch.repo
