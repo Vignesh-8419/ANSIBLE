@@ -116,13 +116,13 @@ TARGET_VERSION="${TARGET_VERSION:-9.8}"
 # Existing Operating Systems
 ###############################################################################
 
-CENTOS_OS="CentOSLinux 7"
+CENTOS_SINGLE_OS="CentOSLinux 7 SingleDisk"
 
-ROCKY8_OS="RockyLinux 8.10"
+ROCKY8_SINGLE_OS="RockyLinux 8.10 SingleDisk"
 
-ROCKY92_OS="RockyLinux 9.2"
+ROCKY92_SINGLE_OS="RockyLinux 9.2 SingleDisk"
 
-ROCKY98_OS="RockyLinux 9.8"
+ROCKY98_SINGLE_OS="RockyLinux 9.8 SingleDisk"
 
 
 
@@ -135,7 +135,7 @@ case "$TARGET_VERSION" in
 
 9.2)
 
-    ROCKY_OS="${ROCKY92_OS}"
+    ROCKY_OS="${ROCKY92_SINGLE_OS}"
 
     ROCKY_TEMPLATE="PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart"
 
@@ -153,7 +153,7 @@ case "$TARGET_VERSION" in
 
 9.8)
 
-    ROCKY_OS="${ROCKY98_OS}"
+    ROCKY_OS="${ROCKY98_SINGLE_OS}"
 
     ROCKY_TEMPLATE="PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart"
 
@@ -474,8 +474,7 @@ echo
 # Assign CentOS Single Disk Template
 ###############################################################################
 
-associate_template \
-"CentOSLinux 7" \
+"CentOSLinux 7 SingleDisk" \
 "PXEGrub2 CentOS UEFI SingleDisk Kickstart"
 
 
@@ -485,7 +484,7 @@ associate_template \
 ###############################################################################
 
 associate_template \
-"RockyLinux 8.10" \
+"RockyLinux 8.10 SingleDisk" \
 "PXEGrub2 Rocky8 UEFI SingleDisk Kickstart"
 
 
@@ -529,11 +528,9 @@ echo
 
 
 
-verify_os_templates "CentOSLinux 7"
+verify_os_templates "CentOSLinux 7 SingleDisk"
 
-
-verify_os_templates "RockyLinux 8.10"
-
+verify_os_templates "RockyLinux 8.10 SingleDisk"
 
 verify_os_templates "${ROCKY_OS}"
 
