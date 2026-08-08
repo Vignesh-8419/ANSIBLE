@@ -5,19 +5,16 @@
 #
 # Creates Hostgroups:
 #
-#   CentOSLinux 7 SingleDisk
-#   RockyLinux 8.10 SingleDisk
-#   RockyLinux 9.2 SingleDisk
-#   RockyLinux 9.8 SingleDisk
+#   CentOSLinux7-SingleDisk
+#   RockyLinux8.10-SingleDisk
+#   RockyLinux9.2-SingleDisk
+#   RockyLinux9.8-SingleDisk
 #
-# Features:
+# OS objects are created by:
+#   01_foreman_pxe_bootstrap.sh
 #
-#   - Single Disk Installation
-#   - PXEGrub2 UEFI Kickstart
-#   - Installation Media mapping
-#   - SingleDisk Operating System mapping
-#   - Subnet mapping
-#   - Domain mapping
+# Content is created by:
+#   02_foreman_katello_bootstrap.sh
 #
 ###############################################################################
 
@@ -56,7 +53,6 @@ ROCKY_SUBNET="vgs-subnet-rockyos"
 TARGET_VERSION="${TARGET_VERSION:-ALL}"
 
 
-
 FAILED_STEPS=()
 
 
@@ -73,17 +69,11 @@ record_failure()
 ###############################################################################
 
 RED='\033[0;31m'
-
 GREEN='\033[0;32m'
-
 YELLOW='\033[1;33m'
-
 BLUE='\033[1;34m'
-
 CYAN='\033[1;36m'
-
 WHITE='\033[1;37m'
-
 NC='\033[0m'
 
 
@@ -133,21 +123,23 @@ header()
 
 
 ###############################################################################
-# Single Disk OS Definitions
+# Single Disk Operating System Mapping
+#
+# MUST match Script 01 exactly
 ###############################################################################
 
-CENTOS_SINGLE_OS="CentOSLinux 7 SingleDisk"
+CENTOS_SINGLE_OS="CentOSLinux7-SingleDisk"
 
-ROCKY8_SINGLE_OS="RockyLinux 8.10 SingleDisk"
+ROCKY8_SINGLE_OS="RockyLinux8.10-SingleDisk"
 
-ROCKY92_SINGLE_OS="RockyLinux 9.2 SingleDisk"
+ROCKY92_SINGLE_OS="RockyLinux9.2-SingleDisk"
 
-ROCKY98_SINGLE_OS="RockyLinux 9.8 SingleDisk"
+ROCKY98_SINGLE_OS="RockyLinux9.8-SingleDisk"
 
 
 
 ###############################################################################
-# Medium Definitions
+# Installation Media Mapping
 ###############################################################################
 
 CENTOS_MEDIA="CentOS 7 Remote"
@@ -161,6 +153,18 @@ ROCKY98_MEDIA="Rocky 9 Remote"
 
 
 ###############################################################################
+# PXE Template Mapping
+###############################################################################
+
+CENTOS_SINGLE_TEMPLATE="PXEGrub2 CentOS UEFI SingleDisk Kickstart"
+
+ROCKY8_SINGLE_TEMPLATE="PXEGrub2 Rocky8 UEFI SingleDisk Kickstart"
+
+ROCKY92_SINGLE_TEMPLATE="PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart"
+
+ROCKY98_SINGLE_TEMPLATE="PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart"
+
+###############################################################################
 # Select Rocky Version
 ###############################################################################
 
@@ -171,7 +175,7 @@ case "${TARGET_VERSION}" in
 
     ROCKY_HOSTGROUPS=(
 
-        "RockyLinux 9.2 SingleDisk"
+        "RockyLinux9.2-SingleDisk"
 
     )
 
@@ -190,12 +194,13 @@ case "${TARGET_VERSION}" in
     )
 
 ;;
+
 
 9.8)
 
     ROCKY_HOSTGROUPS=(
 
-        "RockyLinux 9.8 SingleDisk"
+        "RockyLinux9.8-SingleDisk"
 
     )
 
@@ -215,13 +220,14 @@ case "${TARGET_VERSION}" in
 
 ;;
 
+
 ALL)
 
     ROCKY_HOSTGROUPS=(
 
-        "RockyLinux 9.2 SingleDisk"
+        "RockyLinux9.2-SingleDisk"
 
-        "RockyLinux 9.8 SingleDisk"
+        "RockyLinux9.8-SingleDisk"
 
     )
 
@@ -245,9 +251,10 @@ ALL)
 
 ;;
 
+
 *)
 
-    error "Unsupported TARGET_VERSION ${TARGET_VERSION}"
+    error "Unsupported TARGET_VERSION=${TARGET_VERSION}"
 
     exit 1
 
@@ -264,16 +271,14 @@ esac
 create_centos_single_hostgroup()
 {
 
-HOSTGROUP="CentOSLinux 7 SingleDisk"
+HOSTGROUP="CentOSLinux7-SingleDisk"
 
 
-echo
-
-echo "Checking Hostgroup : ${HOSTGROUP}"
+info "Checking Hostgroup : ${HOSTGROUP}"
 
 
-if $HAMMER hostgroup list \
---search "name=\"${HOSTGROUP}\"" | grep -q "${HOSTGROUP}"
+if $HAMMER hostgroup info \
+    --name "${HOSTGROUP}" >/dev/null 2>&1
 
 then
 
@@ -281,22 +286,22 @@ then
 
 else
 
+
     info "Creating ${HOSTGROUP}..."
 
 
-
     $HAMMER hostgroup create \
-    --name "${HOSTGROUP}" \
-    --organization "${ORGANIZATION}" \
-    --location "${LOCATION}" \
-    --subnet "${CENTOS_SUBNET}" \
-    --domain "${DOMAIN}" \
-    --operatingsystem "${CENTOS_SINGLE_OS}" \
-    --architecture x86_64 \
-    --medium "${CENTOS_MEDIA}" \
-    --partition-table "Kickstart default" \
-    --root-password "password" \
-    --pxe-loader "Grub2 UEFI"
+        --name "${HOSTGROUP}" \
+        --organization "${ORGANIZATION}" \
+        --location "${LOCATION}" \
+        --subnet "${CENTOS_SUBNET}" \
+        --domain "${DOMAIN}" \
+        --operatingsystem "${CENTOS_SINGLE_OS}" \
+        --architecture x86_64 \
+        --medium "${CENTOS_MEDIA}" \
+        --partition-table "Kickstart default" \
+        --root-password "password" \
+        --pxe-loader "Grub2 UEFI"
 
 
 
@@ -314,9 +319,14 @@ else
 
     fi
 
+
 fi
 
+echo
+
 }
+
+
 
 ###############################################################################
 # Create Rocky Linux 8.10 SingleDisk Hostgroup
@@ -325,16 +335,14 @@ fi
 create_rocky8_single_hostgroup()
 {
 
-HOSTGROUP="RockyLinux 8.10 SingleDisk"
+HOSTGROUP="RockyLinux8.10-SingleDisk"
 
 
-echo
-
-echo "Checking Hostgroup : ${HOSTGROUP}"
+info "Checking Hostgroup : ${HOSTGROUP}"
 
 
-if $HAMMER hostgroup list \
---search "name=\"${HOSTGROUP}\"" | grep -q "${HOSTGROUP}"
+if $HAMMER hostgroup info \
+    --name "${HOSTGROUP}" >/dev/null 2>&1
 
 then
 
@@ -342,22 +350,22 @@ then
 
 else
 
+
     info "Creating ${HOSTGROUP}..."
 
 
-
     $HAMMER hostgroup create \
-    --name "${HOSTGROUP}" \
-    --organization "${ORGANIZATION}" \
-    --location "${LOCATION}" \
-    --subnet "${ROCKY_SUBNET}" \
-    --domain "${DOMAIN}" \
-    --operatingsystem "${ROCKY8_SINGLE_OS}" \
-    --architecture x86_64 \
-    --medium "${ROCKY8_MEDIA}" \
-    --partition-table "Kickstart default" \
-    --root-password "password" \
-    --pxe-loader "Grub2 UEFI"
+        --name "${HOSTGROUP}" \
+        --organization "${ORGANIZATION}" \
+        --location "${LOCATION}" \
+        --subnet "${ROCKY_SUBNET}" \
+        --domain "${DOMAIN}" \
+        --operatingsystem "${ROCKY8_SINGLE_OS}" \
+        --architecture x86_64 \
+        --medium "${ROCKY8_MEDIA}" \
+        --partition-table "Kickstart default" \
+        --root-password "password" \
+        --pxe-loader "Grub2 UEFI"
 
 
 
@@ -375,14 +383,15 @@ else
 
     fi
 
+
 fi
+
+echo
 
 }
 
-
-
 ###############################################################################
-# Create Rocky Linux 9 SingleDisk Hostgroups
+# Create Rocky Linux 9.x SingleDisk Hostgroups
 ###############################################################################
 
 create_rocky9_single_hostgroups()
@@ -400,14 +409,12 @@ MEDIA="${ROCKY_MEDIA_LIST[$IDX]}"
 
 
 
-echo
-
-echo "Checking Hostgroup : ${HOSTGROUP}"
+info "Checking Hostgroup : ${HOSTGROUP}"
 
 
 
-if $HAMMER hostgroup list \
---search "name=\"${HOSTGROUP}\"" | grep -q "${HOSTGROUP}"
+if $HAMMER hostgroup info \
+    --name "${HOSTGROUP}" >/dev/null 2>&1
 
 then
 
@@ -415,22 +422,23 @@ then
 
 else
 
+
     info "Creating ${HOSTGROUP}..."
 
 
 
     $HAMMER hostgroup create \
-    --name "${HOSTGROUP}" \
-    --organization "${ORGANIZATION}" \
-    --location "${LOCATION}" \
-    --subnet "${ROCKY_SUBNET}" \
-    --domain "${DOMAIN}" \
-    --operatingsystem "${OS_NAME}" \
-    --architecture x86_64 \
-    --medium "${MEDIA}" \
-    --partition-table "Kickstart default" \
-    --root-password "password" \
-    --pxe-loader "Grub2 UEFI"
+        --name "${HOSTGROUP}" \
+        --organization "${ORGANIZATION}" \
+        --location "${LOCATION}" \
+        --subnet "${ROCKY_SUBNET}" \
+        --domain "${DOMAIN}" \
+        --operatingsystem "${OS_NAME}" \
+        --architecture x86_64 \
+        --medium "${MEDIA}" \
+        --partition-table "Kickstart default" \
+        --root-password "password" \
+        --pxe-loader "Grub2 UEFI"
 
 
 
@@ -452,7 +460,11 @@ else
 fi
 
 
+echo
+
+
 done
+
 
 }
 
@@ -494,8 +506,6 @@ create_rocky9_single_hostgroups
 
 }
 
-
-
 ###############################################################################
 # Assign PXE Provisioning Template
 ###############################################################################
@@ -509,9 +519,7 @@ TEMPLATE="$2"
 
 
 
-echo
-
-echo "Checking Template Assignment"
+info "Checking Template Assignment"
 
 echo "Operating System : ${OS_NAME}"
 
@@ -523,15 +531,8 @@ echo "Template         : ${TEMPLATE}"
 # Check Template Exists
 ###############################################################################
 
-TEMPLATE_EXISTS=$(
-$HAMMER template list \
---search "name=\"${TEMPLATE}\"" 2>/dev/null |
-grep -F "${TEMPLATE}"
-)
-
-
-
-if [ -z "${TEMPLATE_EXISTS}" ]
+if ! $HAMMER template info \
+    --name "${TEMPLATE}" >/dev/null 2>&1
 
 then
 
@@ -546,18 +547,46 @@ fi
 
 
 ###############################################################################
-# Check Existing Assignment
+# Find Operating System ID
 ###############################################################################
 
-EXISTING=$(
-$HAMMER os info \
---title "${OS_NAME}" 2>/dev/null |
-grep -F "${TEMPLATE}"
+OS_ID=$(
+$HAMMER os list |
+awk -F'|' -v NAME="${OS_NAME}" '
+{
+    gsub(/^ +| +$/, "", $2)
+
+    if ($2 == NAME)
+    {
+        gsub(/^ +| +$/, "", $1)
+        print $1
+    }
+}'
 )
 
 
 
-if [ -n "${EXISTING}" ]
+if [ -z "${OS_ID}" ]
+
+then
+
+    error "Operating System not found : ${OS_NAME}"
+
+    record_failure "${OS_NAME}"
+
+    return 1
+
+fi
+
+
+
+###############################################################################
+# Check Existing Assignment
+###############################################################################
+
+if $HAMMER os info \
+    --id "${OS_ID}" |
+    grep -q "${TEMPLATE}"
 
 then
 
@@ -565,13 +594,14 @@ then
 
 else
 
-    info "Assigning template..."
+
+    info "Assigning ${TEMPLATE} to ${OS_NAME}"
 
 
 
     $HAMMER os add-provisioning-template \
-    --title "${OS_NAME}" \
-    --provisioning-template "${TEMPLATE}"
+        --id "${OS_ID}" \
+        --provisioning-template "${TEMPLATE}"
 
 
 
@@ -589,7 +619,11 @@ else
 
     fi
 
+
 fi
+
+
+echo
 
 
 }
@@ -608,499 +642,42 @@ header "Assign Single Disk PXE Templates"
 
 
 ###############################################################################
-# CentOS Linux 7
+# CentOS Linux 7 SingleDisk
 ###############################################################################
 
 assign_template \
 "${CENTOS_SINGLE_OS}" \
-"PXEGrub2 CentOS UEFI SingleDisk Kickstart"
+"${CENTOS_SINGLE_TEMPLATE}"
 
 
 
 ###############################################################################
-# Rocky Linux 8.10
+# Rocky Linux 8.10 SingleDisk
 ###############################################################################
 
 assign_template \
 "${ROCKY8_SINGLE_OS}" \
-"PXEGrub2 Rocky8 UEFI SingleDisk Kickstart"
+"${ROCKY8_SINGLE_TEMPLATE}"
 
 
 
 ###############################################################################
-# Rocky Linux 9.2
+# Rocky Linux 9.2 SingleDisk
 ###############################################################################
 
 assign_template \
 "${ROCKY92_SINGLE_OS}" \
-"PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart"
+"${ROCKY92_SINGLE_TEMPLATE}"
 
 
 
 ###############################################################################
-# Rocky Linux 9.8
+# Rocky Linux 9.8 SingleDisk
 ###############################################################################
 
 assign_template \
 "${ROCKY98_SINGLE_OS}" \
-"PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart"
+"${ROCKY98_SINGLE_TEMPLATE}"
 
 
 }
-
-###############################################################################
-# Verify Single Disk Hostgroups
-###############################################################################
-
-verify_single_hostgroups()
-{
-
-header "Single Disk Hostgroup Verification"
-
-
-
-HOSTGROUPS=(
-
-"CentOSLinux 7 SingleDisk"
-
-"RockyLinux 8.10 SingleDisk"
-
-"RockyLinux 9.2 SingleDisk"
-
-"RockyLinux 9.8 SingleDisk"
-
-)
-
-
-
-for HG in "${HOSTGROUPS[@]}"
-do
-
-
-echo
-
-echo "------------------------------------------------------------"
-
-echo "Hostgroup : ${HG}"
-
-echo "------------------------------------------------------------"
-
-
-
-if $HAMMER hostgroup info \
---name "${HG}" >/dev/null 2>&1
-
-then
-
-    ok "${HG} exists."
-
-    $HAMMER hostgroup info \
-    --name "${HG}"
-
-else
-
-    error "${HG} not found."
-
-    record_failure "${HG}"
-
-fi
-
-
-done
-
-
-}
-
-
-
-###############################################################################
-# Verify OS Template Mapping
-###############################################################################
-
-verify_template_mapping()
-{
-
-header "Operating System Template Verification"
-
-
-
-OS_LIST=(
-
-"CentOSLinux 7"
-
-"RockyLinux 8.10"
-
-"RockyLinux 9.2"
-
-"RockyLinux 9.8"
-
-)
-
-
-
-for OS in "${OS_LIST[@]}"
-
-do
-
-
-echo
-
-echo "------------------------------------------------------------"
-
-echo "Operating System : ${OS}"
-
-echo "------------------------------------------------------------"
-
-
-
-$HAMMER os info \
---title "${OS}" |
-awk '
-/Templates:/,/Parameters:/
-'
-
-
-done
-
-
-}
-
-
-
-###############################################################################
-# Single Disk Summary
-###############################################################################
-
-summary()
-{
-
-header "Single Disk Hostgroup Summary"
-
-
-
-echo
-
-echo "============================================================"
-
-echo "Single Disk Hostgroups"
-
-echo "============================================================"
-
-
-
-$HAMMER hostgroup list \
---search "SingleDisk"
-
-
-
-echo
-
-echo "============================================================"
-
-echo "Operating Systems"
-
-echo "============================================================"
-
-
-
-$HAMMER os list
-
-
-
-echo
-
-echo "============================================================"
-
-echo "PXE Templates"
-
-echo "============================================================"
-
-
-
-$HAMMER template list \
---search "PXEGrub2"
-
-
-
-echo
-
-echo "============================================================"
-
-echo "Expected Configuration"
-
-echo "============================================================"
-
-
-
-echo
-
-echo "CentOS Linux 7 SingleDisk"
-
-echo "--------------------------------"
-
-echo "Hostgroup : CentOSLinux 7 SingleDisk"
-
-echo "OS        : CentOSLinux 7"
-
-echo "Medium    : CentOS 7 Remote"
-
-echo "PXE       : PXEGrub2 CentOS UEFI SingleDisk Kickstart"
-
-
-
-echo
-
-echo "Rocky Linux 8.10 SingleDisk"
-
-echo "--------------------------------"
-
-echo "Hostgroup : RockyLinux 8.10 SingleDisk"
-
-echo "OS        : RockyLinux 8.10"
-
-echo "Medium    : Rocky 8 Remote"
-
-echo "PXE       : PXEGrub2 Rocky8 UEFI SingleDisk Kickstart"
-
-
-
-echo
-
-echo "Rocky Linux 9.2 SingleDisk"
-
-echo "--------------------------------"
-
-echo "Hostgroup : RockyLinux 9.2 SingleDisk"
-
-echo "OS        : RockyLinux 9.2"
-
-echo "Medium    : Rocky 9.2 Remote"
-
-echo "PXE       : PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart"
-
-
-
-echo
-
-echo "Rocky Linux 9.8 SingleDisk"
-
-echo "--------------------------------"
-
-echo "Hostgroup : RockyLinux 9.8 SingleDisk"
-
-echo "OS        : RockyLinux 9.8"
-
-echo "Medium    : Rocky 9 Remote"
-
-echo "PXE       : PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart"
-
-
-}
-
-
-
-###############################################################################
-# Main Execution
-###############################################################################
-
-header "03 - Foreman Single Disk Hostgroup Bootstrap Started"
-
-
-
-###############################################################################
-# Create Hostgroups
-###############################################################################
-
-create_single_hostgroups
-
-
-
-###############################################################################
-# Assign PXE Templates
-###############################################################################
-
-configure_single_pxe_templates
-
-
-
-###############################################################################
-# Verify Hostgroups
-###############################################################################
-
-verify_single_hostgroups
-
-
-
-###############################################################################
-# Verify Template Mapping
-###############################################################################
-
-verify_template_mapping
-
-
-
-###############################################################################
-# Summary
-###############################################################################
-
-summary
-
-###############################################################################
-# Completion Header
-###############################################################################
-
-header "03 - Foreman Single Disk Hostgroup Bootstrap Completed"
-
-
-
-###############################################################################
-# Final Status
-###############################################################################
-
-if [ ${#FAILED_STEPS[@]} -eq 0 ]
-
-then
-
-    echo
-
-    ok "Single Disk Hostgroup Bootstrap completed successfully."
-
-else
-
-
-    echo
-
-    warn "Completed with ${#FAILED_STEPS[@]} failure(s)."
-
-
-
-    for ITEM in "${FAILED_STEPS[@]}"
-
-    do
-
-        error "${ITEM}"
-
-    done
-
-
-fi
-
-
-
-###############################################################################
-# Manual Verification Commands
-###############################################################################
-
-echo
-
-echo "Manual Verification Commands"
-
-echo "------------------------------------------------------------"
-
-
-
-echo
-
-echo 'hammer hostgroup info --name "CentOSLinux 7 SingleDisk"'
-
-
-
-echo
-
-echo 'hammer hostgroup info --name "RockyLinux 8.10 SingleDisk"'
-
-
-
-echo
-
-echo 'hammer hostgroup info --name "RockyLinux 9.2 SingleDisk"'
-
-
-
-echo
-
-echo 'hammer hostgroup info --name "RockyLinux 9.8 SingleDisk"'
-
-
-
-echo
-
-echo "Verify OS Template Mapping"
-
-echo "------------------------------------------------------------"
-
-
-
-echo
-
-echo 'hammer os info --title "CentOSLinux 7"'
-
-
-
-echo
-
-echo 'hammer os info --title "RockyLinux 8.10"'
-
-
-
-echo
-
-echo 'hammer os info --title "RockyLinux 9.2"'
-
-
-
-echo
-
-echo 'hammer os info --title "RockyLinux 9.8"'
-
-
-
-###############################################################################
-# Expected Configuration
-###############################################################################
-
-echo
-
-echo "Expected Single Disk PXE Templates"
-
-echo "------------------------------------------------------------"
-
-
-
-echo
-
-echo "CentOSLinux 7 SingleDisk"
-
-echo " -> PXEGrub2 CentOS UEFI SingleDisk Kickstart"
-
-
-
-echo
-
-echo "RockyLinux 8.10 SingleDisk"
-
-echo " -> PXEGrub2 Rocky8 UEFI SingleDisk Kickstart"
-
-
-
-echo
-
-echo "RockyLinux 9.2 SingleDisk"
-
-echo " -> PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart"
-
-
-
-echo
-
-echo "RockyLinux 9.8 SingleDisk"
-
-echo " -> PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart"
-
-
-
-###############################################################################
-# Script End
-###############################################################################
-
-exit 0
