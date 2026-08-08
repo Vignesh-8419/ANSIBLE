@@ -8,13 +8,17 @@
 #   - Installation Media
 #   - Operating Systems
 #   - PXEGrub2 Templates
-#   - Template Assignment
+#   - OS Template Mapping
 #   - PXE Subnets
 #
 ###############################################################################
 
 set +e
 
+
+###############################################################################
+# Failure Tracking
+###############################################################################
 
 FAILED_STEPS=()
 
@@ -46,40 +50,40 @@ NC='\033[0m'
 
 info()
 {
-echo -e "${CYAN}$1${NC}"
+    echo -e "${CYAN}$1${NC}"
 }
 
 
 ok()
 {
-echo -e "${GREEN}[OK]${NC} $1"
+    echo -e "${GREEN}[OK]${NC} $1"
 }
 
 
 skip()
 {
-echo -e "${YELLOW}[SKIP]${NC} $1"
+    echo -e "${YELLOW}[SKIP]${NC} $1"
 }
 
 
 warn()
 {
-echo -e "${YELLOW}[WARN]${NC} $1"
+    echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
 
 error()
 {
-echo -e "${RED}[ERROR]${NC} $1"
+    echo -e "${RED}[ERROR]${NC} $1"
 }
 
 
 header()
 {
-echo
-echo -e "${BLUE}============================================================${NC}"
-echo -e "${WHITE}$1${NC}"
-echo -e "${BLUE}============================================================${NC}"
+    echo
+    echo -e "${BLUE}============================================================${NC}"
+    echo -e "${WHITE}$1${NC}"
+    echo -e "${BLUE}============================================================${NC}"
 }
 
 
@@ -89,7 +93,7 @@ header "01 - Foreman PXE Bootstrap"
 
 
 ###############################################################################
-# Variables
+# Foreman Credentials
 ###############################################################################
 
 FOREMAN_USER="${FOREMAN_USER:-admin}"
@@ -102,7 +106,7 @@ HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
 
 
 ###############################################################################
-# Media
+# Installation Media
 ###############################################################################
 
 CENTOS_MEDIA="CentOS 7 Remote"
@@ -116,45 +120,114 @@ ROCKY98_MEDIA="Rocky 9 Remote"
 
 
 ###############################################################################
-# OS Names
+# Operating System Mapping
+#
+# NAME:
+#   Internal Foreman OS Name
+#
+# TITLE:
+#   Foreman UI Display Title
+#
+# VERSION:
+#   Major / Minor must exist
+#
 ###############################################################################
-#
-# IMPORTANT:
-#
-# Name is ONLY title.
-#
-# Foreman automatically stores release separately.
-#
+
+
+###############################################################################
+# CentOS 7
 ###############################################################################
 
-
-CENTOS_RAID="CentOSLinux7-RAID"
-
-CENTOS_SINGLE="CentOSLinux7-SingleDisk"
-
-
-
-ROCKY8_RAID="RockyLinux8.10-RAID"
-
-ROCKY8_SINGLE="RockyLinux8.10-SingleDisk"
+CENTOS_RAID_NAME="CentOSLinux7-RAID"
+CENTOS_RAID_TITLE="CentOSLinux-RAID"
+CENTOS_RAID_MAJOR="7"
+CENTOS_RAID_MINOR=""
 
 
-
-ROCKY92_RAID="RockyLinux9.2-RAID"
-
-ROCKY92_SINGLE="RockyLinux9.2-SingleDisk"
-
-
-
-ROCKY98_RAID="RockyLinux9.8-RAID"
-
-ROCKY98_SINGLE="RockyLinux9.8-SingleDisk"
-
+CENTOS_SINGLE_NAME="CentOSLinux7-SingleDisk"
+CENTOS_SINGLE_TITLE="CentOSLinux-SingleDisk"
+CENTOS_SINGLE_MAJOR="7"
+CENTOS_SINGLE_MINOR=""
 
 
 
 ###############################################################################
-# Create Media
+# Rocky Linux 8.10
+###############################################################################
+
+ROCKY8_RAID_NAME="RockyLinux8.10-RAID"
+ROCKY8_RAID_TITLE="RockyLinux-RAID"
+ROCKY8_RAID_MAJOR="8"
+ROCKY8_RAID_MINOR="10"
+
+
+ROCKY8_SINGLE_NAME="RockyLinux8.10-SingleDisk"
+ROCKY8_SINGLE_TITLE="RockyLinux-SingleDisk"
+ROCKY8_SINGLE_MAJOR="8"
+ROCKY8_SINGLE_MINOR="10"
+
+
+
+###############################################################################
+# Rocky Linux 9.2
+###############################################################################
+
+ROCKY92_RAID_NAME="RockyLinux9.2-RAID"
+ROCKY92_RAID_TITLE="RockyLinux-RAID"
+ROCKY92_RAID_MAJOR="9"
+ROCKY92_RAID_MINOR="2"
+
+
+ROCKY92_SINGLE_NAME="RockyLinux9.2-SingleDisk"
+ROCKY92_SINGLE_TITLE="RockyLinux-SingleDisk"
+ROCKY92_SINGLE_MAJOR="9"
+ROCKY92_SINGLE_MINOR="2"
+
+
+
+###############################################################################
+# Rocky Linux 9.8
+###############################################################################
+
+ROCKY98_RAID_NAME="RockyLinux9.8-RAID"
+ROCKY98_RAID_TITLE="RockyLinux-RAID"
+ROCKY98_RAID_MAJOR="9"
+ROCKY98_RAID_MINOR="8"
+
+
+ROCKY98_SINGLE_NAME="RockyLinux9.8-SingleDisk"
+ROCKY98_SINGLE_TITLE="RockyLinux-SingleDisk"
+ROCKY98_SINGLE_MAJOR="9"
+ROCKY98_SINGLE_MINOR="8"
+
+
+
+###############################################################################
+# PXEGrub2 Template Mapping
+###############################################################################
+
+CENTOS_RAID_TEMPLATE="PXEGrub2 CentOS UEFI RAID Kickstart"
+
+CENTOS_SINGLE_TEMPLATE="PXEGrub2 CentOS UEFI SingleDisk Kickstart"
+
+
+ROCKY8_RAID_TEMPLATE="PXEGrub2 Rocky8 UEFI RAID Kickstart"
+
+ROCKY8_SINGLE_TEMPLATE="PXEGrub2 Rocky8 UEFI SingleDisk Kickstart"
+
+
+ROCKY92_RAID_TEMPLATE="PXEGrub2 Rocky9.2 UEFI RAID Kickstart"
+
+ROCKY92_SINGLE_TEMPLATE="PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart"
+
+
+ROCKY98_RAID_TEMPLATE="PXEGrub2 Rocky9.8 UEFI RAID Kickstart"
+
+ROCKY98_SINGLE_TEMPLATE="PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart"
+
+
+###############################################################################
+# Create Installation Media
 ###############################################################################
 
 create_media()
@@ -168,35 +241,37 @@ URL="$2"
 info "Checking Installation Media : ${NAME}"
 
 
-if $HAMMER medium info --name "${NAME}" >/dev/null 2>&1
+if $HAMMER medium info \
+--name "${NAME}" >/dev/null 2>&1
 
 then
 
-skip "${NAME} already exists."
+    skip "${NAME} already exists."
 
 else
 
-
-$HAMMER medium create \
---name "${NAME}" \
---path "${URL}" \
---os-family Redhat
+    info "Creating ${NAME}"
 
 
-if [ $? -eq 0 ]
+    $HAMMER medium create \
+    --name "${NAME}" \
+    --path "${URL}" \
+    --os-family Redhat
 
-then
 
-ok "${NAME} created."
+    if [ $? -eq 0 ]
 
-else
+    then
 
-error "Failed creating ${NAME}"
+        ok "${NAME} created."
 
-record_failure "${NAME}"
+    else
 
-fi
+        error "Failed creating ${NAME}"
 
+        record_failure "${NAME}"
+
+    fi
 
 fi
 
@@ -204,6 +279,44 @@ fi
 echo
 
 }
+
+
+
+###############################################################################
+# Media Creation
+###############################################################################
+
+create_media \
+"CentOS 7 Remote" \
+"http://192.168.253.136/repo/centos/"
+
+
+create_media \
+"Rocky 8 Remote" \
+"http://192.168.253.136/repo/rocky8/"
+
+
+create_media \
+"Rocky 9 Remote" \
+"http://192.168.253.136/repo/rocky9/"
+
+
+create_media \
+"Rocky 9.2 Remote" \
+"http://192.168.253.136/repo/rocky9.2/"
+
+
+
+###############################################################################
+# Verify Media
+###############################################################################
+
+header "Installation Media Verification"
+
+
+$HAMMER medium list
+
+
 
 ###############################################################################
 # Create Operating System
@@ -213,39 +326,34 @@ create_os()
 {
 
 OS_NAME="$1"
-MAJOR="$2"
-MINOR="$3"
-MEDIA="$4"
+OS_TITLE="$2"
+MAJOR="$3"
+MINOR="$4"
+MEDIA="$5"
 
 
 info "Checking OS : ${OS_NAME}"
 
 
 
-###############################################################################
-# Exact OS Title Check
-###############################################################################
-
-OS_EXIST=$(
+OS_ID=$(
 $HAMMER os list |
 awk -F'|' -v name="${OS_NAME}" '
-
 {
+gsub(/^ +| +$/,"",$1)
 gsub(/^ +| +$/,"",$2)
 
-if($2 == name)
+if($2 ~ "^"name)
 {
-print $2
+print $1
 }
-
 }
-
 '
 )
 
 
 
-if [ -n "${OS_EXIST}" ]
+if [ -n "${OS_ID}" ]
 
 then
 
@@ -255,7 +363,6 @@ else
 
 
     info "Creating ${OS_NAME}"
-
 
 
     if [ -n "${MINOR}" ]
@@ -307,15 +414,169 @@ else
 fi
 
 
+
+###############################################################################
+# Update OS Title
+###############################################################################
+
+OS_ID=$(
+$HAMMER os list |
+awk -F'|' -v name="${OS_NAME}" '
+{
+gsub(/^ +| +$/,"",$1)
+gsub(/^ +| +$/,"",$2)
+
+if($2 ~ "^"name)
+{
+print $1
+}
+}
+'
+)
+
+
+
+if [ -n "${OS_ID}" ]
+
+then
+
+
+    info "Updating OS Title : ${OS_TITLE}"
+
+
+    $HAMMER os update \
+    --id "${OS_ID}" \
+    --title "${OS_TITLE}"
+
+
+    if [ $? -eq 0 ]
+
+    then
+
+        ok "Title updated : ${OS_TITLE}"
+
+    else
+
+        warn "Title update failed : ${OS_NAME}"
+
+    fi
+
+
+fi
+
+
 echo
 
 }
 
 ###############################################################################
-# Assign Template To OS
+# Create Operating System Objects
 ###############################################################################
 
-assign_template()
+header "Creating Operating Systems"
+
+
+
+###############################################################################
+# CentOS 7
+###############################################################################
+
+create_os \
+"${CENTOS_RAID_NAME}" \
+"${CENTOS_RAID_TITLE}" \
+"${CENTOS_RAID_MAJOR}" \
+"${CENTOS_RAID_MINOR}" \
+"${CENTOS_MEDIA}"
+
+
+create_os \
+"${CENTOS_SINGLE_NAME}" \
+"${CENTOS_SINGLE_TITLE}" \
+"${CENTOS_SINGLE_MAJOR}" \
+"${CENTOS_SINGLE_MINOR}" \
+"${CENTOS_MEDIA}"
+
+
+
+###############################################################################
+# Rocky Linux 8.10
+###############################################################################
+
+create_os \
+"${ROCKY8_RAID_NAME}" \
+"${ROCKY8_RAID_TITLE}" \
+"${ROCKY8_RAID_MAJOR}" \
+"${ROCKY8_RAID_MINOR}" \
+"${ROCKY8_MEDIA}"
+
+
+create_os \
+"${ROCKY8_SINGLE_NAME}" \
+"${ROCKY8_SINGLE_TITLE}" \
+"${ROCKY8_SINGLE_MAJOR}" \
+"${ROCKY8_SINGLE_MINOR}" \
+"${ROCKY8_MEDIA}"
+
+
+
+###############################################################################
+# Rocky Linux 9.2
+###############################################################################
+
+create_os \
+"${ROCKY92_RAID_NAME}" \
+"${ROCKY92_RAID_TITLE}" \
+"${ROCKY92_RAID_MAJOR}" \
+"${ROCKY92_RAID_MINOR}" \
+"${ROCKY92_MEDIA}"
+
+
+create_os \
+"${ROCKY92_SINGLE_NAME}" \
+"${ROCKY92_SINGLE_TITLE}" \
+"${ROCKY92_SINGLE_MAJOR}" \
+"${ROCKY92_SINGLE_MINOR}" \
+"${ROCKY92_MEDIA}"
+
+
+
+###############################################################################
+# Rocky Linux 9.8
+###############################################################################
+
+create_os \
+"${ROCKY98_RAID_NAME}" \
+"${ROCKY98_RAID_TITLE}" \
+"${ROCKY98_RAID_MAJOR}" \
+"${ROCKY98_RAID_MINOR}" \
+"${ROCKY98_MEDIA}"
+
+
+create_os \
+"${ROCKY98_SINGLE_NAME}" \
+"${ROCKY98_SINGLE_TITLE}" \
+"${ROCKY98_SINGLE_MAJOR}" \
+"${ROCKY98_SINGLE_MINOR}" \
+"${ROCKY98_MEDIA}"
+
+
+
+###############################################################################
+# Verify Operating Systems
+###############################################################################
+
+header "Operating System Verification"
+
+
+$HAMMER os list
+
+
+
+###############################################################################
+# Assign PXEGrub2 Template
+###############################################################################
+
+assign_pxegrub2_template()
 {
 
 OS_NAME="$1"
@@ -323,35 +584,29 @@ OS_NAME="$1"
 TEMPLATE="$2"
 
 
-
-info "Checking Template Assignment"
+info "Assigning PXEGrub2 Template"
 
 echo "OS       : ${OS_NAME}"
-
 echo "Template : ${TEMPLATE}"
 
 
 
 ###############################################################################
-# Get OS ID using TITLE only
+# Get OS ID
 ###############################################################################
 
 OS_ID=$(
 $HAMMER os list |
 awk -F'|' -v name="${OS_NAME}" '
-
 {
 gsub(/^ +| +$/,"",$1)
 gsub(/^ +| +$/,"",$2)
 
-
-if($2 == name)
+if($2 ~ "^"name)
 {
 print $1
 }
-
 }
-
 '
 )
 
@@ -361,7 +616,7 @@ if [ -z "${OS_ID}" ]
 
 then
 
-    error "Operating System not found : ${OS_NAME}"
+    error "OS not found : ${OS_NAME}"
 
     record_failure "${OS_NAME}"
 
@@ -370,36 +625,13 @@ then
 fi
 
 
-
 ok "Found OS ID : ${OS_ID}"
 
 
 
 ###############################################################################
-# Check Existing Assignment
+# Add Provisioning Template
 ###############################################################################
-
-if $HAMMER os info \
---id "${OS_ID}" 2>/dev/null |
-grep -Fq "${TEMPLATE}"
-
-then
-
-    skip "${TEMPLATE} already assigned."
-
-    return 0
-
-fi
-
-
-
-###############################################################################
-# Assign Template
-###############################################################################
-
-info "Assigning template..."
-
-
 
 $HAMMER os add-provisioning-template \
 --id "${OS_ID}" \
@@ -411,13 +643,38 @@ if [ $? -eq 0 ]
 
 then
 
-    ok "${TEMPLATE} assigned."
+    ok "Template attached."
 
 else
 
-    error "Failed assigning ${TEMPLATE}"
+    error "Failed attaching template."
 
-    record_failure "${OS_NAME} -> ${TEMPLATE}"
+    record_failure "${OS_NAME}"
+
+fi
+
+
+
+###############################################################################
+# Set PXEGrub2 Default Template
+###############################################################################
+
+$HAMMER os set-default-template \
+--id "${OS_ID}" \
+--template "${TEMPLATE}" \
+--kind PXEGrub2
+
+
+
+if [ $? -eq 0 ]
+
+then
+
+    ok "PXEGrub2 default template set."
+
+else
+
+    warn "PXEGrub2 default template update failed."
 
 fi
 
@@ -427,8 +684,162 @@ echo
 }
 
 ###############################################################################
-# Create PXE Subnet
+# PXEGrub2 Template Assignment
 ###############################################################################
+
+header "Assigning PXEGrub2 Templates"
+
+
+
+###############################################################################
+# CentOS 7
+###############################################################################
+
+assign_pxegrub2_template \
+"${CENTOS_RAID_NAME}" \
+"${CENTOS_RAID_TEMPLATE}"
+
+
+assign_pxegrub2_template \
+"${CENTOS_SINGLE_NAME}" \
+"${CENTOS_SINGLE_TEMPLATE}"
+
+
+
+###############################################################################
+# Rocky Linux 8.10
+###############################################################################
+
+assign_pxegrub2_template \
+"${ROCKY8_RAID_NAME}" \
+"${ROCKY8_RAID_TEMPLATE}"
+
+
+assign_pxegrub2_template \
+"${ROCKY8_SINGLE_NAME}" \
+"${ROCKY8_SINGLE_TEMPLATE}"
+
+
+
+###############################################################################
+# Rocky Linux 9.2
+###############################################################################
+
+assign_pxegrub2_template \
+"${ROCKY92_RAID_NAME}" \
+"${ROCKY92_RAID_TEMPLATE}"
+
+
+assign_pxegrub2_template \
+"${ROCKY92_SINGLE_NAME}" \
+"${ROCKY92_SINGLE_TEMPLATE}"
+
+
+
+###############################################################################
+# Rocky Linux 9.8
+###############################################################################
+
+assign_pxegrub2_template \
+"${ROCKY98_RAID_NAME}" \
+"${ROCKY98_RAID_TEMPLATE}"
+
+
+assign_pxegrub2_template \
+"${ROCKY98_SINGLE_NAME}" \
+"${ROCKY98_SINGLE_TEMPLATE}"
+
+
+
+###############################################################################
+# Verify OS Template Mapping
+###############################################################################
+
+header "OS Template Mapping Verification"
+
+
+verify_os_template()
+{
+
+OS_NAME="$1"
+
+
+echo
+
+echo "------------------------------------------------------------"
+
+echo "Operating System : ${OS_NAME}"
+
+echo "------------------------------------------------------------"
+
+
+OS_ID=$(
+$HAMMER os list |
+awk -F'|' -v name="${OS_NAME}" '
+{
+gsub(/^ +| +$/,"",$1)
+gsub(/^ +| +$/,"",$2)
+
+if($2 ~ "^"name)
+{
+print $1
+}
+}
+'
+)
+
+
+if [ -z "${OS_ID}" ]
+
+then
+
+    error "OS not found : ${OS_NAME}"
+
+    record_failure "${OS_NAME}"
+
+    return
+
+fi
+
+
+
+$HAMMER os info \
+--id "${OS_ID}" |
+awk '
+/Templates:/,/Parameters:/
+'
+
+
+}
+
+
+
+verify_os_template "${CENTOS_RAID_NAME}"
+
+verify_os_template "${CENTOS_SINGLE_NAME}"
+
+
+verify_os_template "${ROCKY8_RAID_NAME}"
+
+verify_os_template "${ROCKY8_SINGLE_NAME}"
+
+
+verify_os_template "${ROCKY92_RAID_NAME}"
+
+verify_os_template "${ROCKY92_SINGLE_NAME}"
+
+
+verify_os_template "${ROCKY98_RAID_NAME}"
+
+verify_os_template "${ROCKY98_SINGLE_NAME}"
+
+###############################################################################
+# Create PXE Subnets
+###############################################################################
+
+header "Creating PXE Subnets"
+
+
 
 create_subnet()
 {
@@ -447,10 +858,6 @@ info "Checking Subnet : ${SUBNET_NAME}"
 
 
 
-###############################################################################
-# Check Existing Subnet
-###############################################################################
-
 if $HAMMER subnet info \
 --name "${SUBNET_NAME}" >/dev/null 2>&1
 
@@ -461,7 +868,7 @@ then
 else
 
 
-    info "Creating subnet : ${SUBNET_NAME}"
+    info "Creating ${SUBNET_NAME}"
 
 
 
@@ -502,7 +909,6 @@ fi
 DOMAIN_ID=$(
 $HAMMER domain list |
 awk -F'|' -v d="vgs.com" '
-
 {
 gsub(/^ +| +$/,"",$1)
 gsub(/^ +| +$/,"",$2)
@@ -513,7 +919,6 @@ print $1
 }
 
 }
-
 '
 )
 
@@ -524,16 +929,16 @@ if [ -n "${DOMAIN_ID}" ]
 then
 
 
-$HAMMER subnet update \
---name "${SUBNET_NAME}" \
---domain-ids "${DOMAIN_ID}"
+    $HAMMER subnet update \
+    --name "${SUBNET_NAME}" \
+    --domain-ids "${DOMAIN_ID}"
 
 
-ok "Domain assigned."
+    ok "Domain assigned."
 
 else
 
-warn "Domain not found."
+    warn "Domain not found."
 
 fi
 
@@ -546,7 +951,6 @@ fi
 TFTP_ID=$(
 $HAMMER proxy list |
 awk -F'|' -v p="${TFTP_PROXY}" '
-
 {
 gsub(/^ +| +$/,"",$1)
 gsub(/^ +| +$/,"",$2)
@@ -557,7 +961,6 @@ print $1
 }
 
 }
-
 '
 )
 
@@ -568,16 +971,16 @@ if [ -n "${TFTP_ID}" ]
 then
 
 
-$HAMMER subnet update \
---name "${SUBNET_NAME}" \
---tftp-id "${TFTP_ID}"
+    $HAMMER subnet update \
+    --name "${SUBNET_NAME}" \
+    --tftp-id "${TFTP_ID}"
 
 
-ok "TFTP proxy assigned."
+    ok "TFTP proxy assigned."
 
 else
 
-warn "TFTP proxy not found : ${TFTP_PROXY}"
+    warn "TFTP proxy not found : ${TFTP_PROXY}"
 
 fi
 
@@ -590,7 +993,6 @@ fi
 DHCP_ID=$(
 $HAMMER proxy list |
 awk -F'|' -v p="${DHCP_PROXY}" '
-
 {
 gsub(/^ +| +$/,"",$1)
 gsub(/^ +| +$/,"",$2)
@@ -601,7 +1003,6 @@ print $1
 }
 
 }
-
 '
 )
 
@@ -612,24 +1013,53 @@ if [ -n "${DHCP_ID}" ]
 then
 
 
-$HAMMER subnet update \
---name "${SUBNET_NAME}" \
---dhcp-id "${DHCP_ID}"
+    $HAMMER subnet update \
+    --name "${SUBNET_NAME}" \
+    --dhcp-id "${DHCP_ID}"
 
 
-ok "DHCP proxy assigned."
+    ok "DHCP proxy assigned."
 
 else
 
-warn "DHCP proxy not found : ${DHCP_PROXY}"
+    warn "DHCP proxy not found : ${DHCP_PROXY}"
 
 fi
-
 
 
 echo
 
 }
+
+
+
+###############################################################################
+# CentOS PXE Subnet
+###############################################################################
+
+create_subnet \
+"vgs-subnet-centos" \
+"192.168.253.0" \
+"255.255.255.0" \
+"192.168.253.2" \
+"192.168.253.1" \
+"cent-07-01.vgs.com" \
+"cent-07-01.vgs.com"
+
+
+
+###############################################################################
+# Rocky PXE Subnet
+###############################################################################
+
+create_subnet \
+"vgs-subnet-rockyos" \
+"192.168.253.0" \
+"255.255.255.0" \
+"192.168.253.2" \
+"192.168.253.1" \
+"cent-07-02.vgs.com" \
+"cent-07-02.vgs.com"
 
 ###############################################################################
 # Final Verification
@@ -639,136 +1069,166 @@ header "PXE Bootstrap Verification"
 
 
 
-###############################################################################
-# Operating Systems
-###############################################################################
-
 echo
+
 echo "==============================="
+
 echo "Operating Systems"
+
 echo "==============================="
 
 
-$HAMMER os list |
-egrep "CentOSLinux7|RockyLinux8.10|RockyLinux9.2|RockyLinux9.8" \
-|| true
+$HAMMER os list
 
 
-
-###############################################################################
-# PXE Templates
-###############################################################################
 
 echo
+
 echo "==============================="
+
 echo "PXE Templates"
+
 echo "==============================="
 
 
-$HAMMER template list |
-grep "PXEGrub2" \
-|| true
+$HAMMER template list | grep PXEGrub2
 
 
-
-
-###############################################################################
-# Subnets
-###############################################################################
 
 echo
+
 echo "==============================="
+
 echo "PXE Subnets"
+
 echo "==============================="
 
 
-$HAMMER subnet list |
-egrep "vgs-subnet-centos|vgs-subnet-rockyos" \
-|| true
-
+$HAMMER subnet list
 
 
 
 ###############################################################################
-# Detailed OS Template Verification
+# Final OS Template Mapping Check
 ###############################################################################
 
-header "OS Template Mapping Verification"
+header "Final OS Template Mapping"
 
 
 
-verify_os_template()
+check_template()
 {
 
-OS_ID="$1"
+OS_NAME="$1"
+
+EXPECTED_TEMPLATE="$2"
+
 
 
 echo
 
 echo "------------------------------------------------------------"
 
-echo "OS ID : ${OS_ID}"
+echo "OS       : ${OS_NAME}"
+
+echo "Expected : ${EXPECTED_TEMPLATE}"
 
 echo "------------------------------------------------------------"
 
 
-$HAMMER os info \
---id "${OS_ID}" |
-awk '
-/Title:/,/Parameters:/
-'
 
+OS_ID=$(
+$HAMMER os list |
+awk -F'|' -v name="${OS_NAME}" '
+{
+gsub(/^ +| +$/,"",$1)
+gsub(/^ +| +$/,"",$2)
 
-echo
-
+if($2 ~ "^"name)
+{
+print $1
 }
 
-
-
-###############################################################################
-# Verify Created OS IDs
-###############################################################################
-
-OS_IDS=$(
-$HAMMER os list |
-awk -F'|' '
-
-/CentOSLinux7-RAID/ {print $1}
-
-/CentOSLinux7-SingleDisk/ {print $1}
-
-/RockyLinux8.10-RAID/ {print $1}
-
-/RockyLinux8.10-SingleDisk/ {print $1}
-
-/RockyLinux9.2-RAID/ {print $1}
-
-/RockyLinux9.2-SingleDisk/ {print $1}
-
-/RockyLinux9.8-RAID/ {print $1}
-
-/RockyLinux9.8-SingleDisk/ {print $1}
-
+}
 '
 )
 
 
 
-for ID in ${OS_IDS}
-do
-
-ID=$(echo ${ID} | tr -d ' ')
-
-if [ -n "${ID}" ]
+if [ -z "${OS_ID}" ]
 
 then
 
-verify_os_template "${ID}"
+    error "OS not found : ${OS_NAME}"
+
+    return
 
 fi
 
-done
 
+
+if $HAMMER os info \
+--id "${OS_ID}" |
+grep -q "${EXPECTED_TEMPLATE}"
+
+then
+
+    ok "Template mapping correct."
+
+else
+
+    error "Template mapping missing."
+
+    record_failure "${OS_NAME}"
+
+fi
+
+
+}
+
+
+
+check_template \
+"${CENTOS_RAID_NAME}" \
+"${CENTOS_RAID_TEMPLATE}"
+
+
+check_template \
+"${CENTOS_SINGLE_NAME}" \
+"${CENTOS_SINGLE_TEMPLATE}"
+
+
+
+check_template \
+"${ROCKY8_RAID_NAME}" \
+"${ROCKY8_RAID_TEMPLATE}"
+
+
+check_template \
+"${ROCKY8_SINGLE_NAME}" \
+"${ROCKY8_SINGLE_TEMPLATE}"
+
+
+
+check_template \
+"${ROCKY92_RAID_NAME}" \
+"${ROCKY92_RAID_TEMPLATE}"
+
+
+check_template \
+"${ROCKY92_SINGLE_NAME}" \
+"${ROCKY92_SINGLE_TEMPLATE}"
+
+
+
+check_template \
+"${ROCKY98_RAID_NAME}" \
+"${ROCKY98_RAID_TEMPLATE}"
+
+
+check_template \
+"${ROCKY98_SINGLE_NAME}" \
+"${ROCKY98_SINGLE_TEMPLATE}"
 
 
 
@@ -789,8 +1249,7 @@ then
 else
 
 
-    warn "Bootstrap completed with ${#FAILED_STEPS[@]} failure(s)."
-
+    warn "Completed with ${#FAILED_STEPS[@]} failure(s)."
 
 
     for ITEM in "${FAILED_STEPS[@]}"
@@ -806,128 +1265,25 @@ fi
 
 
 
-
-###############################################################################
-# Manual Verification Commands
-###############################################################################
-
 echo
 
 echo "Manual Verification Commands"
 
 echo "------------------------------------------------------------"
 
+echo
+
+echo "hammer os list"
 
 echo
 
-echo "Operating Systems:"
-echo
-
-echo 'hammer os list'
-
+echo "hammer template list | grep PXEGrub2"
 
 echo
 
-echo "Templates:"
-echo
-
-echo 'hammer template list | grep PXEGrub2'
-
+echo "hammer subnet list"
 
 echo
 
-echo "Subnets:"
-echo
-
-echo 'hammer subnet list'
-
-
-echo
-
-
-
-###############################################################################
-# Expected Configuration
-###############################################################################
-
-header "Expected Configuration"
-
-
-
-cat <<EOF
-
-
-Operating Systems:
-
-CentOSLinux7-RAID
-    |
-    +-- PXEGrub2 CentOS UEFI RAID Kickstart
-
-
-CentOSLinux7-SingleDisk
-    |
-    +-- PXEGrub2 CentOS UEFI SingleDisk Kickstart
-
-
-
-RockyLinux8.10-RAID
-    |
-    +-- PXEGrub2 Rocky8 UEFI RAID Kickstart
-
-
-RockyLinux8.10-SingleDisk
-    |
-    +-- PXEGrub2 Rocky8 UEFI SingleDisk Kickstart
-
-
-
-RockyLinux9.2-RAID
-    |
-    +-- PXEGrub2 Rocky9.2 UEFI RAID Kickstart
-
-
-RockyLinux9.2-SingleDisk
-    |
-    +-- PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart
-
-
-
-RockyLinux9.8-RAID
-    |
-    +-- PXEGrub2 Rocky9.8 UEFI RAID Kickstart
-
-
-RockyLinux9.8-SingleDisk
-    |
-    +-- PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart
-
-
-
-PXE Subnets:
-
-vgs-subnet-centos
-
-vgs-subnet-rockyos
-
-
-
-EOF
-
-
-
-
-###############################################################################
-# Exit
-###############################################################################
-
-if [ ${#FAILED_STEPS[@]} -eq 0 ]
-
-then
 
 exit 0
-
-else
-
-exit 1
-
-fi
