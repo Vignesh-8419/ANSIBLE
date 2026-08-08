@@ -414,9 +414,7 @@ assign_template()
 {
 
 OS_NAME="$1"
-
 TEMPLATE="$2"
-
 
 
 echo
@@ -425,9 +423,33 @@ echo "OS       : ${OS_NAME}"
 echo "Template : ${TEMPLATE}"
 
 
+###############################################################################
+# Check Template Exists
+###############################################################################
+
+TEMPLATE_EXISTS=$(
+$HAMMER template list --search "name=\"${TEMPLATE}\"" 2>/dev/null |
+grep -F "${TEMPLATE}"
+)
+
+
+if [ -z "${TEMPLATE_EXISTS}" ]
+then
+
+    warn "PXE Template not found: ${TEMPLATE}"
+
+    warn "Create this template first in Foreman."
+
+    record_failure "${TEMPLATE}"
+
+    return 1
+
+fi
+
+
 
 ###############################################################################
-# Check Existing Assignment
+# Check Existing OS Assignment
 ###############################################################################
 
 EXISTING=$(
@@ -439,7 +461,6 @@ grep -F "${TEMPLATE}"
 
 
 if [ -n "${EXISTING}" ]
-
 then
 
     skip "${TEMPLATE} already assigned to ${OS_NAME}"
@@ -450,7 +471,6 @@ else
     echo "Assigning template to ${OS_NAME}..."
 
 
-
     $HAMMER os add-provisioning-template \
     --title "${OS_NAME}" \
     --provisioning-template "${TEMPLATE}"
@@ -458,7 +478,6 @@ else
 
 
     if [ $? -eq 0 ]
-
     then
 
         ok "${TEMPLATE} assigned to ${OS_NAME}"
@@ -471,13 +490,10 @@ else
 
     fi
 
-
 fi
 
 
 }
-
-
 
 ###############################################################################
 # Configure RAID PXE Templates
@@ -687,7 +703,7 @@ echo
 
 echo "============================================================"
 
-echo "RAID PXE Templates"
+echo "RAID PXE Templates (Required)"
 
 echo "============================================================"
 
