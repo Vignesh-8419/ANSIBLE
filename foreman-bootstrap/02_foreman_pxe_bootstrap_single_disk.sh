@@ -106,114 +106,104 @@ error "Unsupported TARGET_VERSION=${TARGET_VERSION}"
 exit 1
 ;;
 esac
-#!/bin/bash
 ###############################################################################
-#02 - Foreman PXE Bootstrap (Single Disk)
-#
-#Purpose:
-#Create Single Disk PXE templates
-#Attach templates to existing Foreman Operating Systems
-#
-#Supported OS Objects:
-#CentOSLinux7-SingleDisk
-#RockyLinux8.10-SingleDisk
-#RockyLinux9.2-SingleDisk
-#RockyLinux9.8-SingleDisk
+#[1/4]Create Single Disk PXE Templates
 ###############################################################################
-set +e
-FAILED_STEPS=()
-record_failure()
-{
-FAILED_STEPS+=("$1")
+header "[1/4] Creating Single Disk PXE Templates"
+###############################################################################
+#CentOS 7 Single Disk Template
+###############################################################################
+info "Generating CentOS 7 Single Disk template..."
+cat > /tmp/centos-singledisk.erb <<'EOF'
+<%#
+name: PXEGrub2 CentOS UEFI SingleDisk Kickstart
+kind: PXEGrub2
+oses:
+- CentOSLinux
+%>
+set default=0
+set timeout=5
+menuentry 'Install CentOS 7 Single Disk' {
+linuxefi /centos/vmlinuz \
+inst.stage2=http://192.168.253.136/repo/centos/ \
+inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/centos7-kickstarts/CentOS7_Golden_SingleDisk_Minimal.cfg \
+inst.text \
+inst.ks.device=bootif \
+BOOTIF=01-${net_default_mac} \
+hostname=<%= @host.name %>
+initrdefi /centos/initrd.img
 }
+EOF
+ok "CentOS Single Disk template generated."
 ###############################################################################
-#Colors
+#Rocky Linux 8 Single Disk Template
 ###############################################################################
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[1;34m'
-CYAN='\033[1;36m'
-WHITE='\033[1;37m'
-NC='\033[0m'
-###############################################################################
-#Logging
-###############################################################################
-info()
-{
-echo -e "${CYAN}$1${NC}"
+info "Generating Rocky Linux 8 Single Disk template..."
+cat > /tmp/rocky8-singledisk.erb <<'EOF'
+<%#
+name: PXEGrub2 Rocky8 UEFI SingleDisk Kickstart
+kind: PXEGrub2
+oses:
+- RockyLinux
+%>
+set default=0
+set timeout=5
+menuentry 'Install Rocky Linux 8.10 Single Disk' {
+linuxefi /rocky8/vmlinuz \
+inst.stage2=http://192.168.253.136/repo/rocky8/ \
+inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky8-kickstarts/Rocky8_Golden_SingleDisk_Minimal.cfg \
+inst.text \
+inst.ks.device=bootif \
+BOOTIF=01-${net_default_mac} \
+hostname=<%= @host.name %>
+initrdefi /rocky8/initrd.img
 }
-ok()
-{
-echo -e "${GREEN}[OK]${NC} $1"
+EOF
+ok "Rocky Linux 8 Single Disk template generated."
+###############################################################################
+#Rocky Linux 9 Single Disk Template
+###############################################################################
+info "Generating ${ROCKY_TEMPLATE}..."
+cat > "${ROCKY_TEMPLATE_FILE}" <<EOF
+<%#
+name: ${ROCKY_TEMPLATE}
+kind: PXEGrub2
+oses:
+- RockyLinux
+%>
+set default=0
+set timeout=5
+menuentry 'Install ${ROCKY_OS} Single Disk' {
+linuxefi ${ROCKY_KERNEL} \
+ip=dhcp \
+BOOTIF=01-\${net_default_mac} \
+inst.repo=${ROCKY_REPO} \
+inst.ks=${ROCKY_KS} \
+inst.text \
+inst.ks.device=bootif \
+hostname=<%= @host.name %>
+initrdefi ${ROCKY_INITRD}
 }
-skip()
+EOF
+ok "${ROCKY_TEMPLATE} generated."
+###############################################################################
+#Get Operating System ID
+###############################################################################
+get_os_id()
 {
-echo -e "${YELLOW}[SKIP]${NC} $1"
-}
-warn()
+OS_NAME="$1"
+OS_ID=$(
+$HAMMER os list 2>/dev/null |
+grep -F "${OS_NAME}" |
+head -1 |
+awk -F'|' '
 {
-echo -e "${YELLOW}[WARN]${NC} $1"
+gsub(/^ +| +$/,"",$1)
+print $1
+}'
+)
+echo "${OS_ID}"
 }
-error()
-{
-echo -e "${RED}[ERROR]${NC} $1"
-}
-header()
-{
-echo
-echo -e "${BLUE}============================================================${NC}"
-echo -e "${WHITE}$1${NC}"
-echo -e "${BLUE}============================================================${NC}"
-}
-###############################################################################
-#Start
-###############################################################################
-header "02 - Foreman PXE Bootstrap (Single Disk)"
-###############################################################################
-#Foreman Credentials
-###############################################################################
-FOREMAN_USER="${FOREMAN_USER:-admin}"
-FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
-HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
-###############################################################################
-#Target Version
-###############################################################################
-TARGET_VERSION="${TARGET_VERSION:-9.8}"
-###############################################################################
-#Existing Foreman Operating Systems
-###############################################################################
-CENTOS_SINGLE_OS="CentOSLinux7-SingleDisk"
-ROCKY8_SINGLE_OS="RockyLinux8.10-SingleDisk"
-ROCKY92_SINGLE_OS="RockyLinux9.2-SingleDisk"
-ROCKY98_SINGLE_OS="RockyLinux9.8-SingleDisk"
-###############################################################################
-#Select Rocky Version
-###############################################################################
-case "${TARGET_VERSION}" in
-9.2)
-ROCKY_OS="${ROCKY92_SINGLE_OS}"
-ROCKY_TEMPLATE="PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart"
-ROCKY_TEMPLATE_FILE="/tmp/rocky92-singledisk.erb"
-ROCKY_KERNEL="/rocky92/vmlinuz"
-ROCKY_INITRD="/rocky92/initrd.img"
-ROCKY_REPO="http://192.168.253.136/repo/rocky9.2/"
-ROCKY_KS="http://192.168.253.136/repo/Foreman-Kickstarts/rocky9-kickstart/Rocky9_2_Golden_SingleDisk_Minimal.cfg"
-;;
-9.8)
-ROCKY_OS="${ROCKY98_SINGLE_OS}"
-ROCKY_TEMPLATE="PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart"
-ROCKY_TEMPLATE_FILE="/tmp/rocky98-singledisk.erb"
-ROCKY_KERNEL="/rocky9/vmlinuz"
-ROCKY_INITRD="/rocky9/initrd.img"
-ROCKY_REPO="http://192.168.253.136/repo/rocky9/"
-ROCKY_KS="http://192.168.253.136/repo/Foreman-Kickstarts/rocky9_8-kickstart/Rocky9_Golden_SingleDisk_Minimal.cfg"
-;;
-*)
-error "Unsupported TARGET_VERSION=${TARGET_VERSION}"
-exit 1
-;;
-esac
 ###############################################################################
 #Import Template Function
 ###############################################################################
@@ -438,7 +428,6 @@ echo "PXE Template : ${ROCKY_TEMPLATE}"
 echo "Repository : ${ROCKY_REPO}"
 echo "Kickstart : ${ROCKY_KS}"
 echo
-id="q0m9ks"
 ###############################################################################
 #Final Status
 ###############################################################################
@@ -468,7 +457,7 @@ echo 'hammer --username admin --password "PASSWORD" os info --title "RockyLinux8
 echo
 echo "Rocky Linux 9.2 Single Disk"
 echo "------------------------------------------------------------"
-echo 'hammer --username admin --password "PASSWORD" os info --title "RockyLinux9.2-SingleDisk"'
+echo "hammer --username admin --password \"PASSWORD\" os info --title \"RockyLinux9.2-SingleDisk\""
 echo
 echo "Rocky Linux 9.8 Single Disk"
 echo "------------------------------------------------------------"
