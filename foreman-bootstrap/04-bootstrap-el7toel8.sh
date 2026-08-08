@@ -286,6 +286,11 @@ then
 ok "${REPO_NAME} synchronization started."
 return 0
 fi
+if echo "${OUTPUT}" | grep -qi "Skipping Sync"
+then
+ok "${REPO_NAME} already synchronized."
+return 0
+fi
 if echo "${OUTPUT}" | grep -qi "Required lock is already taken"
 then
 warn "Repository lock detected."
@@ -463,34 +468,52 @@ record_failure "Sync ${REPO_NAME}"
 wait_for_sync()
 {
 REPO_NAME="$1"
+
 info "Waiting for ${REPO_NAME} sync completion..."
-while true
+
+for COUNT in $(seq 1 60)
 do
+
 STATUS=$(
 $HAMMER repository info \
 --organization "${ORG}" \
 --product "${PRODUCT_NAME}" \
 --name "${REPO_NAME}" 2>/dev/null |
-grep -Ei "Sync State|Sync Status" |
+grep -Ei "Sync State|Sync Status|Last Sync Result" |
 awk -F':' '{print $2}' |
 xargs
 )
+
 echo "Current Status : ${STATUS}"
-case "${STATUS}" in
-Complete)
+
+
+if echo "${STATUS}" | grep -Eqi "Complete|Finished|Success"
+then
+
 ok "${REPO_NAME} sync completed."
-break
-;;
-Error)
+return 0
+
+fi
+
+
+if echo "${STATUS}" | grep -Eqi "Error|Failed"
+then
+
 error "${REPO_NAME} sync failed."
 record_failure "Sync ${REPO_NAME}"
-break
-;;
-*)
+return 1
+
+fi
+
+
 sleep 30
-;;
-esac
+
 done
+
+
+warn "${REPO_NAME} sync status timeout."
+record_failure "Sync timeout ${REPO_NAME}"
+
 }
 ###############################################################################
 # Sync All EL7 Repositories
