@@ -1,17 +1,33 @@
 #!/bin/bash
+
 ###############################################################################
 # 05 - Foreman Katello Bootstrap
 # EL8 -> EL9 Upgrade Bootstrap
-# Supports Rocky Linux 9.2 and Rocky Linux 9.8
+#
+# Supports:
+#   - Rocky Linux 9.2
+#   - Rocky Linux 9.8
+#
+# Purpose:
+#   Prepare Rocky Linux 8 content for Leapp/ELevate migration
+#
 ###############################################################################
 
 set +e
 
+
+###############################################################################
+# Failure Tracking
+###############################################################################
+
 FAILED_STEPS=()
 
-record_failure() {
+
+record_failure()
+{
     FAILED_STEPS+=("$1")
 }
+
 
 
 ###############################################################################
@@ -27,36 +43,43 @@ WHITE='\033[1;37m'
 NC='\033[0m'
 
 
+
 ###############################################################################
 # Logging Functions
 ###############################################################################
 
-info() {
+info()
+{
     echo -e "${CYAN}$1${NC}"
 }
 
 
-ok() {
+ok()
+{
     echo -e "${GREEN}[OK]${NC} $1"
 }
 
 
-skip() {
+skip()
+{
     echo -e "${YELLOW}[SKIP]${NC} $1"
 }
 
 
-warn() {
+warn()
+{
     echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
 
-error() {
+error()
+{
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
 
-header() {
+header()
+{
     echo
     echo -e "${BLUE}============================================================${NC}"
     echo -e "${WHITE}$1${NC}"
@@ -64,28 +87,137 @@ header() {
 }
 
 
-summary_ok() {
-    printf "%-40s ${GREEN}[OK]${NC}\n" "$1"
-}
+
+###############################################################################
+# Foreman Configuration
+###############################################################################
+
+FOREMAN_USER="${FOREMAN_USER:-admin}"
+
+FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
+
+
+HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
+
+
+ORG="Default Organization"
+
+LOCATION="Default Location"
+
 
 
 ###############################################################################
-# Resume Paused Tasks
+# Target Version
 ###############################################################################
 
-resume_paused_tasks() {
+TARGET_VERSION="${TARGET_VERSION:-9.8}"
+
+
+
+case "${TARGET_VERSION}" in
+
+
+9.2)
+
+    ROCKY_VERSION="9.2"
+
+    CONTENT_VIEW="Rocky9.2-CV"
+
+    ACTIVATION_KEY="rocky9.2-key"
+
+    ELEVATE_REPO_NAME="Rocky-08-EL8toEL9-9.2"
+
+    ELEVATE_REPO_URL="http://192.168.253.136/repo/leapp/9.2/el8toel9"
+
+;;
+
+9.8)
+
+    ROCKY_VERSION="9.8"
+
+    CONTENT_VIEW="Rocky9.8-CV"
+
+    ACTIVATION_KEY="rocky9.8-key"
+
+    ELEVATE_REPO_NAME="Rocky-08-EL8toEL9-9.8"
+
+    ELEVATE_REPO_URL="http://192.168.253.136/repo/leapp/9/el8toel9"
+
+;;
+
+*)
+
+    error "Unsupported TARGET_VERSION=${TARGET_VERSION}"
+
+    exit 1
+
+;;
+
+esac
+
+
+
+PRODUCT="Rocky Linux 8"
+
+
+
+BASE_REPO="Rocky-08-BaseOS"
+
+APPSTREAM_REPO="Rocky-08-AppStream"
+
+
+
+BASE_URL="http://192.168.253.136/repo/rocky8/BaseOS"
+
+APPSTREAM_URL="http://192.168.253.136/repo/rocky8/AppStream"
+
+
+
+echo
+
+info "Selected Migration Configuration"
+
+echo "------------------------------------------------------------"
+
+echo "Target Rocky Version : ${ROCKY_VERSION}"
+
+echo "Product              : ${PRODUCT}"
+
+echo "Base Repository      : ${BASE_REPO}"
+
+echo "AppStream Repository : ${APPSTREAM_REPO}"
+
+echo "ELevate Repository   : ${ELEVATE_REPO_NAME}"
+
+echo "Content View         : ${CONTENT_VIEW}"
+
+echo "Activation Key       : ${ACTIVATION_KEY}"
+
+echo
+
+
+###############################################################################
+# Resume Paused Foreman Tasks
+###############################################################################
+
+resume_paused_tasks()
+{
 
     header "Recovering Paused Foreman Tasks"
+
 
     local COUNT
 
 
-    COUNT=$($HAMMER task list \
-        --search "state = paused" 2>/dev/null |
-        grep -c paused || true)
+    COUNT=$(
+        $HAMMER task list \
+            --search "state = paused" 2>/dev/null |
+            grep -c paused || true
+    )
 
 
-    if [ "$COUNT" -eq 0 ]; then
+    if [ "${COUNT}" -eq 0 ]
+    then
 
         ok "No paused tasks found."
 
@@ -94,22 +226,27 @@ resume_paused_tasks() {
     fi
 
 
-    warn "Found $COUNT paused task(s)."
+    warn "Found ${COUNT} paused task(s)."
 
 
     $HAMMER task resume \
-        --search "state = paused"
+        --search "state = paused" >/dev/null 2>&1
 
 
-    for i in {1..6}; do
+
+    for TRY in {1..6}
+    do
 
 
-        COUNT=$($HAMMER task list \
-            --search "state = paused" 2>/dev/null |
-            grep -c paused || true)
+        COUNT=$(
+            $HAMMER task list \
+                --search "state = paused" 2>/dev/null |
+                grep -c paused || true
+        )
 
 
-        if [ "$COUNT" -eq 0 ]; then
+        if [ "${COUNT}" -eq 0 ]
+        then
 
             ok "Paused tasks cleared."
 
@@ -118,8 +255,7 @@ resume_paused_tasks() {
         fi
 
 
-        warn "$COUNT paused task(s) still remain. Waiting..."
-
+        warn "${COUNT} paused task(s) still remain."
 
         sleep 10
 
@@ -127,143 +263,171 @@ resume_paused_tasks() {
     done
 
 
-    warn "Some paused tasks still remain."
-    warn "Continuing because the repository lock may already be released."
-
-
-    return 0
+    warn "Paused tasks still exist. Continuing."
 
 }
 
 
-###############################################################################
-# Variables
-###############################################################################
-
-FOREMAN_USER="${FOREMAN_USER:-admin}"
-
-FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
-
-HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
-
-
-TARGET_VERSION="${TARGET_VERSION:-9.8}"
-
-
-case "$TARGET_VERSION" in
-
-    9.2)
-
-        ROCKY_PRODUCT="Rocky Linux 8"
-
-        EL8TOEL9_REPO_NAME="Rocky-08-EL8toEL9-9.2"
-
-        EL8TOEL9_REPO_URL="http://192.168.253.136/repo/leapp/9.2/el8toel9"
-
-        CONTENT_VIEW="Rocky9.2-CV"
-
-        ACTIVATION_KEY="rocky9.2-key"
-
-        ;;
-
-
-    9.8)
-
-        ROCKY_PRODUCT="Rocky Linux 8"
-
-       EL8TOEL9_REPO_NAME="Rocky-08-EL8toEL9-9.8"
-
-        EL8TOEL9_REPO_URL="http://192.168.253.136/repo/leapp/9/el8toel9"
-
-        CONTENT_VIEW="Rocky9.8-CV"
-
-        ACTIVATION_KEY="rocky9.8-key"
-
-        ;;
-
-
-    *)
-
-        echo "Unsupported TARGET_VERSION: ${TARGET_VERSION}"
-
-        exit 1
-
-        ;;
-
-esac
-
-
-echo
-
-info "Selected Upgrade Target"
-
-echo "  Rocky Version : ${TARGET_VERSION}"
-echo "  Product       : ${ROCKY_PRODUCT}"
-echo "  ELevate Repo  : ${EL8TOEL9_REPO_NAME}"
-echo "  Content View  : ${CONTENT_VIEW}"
-echo "  ActivationKey : ${ACTIVATION_KEY}"
-
-echo
 
 ###############################################################################
-# [1/6] Verify Product
+# Create Product
 ###############################################################################
 
-header "[1/6] Verifying Product"
+create_product()
+{
+
+    header "Checking Product"
 
 
-info "Checking Product : ${ROCKY_PRODUCT}"
+    info "Product : ${PRODUCT}"
 
 
-if $HAMMER product info \
-    --organization "Default Organization" \
-    --name "${ROCKY_PRODUCT}" >/dev/null 2>&1
-then
+    if $HAMMER product info \
+        --organization "${ORG}" \
+        --name "${PRODUCT}" >/dev/null 2>&1
 
-    skip "Product already exists."
-
-else
-
-    info "Creating Product..."
-
-
-    $HAMMER product create \
-        --organization "Default Organization" \
-        --name "${ROCKY_PRODUCT}"
-
-
-    if [ $? -eq 0 ]
     then
 
-        ok "Product created."
+        skip "Product ${PRODUCT} already exists."
+
 
     else
 
-        error "Product creation failed."
 
-        record_failure "${ROCKY_PRODUCT}"
+        info "Creating Product ${PRODUCT}"
+
+
+        $HAMMER product create \
+            --organization "${ORG}" \
+            --name "${PRODUCT}"
+
+
+
+        if [ $? -eq 0 ]
+
+        then
+
+            ok "Product created."
+
+        else
+
+            error "Product creation failed."
+
+            record_failure "Product ${PRODUCT}"
+
+        fi
+
+
+    fi
+
+}
+
+
+
+###############################################################################
+# Create Repository
+###############################################################################
+
+create_repository()
+{
+
+    REPO="$1"
+
+    URL="$2"
+
+
+
+    info "Checking Repository : ${REPO}"
+
+
+    if $HAMMER repository info \
+        --organization "${ORG}" \
+        --product "${PRODUCT}" \
+        --name "${REPO}" >/dev/null 2>&1
+
+    then
+
+
+        skip "${REPO} already exists."
+
+
+    else
+
+
+        info "Creating Repository : ${REPO}"
+
+
+        $HAMMER repository create \
+            --organization "${ORG}" \
+            --product "${PRODUCT}" \
+            --name "${REPO}" \
+            --content-type yum \
+            --url "${URL}"
+
+
+
+        if [ $? -eq 0 ]
+
+        then
+
+            ok "${REPO} created."
+
+        else
+
+            error "${REPO} creation failed."
+
+            record_failure "${REPO}"
+
+        fi
+
 
     fi
 
 
-fi
+}
 
-
-echo
 
 
 ###############################################################################
-# Product Verification
+# Update Repository URL
 ###############################################################################
 
-header "Products"
+update_repository_url()
+{
+
+    REPO="$1"
+
+    URL="$2"
 
 
-$HAMMER product list \
-    --organization "Default Organization"
+
+    info "Updating Repository URL : ${REPO}"
 
 
-echo
+
+    $HAMMER repository update \
+        --organization "${ORG}" \
+        --product "${PRODUCT}" \
+        --name "${REPO}" \
+        --url "${URL}"
+
+
+
+    if [ $? -eq 0 ]
+
+    then
+
+        ok "${REPO} URL updated."
+
+    else
+
+        error "${REPO} URL update failed."
+
+        record_failure "${REPO} URL"
+
+    fi
+
+}
 
 
 
@@ -271,156 +435,191 @@ echo
 # Create Rocky Linux 8 Repositories
 ###############################################################################
 
-header "[2/6] Creating EL8 Repositories"
-
-
-create_repository()
+create_repositories()
 {
 
-PRODUCT="$1"
-REPO="$2"
-URL="$3"
+    header "[1/6] Creating Rocky Linux 8 Repositories"
 
 
-info "Checking Repository : ${REPO}"
+
+    create_repository \
+        "${BASE_REPO}" \
+        "${BASE_URL}"
 
 
-if $HAMMER repository info \
-    --organization "Default Organization" \
-    --product "${PRODUCT}" \
-    --name "${REPO}" >/dev/null 2>&1
-then
 
-    skip "${REPO} already exists."
-
-else
+    create_repository \
+        "${APPSTREAM_REPO}" \
+        "${APPSTREAM_URL}"
 
 
-    info "Creating Repository : ${REPO}"
+
+    create_repository \
+        "${ELEVATE_REPO_NAME}" \
+        "${ELEVATE_REPO_URL}"
 
 
-    $HAMMER repository create \
-        --organization "Default Organization" \
-        --product "${PRODUCT}" \
-        --name "${REPO}" \
-        --content-type yum \
-        --url "${URL}"
+
+    header "Updating Repository URLs"
 
 
-    if [ $? -eq 0 ]
-    then
 
-        ok "${REPO} created."
-
-    else
-
-        error "${REPO} creation failed."
-
-        record_failure "${REPO}"
-
-    fi
+    update_repository_url \
+        "${BASE_REPO}" \
+        "${BASE_URL}"
 
 
-fi
+
+    update_repository_url \
+        "${APPSTREAM_REPO}" \
+        "${APPSTREAM_URL}"
 
 
-echo
+
+    update_repository_url \
+        "${ELEVATE_REPO_NAME}" \
+        "${ELEVATE_REPO_URL}"
 
 }
 
 
-###############################################################################
-# Rocky Linux 8 BaseOS
-###############################################################################
-
-create_repository \
-"${ROCKY_PRODUCT}" \
-"Rocky-08-BaseOS" \
-"http://192.168.253.136/repo/rocky8/BaseOS"
-
-
 
 ###############################################################################
-# Rocky Linux 8 AppStream
+# Get Repository ID
 ###############################################################################
 
-create_repository \
-"${ROCKY_PRODUCT}" \
-"Rocky-08-AppStream" \
-"http://192.168.253.136/repo/rocky8/AppStream"
+get_repository_id()
+{
+
+    REPO="$1"
+
+
+    $HAMMER repository info \
+        --organization "${ORG}" \
+        --product "${PRODUCT}" \
+        --name "${REPO}" 2>/dev/null |
+        awk -F':' '/Id/ {gsub(/ /,"",$2);print $2}'
+
+
+}
+
 
 
 ###############################################################################
-# Rocky ELevate Repository
+# Synchronize Repository
 ###############################################################################
-
-create_repository \
-"${ROCKY_PRODUCT}" \
-"${EL8TOEL9_REPO_NAME}" \
-"${EL8TOEL9_REPO_URL}"
-
-
-echo
-
-###############################################################################
-# [3/6] Synchronizing Repositories
-###############################################################################
-
-header "[3/6] Synchronizing Repositories"
-
 
 sync_repository()
 {
 
-REPO="$1"
-
-
-info "Checking Sync Status : ${REPO}"
-
-
-STATUS=$(
-$HAMMER repository info \
-    --organization "Default Organization" \
-    --product "${ROCKY_PRODUCT}" \
-    --name "${REPO}" 2>/dev/null |
-    grep -Ei "Sync State|Last Sync|Sync Status" |
-    awk -F':' '{print $2}' |
-    xargs
-)
-
-
-if echo "$STATUS" | grep -qi "Complete"
-then
-
-    skip "${REPO} already synced."
-
-    return 0
-
-fi
+    REPO="$1"
 
 
 
-info "Starting sync : ${REPO}"
+    info "Checking Sync Status : ${REPO}"
 
 
-$HAMMER repository synchronize \
-    --organization "Default Organization" \
-    --product "${ROCKY_PRODUCT}" \
-    --name "${REPO}"
+
+    STATUS=$(
+        $HAMMER repository info \
+            --organization "${ORG}" \
+            --product "${PRODUCT}" \
+            --name "${REPO}" 2>/dev/null |
+            grep "Sync State" |
+            awk -F':' '{print $2}' |
+            xargs
+    )
 
 
-if [ $? -eq 0 ]
-then
 
-    ok "${REPO} sync started."
+    if echo "${STATUS}" | grep -qi "Complete"
 
-else
+    then
 
-    error "${REPO} sync failed."
+        skip "${REPO} already synced."
+
+        return 0
+
+    fi
+
+
+
+    info "Starting synchronization : ${REPO}"
+
+
+
+    OUTPUT=$(
+        $HAMMER repository synchronize \
+            --organization "${ORG}" \
+            --product "${PRODUCT}" \
+            --name "${REPO}" 2>&1
+    )
+
+
+    RC=$?
+
+
+
+    echo "${OUTPUT}"
+
+
+
+    if [ ${RC} -eq 0 ]
+
+    then
+
+        ok "${REPO} synchronization started."
+
+        return 0
+
+    fi
+
+
+
+    if echo "${OUTPUT}" | grep -qi "Required lock is already taken"
+
+    then
+
+
+        warn "Repository lock detected."
+
+
+        resume_paused_tasks
+
+
+        sleep 10
+
+
+
+        info "Retrying synchronization..."
+
+
+
+        $HAMMER repository synchronize \
+            --organization "${ORG}" \
+            --product "${PRODUCT}" \
+            --name "${REPO}"
+
+
+
+        if [ $? -eq 0 ]
+
+        then
+
+            ok "${REPO} synchronization started."
+
+            return 0
+
+        fi
+
+
+    fi
+
+
+
+    error "${REPO} synchronization failed."
 
     record_failure "Sync ${REPO}"
-
-fi
 
 
 }
@@ -428,243 +627,443 @@ fi
 
 
 ###############################################################################
-# Sync Rocky 8 BaseOS
+# Synchronize All EL8 Repositories
 ###############################################################################
 
-sync_repository \
-"Rocky-08-BaseOS"
+sync_repositories()
+{
+
+    header "[2/6] Synchronizing Rocky Linux 8 Repositories"
 
 
 
-###############################################################################
-# Sync Rocky 8 AppStream
-###############################################################################
-
-sync_repository \
-"Rocky-08-AppStream"
+    sync_repository "${BASE_REPO}"
 
 
+    sync_repository "${APPSTREAM_REPO}"
 
-###############################################################################
-# Sync ELevate Repository
-###############################################################################
 
-sync_repository \
-"${EL8TOEL9_REPO_NAME}"
+    sync_repository "${ELEVATE_REPO_NAME}"
 
+
+}
 
 
 ###############################################################################
-# Repository Summary
+# Create Content View
 ###############################################################################
 
-header "Repository Summary"
+create_content_view()
+{
+
+    header "[3/6] Creating Content View"
 
 
-$HAMMER repository list \
-    --organization "Default Organization" \
-    --product "${ROCKY_PRODUCT}"
-
-
-
-echo
+    info "Checking Content View : ${CONTENT_VIEW}"
 
 
 
-###############################################################################
-# [4/6] Creating Content View
-###############################################################################
+    if $HAMMER content-view info \
+        --organization "${ORG}" \
+        --name "${CONTENT_VIEW}" >/dev/null 2>&1
 
-header "[4/6] Creating Content View"
-
-
-if $HAMMER content-view info \
-    --organization "Default Organization" \
-    --name "${CONTENT_VIEW}" >/dev/null 2>&1
-then
-
-    skip "Content View ${CONTENT_VIEW} already exists."
-
-else
-
-
-    info "Creating Content View ${CONTENT_VIEW}..."
-
-
-    $HAMMER content-view create \
-        --organization "Default Organization" \
-        --name "${CONTENT_VIEW}"
-
-
-    if [ $? -eq 0 ]
     then
 
-        ok "Content View created."
+
+        skip "Content View ${CONTENT_VIEW} already exists."
+
+
 
     else
 
-        error "Content View creation failed."
 
-        record_failure "${CONTENT_VIEW}"
+        info "Creating Content View : ${CONTENT_VIEW}"
+
+
+
+        $HAMMER content-view create \
+            --organization "${ORG}" \
+            --name "${CONTENT_VIEW}"
+
+
+
+        if [ $? -eq 0 ]
+
+        then
+
+            ok "Content View created."
+
+        else
+
+            error "Content View creation failed."
+
+            record_failure "${CONTENT_VIEW}"
+
+        fi
+
 
     fi
 
 
-fi
+}
+
+
 
 ###############################################################################
-# Add Repositories To Content View
+# Add Repository To Content View
 ###############################################################################
 
 add_repository_to_cv()
 {
 
-REPO="$1"
+    REPO="$1"
 
 
-info "Checking Content View Repository : ${REPO}"
+
+    info "Checking Repository Assignment : ${REPO}"
 
 
-if $HAMMER content-view info \
-    --organization "Default Organization" \
-    --name "${CONTENT_VIEW}" |
-    grep -q "${REPO}"
-then
 
-    skip "${REPO} already added."
-
-else
+    EXISTING=$(
+        $HAMMER content-view info \
+            --organization "${ORG}" \
+            --name "${CONTENT_VIEW}" 2>/dev/null |
+            grep -F "${REPO}" || true
+    )
 
 
-    info "Adding ${REPO} to ${CONTENT_VIEW}..."
+
+    if [ -n "${EXISTING}" ]
+
+    then
+
+        skip "${REPO} already assigned."
+
+        return 0
+
+    fi
+
+
+
+    info "Adding ${REPO} to ${CONTENT_VIEW}"
+
 
 
     $HAMMER content-view add-repository \
-        --organization "Default Organization" \
+        --organization "${ORG}" \
         --name "${CONTENT_VIEW}" \
-        --product "${ROCKY_PRODUCT}" \
+        --product "${PRODUCT}" \
         --repository "${REPO}"
 
 
+
     if [ $? -eq 0 ]
+
     then
 
-        ok "${REPO} added."
+        ok "${REPO} added to ${CONTENT_VIEW}."
 
     else
 
         error "Failed adding ${REPO}"
 
-        record_failure "${REPO} Content View"
+        record_failure "${REPO} -> ${CONTENT_VIEW}"
 
     fi
 
-
-fi
-
-
-echo
 
 }
 
 
 
 ###############################################################################
-# Configure Content View Repositories
+# Configure Content View
 ###############################################################################
 
-header "Configuring Content View Repositories"
+configure_content_view()
+{
+
+    header "Configuring Content View Repositories"
 
 
-add_repository_to_cv \
-"Rocky-08-BaseOS"
+
+    add_repository_to_cv \
+        "${BASE_REPO}"
 
 
-add_repository_to_cv \
-"Rocky-08-AppStream"
+
+    add_repository_to_cv \
+        "${APPSTREAM_REPO}"
 
 
-add_repository_to_cv \
-"${EL8TOEL9_REPO_NAME}"
+
+    add_repository_to_cv \
+        "${ELEVATE_REPO_NAME}"
+
+
+
+}
 
 
 
 ###############################################################################
-# Publish Content View Version
+# Verify Content View Repository Mapping
+###############################################################################
+
+verify_content_view()
+{
+
+    header "Verifying Content View Repository Mapping"
+
+
+
+    FAILED=0
+
+
+
+    for REPO in \
+        "${BASE_REPO}" \
+        "${APPSTREAM_REPO}" \
+        "${ELEVATE_REPO_NAME}"
+
+    do
+
+
+
+        if $HAMMER content-view info \
+            --organization "${ORG}" \
+            --name "${CONTENT_VIEW}" 2>/dev/null |
+            grep -Fq "${REPO}"
+
+        then
+
+
+            ok "${REPO} mapped correctly."
+
+
+
+        else
+
+
+            error "${REPO} missing from ${CONTENT_VIEW}"
+
+            FAILED=1
+
+
+        fi
+
+
+    done
+
+
+
+    if [ ${FAILED} -eq 1 ]
+
+    then
+
+        record_failure "Content View Repository Verification"
+
+        return 1
+
+    fi
+
+
+    ok "All repositories mapped successfully."
+
+
+}
+
+
+
+###############################################################################
+# Publish Content View
 ###############################################################################
 
 publish_content_view()
 {
 
-header "Publishing Content View"
-
-
-VERSION=$(
-$HAMMER content-view version list \
-    --organization "Default Organization" \
-    --content-view "${CONTENT_VIEW}" |
-    grep "${CONTENT_VIEW}" |
-    awk -F'|' '{print $2}' |
-    tail -1
-)
+    header "[4/6] Publishing Content View"
 
 
 
-if [ -n "$VERSION" ]
-then
-
-    skip "Existing Content View version found."
-
-else
-
-
-    info "Publishing ${CONTENT_VIEW}..."
-
-
-    $HAMMER content-view publish \
-        --organization "Default Organization" \
-        --name "${CONTENT_VIEW}" \
-        --async
+    verify_content_view
 
 
 
-    if [ $? -eq 0 ]
+    if [ $? -ne 0 ]
+
     then
 
-        ok "Content View publish started."
+        error "Publishing skipped because repository mapping failed."
 
-    else
-
-        error "Content View publish failed."
-
-        record_failure "${CONTENT_VIEW} publish"
+        return 1
 
     fi
 
 
-fi
+
+    EXISTING_VERSION=$(
+        $HAMMER content-view version list \
+            --organization "${ORG}" \
+            --content-view "${CONTENT_VIEW}" 2>/dev/null |
+            grep "${CONTENT_VIEW}" |
+            tail -1
+    )
+
+
+
+    if [ -n "${EXISTING_VERSION}" ]
+
+    then
+
+
+        warn "Existing Content View version detected."
+
+        info "Publishing new version after repository validation."
+
+
+
+    fi
+
+
+
+    info "Publishing ${CONTENT_VIEW}"
+
+
+
+    OUTPUT=$(
+        $HAMMER content-view publish \
+            --organization "${ORG}" \
+            --name "${CONTENT_VIEW}" \
+            --description "EL8 to EL9 Migration $(date '+%F %T')" \
+            --async 2>&1
+    )
+
+
+
+    RC=$?
+
+
+
+    echo "${OUTPUT}"
+
+
+
+    if [ ${RC} -eq 0 ]
+
+    then
+
+        ok "${CONTENT_VIEW} publish started."
+
+    else
+
+
+        if echo "${OUTPUT}" | grep -qi "Required lock is already taken"
+
+        then
+
+
+            warn "Content View publish lock detected."
+
+            resume_paused_tasks
+
+
+            sleep 10
+
+
+
+            info "Retrying publish..."
+
+
+
+            $HAMMER content-view publish \
+                --organization "${ORG}" \
+                --name "${CONTENT_VIEW}" \
+                --description "EL8 to EL9 Migration Retry $(date '+%F %T')" \
+                --async
+
+
+
+            if [ $? -eq 0 ]
+
+            then
+
+                ok "${CONTENT_VIEW} publish retry started."
+
+                return 0
+
+            fi
+
+
+        fi
+
+
+
+        error "${CONTENT_VIEW} publish failed."
+
+        record_failure "${CONTENT_VIEW} publish"
+
+
+    fi
 
 
 }
 
 
-publish_content_view
-
-
 
 ###############################################################################
-# Content View Verification
+# Content View Summary
 ###############################################################################
 
-header "Content View Summary"
+content_view_summary()
+{
+
+    header "Content View Summary"
 
 
-$HAMMER content-view list \
-    --organization "Default Organization" |
-    grep "${CONTENT_VIEW}"
+
+    echo
+
+    echo "Content View"
+
+    echo "------------------------------------------------------------"
 
 
-echo
+
+    $HAMMER content-view info \
+        --organization "${ORG}" \
+        --name "${CONTENT_VIEW}"
+
+
+
+    echo
+
+
+}
+
+###############################################################################
+# Get Repository Content Label
+###############################################################################
+
+get_content_label()
+{
+
+    REPO="$1"
+
+
+    $HAMMER repository info \
+        --organization "${ORG}" \
+        --product "${PRODUCT}" \
+        --name "${REPO}" 2>/dev/null |
+        awk -F':' '/Content Label/ {
+            gsub(/ /,"",$2);
+            print $2
+        }'
+
+
+}
+
+
 
 ###############################################################################
 # Create Activation Key
@@ -673,24 +1072,50 @@ echo
 create_activation_key()
 {
 
-header "Creating Activation Key"
+    header "[5/6] Creating Activation Key"
 
 
-if $HAMMER activation-key info \
-    --organization "Default Organization" \
-    --name "${ACTIVATION_KEY}" >/dev/null 2>&1
-then
 
-    skip "Activation Key ${ACTIVATION_KEY} already exists."
-
-else
+    info "Checking Activation Key : ${ACTIVATION_KEY}"
 
 
-    info "Creating Activation Key ${ACTIVATION_KEY}..."
+
+    if $HAMMER activation-key info \
+        --organization "${ORG}" \
+        --name "${ACTIVATION_KEY}" >/dev/null 2>&1
+
+    then
+
+
+        skip "Activation Key already exists."
+
+
+
+        info "Updating Activation Key Content View"
+
+
+
+        $HAMMER activation-key update \
+            --organization "${ORG}" \
+            --name "${ACTIVATION_KEY}" \
+            --content-view "${CONTENT_VIEW}" \
+            --lifecycle-environment "Library"
+
+
+
+        return 0
+
+
+    fi
+
+
+
+    info "Creating Activation Key"
+
 
 
     $HAMMER activation-key create \
-        --organization "Default Organization" \
+        --organization "${ORG}" \
         --name "${ACTIVATION_KEY}" \
         --content-view "${CONTENT_VIEW}" \
         --lifecycle-environment "Library"
@@ -698,6 +1123,7 @@ else
 
 
     if [ $? -eq 0 ]
+
     then
 
         ok "Activation Key created."
@@ -711,13 +1137,7 @@ else
     fi
 
 
-fi
-
-
 }
-
-
-create_activation_key
 
 
 
@@ -728,38 +1148,73 @@ create_activation_key
 configure_activation_key()
 {
 
-
-header "Configuring Activation Key Repositories"
-
+    header "Configuring Activation Key Repositories"
 
 
-for REPO in \
-"Rocky-08-BaseOS" \
-"Rocky-08-AppStream" \
-"${EL8TOEL9_REPO_NAME}"
 
-do
+    for REPO in \
+        "${BASE_REPO}" \
+        "${APPSTREAM_REPO}" \
+        "${ELEVATE_REPO_NAME}"
 
-
-info "Enabling Repository : ${REPO}"
+    do
 
 
-$HAMMER activation-key content-override \
-    --organization "Default Organization" \
-    --name "${ACTIVATION_KEY}" \
-    --content-label "${REPO}" \
-    --value 1 \
-    2>/dev/null || true
 
-done
+        LABEL=$(get_content_label "${REPO}")
 
-ok "Activation Key repository configuration completed."
+
+
+        if [ -z "${LABEL}" ]
+
+        then
+
+            warn "Content label not found for ${REPO}"
+
+            record_failure "${REPO} content label"
+
+            continue
+
+        fi
+
+
+
+        info "Enabling Repository"
+
+        echo "Repository : ${REPO}"
+
+        echo "Label      : ${LABEL}"
+
+
+
+        $HAMMER activation-key content-override \
+            --organization "${ORG}" \
+            --name "${ACTIVATION_KEY}" \
+            --content-label "${LABEL}" \
+            --value 1
+
+
+
+        if [ $? -eq 0 ]
+
+        then
+
+            ok "${REPO} enabled."
+
+        else
+
+            error "${REPO} enable failed."
+
+            record_failure "${REPO} activation key"
+
+        fi
+
+
+    done
 
 
 }
 
-
-configure_activation_key
 
 
 ###############################################################################
@@ -769,71 +1224,85 @@ configure_activation_key
 generate_bootstrap_command()
 {
 
-
-header "Generating EL8 To EL9 Migration Command"
-
-
-echo
-
-echo "Run this command on Rocky Linux 8 systems:"
-echo
-
-echo "------------------------------------------------------------"
-
-echo "subscription-manager register \\"
-
-echo "--org=\"Default Organization\" \\"
-
-echo "--activationkey=${ACTIVATION_KEY}"
+    header "Generating Rocky Linux 8 Bootstrap Command"
 
 
-echo "------------------------------------------------------------"
+
+    echo
+
+    echo "Run on Rocky Linux 8 source server"
+
+    echo
+
+    echo "------------------------------------------------------------"
 
 
-echo
+    echo "subscription-manager register \\"
 
-echo "After registration run:"
+    echo "  --org=\"${ORG}\" \\"
 
-echo
+    echo "  --activationkey=\"${ACTIVATION_KEY}\""
 
-echo "dnf clean all"
 
-echo "dnf repolist"
 
-echo
+    echo "------------------------------------------------------------"
 
-echo "Install ELevate packages:"
 
-echo
 
-echo "dnf install -y leapp-upgrade leapp-data-rocky"
+    echo
 
-echo
+    echo "After registration:"
 
-echo "Run preupgrade:"
+    echo
 
-echo
+    echo "dnf clean all"
 
-echo "leapp preupgrade"
+    echo "dnf repolist"
 
-echo
 
-echo "Run upgrade:"
 
-echo
+    echo
 
-echo "leapp upgrade"
+    echo "Install ELevate packages:"
 
-echo
+    echo
 
-echo "Reboot:"
+    echo "dnf install -y leapp-upgrade leapp-data-rocky"
 
-echo
 
-echo "reboot"
+
+    echo
+
+    echo "Run upgrade checks:"
+
+    echo
+
+    echo "leapp preupgrade"
+
+
+
+    echo
+
+    echo "Execute migration:"
+
+    echo
+
+    echo "leapp upgrade"
+
+
+
+    echo
+
+    echo "Reboot:"
+
+    echo
+
+    echo "reboot"
 
 
 }
+
+
 
 ###############################################################################
 # Final Summary
@@ -842,71 +1311,77 @@ echo "reboot"
 summary()
 {
 
-header "EL8 To EL9 Bootstrap Summary"
+    header "EL8 To EL9 Bootstrap Summary"
 
 
 
-echo
-echo "Product"
-echo "------------------------------------------------------------"
+    echo
 
-$HAMMER product list \
-    --organization "Default Organization" |
-    grep "${ROCKY_PRODUCT}"
+    echo "Product"
+
+    echo "------------------------------------------------------------"
 
 
-
-echo
-echo "Repositories"
-echo "------------------------------------------------------------"
-
-$HAMMER repository list \
-    --organization "Default Organization" \
-    --product "${ROCKY_PRODUCT}"
+    $HAMMER product list \
+        --organization "${ORG}" |
+        grep "${PRODUCT}"
 
 
 
-echo
-echo "Content View"
-echo "------------------------------------------------------------"
+    echo
 
-$HAMMER content-view list \
-    --organization "Default Organization" |
-    grep "${CONTENT_VIEW}"
+    echo "Repositories"
+
+    echo "------------------------------------------------------------"
 
 
-
-echo
-echo "Activation Key"
-echo "------------------------------------------------------------"
-
-$HAMMER activation-key list \
-    --organization "Default Organization" |
-    grep "${ACTIVATION_KEY}"
+    $HAMMER repository list \
+        --organization "${ORG}" \
+        --product "${PRODUCT}"
 
 
 
-echo
-echo "Migration Configuration"
-echo "------------------------------------------------------------"
+    echo
 
-echo "Target Version      : ${TARGET_VERSION}"
+    echo "Content View"
 
-echo "Product             : ${ROCKY_PRODUCT}"
+    echo "------------------------------------------------------------"
 
-echo "Content View        : ${CONTENT_VIEW}"
 
-echo "Activation Key      : ${ACTIVATION_KEY}"
+    $HAMMER content-view list \
+        --organization "${ORG}" |
+        grep "${CONTENT_VIEW}"
 
-echo
 
-echo "Repositories        :"
 
-echo "  - Rocky-08-BaseOS"
+    echo
 
-echo "  - Rocky-08-AppStream"
+    echo "Activation Key"
 
-echo "  - ${EL8TOEL9_REPO_NAME}"
+    echo "------------------------------------------------------------"
+
+
+    $HAMMER activation-key list \
+        --organization "${ORG}" |
+        grep "${ACTIVATION_KEY}"
+
+
+
+    echo
+
+    echo "Migration Configuration"
+
+    echo "------------------------------------------------------------"
+
+
+    echo "Target Version : ${ROCKY_VERSION}"
+
+    echo "Product        : ${PRODUCT}"
+
+    echo "Content View   : ${CONTENT_VIEW}"
+
+    echo "Activation Key : ${ACTIVATION_KEY}"
+
 
 
 }
@@ -925,21 +1400,43 @@ resume_paused_tasks
 
 
 
-###############################################################################
-# Execute Bootstrap Steps
-###############################################################################
+create_product
 
-# Product
 
-# Repository creation
 
-# Repository sync
+create_repositories
 
-# Content View
 
-# Activation Key
 
-# Bootstrap command generation
+sync_repositories
+
+
+
+create_content_view
+
+
+
+configure_content_view
+
+
+
+publish_content_view
+
+
+
+create_activation_key
+
+
+
+configure_activation_key
+
+
+
+generate_bootstrap_command
+
+
+
+content_view_summary
 
 
 
@@ -951,21 +1448,25 @@ header "05 - EL8 To EL9 Bootstrap Completed"
 
 
 
-if [ ${#FAILED_STEPS[@]} -eq 0 ]
-then
+###############################################################################
+# Final Status
+###############################################################################
 
-    echo
+if [ ${#FAILED_STEPS[@]} -eq 0 ]
+
+then
 
     ok "EL8 To EL9 Bootstrap completed successfully."
 
 else
 
-    echo
 
     warn "Bootstrap completed with ${#FAILED_STEPS[@]} failure(s)."
 
 
+
     for ITEM in "${FAILED_STEPS[@]}"
+
     do
 
         error "${ITEM}"
@@ -974,3 +1475,7 @@ else
 
 
 fi
+
+
+
+exit 0
