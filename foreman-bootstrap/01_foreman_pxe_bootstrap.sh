@@ -75,7 +75,7 @@ FOREMAN_USER="${FOREMAN_USER:-admin}"
 FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
 
 HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
-
+DOMAIN="vgs.com"
 TARGET_VERSION="${TARGET_VERSION:-9.8}"
 
 case "$TARGET_VERSION" in
@@ -615,6 +615,7 @@ create_subnet() {
             --mask "${MASK}" \
             --gateway "${GATEWAY}" \
             --dns-primary "${DNS}" \
+            --domain "${DOMAIN}" \
             --boot-mode DHCP \
             --ipam DHCP
 
