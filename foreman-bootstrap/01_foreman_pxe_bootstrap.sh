@@ -780,3 +780,361 @@ header "OS Template Verification"
 
 
 $HAMMER os list
+
+###############################################################################
+# Create PXE Subnets
+###############################################################################
+
+header "[4/6] Creating PXE Subnets"
+
+
+
+create_subnet()
+{
+
+SUBNET_NAME="$1"
+
+NETWORK="$2"
+
+MASK="$3"
+
+GATEWAY="$4"
+
+DNS="$5"
+
+TFTP_PROXY="$6"
+
+DHCP_PROXY="$7"
+
+
+
+info "Checking Subnet : ${SUBNET_NAME}"
+
+
+
+if $HAMMER subnet info \
+--name "${SUBNET_NAME}" >/dev/null 2>&1
+
+then
+
+    skip "${SUBNET_NAME} already exists."
+
+else
+
+
+    info "Creating ${SUBNET_NAME}"
+
+
+    $HAMMER subnet create \
+    --name "${SUBNET_NAME}" \
+    --network "${NETWORK}" \
+    --mask "${MASK}" \
+    --gateway "${GATEWAY}" \
+    --dns-primary "${DNS}" \
+    --boot-mode DHCP \
+    --ipam DHCP
+
+
+
+    if [ $? -eq 0 ]
+
+    then
+
+        ok "${SUBNET_NAME} created."
+
+    else
+
+        error "Failed creating ${SUBNET_NAME}"
+
+        record_failure "${SUBNET_NAME}"
+
+    fi
+
+
+fi
+
+
+
+###############################################################################
+# Assign Domain
+###############################################################################
+
+DOMAIN_ID=$(
+$HAMMER domain list |
+awk -F'|' '
+
+{
+gsub(/^ +| +$/,"",$1)
+gsub(/^ +| +$/,"",$2)
+
+if($2=="vgs.com")
+print $1
+
+}
+'
+)
+
+
+
+if [ -n "${DOMAIN_ID}" ]
+
+then
+
+    $HAMMER subnet update \
+    --name "${SUBNET_NAME}" \
+    --domain-ids "${DOMAIN_ID}"
+
+    ok "Domain assigned."
+
+else
+
+    warn "Domain vgs.com not found."
+
+fi
+
+
+
+###############################################################################
+# Assign TFTP Proxy
+###############################################################################
+
+TFTP_ID=$(
+$HAMMER proxy list |
+awk -F'|' -v p="${TFTP_PROXY}" '
+
+{
+gsub(/^ +| +$/,"",$1)
+gsub(/^ +| +$/,"",$2)
+
+if($2==p)
+print $1
+
+}
+'
+)
+
+
+
+if [ -n "${TFTP_ID}" ]
+
+then
+
+    $HAMMER subnet update \
+    --name "${SUBNET_NAME}" \
+    --tftp-id "${TFTP_ID}"
+
+    ok "TFTP proxy assigned."
+
+else
+
+    warn "TFTP proxy not found : ${TFTP_PROXY}"
+
+fi
+
+
+
+###############################################################################
+# Assign DHCP Proxy
+###############################################################################
+
+DHCP_ID=$(
+$HAMMER proxy list |
+awk -F'|' -v p="${DHCP_PROXY}" '
+
+{
+gsub(/^ +| +$/,"",$1)
+gsub(/^ +| +$/,"",$2)
+
+if($2==p)
+print $1
+
+}
+'
+)
+
+
+
+if [ -n "${DHCP_ID}" ]
+
+then
+
+    $HAMMER subnet update \
+    --name "${SUBNET_NAME}" \
+    --dhcp-id "${DHCP_ID}"
+
+    ok "DHCP proxy assigned."
+
+else
+
+    warn "DHCP proxy not found : ${DHCP_PROXY}"
+
+fi
+
+
+echo
+
+}
+
+
+
+###############################################################################
+# CentOS PXE Subnet
+###############################################################################
+
+create_subnet \
+"vgs-subnet-centos" \
+"192.168.253.0" \
+"255.255.255.0" \
+"192.168.253.2" \
+"192.168.253.1" \
+"cent-07-01.vgs.com" \
+"cent-07-01.vgs.com"
+
+
+
+###############################################################################
+# Rocky PXE Subnet
+###############################################################################
+
+create_subnet \
+"vgs-subnet-rockyos" \
+"192.168.253.0" \
+"255.255.255.0" \
+"192.168.253.2" \
+"192.168.253.1" \
+"cent-07-02.vgs.com" \
+"cent-07-02.vgs.com"
+
+###############################################################################
+# Final Verification
+###############################################################################
+
+header "[5/6] PXE Bootstrap Verification"
+
+
+
+echo
+echo "==============================="
+echo "Operating Systems"
+echo "==============================="
+
+
+$HAMMER os list
+
+
+
+echo
+echo "==============================="
+echo "PXE Templates"
+echo "==============================="
+
+
+$HAMMER template list | grep PXEGrub2
+
+
+
+echo
+echo "==============================="
+echo "Subnets"
+echo "==============================="
+
+
+$HAMMER subnet list
+
+
+
+###############################################################################
+# Detailed Verification
+###############################################################################
+
+header "Detailed OS Verification"
+
+
+
+for OS in \
+"CentOSLinux7-RAID" \
+"CentOSLinux7-SingleDisk" \
+"RockyLinux8.10-RAID" \
+"RockyLinux8.10-SingleDisk" \
+"RockyLinux9.2-RAID" \
+"RockyLinux9.2-SingleDisk" \
+"RockyLinux9.8-RAID" \
+"RockyLinux9.8-SingleDisk"
+
+do
+
+echo
+echo "------------------------------------------------------------"
+echo "Operating System : ${OS}"
+echo "------------------------------------------------------------"
+
+
+$HAMMER os info \
+--title "${OS}" || true
+
+
+done
+
+
+
+###############################################################################
+# Final Status
+###############################################################################
+
+header "[6/6] PXE Bootstrap Completed"
+
+
+
+if [ ${#FAILED_STEPS[@]} -eq 0 ]
+
+then
+
+    ok "PXE Bootstrap completed successfully."
+
+else
+
+    warn "Completed with ${#FAILED_STEPS[@]} failure(s)."
+
+
+    for ITEM in "${FAILED_STEPS[@]}"
+
+    do
+
+        error "${ITEM}"
+
+    done
+
+fi
+
+
+
+###############################################################################
+# Manual Verification Commands
+###############################################################################
+
+echo
+
+echo "Manual Verification:"
+echo "------------------------------------------------------------"
+
+
+echo
+
+echo "hammer os list"
+
+
+echo
+
+echo "hammer template list | grep PXEGrub2"
+
+
+echo
+
+echo "hammer subnet list"
+
+
+
+echo
+
+
+exit 0
