@@ -15,7 +15,8 @@ Run all Foreman bootstrap scripts in this order.
 #   - PXE Configuration
 ###############################################################################
 
-TARGET_VERSION=ALL ./01_foreman_pxe_bootstrap.sh
+TARGET_VERSION=9.8 ./01_foreman_pxe_bootstrap.sh
+TARGET_VERSION=9.2 ./01_foreman_pxe_bootstrap.sh
 
 
 ###############################################################################
