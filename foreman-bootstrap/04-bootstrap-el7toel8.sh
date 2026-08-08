@@ -218,14 +218,14 @@ info "Starting synchronization : ${REPO_NAME}"
 OUTPUT=$($HAMMER repository synchronize --organization "${ORG}" --product "${PRODUCT_NAME}" --name "${REPO_NAME}" 2>&1)
 RC=$?
 echo "${OUTPUT}"
-if [ ${RC} -eq 0 ]
-then
-ok "${REPO_NAME} synchronization started."
-return 0
-fi
 if echo "${OUTPUT}" | grep -qi "Skipping Sync"
 then
-ok "${REPO_NAME} already synchronized."
+skip "${REPO_NAME} already synchronized."
+return 0
+fi
+if [ ${RC} -eq 0 ]
+then
+ok "${REPO_NAME} synchronization completed."
 return 0
 fi
 if echo "${OUTPUT}" | grep -qi "Required lock is already taken"
@@ -255,44 +255,14 @@ error "${REPO_NAME} synchronization failed."
 record_failure "Sync ${REPO_NAME}"
 }
 ###############################################################################
-# Wait For Repository Sync Completion
-###############################################################################
-wait_for_sync()
-{
-REPO_NAME="$1"
-info "Waiting for ${REPO_NAME} sync completion..."
-for COUNT in $(seq 1 60)
-do
-STATUS=$($HAMMER task list --search "resource = ${REPO_NAME}" 2>/dev/null | grep -Ei "running|success|error" | tail -1)
-echo "Current Status : ${STATUS}"
-if echo "${STATUS}" | grep -Eqi "success"
-then
-ok "${REPO_NAME} sync completed."
-return 0
-fi
-if echo "${STATUS}" | grep -Eqi "error|failed"
-then
-error "${REPO_NAME} sync failed."
-record_failure "Sync ${REPO_NAME}"
-return 1
-fi
-sleep 30
-done
-warn "${REPO_NAME} sync status timeout."
-record_failure "Sync timeout ${REPO_NAME}"
-}
-###############################################################################
 # Sync All EL7 Repositories
 ###############################################################################
 sync_el7_repositories()
 {
 header "Synchronizing EL7 Repositories"
 sync_repository "${BASE_REPO}"
-wait_for_sync "${BASE_REPO}"
 sync_repository "${UPDATE_REPO}"
-wait_for_sync "${UPDATE_REPO}"
 sync_repository "${ELEVATE_REPO}"
-wait_for_sync "${ELEVATE_REPO}"
 }
 ###############################################################################
 # Create Content View
