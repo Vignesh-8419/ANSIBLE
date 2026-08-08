@@ -526,58 +526,82 @@ fi
 add_repository_to_cv()
 {
 
-REPO_NAME="$1"
+    REPO_NAME="$1"
 
+    echo
+    echo "Checking Content View Repository : ${REPO_NAME}"
 
-echo
+    ###########################################################################
+    # Get Repository ID
+    ###########################################################################
 
-echo "Checking Content View Repository : ${REPO_NAME}"
+    REPO_ID=$(
+        $HAMMER repository list \
+        --organization "$ORG" \
+        --product "$PRODUCT_NAME" \
+        --search "name = ${REPO_NAME}" \
+        --fields "Id" \
+        --output csv 2>/dev/null |
+        tail -n +2 |
+        tr -d '" ' |
+        head -1
+    )
 
+    if [ -z "$REPO_ID" ]; then
 
-EXISTING=$(
-$HAMMER content-view info \
---organization "$ORG" \
---name "$CONTENT_VIEW" 2>/dev/null |
-grep "${REPO_NAME}"
-)
-
-
-
-if echo "$EXISTING" | grep -q "${REPO_NAME}"
-then
-
-    skip "${REPO_NAME} already added."
-
-else
-
-
-    echo "Adding ${REPO_NAME} to ${CONTENT_VIEW}..."
-
-
-    $HAMMER content-view repository add \
-    --organization "$ORG" \
-    --name "$CONTENT_VIEW" \
-    --product "$PRODUCT_NAME" \
-    --repository "$REPO_NAME"
-
-
-
-    if [ $? -eq 0 ]
-    then
-
-        ok "${REPO_NAME} added."
-
-    else
-
-        error "Failed adding ${REPO_NAME}"
+        error "Repository ID not found for ${REPO_NAME}"
 
         record_failure "${REPO_NAME} Content View"
 
+        return 1
+
     fi
 
+    info "Repository ${REPO_NAME} ID : ${REPO_ID}"
 
-fi
+    ###########################################################################
+    # Check Whether Repository Is Already In Content View
+    ###########################################################################
 
+    EXISTING=$(
+        $HAMMER content-view info \
+        --organization "$ORG" \
+        --name "$CONTENT_VIEW" 2>/dev/null |
+        grep -F "$REPO_NAME" || true
+    )
+
+    if [ -n "$EXISTING" ]; then
+
+        skip "${REPO_NAME} already added to ${CONTENT_VIEW}."
+
+        return 0
+
+    fi
+
+    ###########################################################################
+    # Add Repository
+    ###########################################################################
+
+    echo "Adding ${REPO_NAME} to ${CONTENT_VIEW}..."
+
+    $HAMMER content-view add-repository \
+        --organization "$ORG" \
+        --name "$CONTENT_VIEW" \
+        --repository-id "$REPO_ID"
+
+    if [ $? -eq 0 ]; then
+
+        ok "${REPO_NAME} added to ${CONTENT_VIEW}."
+
+    else
+
+        error "Failed adding ${REPO_NAME} to ${CONTENT_VIEW}"
+
+        record_failure "${REPO_NAME} Content View"
+
+        return 1
+
+    fi
 
 }
 
