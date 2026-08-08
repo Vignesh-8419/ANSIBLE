@@ -394,6 +394,51 @@ create_rocky9_single_hostgroups
 ###############################################################################
 create_single_hostgroups
 ###############################################################################
+#Set Default PXEGrub2 Template Function
+###############################################################################
+set_default_template()
+{
+OS_NAME="$1"
+TEMPLATE="$2"
+info "Setting default PXEGrub2 template : ${OS_NAME}"
+OS_ID=$(get_os_id "${OS_NAME}")
+if [ -z "${OS_ID}" ]
+then
+error "Operating System not found : ${OS_NAME}"
+record_failure "${OS_NAME}"
+return 1
+fi
+TEMPLATE_ID=$(
+$HAMMER template list 2>/dev/null |
+awk -F'|' -v NAME="${TEMPLATE}" '
+{
+gsub(/^ +| +$/,"",$2)
+if($2==NAME)
+{
+gsub(/^ +| +$/,"",$1)
+print $1
+}
+}'
+)
+if [ -z "${TEMPLATE_ID}" ]
+then
+error "Template not found : ${TEMPLATE}"
+record_failure "${TEMPLATE}"
+return 1
+fi
+$HAMMER os set-default-template \
+--id "${OS_ID}" \
+--provisioning-template-id "${TEMPLATE_ID}"
+if [ $? -eq 0 ]
+then
+ok "Default PXEGrub2 template assigned."
+else
+error "Default template assignment failed."
+record_failure "${OS_NAME}"
+fi
+echo
+}
+###############################################################################
 #Set Default Single Disk PXEGrub2 Templates
 ###############################################################################
 header "Setting Default Single Disk PXEGrub2 Templates"
