@@ -1,7 +1,17 @@
 #!/bin/bash
 ###############################################################################
 # Foreman Katello Bootstrap
-# Supports CentOS 7, Rocky Linux 8.10, Rocky Linux 9.2 and Rocky Linux 9.8
+# Supports:
+# CentOS 7
+# Rocky Linux 8.10
+# Rocky Linux 9.2
+# Rocky Linux 9.8
+#
+# Disk layout is handled by Foreman Operating Systems:
+#   - RAID OS
+#   - SingleDisk OS
+#
+# Katello content is shared.
 ###############################################################################
 
 # Usage:
