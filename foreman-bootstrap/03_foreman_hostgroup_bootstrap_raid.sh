@@ -9,11 +9,9 @@
 #RockyLinux9.2-RAID
 #RockyLinux9.8-RAID
 #
-#Depends On:
-#
+#Depends:
 #01_foreman_pxe_bootstrap.sh
 #02_foreman_katello_bootstrap.sh
-#
 ###############################################################################
 set +e
 FAILED_STEPS=()
@@ -21,21 +19,6 @@ record_failure()
 {
 FAILED_STEPS+=("$1")
 }
-###############################################################################
-#Foreman Credentials
-###############################################################################
-FOREMAN_USER="${FOREMAN_USER:-admin}"
-FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
-HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
-###############################################################################
-#Global Configuration
-###############################################################################
-DOMAIN="vgs.com"
-LOCATION="Default Location"
-ORGANIZATION="Default Organization"
-CENTOS_SUBNET="vgs-subnet-centos"
-ROCKY_SUBNET="vgs-subnet-rockyos"
-TARGET_VERSION="${TARGET_VERSION:-ALL}"
 ###############################################################################
 #Colors
 ###############################################################################
@@ -78,19 +61,34 @@ echo -e "${BLUE}============================================================${NC
 }
 header "03 - Foreman RAID Hostgroup Bootstrap"
 ###############################################################################
-#RAID PXE Template Mapping
+#Foreman Credentials
 ###############################################################################
-CENTOS_RAID_TEMPLATE="PXEGrub2 CentOS UEFI RAID Kickstart"
-ROCKY8_RAID_TEMPLATE="PXEGrub2 Rocky8 UEFI RAID Kickstart"
-ROCKY92_RAID_TEMPLATE="PXEGrub2 Rocky9.2 UEFI RAID Kickstart"
-ROCKY98_RAID_TEMPLATE="PXEGrub2 Rocky9.8 UEFI RAID Kickstart"
+FOREMAN_USER="${FOREMAN_USER:-admin}"
+FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
+HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
 ###############################################################################
-#RAID Operating System Mapping
+#Global Configuration
+###############################################################################
+DOMAIN="vgs.com"
+LOCATION="Default Location"
+ORGANIZATION="Default Organization"
+CENTOS_SUBNET="vgs-subnet-centos"
+ROCKY_SUBNET="vgs-subnet-rockyos"
+TARGET_VERSION="${TARGET_VERSION:-ALL}"
+###############################################################################
+#OS Mapping From Script 01
 ###############################################################################
 CENTOS_RAID_OS="CentOSLinux7-RAID"
 ROCKY8_RAID_OS="RockyLinux8.10-RAID"
 ROCKY92_RAID_OS="RockyLinux9.2-RAID"
 ROCKY98_RAID_OS="RockyLinux9.8-RAID"
+###############################################################################
+#PXE Template Mapping From Script 01
+###############################################################################
+CENTOS_RAID_TEMPLATE="PXEGrub2 CentOS UEFI RAID Kickstart"
+ROCKY8_RAID_TEMPLATE="PXEGrub2 Rocky8 UEFI RAID Kickstart"
+ROCKY92_RAID_TEMPLATE="PXEGrub2 Rocky9.2 UEFI RAID Kickstart"
+ROCKY98_RAID_TEMPLATE="PXEGrub2 Rocky9.8 UEFI RAID Kickstart"
 ###############################################################################
 #Installation Media Mapping
 ###############################################################################
@@ -98,6 +96,23 @@ CENTOS_MEDIA="CentOS 7 Remote"
 ROCKY8_MEDIA="Rocky 8 Remote"
 ROCKY92_MEDIA="Rocky 9.2 Remote"
 ROCKY98_MEDIA="Rocky 9 Remote"
+###############################################################################
+#OS ID Lookup
+###############################################################################
+get_os_id()
+{
+OS_NAME="$1"
+$HAMMER os list 2>/dev/null |
+awk -F'|' -v NAME="${OS_NAME}" '
+{
+gsub(/^ +| +$/,"",$2)
+if($2 ~ NAME)
+{
+gsub(/^ +| +$/,"",$1)
+print $1
+}
+}'
+}
 ###############################################################################
 #Select Rocky Version
 ###############################################################################
@@ -144,99 +159,35 @@ exit 1
 ;;
 esac
 ###############################################################################
-#Create CentOS 7 RAID Hostgroup
+#Create Hostgroup Function
 ###############################################################################
-create_centos_raid_hostgroup()
+create_hostgroup()
 {
-HOSTGROUP="CentOSLinux7-RAID"
+HOSTGROUP="$1"
+SUBNET="$2"
+OS_NAME="$3"
+MEDIA="$4"
 info "Checking Hostgroup : ${HOSTGROUP}"
 if $HAMMER hostgroup info \
 --name "${HOSTGROUP}" >/dev/null 2>&1
 then
 skip "${HOSTGROUP} already exists."
 else
+OS_ID=$(get_os_id "${OS_NAME}")
+if [ -z "${OS_ID}" ]
+then
+error "Operating System not found : ${OS_NAME}"
+record_failure "${OS_NAME}"
+return 1
+fi
 info "Creating ${HOSTGROUP}..."
 $HAMMER hostgroup create \
 --name "${HOSTGROUP}" \
 --organization "${ORGANIZATION}" \
 --location "${LOCATION}" \
---subnet "${CENTOS_SUBNET}" \
+--subnet "${SUBNET}" \
 --domain "${DOMAIN}" \
---operatingsystem "${CENTOS_RAID_OS}" \
---architecture x86_64 \
---medium "${CENTOS_MEDIA}" \
---partition-table "Kickstart default" \
---root-password "password" \
---pxe-loader "Grub2 UEFI"
-if [ $? -eq 0 ]
-then
-ok "${HOSTGROUP} created."
-else
-error "Failed creating ${HOSTGROUP}"
-record_failure "${HOSTGROUP}"
-fi
-fi
-echo
-}
-###############################################################################
-#Create Rocky Linux 8 RAID Hostgroup
-###############################################################################
-create_rocky8_raid_hostgroup()
-{
-HOSTGROUP="RockyLinux8.10-RAID"
-info "Checking Hostgroup : ${HOSTGROUP}"
-if $HAMMER hostgroup info \
---name "${HOSTGROUP}" >/dev/null 2>&1
-then
-skip "${HOSTGROUP} already exists."
-else
-info "Creating ${HOSTGROUP}..."
-$HAMMER hostgroup create \
---name "${HOSTGROUP}" \
---organization "${ORGANIZATION}" \
---location "${LOCATION}" \
---subnet "${ROCKY_SUBNET}" \
---domain "${DOMAIN}" \
---operatingsystem "${ROCKY8_RAID_OS}" \
---architecture x86_64 \
---medium "${ROCKY8_MEDIA}" \
---partition-table "Kickstart default" \
---root-password "password" \
---pxe-loader "Grub2 UEFI"
-if [ $? -eq 0 ]
-then
-ok "${HOSTGROUP} created."
-else
-error "Failed creating ${HOSTGROUP}"
-record_failure "${HOSTGROUP}"
-fi
-fi
-echo
-}
-###############################################################################
-#Create Rocky Linux 9.x RAID Hostgroups
-###############################################################################
-create_rocky9_raid_hostgroups()
-{
-for IDX in "${!ROCKY_HOSTGROUPS[@]}"
-do
-HOSTGROUP="${ROCKY_HOSTGROUPS[$IDX]}"
-OS_NAME="${ROCKY_OS_LIST[$IDX]}"
-MEDIA="${ROCKY_MEDIA_LIST[$IDX]}"
-info "Checking Hostgroup : ${HOSTGROUP}"
-if $HAMMER hostgroup info \
---name "${HOSTGROUP}" >/dev/null 2>&1
-then
-skip "${HOSTGROUP} already exists."
-else
-info "Creating ${HOSTGROUP}..."
-$HAMMER hostgroup create \
---name "${HOSTGROUP}" \
---organization "${ORGANIZATION}" \
---location "${LOCATION}" \
---subnet "${ROCKY_SUBNET}" \
---domain "${DOMAIN}" \
---operatingsystem "${OS_NAME}" \
+--operatingsystem-id "${OS_ID}" \
 --architecture x86_64 \
 --medium "${MEDIA}" \
 --partition-table "Kickstart default" \
@@ -251,10 +202,9 @@ record_failure "${HOSTGROUP}"
 fi
 fi
 echo
-done
 }
 ###############################################################################
-#Create All RAID Hostgroups
+#Create RAID Hostgroups
 ###############################################################################
 create_raid_hostgroups()
 {
@@ -262,22 +212,37 @@ header "Creating RAID Hostgroups"
 ###############################################################################
 #CentOS 7 RAID
 ###############################################################################
-create_centos_raid_hostgroup
+create_hostgroup \
+"CentOSLinux7-RAID" \
+"${CENTOS_SUBNET}" \
+"${CENTOS_RAID_OS}" \
+"${CENTOS_MEDIA}"
 ###############################################################################
 #Rocky Linux 8 RAID
 ###############################################################################
-create_rocky8_raid_hostgroup
+create_hostgroup \
+"RockyLinux8.10-RAID" \
+"${ROCKY_SUBNET}" \
+"${ROCKY8_RAID_OS}" \
+"${ROCKY8_MEDIA}"
 ###############################################################################
 #Rocky Linux 9 RAID
 ###############################################################################
-create_rocky9_raid_hostgroups
+for IDX in "${!ROCKY_HOSTGROUPS[@]}"
+do
+create_hostgroup \
+"${ROCKY_HOSTGROUPS[$IDX]}" \
+"${ROCKY_SUBNET}" \
+"${ROCKY_OS_LIST[$IDX]}" \
+"${ROCKY_MEDIA_LIST[$IDX]}"
+done
 }
 ###############################################################################
-#Execute Hostgroup Creation
+#Create Hostgroups
 ###############################################################################
 create_raid_hostgroups
 ###############################################################################
-#Assign RAID Provisioning Templates
+#Assign RAID PXE Template
 ###############################################################################
 assign_template()
 {
@@ -287,7 +252,7 @@ info "Checking Template Assignment"
 echo "OS       : ${OS_NAME}"
 echo "Template : ${TEMPLATE}"
 ###############################################################################
-#Verify Template Exists
+#Check Template Exists
 ###############################################################################
 if ! $HAMMER template info \
 --name "${TEMPLATE}" >/dev/null 2>&1
@@ -297,20 +262,9 @@ record_failure "${TEMPLATE}"
 return 1
 fi
 ###############################################################################
-#Find Operating System ID
+#Get OS ID
 ###############################################################################
-OS_ID=$(
-$HAMMER os list 2>/dev/null |
-awk -F'|' -v NAME="${OS_NAME}" '
-{
-gsub(/^ +| +$/,"",$2)
-if($2==NAME)
-{
-gsub(/^ +| +$/,"",$1)
-print $1
-}
-}'
-)
+OS_ID=$(get_os_id "${OS_NAME}")
 if [ -z "${OS_ID}" ]
 then
 error "Operating System not found : ${OS_NAME}"
@@ -319,15 +273,15 @@ return 1
 fi
 ok "Found Operating System ID : ${OS_ID}"
 ###############################################################################
-#Check Existing Template Assignment
+#Check Existing Assignment
 ###############################################################################
 if $HAMMER os info \
 --id "${OS_ID}" 2>/dev/null |
 grep -q "${TEMPLATE}"
 then
-skip "${TEMPLATE} already assigned to ${OS_NAME}"
+skip "${TEMPLATE} already assigned."
 else
-info "Assigning ${TEMPLATE} to ${OS_NAME}"
+info "Assigning template..."
 $HAMMER os add-provisioning-template \
 --operatingsystem-id "${OS_ID}" \
 --provisioning-template "${TEMPLATE}"
@@ -342,7 +296,7 @@ fi
 echo
 }
 ###############################################################################
-#Configure RAID PXE Templates
+#Configure RAID Templates
 ###############################################################################
 configure_raid_templates()
 {
@@ -354,13 +308,13 @@ assign_template \
 "${CENTOS_RAID_OS}" \
 "${CENTOS_RAID_TEMPLATE}"
 ###############################################################################
-#Rocky Linux 8 RAID
+#Rocky 8 RAID
 ###############################################################################
 assign_template \
 "${ROCKY8_RAID_OS}" \
 "${ROCKY8_RAID_TEMPLATE}"
 ###############################################################################
-#Rocky Linux 9 RAID
+#Rocky 9 RAID
 ###############################################################################
 for IDX in "${!ROCKY_OS_LIST[@]}"
 do
@@ -380,7 +334,7 @@ esac
 done
 }
 ###############################################################################
-#Run Template Configuration
+#Run Template Assignment
 ###############################################################################
 configure_raid_templates
 ###############################################################################
@@ -391,18 +345,7 @@ set_default_template()
 OS_NAME="$1"
 TEMPLATE="$2"
 info "Setting default PXEGrub2 template : ${OS_NAME}"
-OS_ID=$(
-$HAMMER os list 2>/dev/null |
-awk -F'|' -v NAME="${OS_NAME}" '
-{
-gsub(/^ +| +$/,"",$2)
-if($2==NAME)
-{
-gsub(/^ +| +$/,"",$1)
-print $1
-}
-}'
-)
+OS_ID=$(get_os_id "${OS_NAME}")
 if [ -z "${OS_ID}" ]
 then
 error "Operating System not found : ${OS_NAME}"
@@ -440,24 +383,15 @@ fi
 echo
 }
 ###############################################################################
-#Default PXEGrub2 Template Mapping
+#Set Default PXEGrub2 Template Mapping
 ###############################################################################
 header "Setting Default RAID PXEGrub2 Templates"
-###############################################################################
-#CentOS 7 RAID Default Template
-###############################################################################
 set_default_template \
 "CentOSLinux7-RAID" \
 "PXEGrub2 CentOS UEFI RAID Kickstart"
-###############################################################################
-#Rocky Linux 8 RAID Default Template
-###############################################################################
 set_default_template \
 "RockyLinux8.10-RAID" \
 "PXEGrub2 Rocky8 UEFI RAID Kickstart"
-###############################################################################
-#Rocky Linux 9 RAID Default Template
-###############################################################################
 for IDX in "${!ROCKY_OS_LIST[@]}"
 do
 OS_NAME="${ROCKY_OS_LIST[$IDX]}"
@@ -475,12 +409,11 @@ set_default_template \
 esac
 done
 ###############################################################################
-#Verify Hostgroups
+#Verify Hostgroup
 ###############################################################################
-verify_hostgroups()
+verify_hostgroup()
 {
 HOSTGROUP="$1"
-echo
 info "Checking Hostgroup : ${HOSTGROUP}"
 if $HAMMER hostgroup info \
 --name "${HOSTGROUP}" >/dev/null 2>&1
@@ -492,60 +425,74 @@ record_failure "${HOSTGROUP}"
 fi
 }
 ###############################################################################
-#Verify Operating Systems
+#Verify OS Template Mapping
 ###############################################################################
-verify_os()
+verify_template_mapping()
 {
 OS_NAME="$1"
+TEMPLATE="$2"
 echo
-info "Checking Operating System : ${OS_NAME}"
-OS_ID=$(
-$HAMMER os list 2>/dev/null |
-awk -F'|' -v NAME="${OS_NAME}" '
-{
-gsub(/^ +| +$/,"",$2)
-if($2==NAME)
-{
-gsub(/^ +| +$/,"",$1)
-print $1
-}
-}'
-)
-if [ -n "${OS_ID}" ]
+info "Checking ${OS_NAME}"
+OS_ID=$(get_os_id "${OS_NAME}")
+if [ -z "${OS_ID}" ]
 then
-ok "${OS_NAME} exists with ID ${OS_ID}"
-else
-error "${OS_NAME} not found."
+error "Operating System not found : ${OS_NAME}"
 record_failure "${OS_NAME}"
+return
+fi
+if $HAMMER os info \
+--id "${OS_ID}" 2>/dev/null |
+grep -q "${TEMPLATE}"
+then
+ok "Template mapping correct."
+else
+error "Template mapping missing."
+record_failure "${OS_NAME} -> ${TEMPLATE}"
 fi
 }
 ###############################################################################
-#Verification Section
+#Verification
 ###############################################################################
 header "RAID Hostgroup Verification"
-verify_hostgroups "CentOSLinux7-RAID"
-verify_hostgroups "RockyLinux8.10-RAID"
-for OS in "${ROCKY_OS_LIST[@]}"
+verify_hostgroup "CentOSLinux7-RAID"
+verify_hostgroup "RockyLinux8.10-RAID"
+for HG in "${ROCKY_HOSTGROUPS[@]}"
 do
-verify_hostgroups "${OS}"
+verify_hostgroup "${HG}"
 done
-header "RAID Operating System Verification"
-verify_os "CentOSLinux7-RAID"
-verify_os "RockyLinux8.10-RAID"
-for OS in "${ROCKY_OS_LIST[@]}"
+header "RAID Template Mapping Verification"
+verify_template_mapping \
+"CentOSLinux7-RAID" \
+"PXEGrub2 CentOS UEFI RAID Kickstart"
+verify_template_mapping \
+"RockyLinux8.10-RAID" \
+"PXEGrub2 Rocky8 UEFI RAID Kickstart"
+for IDX in "${!ROCKY_OS_LIST[@]}"
 do
-verify_os "${OS}"
+OS_NAME="${ROCKY_OS_LIST[$IDX]}"
+case "${OS_NAME}" in
+"RockyLinux9.2-RAID")
+verify_template_mapping \
+"${OS_NAME}" \
+"PXEGrub2 Rocky9.2 UEFI RAID Kickstart"
+;;
+"RockyLinux9.8-RAID")
+verify_template_mapping \
+"${OS_NAME}" \
+"PXEGrub2 Rocky9.8 UEFI RAID Kickstart"
+;;
+esac
 done
 ###############################################################################
-#Hostgroup List Verification
+#Final Verification
 ###############################################################################
-header "Hostgroups"
+header "RAID Hostgroups"
 $HAMMER hostgroup list
 echo
 ###############################################################################
-#Operating System List Verification
+#Operating System Verification
 ###############################################################################
-header "Operating Systems"
+header "RAID Operating Systems"
 $HAMMER os list |
 egrep "CentOSLinux7-RAID|RockyLinux8.10-RAID|RockyLinux9.2-RAID|RockyLinux9.8-RAID"
 echo
@@ -557,9 +504,9 @@ $HAMMER template list |
 grep "RAID"
 echo
 ###############################################################################
-#Final RAID Configuration Summary
+#Final Configuration Summary
 ###############################################################################
-header "RAID Hostgroup Configuration"
+header "RAID Configuration Summary"
 cat <<EOF
 Hostgroups:
 CentOSLinux7-RAID
@@ -588,13 +535,14 @@ RockyLinux9.8-RAID
 
 
 Disk Layout:
+
 RAID1
  |
  +-- EFI
  |
  +-- RAID /boot
  |
- +-- RAID LVM PV
+ +-- RAID LVM
       |
       +-- /
       +-- swap
