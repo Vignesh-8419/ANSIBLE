@@ -38,8 +38,8 @@ TARGET_VERSION=9.2 ./02_foreman_katello_bootstrap.sh
 #   - Single Disk OS Template Mapping
 ###############################################################################
 
-TARGET_VERSION=ALL ./02_foreman_pxe_bootstrap_single_disk.sh
-
+TARGET_VERSION=9.8 ./02_foreman_pxe_bootstrap_single_disk.sh
+TARGET_VERSION=9.2 ./02_foreman_pxe_bootstrap_single_disk.sh
 
 ###############################################################################
 # 03 - RAID Hostgroup Bootstrap
