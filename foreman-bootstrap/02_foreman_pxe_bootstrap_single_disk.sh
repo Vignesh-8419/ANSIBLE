@@ -7,19 +7,13 @@
 #   Create Single Disk PXE templates
 #   Attach templates to existing Operating Systems
 #
-# Supported:
-#   - CentOSLinux7-SingleDisk
-#   - RockyLinux8.10-SingleDisk
-#   - RockyLinux9.2-SingleDisk
-#   - RockyLinux9.8-SingleDisk
+# Supported OS Objects:
 #
-# NOTE:
-#   OS objects are created by:
-#       01_foreman_pxe_bootstrap.sh
+#   CentOSLinux7-SingleDisk
+#   RockyLinux8.10-SingleDisk
+#   RockyLinux9.2-SingleDisk
+#   RockyLinux9.8-SingleDisk
 #
-#   This script only:
-#       - Creates PXE templates
-#       - Associates templates with OS objects
 ###############################################################################
 
 set +e
@@ -119,6 +113,19 @@ TARGET_VERSION="${TARGET_VERSION:-9.8}"
 
 ###############################################################################
 # Existing Operating Systems
+#
+# IMPORTANT:
+# Foreman OS name and title are different.
+#
+# Example:
+#
+# Name:
+#   CentOSLinux7-SingleDisk
+#
+# Title:
+#   CentOSLinux7-SingleDisk 7
+#
+# Therefore use OS ID lookup.
 ###############################################################################
 
 CENTOS_SINGLE_OS="CentOSLinux7-SingleDisk"
@@ -128,6 +135,33 @@ ROCKY8_SINGLE_OS="RockyLinux8.10-SingleDisk"
 ROCKY92_SINGLE_OS="RockyLinux9.2-SingleDisk"
 
 ROCKY98_SINGLE_OS="RockyLinux9.8-SingleDisk"
+
+
+
+###############################################################################
+# Function : Get Operating System ID
+###############################################################################
+
+get_os_id()
+{
+
+OS_NAME="$1"
+
+
+$HAMMER os list \
+    --search "name=${OS_NAME}" 2>/dev/null |
+awk -F'|' -v name="${OS_NAME}" '
+{
+    gsub(/^ +| +$/, "", $2)
+
+    if ($2 == name)
+    {
+        gsub(/^ +| +$/, "", $1)
+        print $1
+    }
+}'
+
+}
 
 
 
@@ -186,8 +220,6 @@ case "$TARGET_VERSION" in
 
 esac
 
-
-
 ###############################################################################
 # [1/4] Create Single Disk PXE Templates
 ###############################################################################
@@ -234,7 +266,6 @@ EOF
 
 ok "CentOS Single Disk template generated."
 
-
 echo
 
 
@@ -279,8 +310,9 @@ EOF
 
 ok "Rocky Linux 8 Single Disk template generated."
 
-
 echo
+
+
 
 ###############################################################################
 # Rocky Linux 9 Single Disk Template
@@ -385,7 +417,7 @@ echo
 
 
 ###############################################################################
-# [2/4] Import Single Disk Templates
+# [2/4] Import Templates
 ###############################################################################
 
 header "[2/4] Importing Single Disk Templates"
@@ -419,33 +451,36 @@ header "[3/4] Associating Single Disk Templates"
 
 
 ###############################################################################
-# Function : Associate Template With OS
+# Function : Associate Template
 ###############################################################################
 
 associate_template()
 {
 
-OS_TITLE="$1"
+OS_NAME="$1"
 
 TEMPLATE_NAME="$2"
 
 
-info "Checking ${TEMPLATE_NAME} on ${OS_TITLE}..."
+info "Checking ${TEMPLATE_NAME} on ${OS_NAME}..."
 
 
 
 ###############################################################################
-# Verify OS Exists
+# Get OS ID
 ###############################################################################
 
-if ! $HAMMER os info \
-    --title "${OS_TITLE}" >/dev/null 2>&1
+OS_ID=$(get_os_id "${OS_NAME}")
+
+
+
+if [ -z "${OS_ID}" ]
 
 then
 
-    error "Operating System not found : ${OS_TITLE}"
+    error "Operating System not found : ${OS_NAME}"
 
-    record_failure "${OS_TITLE}"
+    record_failure "${OS_NAME}"
 
     return 1
 
@@ -454,11 +489,11 @@ fi
 
 
 ###############################################################################
-# Check Existing Assignment
+# Check Existing Template Assignment
 ###############################################################################
 
 if $HAMMER os info \
-    --title "${OS_TITLE}" |
+    --id "${OS_ID}" |
     awk '/Templates\:/,/Parameters\:/' |
     grep -q "${TEMPLATE_NAME}"
 
@@ -472,9 +507,8 @@ else
     info "Assigning template..."
 
 
-
     $HAMMER os add-provisioning-template \
-        --title "${OS_TITLE}" \
+        --id "${OS_ID}" \
         --provisioning-template "${TEMPLATE_NAME}"
 
 
@@ -489,7 +523,7 @@ else
 
         error "Failed assigning template."
 
-        record_failure "${OS_TITLE} -> ${TEMPLATE_NAME}"
+        record_failure "${OS_NAME} -> ${TEMPLATE_NAME}"
 
     fi
 
@@ -504,7 +538,7 @@ echo
 
 
 ###############################################################################
-# Assign CentOS Single Disk Template
+# Assign Templates
 ###############################################################################
 
 associate_template \
@@ -513,25 +547,15 @@ associate_template \
 
 
 
-###############################################################################
-# Assign Rocky Linux 8 Single Disk Template
-###############################################################################
-
 associate_template \
 "RockyLinux8.10-SingleDisk" \
 "PXEGrub2 Rocky8 UEFI SingleDisk Kickstart"
 
 
 
-###############################################################################
-# Assign Rocky Linux 9 Single Disk Template
-###############################################################################
-
 associate_template \
 "${ROCKY_OS}" \
 "${ROCKY_TEMPLATE}"
-
-
 
 ###############################################################################
 # Verification
@@ -540,19 +564,39 @@ associate_template \
 header "Single Disk Template Verification"
 
 
+
 verify_os_templates()
 {
 
-OS="$1"
+OS_NAME="$1"
 
 
 echo
 
-info "${OS}"
+info "${OS_NAME}"
+
+
+
+OS_ID=$(get_os_id "${OS_NAME}")
+
+
+
+if [ -z "${OS_ID}" ]
+
+then
+
+    error "Operating System not found : ${OS_NAME}"
+
+    record_failure "${OS_NAME}"
+
+    return 1
+
+fi
+
 
 
 $HAMMER os info \
-    --title "${OS}" |
+    --id "${OS_ID}" |
     awk '/Templates\:/,/Parameters\:/'
 
 echo
@@ -560,6 +604,10 @@ echo
 }
 
 
+
+###############################################################################
+# Verify OS Template Mapping
+###############################################################################
 
 verify_os_templates "CentOSLinux7-SingleDisk"
 
@@ -570,10 +618,11 @@ verify_os_templates "${ROCKY_OS}"
 
 
 ###############################################################################
-# Important
+# Important:
 #
 # RAID remains default.
 # Hostgroup selects SingleDisk template.
+#
 ###############################################################################
 
 
@@ -591,6 +640,8 @@ $HAMMER template list | grep "SingleDisk"
 
 echo
 
+
+
 ###############################################################################
 # [4/4] Single Disk PXE Bootstrap Summary
 ###############################################################################
@@ -600,7 +651,7 @@ header "[4/4] Single Disk PXE Bootstrap Summary"
 
 
 ###############################################################################
-# Template List
+# PXE Templates
 ###############################################################################
 
 info "PXE Templates"
@@ -614,7 +665,7 @@ echo
 
 
 ###############################################################################
-# Operating System Verification
+# Operating Systems
 ###############################################################################
 
 info "Operating Systems"
@@ -702,7 +753,7 @@ echo "CentOS 7 SingleDisk"
 
 echo "------------------------------------------------------------"
 
-echo 'hammer os info --title "CentOSLinux7-SingleDisk"'
+echo 'hammer os info --id $(hammer os list --search "name=CentOSLinux7-SingleDisk" | awk -F"|" "{print \$1}")'
 
 
 
@@ -712,7 +763,7 @@ echo "Rocky Linux 8.10 SingleDisk"
 
 echo "------------------------------------------------------------"
 
-echo 'hammer os info --title "RockyLinux8.10-SingleDisk"'
+echo 'hammer os info --id $(hammer os list --search "name=RockyLinux8.10-SingleDisk" | awk -F"|" "{print \$1}")'
 
 
 
@@ -722,7 +773,7 @@ echo "Rocky Linux 9.2 SingleDisk"
 
 echo "------------------------------------------------------------"
 
-echo 'hammer os info --title "RockyLinux9.2-SingleDisk"'
+echo 'hammer os info --id $(hammer os list --search "name=RockyLinux9.2-SingleDisk" | awk -F"|" "{print \$1}")'
 
 
 
@@ -732,7 +783,7 @@ echo "Rocky Linux 9.8 SingleDisk"
 
 echo "------------------------------------------------------------"
 
-echo 'hammer os info --title "RockyLinux9.8-SingleDisk"'
+echo 'hammer os info --id $(hammer os list --search "name=RockyLinux9.8-SingleDisk" | awk -F"|" "{print \$1}")'
 
 
 
