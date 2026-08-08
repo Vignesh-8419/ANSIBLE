@@ -263,14 +263,14 @@ REPO_NAME="$1"
 info "Waiting for ${REPO_NAME} sync completion..."
 for COUNT in $(seq 1 60)
 do
-STATUS=$($HAMMER repository info --organization "${ORG}" --product "${PRODUCT_NAME}" --name "${REPO_NAME}" 2>/dev/null | grep -Ei "Sync State|Sync Status|Last Sync Result" | awk -F':' '{print $2}' | xargs)
+STATUS=$($HAMMER task list --search "resource = ${REPO_NAME}" 2>/dev/null | grep -Ei "running|success|error" | tail -1)
 echo "Current Status : ${STATUS}"
-if echo "${STATUS}" | grep -Eqi "Complete|Finished|Success"
+if echo "${STATUS}" | grep -Eqi "success"
 then
 ok "${REPO_NAME} sync completed."
 return 0
 fi
-if echo "${STATUS}" | grep -Eqi "Error|Failed"
+if echo "${STATUS}" | grep -Eqi "error|failed"
 then
 error "${REPO_NAME} sync failed."
 record_failure "Sync ${REPO_NAME}"
