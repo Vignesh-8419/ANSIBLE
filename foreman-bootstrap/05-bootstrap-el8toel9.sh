@@ -2,6 +2,14 @@
 ###############################################################################
 # 05 - Foreman Katello Bootstrap
 # EL8 -> EL9 Upgrade Bootstrap
+#
+# Supports:
+#   - Rocky Linux 9.2
+#   - Rocky Linux 9.8
+#
+# Purpose:
+#   Prepare Rocky Linux 8 content for Leapp/ELevate migration
+#
 ###############################################################################
 set +e
 ###############################################################################
@@ -52,6 +60,104 @@ echo -e "${BLUE}============================================================${NC
 echo -e "${WHITE}$1${NC}"
 echo -e "${BLUE}============================================================${NC}"
 }
+###############################################################################
+# Foreman Configuration
+###############################################################################
+FOREMAN_USER="${FOREMAN_USER:-admin}"
+FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
+HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
+ORG="Default Organization"
+LOCATION="Default Location"
+###############################################################################
+# Target Version
+###############################################################################
+TARGET_VERSION="${TARGET_VERSION:-9.8}"
+case "${TARGET_VERSION}" in
+9.2)
+ROCKY_VERSION="9.2"
+CONTENT_VIEW="Rocky9.2-CV"
+ACTIVATION_KEY="rocky9.2-key"
+ELEVATE_REPO_NAME="Rocky-08-EL8toEL9-9.2"
+ELEVATE_REPO_URL="http://192.168.253.136/repo/leapp/9.2/el8toel9"
+;;
+9.8)
+ROCKY_VERSION="9.8"
+CONTENT_VIEW="Rocky9.8-CV"
+ACTIVATION_KEY="rocky9.8-key"
+ELEVATE_REPO_NAME="Rocky-08-EL8toEL9-9.8"
+ELEVATE_REPO_URL="http://192.168.253.136/repo/leapp/9/el8toel9"
+;;
+*)
+error "Unsupported TARGET_VERSION=${TARGET_VERSION}"
+exit 1
+;;
+esac
+PRODUCT="Rocky Linux 8"
+BASE_REPO="Rocky-08-BaseOS"
+APPSTREAM_REPO="Rocky-08-AppStream"
+BASE_URL="http://192.168.253.136/repo/rocky8/BaseOS"
+APPSTREAM_URL="http://192.168.253.136/repo/rocky8/AppStream"
+echo
+info "Selected Migration Configuration"
+echo "------------------------------------------------------------"
+echo "Target Rocky Version : ${ROCKY_VERSION}"
+echo "Product              : ${PRODUCT}"
+echo "Base Repository      : ${BASE_REPO}"
+echo "AppStream Repository : ${APPSTREAM_REPO}"
+echo "ELevate Repository   : ${ELEVATE_REPO_NAME}"
+echo "Content View         : ${CONTENT_VIEW}"
+echo "Activation Key       : ${ACTIVATION_KEY}"
+echo
+###############################################################################
+# Resume Paused Foreman Tasks
+###############################################################################
+resume_paused_tasks()
+{
+header "Recovering Paused Foreman Tasks"
+COUNT=$(
+$HAMMER task list \
+--search "state = paused" 2>/dev/null |
+grep -c paused || true
+)
+if [ "${COUNT}" -eq 0 ]
+then
+ok "No paused tasks found."
+return 0
+fi
+warn "Found ${COUNT} paused task(s)."
+$HAMMER task resume \
+--search "state = paused" >/dev/null 2>&1
+sleep 10
+}
+###############################################################################
+# Create Product
+###############################################################################
+create_product()
+{
+header "Checking Product"
+info "Product : ${PRODUCT}"
+if $HAMMER product info \
+--organization "${ORG}" \
+--name "${PRODUCT}" >/dev/null 2>&1
+then
+skip "Product ${PRODUCT} already exists."
+else
+info "Creating Product ${PRODUCT}"
+$HAMMER product create \
+--organization "${ORG}" \
+--name "${PRODUCT}"
+if [ $? -eq 0 ]
+then
+ok "Product created."
+else
+error "Product creation failed."
+record_failure "Product ${PRODUCT}"
+fi
+fi
+}
+###############################################################################
+# Create Repository
+###############################################################################
 create_repository()
 {
 REPO="$1"
@@ -540,41 +646,23 @@ echo "Activation Key : ${ACTIVATION_KEY}"
 ###############################################################################
 # Main Execution
 ###############################################################################
-
 header "05 - Foreman Katello Bootstrap EL8 To EL9"
-
 resume_paused_tasks
-
 create_product
-
 create_repositories
-
 sync_repositories
-
 create_content_view
-
 configure_content_view
-
 publish_content_view
-
 create_activation_key
-
 configure_activation_key
-
 generate_bootstrap_command
-
 content_view_summary
-
 summary
-
-
 header "05 - EL8 To EL9 Bootstrap Completed"
-
-
 ###############################################################################
 # Final Status
 ###############################################################################
-
 if [ ${#FAILED_STEPS[@]} -eq 0 ]
 then
 ok "EL8 To EL9 Bootstrap completed successfully."
@@ -585,6 +673,4 @@ do
 error "${ITEM}"
 done
 fi
-
-
 exit 0
