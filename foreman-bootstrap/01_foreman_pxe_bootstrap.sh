@@ -807,7 +807,7 @@ echo "Template : ${TEMPLATE}"
 ###############################################################################
 
 if ! $HAMMER os info \
---title "${OS_NAME}" >/dev/null 2>&1
+--name "${OS_NAME}" >/dev/null 2>&1
 
 then
 
@@ -826,7 +826,7 @@ fi
 ###############################################################################
 
 if $HAMMER os info \
---title "${OS_NAME}" 2>/dev/null |
+--name "${OS_NAME}" 2>/dev/null |
 grep -q "${TEMPLATE}"
 
 then
@@ -840,7 +840,7 @@ else
 
 
     $HAMMER os add-provisioning-template \
-    --title "${OS_NAME}" \
+    --name "${OS_NAME}" \
     --provisioning-template "${TEMPLATE}"
 
 
