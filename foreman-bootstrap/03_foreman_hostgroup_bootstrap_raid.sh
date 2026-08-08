@@ -1,4 +1,5 @@
 #!/bin/bash
+
 ###############################################################################
 # 03 - Foreman Hostgroup Bootstrap (RAID)
 #
@@ -10,39 +11,59 @@
 #   RockyLinux 9.8 RAID
 #
 # Features:
+#
 #   - RAID1 partition layout
 #   - PXEGrub2 UEFI Static Kickstart
 #   - Installation Media mapping
 #   - Operating System mapping
 #   - Subnet mapping
-#   - Root password
-#   - Kickstart repository configuration
+#   - Domain mapping
+#   - Hostgroup PXE Template mapping
 #
 ###############################################################################
 
 set +e
+
 
 ###############################################################################
 # Foreman Credentials
 ###############################################################################
 
 FOREMAN_USER="${FOREMAN_USER:-admin}"
+
 FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
+
 
 HAMMER="hammer --username ${FOREMAN_USER} --password ${FOREMAN_PASSWORD}"
 
+
 ###############################################################################
-# Configuration
+# Global Configuration
 ###############################################################################
 
 DOMAIN="vgs.com"
 
 LOCATION="Default Location"
+
 ORGANIZATION="Default Organization"
+
+
 CENTOS_SUBNET="vgs-subnet-centos"
+
 ROCKY_SUBNET="vgs-subnet-rockyos"
 
+
 TARGET_VERSION="${TARGET_VERSION:-9.8}"
+
+
+FAILED_STEPS=()
+
+
+record_failure()
+{
+    FAILED_STEPS+=("$1")
+}
+
 
 
 ###############################################################################
@@ -50,17 +71,23 @@ TARGET_VERSION="${TARGET_VERSION:-9.8}"
 ###############################################################################
 
 RED='\033[0;31m'
+
 GREEN='\033[0;32m'
+
 YELLOW='\033[1;33m'
+
 BLUE='\033[1;34m'
+
 CYAN='\033[1;36m'
+
 WHITE='\033[1;37m'
+
 NC='\033[0m'
 
 
 
 ###############################################################################
-# Logging
+# Logging Functions
 ###############################################################################
 
 info()
@@ -102,15 +129,17 @@ header()
 }
 
 
+
 ###############################################################################
 # Select Rocky Version
 ###############################################################################
 
 case "$TARGET_VERSION" in
 
+
 9.2)
 
-    ROCKY_OS="RockyLinux 9.2 RAID"
+    ROCKY_HOSTGROUP="RockyLinux 9.2 RAID"
 
     ROCKY_BASE_OS="RockyLinux 9.2"
 
@@ -122,12 +151,12 @@ case "$TARGET_VERSION" in
 
     ROCKY_KS="http://192.168.253.136/repo/Foreman-Kickstarts/rocky9-kickstart/rocky9.cfg"
 
-    ;;
+;;
 
 
 9.8)
 
-    ROCKY_OS="RockyLinux 9.8 RAID"
+    ROCKY_HOSTGROUP="RockyLinux 9.8 RAID"
 
     ROCKY_BASE_OS="RockyLinux 9.8"
 
@@ -139,20 +168,22 @@ case "$TARGET_VERSION" in
 
     ROCKY_KS="http://192.168.253.136/repo/Foreman-Kickstarts/rocky9_8-kickstart/rocky9.cfg"
 
-    ;;
+;;
 
 
 *)
 
-    echo "Unsupported TARGET_VERSION"
+    echo "Unsupported TARGET_VERSION: ${TARGET_VERSION}"
+
     exit 1
 
-    ;;
+;;
+
 
 esac
 
 ###############################################################################
-# CentOS 7 RAID Configuration
+# Create CentOS Linux 7 RAID Hostgroup
 ###############################################################################
 
 create_centos_hostgroup()
@@ -160,11 +191,13 @@ create_centos_hostgroup()
 
 HOSTGROUP="CentOSLinux 7 RAID"
 
+
 echo
 echo "Checking Hostgroup : ${HOSTGROUP}"
 
 
-if $HAMMER hostgroup list --search "name=\"${HOSTGROUP}\"" | grep -q "${HOSTGROUP}"
+if $HAMMER hostgroup list \
+--search "name=\"${HOSTGROUP}\"" | grep -q "${HOSTGROUP}"
 then
 
     skip "${HOSTGROUP} already exists."
@@ -188,23 +221,26 @@ else
     --pxe-loader "Grub2 UEFI"
 
 
+
     if [ $? -eq 0 ]
     then
+
         ok "${HOSTGROUP} created."
+
     else
+
         error "Failed creating ${HOSTGROUP}"
+
         record_failure "${HOSTGROUP}"
+
     fi
 
 fi
 
-
 }
 
-
-
 ###############################################################################
-# Rocky Linux 8 RAID Configuration
+# Create Rocky Linux 8.10 RAID Hostgroup
 ###############################################################################
 
 create_rocky8_hostgroup()
@@ -217,13 +253,13 @@ echo
 echo "Checking Hostgroup : ${HOSTGROUP}"
 
 
-if $HAMMER hostgroup list --search "name=\"${HOSTGROUP}\"" | grep -q "${HOSTGROUP}"
+if $HAMMER hostgroup list \
+--search "name=\"${HOSTGROUP}\"" | grep -q "${HOSTGROUP}"
 then
 
     skip "${HOSTGROUP} already exists."
 
 else
-
 
     echo "Creating ${HOSTGROUP}..."
 
@@ -251,36 +287,36 @@ else
     else
 
         error "Failed creating ${HOSTGROUP}"
+
         record_failure "${HOSTGROUP}"
 
     fi
-
 
 fi
 
 }
 
 ###############################################################################
-# Rocky Linux 9 RAID Configuration
+# Create Rocky Linux 9 RAID Hostgroup
 ###############################################################################
 
 create_rocky9_hostgroup()
 {
 
-HOSTGROUP="${ROCKY_OS}"
+HOSTGROUP="${ROCKY_HOSTGROUP}"
 
 
 echo
 echo "Checking Hostgroup : ${HOSTGROUP}"
 
 
-if $HAMMER hostgroup list --search "name=\"${HOSTGROUP}\"" | grep -q "${HOSTGROUP}"
+if $HAMMER hostgroup list \
+--search "name=\"${HOSTGROUP}\"" | grep -q "${HOSTGROUP}"
 then
 
     skip "${HOSTGROUP} already exists."
 
 else
-
 
     echo "Creating ${HOSTGROUP}..."
 
@@ -308,20 +344,17 @@ else
     else
 
         error "Failed creating ${HOSTGROUP}"
+
         record_failure "${HOSTGROUP}"
 
     fi
 
-
 fi
-
 
 }
 
-
-
 ###############################################################################
-# Assign PXE Templates
+# Assign OS Provisioning Template
 ###############################################################################
 
 assign_template()
@@ -332,8 +365,9 @@ TEMPLATE="$2"
 
 
 echo
-echo "Checking PXE Template:"
-echo "${OS_NAME} -> ${TEMPLATE}"
+echo "Checking OS Template:"
+echo "OS       : ${OS_NAME}"
+echo "Template : ${TEMPLATE}"
 
 
 EXISTING=$(
@@ -346,12 +380,11 @@ grep "${TEMPLATE}"
 if echo "${EXISTING}" | grep -q "${TEMPLATE}"
 then
 
-    skip "Template already assigned."
+    skip "${TEMPLATE} already assigned to ${OS_NAME}"
 
 else
 
-
-    echo "Assigning template..."
+    echo "Assigning OS template..."
 
 
     $HAMMER os add-provisioning-template \
@@ -362,78 +395,222 @@ else
     if [ $? -eq 0 ]
     then
 
-        ok "Template assigned."
+        ok "OS template assigned."
 
     else
 
-        error "Failed assigning ${TEMPLATE}"
+        error "Failed assigning OS template."
+
         record_failure "${OS_NAME} -> ${TEMPLATE}"
 
     fi
-
 
 fi
 
 }
 
+###############################################################################
+# Assign PXE Template To Hostgroup
+###############################################################################
 
+assign_hostgroup_template()
+{
+
+HOSTGROUP="$1"
+TEMPLATE="$2"
+
+
+echo
+echo "Assigning Hostgroup PXE Template"
+echo "Hostgroup : ${HOSTGROUP}"
+echo "Template  : ${TEMPLATE}"
+
+
+HG_ID=$(
+$HAMMER hostgroup list |
+awk -F'|' -v hg="${HOSTGROUP}" '
+{
+    gsub(/^ +| +$/, "", $2)
+
+    if ($2==hg)
+        print $1
+}'
+)
+
+
+if [ -z "${HG_ID}" ]
+then
+
+    error "Hostgroup ID not found: ${HOSTGROUP}"
+
+    record_failure "${HOSTGROUP}"
+
+    return
+
+fi
+
+
+$HAMMER hostgroup set-template \
+--id "${HG_ID}" \
+--provisioning-template "${TEMPLATE}" \
+--template-kind PXEGrub2
+
+
+if [ $? -eq 0 ]
+then
+
+    ok "Hostgroup PXE template assigned."
+
+else
+
+    error "Failed assigning Hostgroup PXE template."
+
+    record_failure "${HOSTGROUP} -> ${TEMPLATE}"
+
+fi
+
+
+}
+
+###############################################################################
+# Configure RAID Hostgroup PXE Templates
+###############################################################################
+
+configure_raid_pxe_templates()
+{
+
+header "Assign RAID Hostgroup PXE Templates"
+
+
+
+###############################################################################
+# CentOS 7 RAID
+###############################################################################
+
+assign_hostgroup_template \
+"CentOSLinux 7 RAID" \
+"PXEGrub2 CentOS UEFI Static Kickstart"
+
+
+
+###############################################################################
+# Rocky Linux 8 RAID
+###############################################################################
+
+assign_hostgroup_template \
+"RockyLinux 8.10 RAID" \
+"PXEGrub2 RockyOS UEFI Static Kickstart"
+
+
+
+###############################################################################
+# Rocky Linux 9.2 RAID
+###############################################################################
+
+assign_hostgroup_template \
+"RockyLinux 9.2 RAID" \
+"PXEGrub2 Rocky9.2 UEFI Static Kickstart"
+
+
+
+###############################################################################
+# Rocky Linux 9.8 RAID
+###############################################################################
+
+assign_hostgroup_template \
+"RockyLinux 9.8 RAID" \
+"PXEGrub2 Rocky9.8 UEFI Static Kickstart"
+
+
+
+}
 
 ###############################################################################
 # Create RAID Hostgroups
 ###############################################################################
 
-header "03 - Creating RAID Hostgroups"
+create_raid_hostgroups()
+{
 
+header "Creating RAID Hostgroups"
+
+
+
+###############################################################################
+# CentOS Linux 7 RAID
+###############################################################################
 
 create_centos_hostgroup
 
 
+
+###############################################################################
+# Rocky Linux 8.10 RAID
+###############################################################################
+
 create_rocky8_hostgroup
 
 
+
+###############################################################################
+# Rocky Linux 9 RAID
+###############################################################################
+
 create_rocky9_hostgroup
 
-###############################################################################
-# Configure Hostgroup PXE Defaults
-###############################################################################
-
-configure_pxe_defaults()
-{
-
-echo
-header "Setting RAID PXE Templates"
-
-
-echo "Checking CentOSLinux 7 RAID..."
-
-assign_template \
-"CentOSLinux 7" \
-"PXEGrub2 CentOS UEFI Static Kickstart"
-
-
-echo
-echo "Checking RockyLinux 8.10 RAID..."
-
-assign_template \
-"RockyLinux 8.10" \
-"PXEGrub2 RockyOS UEFI Static Kickstart"
-
-
-
-echo
-echo "Checking ${ROCKY_BASE_OS} RAID..."
-
-assign_template \
-"${ROCKY_BASE_OS}" \
-"${ROCKY_TEMPLATE}"
 
 
 }
 
+###############################################################################
+# Verify RAID Hostgroups
+###############################################################################
 
+verify_raid_hostgroups()
+{
+
+header "RAID Hostgroup Verification"
+
+
+
+HOSTGROUPS=(
+
+"CentOSLinux 7 RAID"
+
+"RockyLinux 8.10 RAID"
+
+"RockyLinux 9.2 RAID"
+
+"RockyLinux 9.8 RAID"
+
+)
+
+
+
+for HG in "${HOSTGROUPS[@]}"
+do
+
+
+echo
+echo "------------------------------------------------------------"
+
+echo "Hostgroup : ${HG}"
+
+echo "------------------------------------------------------------"
+
+
+
+$HAMMER hostgroup info \
+--name "${HG}"
+
+
+done
+
+
+}
 
 ###############################################################################
-# Display Hostgroup Summary
+# RAID Hostgroup Summary
 ###############################################################################
 
 summary()
@@ -442,26 +619,34 @@ summary()
 header "RAID Hostgroup Summary"
 
 
+
 echo
+echo "============================================================"
 echo "Hostgroups"
-echo "------------------------------------------------------------"
+echo "============================================================"
 
 
-$HAMMER hostgroup list
+$HAMMER hostgroup list \
+--search "RAID"
+
 
 
 echo
+echo "============================================================"
 echo "Operating Systems"
-echo "------------------------------------------------------------"
+echo "============================================================"
 
+
+echo
 
 $HAMMER os list
 
 
 
 echo
+echo "============================================================"
 echo "PXE Templates"
-echo "------------------------------------------------------------"
+echo "============================================================"
 
 
 $HAMMER template list \
@@ -470,27 +655,80 @@ $HAMMER template list \
 
 
 echo
-echo "Selected RAID Configuration"
-echo "------------------------------------------------------------"
+echo "============================================================"
+echo "RAID Configuration"
+echo "============================================================"
 
 
-echo "TARGET_VERSION       : ${TARGET_VERSION}"
-echo "Operating System     : ${ROCKY_OS}"
-echo "PXE Template         : ${ROCKY_TEMPLATE}"
-echo "Installation Media   : ${ROCKY_MEDIA}"
-echo "Repository           : ${ROCKY_REPO}"
-echo "Kickstart            : ${ROCKY_KS}"
+echo
+
+echo "CentOS 7 RAID"
+echo "-------------"
+echo "Hostgroup : CentOSLinux 7 RAID"
+echo "PXE       : PXEGrub2 CentOS UEFI Static Kickstart"
+
+
+echo
+
+echo "Rocky Linux 8 RAID"
+echo "------------------"
+echo "Hostgroup : RockyLinux 8.10 RAID"
+echo "PXE       : PXEGrub2 RockyOS UEFI Static Kickstart"
+
+
+echo
+
+echo "Rocky Linux 9.2 RAID"
+echo "--------------------"
+echo "Hostgroup : RockyLinux 9.2 RAID"
+echo "PXE       : PXEGrub2 Rocky9.2 UEFI Static Kickstart"
+
+
+echo
+
+echo "Rocky Linux 9.8 RAID"
+echo "--------------------"
+echo "Hostgroup : RockyLinux 9.8 RAID"
+echo "PXE       : PXEGrub2 Rocky9.8 UEFI Static Kickstart"
+
 
 }
 
+###############################################################################
+# Main Execution
+###############################################################################
+
+header "03 - Foreman RAID Hostgroup Bootstrap Started"
+
 
 
 ###############################################################################
-# Main
+# Create Hostgroups
 ###############################################################################
 
-configure_pxe_defaults
+create_raid_hostgroups
 
+
+
+###############################################################################
+# Assign PXE Templates
+###############################################################################
+
+configure_raid_pxe_templates
+
+
+
+###############################################################################
+# Verify Hostgroups
+###############################################################################
+
+verify_raid_hostgroups
+
+
+
+###############################################################################
+# Summary
+###############################################################################
 
 summary
 
@@ -500,18 +738,93 @@ header "03 - Foreman RAID Hostgroup Bootstrap Completed"
 
 
 
+###############################################################################
+# Final Status
+###############################################################################
+
 if [ ${#FAILED_STEPS[@]} -eq 0 ]
 then
 
-    echo "[OK] RAID Hostgroup Bootstrap completed successfully."
+    echo
+    ok "RAID Hostgroup Bootstrap completed successfully."
 
 else
 
-    echo "[WARN] Completed with ${#FAILED_STEPS[@]} failure(s)."
+    echo
+    warn "Completed with ${#FAILED_STEPS[@]} failure(s)."
+
 
     for ITEM in "${FAILED_STEPS[@]}"
     do
-        echo "[ERROR] ${ITEM}"
+
+        error "${ITEM}"
+
     done
 
 fi
+
+###############################################################################
+# Script Completed
+###############################################################################
+
+echo
+
+header "03 - RAID Hostgroup Bootstrap Finished"
+
+
+
+###############################################################################
+# Final Verification Commands
+###############################################################################
+
+echo
+
+echo "Verify Hostgroups:"
+echo "------------------------------------------------------------"
+
+echo
+
+echo "hammer hostgroup info --name \"CentOSLinux 7 RAID\""
+
+echo
+
+echo "hammer hostgroup info --name \"RockyLinux 8.10 RAID\""
+
+echo
+
+echo "hammer hostgroup info --name \"RockyLinux 9.2 RAID\""
+
+echo
+
+echo "hammer hostgroup info --name \"RockyLinux 9.8 RAID\""
+
+
+
+echo
+
+echo "Expected PXE Templates:"
+echo "------------------------------------------------------------"
+
+echo
+
+echo "CentOSLinux 7 RAID"
+echo " -> PXEGrub2 CentOS UEFI Static Kickstart"
+
+echo
+
+echo "RockyLinux 8.10 RAID"
+echo " -> PXEGrub2 RockyOS UEFI Static Kickstart"
+
+echo
+
+echo "RockyLinux 9.2 RAID"
+echo " -> PXEGrub2 Rocky9.2 UEFI Static Kickstart"
+
+echo
+
+echo "RockyLinux 9.8 RAID"
+echo " -> PXEGrub2 Rocky9.8 UEFI Static Kickstart"
+
+
+
+exit 0
