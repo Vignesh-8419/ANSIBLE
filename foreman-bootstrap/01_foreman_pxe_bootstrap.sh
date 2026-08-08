@@ -87,7 +87,7 @@ case "$TARGET_VERSION" in
 
     ROCKY_OS="RockyLinux 9.2"
 
-    ROCKY_RAID_TEMPLATE="PXEGrub2 Rocky9.2 UEFI Static Kickstart"
+    ROCKY_RAID_TEMPLATE="PXEGrub2 Rocky9.2 UEFI RAID Kickstart"
 
     ;;
 
@@ -98,7 +98,7 @@ case "$TARGET_VERSION" in
 
     ROCKY_OS="RockyLinux 9.8"
 
-    ROCKY_RAID_TEMPLATE="PXEGrub2 Rocky9.8 UEFI Static Kickstart"
+    ROCKY_RAID_TEMPLATE="PXEGrub2 Rocky9.8 UEFI RAID Kickstart"
 
     ;;
 
@@ -246,7 +246,7 @@ ROCKY_TEMPLATE_FILE="/tmp/rocky92-pxegrub2.erb"
 
 cat > "${ROCKY_TEMPLATE_FILE}" <<'EOF'
 <%#
-name: PXEGrub2 Rocky9.2 UEFI Static Kickstart
+name: PXEGrub2 Rocky9.2 UEFI RAID Kickstart
 kind: PXEGrub2
 oses:
 - RockyLinux
@@ -278,7 +278,7 @@ ROCKY_TEMPLATE_FILE="/tmp/rocky98-pxegrub2.erb"
 
 cat > "${ROCKY_TEMPLATE_FILE}" <<'EOF'
 <%#
-name: PXEGrub2 Rocky9.8 UEFI Static Kickstart
+name: PXEGrub2 Rocky9.8 UEFI RAID Kickstart
 kind: PXEGrub2
 oses:
 - RockyLinux
@@ -382,7 +382,7 @@ CENTOS_TEMPLATE_FILE="/tmp/centos-pxegrub2.erb"
 
 cat > "${CENTOS_TEMPLATE_FILE}" <<'EOF'
 <%#
-name: PXEGrub2 CentOS UEFI Static Kickstart
+name: PXEGrub2 CentOS UEFI RAID Kickstart
 kind: PXEGrub2
 oses:
 - CentOSLinux
@@ -419,7 +419,7 @@ ROCKY8_TEMPLATE_FILE="/tmp/rocky8-pxegrub2.erb"
 
 cat > "${ROCKY8_TEMPLATE_FILE}" <<'EOF'
 <%#
-name: PXEGrub2 RockyOS UEFI Static Kickstart
+name: PXEGrub2 Rocky8 UEFI RAID Kickstart
 kind: PXEGrub2
 oses:
 - RockyLinux
@@ -455,7 +455,7 @@ echo
 info "Checking PXEGrub2 CentOS UEFI Static Kickstart..."
 
 if $HAMMER template info \
-    --name "PXEGrub2 CentOS UEFI Static Kickstart" >/dev/null 2>&1; then
+    --name "PXEGrub2 CentOS UEFI RAID Kickstart" >/dev/null 2>&1; then
 
     skip "Template already exists."
 
@@ -464,7 +464,7 @@ else
     info "Importing template..."
 
     $HAMMER template create \
-        --name "PXEGrub2 CentOS UEFI Static Kickstart" \
+        --name "PXEGrub2 CentOS UEFI RAID Kickstart" \
         --type PXEGrub2 \
         --file "${CENTOS_TEMPLATE_FILE}"
 
@@ -483,10 +483,10 @@ echo
 # Import Rocky 8 Template
 ###############################################################################
 
-info "Checking PXEGrub2 RockyOS UEFI Static Kickstart..."
+info "Checking PXEGrub2 Rocky8 UEFI RAID Kickstart..."
 
 if $HAMMER template info \
-    --name "PXEGrub2 RockyOS UEFI Static Kickstart" >/dev/null 2>&1; then
+    --name "PXEGrub2 Rocky8 UEFI RAID Kickstart" >/dev/null 2>&1; then
 
     skip "Template already exists."
 
@@ -494,8 +494,8 @@ else
 
     info "Importing template..."
 
-    $HAMMER template create \
-        --name "PXEGrub2 RockyOS UEFI Static Kickstart" \
+$HAMMER template create \
+        --name "PXEGrub2 Rocky8 UEFI RAID Kickstart" \
         --type PXEGrub2 \
         --file "${ROCKY8_TEMPLATE_FILE}"
 
@@ -518,7 +518,7 @@ info "Checking template assignment for ${CENTOS_OS}..."
 
 if $HAMMER os info \
     --title "${CENTOS_OS}" | \
-    grep -q "PXEGrub2 CentOS UEFI Static Kickstart"; then
+    grep -q "PXEGrub2 CentOS UEFI RAID Kickstart"; then
 
     skip "Already assigned."
 
@@ -528,7 +528,7 @@ else
 
     $HAMMER os add-provisioning-template \
         --title "${CENTOS_OS}" \
-        --provisioning-template "PXEGrub2 CentOS UEFI Static Kickstart"
+        --provisioning-template "PXEGrub2 CentOS UEFI RAID Kickstart"
 
     if [ $? -eq 0 ]; then
         ok "Template assigned."
@@ -549,7 +549,7 @@ info "Checking template assignment for ${ROCKY8_OS}..."
 
 if $HAMMER os info \
     --title "${ROCKY8_OS}" | \
-    grep -q "PXEGrub2 RockyOS UEFI Static Kickstart"; then
+    grep -q "PXEGrub2 Rocky8 UEFI RAID Kickstart"; then
 
     skip "Already assigned."
 
@@ -557,9 +557,9 @@ else
 
     info "Assigning template..."
 
-    $HAMMER os add-provisioning-template \
+$HAMMER os add-provisioning-template \
         --title "${ROCKY8_OS}" \
-        --provisioning-template "PXEGrub2 RockyOS UEFI Static Kickstart"
+        --provisioning-template "PXEGrub2 Rocky8 UEFI RAID Kickstart"
 
     if [ $? -eq 0 ]; then
         ok "Template assigned."
@@ -819,12 +819,12 @@ set_default_template() {
 
 set_default_template \
     "CentOSLinux 7" \
-    "PXEGrub2 CentOS UEFI Static Kickstart"
+    "PXEGrub2 CentOS UEFI RAID Kickstart"
 
 
 set_default_template \
     "RockyLinux 8.10" \
-    "PXEGrub2 RockyOS UEFI Static Kickstart"
+    "PXEGrub2 Rocky8 UEFI RAID Kickstart"
 
 
 set_default_template \
