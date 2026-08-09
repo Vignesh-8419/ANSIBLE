@@ -1302,56 +1302,37 @@ set_pxe_default()
 
     fi
 
+###############################################################################
+# 422 = DEFAULT ALREADY EXISTS
+###############################################################################
+
+if [ "$API_STATUS" = "422" ]; then
+
     ###########################################################################
-    # 422 = CHECK AGAIN
+    # Foreman 3.2.1 returns:
+    #
+    # {
+    #   "errors": {
+    #     "template_kind_id": [
+    #       "has already been taken"
+    #     ]
+    #   }
+    # }
+    #
+    # This means the PXEGrub2 default already exists.
+    # Treat it as SKIP, not ERROR.
     ###########################################################################
 
-    if [ "$API_STATUS" = "422" ]; then
+    if printf '%s\n' "$API_BODY" |
+        "$GREP" -qi "has already been taken"
+    then
 
-        if api_request GET \
-            "${API}/operatingsystems/${os_id}/os_default_templates?per_page=all"
-        then
+        skip "PXEGrub2 default already exists for ${os_name}. Nothing to change."
 
-            existing_id="$(
-                printf '%s\n' "$API_BODY" |
-                    "$JQ" -r \
-                        --argjson TEMPLATE "$template_id" \
-                        --argjson KIND "$PXEGRUB2_KIND_ID" \
-                        '
-                        (.results // [])
-                        | .[]
-                        | select(
-                            .provisioning_template_id == $TEMPLATE
-                            and
-                            .template_kind_id == $KIND
-                        )
-                        | .id
-                        ' |
-                    "$HEAD" -1
-            )"
-
-            if [ -n "$existing_id" ] &&
-               [ "$existing_id" != "null" ]
-            then
-
-                skip "PXEGrub2 default already exists. ID=${existing_id}"
-
-                return 0
-
-            fi
-
-        fi
-
+        return 0
     fi
 
-    print_api_error \
-        POST \
-        "${API}/operatingsystems/${os_id}/os_default_templates"
-
-    record_failure "${os_name} default creation"
-
-    return 1
-}
+fi
 
 ###############################################################################
 # ASSOCIATE ALL SINGLE DISK TEMPLATES
