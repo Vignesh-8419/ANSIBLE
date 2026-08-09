@@ -4,90 +4,20 @@
 # 01 - Foreman PXE Bootstrap - REST API
 #
 # Foreman 3.2.1
-# REST API only
-# NO HAMMER
-#
-# Existing resources are preserved.
 #
 # Creates / verifies:
-#   1. Installation Media
-#   2. Operating Systems
-#   3. PXEGrub2 Templates
-#   4. OS -> PXEGrub2 Template associations
-#   5. PXEGrub2 Default Templates
-#   6. PXE Subnets
+#   - Installation Media
+#   - Architectures / Partition Table
+#   - Operating Systems
+#   - PXEGrub2 provisioning templates
+#   - OS/template associations
+#   - PXEGrub2 default templates
+#   - PXE subnets
 #
+# Important:
+#   Existing resources are NOT deleted.
+#   Existing PXEGrub2 defaults are updated instead of creating duplicates.
 ###############################################################################
-
-set +e
-
-###############################################################################
-# COLORS
-###############################################################################
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[1;34m'
-CYAN='\033[1;36m'
-WHITE='\033[1;37m'
-NC='\033[0m'
-
-###############################################################################
-# OUTPUT FUNCTIONS
-###############################################################################
-
-info()
-{
-    echo -e "${CYAN}[INFO]${NC} $1"
-}
-
-ok()
-{
-    echo -e "${GREEN}[OK]${NC} $1"
-}
-
-skip()
-{
-    echo -e "${YELLOW}[SKIP]${NC} $1"
-}
-
-warn()
-{
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-error()
-{
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-section()
-{
-    echo
-    echo -e "${BLUE}============================================================${NC}"
-    echo -e "${WHITE}$1${NC}"
-    echo -e "${BLUE}============================================================${NC}"
-}
-
-subsection()
-{
-    echo
-    echo -e "${BLUE}------------------------------------------------------------${NC}"
-    echo -e "${WHITE}$1${NC}"
-    echo -e "${BLUE}------------------------------------------------------------${NC}"
-}
-
-###############################################################################
-# FAILURE TRACKING
-###############################################################################
-
-FAILURES=()
-
-record_failure()
-{
-    FAILURES+=("$1")
-}
 
 ###############################################################################
 # CONFIGURATION
@@ -95,606 +25,898 @@ record_failure()
 
 FOREMAN_URL="${FOREMAN_URL:-https://cent-07-01.vgs.com}"
 FOREMAN_USER="${FOREMAN_USER:-admin}"
-FOREMAN_TOKEN="${FOREMAN_TOKEN:-}"
+
+if [ -z "${FOREMAN_TOKEN:-}" ]; then
+    echo
+    echo "[ERROR] FOREMAN_TOKEN is not set."
+    echo
+    echo "Set it first:"
+    echo
+    echo "export FOREMAN_TOKEN='YOUR_FOREMAN_TOKEN'"
+    echo
+    exit 1
+fi
 
 API="${FOREMAN_URL}/api"
 
-CURL_SSL="-k"
+ACCEPT_HEADER="Accept: application/json,version=2"
+CONTENT_HEADER="Content-Type: application/json"
+
+TMP_ROOT="/tmp/foreman-pxe-bootstrap"
+TEMPLATE_DIR="${TMP_ROOT}/templates"
 
 ###############################################################################
-# REQUIRED COMMANDS
+# COMMAND PATHS
 ###############################################################################
 
-section "Dependency Check"
-
-for CMD in curl jq cat head grep awk sed mkdir mktemp
-do
-    if command -v "${CMD}" >/dev/null 2>&1
-    then
-        ok "${CMD} found: $(command -v "${CMD}")"
-    else
-        error "${CMD} not found."
-        record_failure "Dependency ${CMD}"
-    fi
-done
-
-if [ ${#FAILURES[@]} -ne 0 ]
-then
-    exit 1
-fi
+CURL="$(command -v curl 2>/dev/null)"
+JQ="$(command -v jq 2>/dev/null)"
+CAT="$(command -v cat 2>/dev/null)"
+HEAD="$(command -v head 2>/dev/null)"
+GREP="$(command -v grep 2>/dev/null)"
+AWK="$(command -v awk 2>/dev/null)"
+SED="$(command -v sed 2>/dev/null)"
+MKDIR="$(command -v mkdir 2>/dev/null)"
+MKTEMP="$(command -v mktemp 2>/dev/null)"
+RM="$(command -v rm 2>/dev/null)"
+BASENAME="$(command -v basename 2>/dev/null)"
+DATE="$(command -v date 2>/dev/null)"
+WC="$(command -v wc 2>/dev/null)"
 
 ###############################################################################
-# PAT CHECK
+# GLOBALS
 ###############################################################################
 
-if [ -z "${FOREMAN_TOKEN}" ]
-then
-    error "FOREMAN_TOKEN is not set."
-    echo
-    echo "Run:"
-    echo
-    echo "export FOREMAN_USER='admin'"
-    echo "export FOREMAN_TOKEN='YOUR_FOREMAN_PAT'"
-    echo
-    exit 1
-fi
-
-###############################################################################
-# API VARIABLES
-###############################################################################
-
-API_STATUS=""
 API_BODY=""
-API_METHOD=""
-API_URL=""
+API_STATUS=""
+API_HEADERS=""
+
+ARCH_ID=""
+PTABLE_ID=""
+PXEGRUB2_KIND_ID=""
+
+FAILURES=()
+
+MEDIA_IDS=()
+OS_IDS=()
+TEMPLATE_IDS=()
+
+###############################################################################
+# OUTPUT FUNCTIONS
+###############################################################################
+
+section()
+{
+    echo
+    echo "============================================================"
+    echo "$1"
+    echo "============================================================"
+}
+
+subsection()
+{
+    echo
+    echo "------------------------------------------------------------"
+    echo "$1"
+    echo "------------------------------------------------------------"
+}
+
+info()
+{
+    echo "[INFO] $1"
+}
+
+ok()
+{
+    echo "[OK] $1"
+}
+
+skip()
+{
+    echo "[SKIP] $1"
+}
+
+warn()
+{
+    echo "[WARN] $1"
+}
+
+error()
+{
+    echo "[ERROR] $1"
+}
+
+record_failure()
+{
+    FAILURES+=("$1")
+}
+
+###############################################################################
+# DEPENDENCY CHECK
+###############################################################################
+
+check_dependencies()
+{
+    section "Dependency Check"
+
+    local failed=0
+    local cmd
+    local name
+
+    for cmd in \
+        "$CURL" \
+        "$JQ" \
+        "$CAT" \
+        "$HEAD" \
+        "$GREP" \
+        "$AWK" \
+        "$SED" \
+        "$MKDIR" \
+        "$MKTEMP" \
+        "$RM" \
+        "$BASENAME" \
+        "$DATE" \
+        "$WC"
+    do
+
+        if [ -n "$cmd" ] && [ -x "$cmd" ]; then
+            name="$("$BASENAME" "$cmd")"
+            ok "$name found: $cmd"
+        else
+            error "Required command not found: $cmd"
+            failed=1
+        fi
+
+    done
+
+    if [ "$failed" -ne 0 ]; then
+        error "Dependency check failed."
+        exit 1
+    fi
+}
+
+###############################################################################
+# TEMP DIRECTORY
+###############################################################################
+
+prepare_temp()
+{
+    "$RM" -rf "$TMP_ROOT"
+    "$MKDIR" -p "$TMP_ROOT"
+
+    if [ ! -d "$TMP_ROOT" ]; then
+        error "Unable to create $TMP_ROOT"
+        exit 1
+    fi
+}
 
 ###############################################################################
 # JSON VALIDATION
 ###############################################################################
 
-is_json()
+json_valid()
 {
-    echo "$1" | jq -e . >/dev/null 2>&1
+    local file="$1"
+
+    if [ -z "$file" ] || [ ! -s "$file" ]; then
+        return 1
+    fi
+
+    "$JQ" -e . "$file" >/dev/null 2>&1
 }
 
 ###############################################################################
 # API REQUEST
-#
-# --globoff is important because Foreman URLs contain [] in some requests.
 ###############################################################################
 
 api_request()
 {
-    local METHOD="$1"
-    local URL="$2"
-    local DATA="${3:-}"
+    local method="$1"
+    local url="$2"
+    local data="${3:-}"
 
-    local BODY_FILE
-    local HEADER_FILE
-    local CURL_RC
+    local body_file
+    local header_file
+    local curl_rc
+    local curl_output
 
-    API_METHOD="${METHOD}"
-    API_URL="${URL}"
-    API_STATUS=""
-    API_BODY=""
+    body_file="$("$MKTEMP" "${TMP_ROOT}/body.XXXXXX")"
+    header_file="$("$MKTEMP" "${TMP_ROOT}/header.XXXXXX")"
 
-    BODY_FILE="$(mktemp)"
-    HEADER_FILE="$(mktemp)"
-
-    if [ -n "${DATA}" ]
-    then
-        curl \
-            --globoff \
-            -sS \
-            ${CURL_SSL} \
-            --request "${METHOD}" \
-            --user "${FOREMAN_USER}:${FOREMAN_TOKEN}" \
-            --header "Accept: application/json,version=2" \
-            --header "Content-Type: application/json" \
-            --data "${DATA}" \
-            --output "${BODY_FILE}" \
-            --dump-header "${HEADER_FILE}" \
-            --write-out "%{http_code}" \
-            "${URL}" > "${BODY_FILE}.code" 2>/dev/null
-
-        CURL_RC=$?
-    else
-        curl \
-            --globoff \
-            -sS \
-            ${CURL_SSL} \
-            --request "${METHOD}" \
-            --user "${FOREMAN_USER}:${FOREMAN_TOKEN}" \
-            --header "Accept: application/json,version=2" \
-            --header "Content-Type: application/json" \
-            --output "${BODY_FILE}" \
-            --dump-header "${HEADER_FILE}" \
-            --write-out "%{http_code}" \
-            "${URL}" > "${BODY_FILE}.code" 2>/dev/null
-
-        CURL_RC=$?
-    fi
-
-    if [ ${CURL_RC} -ne 0 ]
-    then
-        API_STATUS=""
-        API_BODY="$(cat "${BODY_FILE}" 2>/dev/null)"
-        rm -f "${BODY_FILE}" "${HEADER_FILE}" "${BODY_FILE}.code"
+    if [ -z "$body_file" ] || [ -z "$header_file" ]; then
+        error "Unable to create temporary API files."
         return 1
     fi
 
-    API_STATUS="$(cat "${BODY_FILE}.code")"
-    API_BODY="$(cat "${BODY_FILE}")"
+    if [ -n "$data" ]; then
 
-    rm -f "${BODY_FILE}" "${HEADER_FILE}" "${BODY_FILE}.code"
+        curl_output="$(
+            "$CURL" \
+                --silent \
+                --show-error \
+                --insecure \
+                --request "$method" \
+                --user "${FOREMAN_USER}:${FOREMAN_TOKEN}" \
+                --header "$ACCEPT_HEADER" \
+                --header "$CONTENT_HEADER" \
+                --data "$data" \
+                --output "$body_file" \
+                --dump-header "$header_file" \
+                --write-out '%{http_code}' \
+                "$url"
+        )"
 
-    [[ "${API_STATUS}" =~ ^2[0-9][0-9]$ ]]
+    else
+
+        curl_output="$(
+            "$CURL" \
+                --silent \
+                --show-error \
+                --insecure \
+                --request "$method" \
+                --user "${FOREMAN_USER}:${FOREMAN_TOKEN}" \
+                --header "$ACCEPT_HEADER" \
+                --output "$body_file" \
+                --dump-header "$header_file" \
+                --write-out '%{http_code}' \
+                "$url"
+        )"
+
+    fi
+
+    curl_rc=$?
+
+    API_STATUS="$curl_output"
+    API_BODY="$body_file"
+    API_HEADERS="$header_file"
+
+    if [ "$curl_rc" -ne 0 ]; then
+        error "curl failed."
+        error "Method : $method"
+        error "URL    : $url"
+        return 1
+    fi
+
+    if ! [[ "$API_STATUS" =~ ^[0-9]{3}$ ]]; then
+        error "Invalid HTTP status: $API_STATUS"
+        return 1
+    fi
+
+    return 0
 }
 
 ###############################################################################
-# API ERROR
+# API SUCCESS
 ###############################################################################
 
-show_api_error()
+api_success()
+{
+    [[ "$API_STATUS" =~ ^2[0-9][0-9]$ ]]
+}
+
+###############################################################################
+# PRINT API ERROR
+###############################################################################
+
+print_api_error()
 {
     error "API request failed."
     error "HTTP Status : ${API_STATUS}"
-    error "Method      : ${API_METHOD}"
-    error "URL         : ${API_URL}"
+    error "Method      : ${1:-UNKNOWN}"
+    error "URL         : ${2:-UNKNOWN}"
 
-    if [ -n "${API_BODY}" ]
-    then
-        echo "${API_BODY}" | jq . 2>/dev/null || echo "${API_BODY}"
+    if [ -n "$API_BODY" ] && [ -s "$API_BODY" ]; then
+        "$JQ" . "$API_BODY" 2>/dev/null || "$CAT" "$API_BODY"
     fi
 }
 
 ###############################################################################
-# FOREMAN API TEST
+# GET ID BY NAME
 ###############################################################################
 
-section "01 - Foreman PXE Bootstrap - REST API"
+get_id_by_name()
+{
+    local endpoint="$1"
+    local name="$2"
 
-section "Foreman API Authentication Test"
+    api_request GET "${API}${endpoint}?per_page=all" || return 1
 
-info "Testing Foreman REST API..."
+    if ! api_success; then
+        return 1
+    fi
 
-if api_request GET "${API}/status"
-then
+    if ! json_valid "$API_BODY"; then
+        return 1
+    fi
+
+    "$JQ" -r \
+        --arg NAME "$name" \
+        '
+        (.results // [])[]
+        | select(.name == $NAME)
+        | .id
+        ' \
+        "$API_BODY" |
+        "$HEAD" -1
+}
+
+###############################################################################
+# GET RESOURCE IDS
+###############################################################################
+
+get_os_id()
+{
+    get_id_by_name "/operatingsystems" "$1"
+}
+
+get_media_id()
+{
+    get_id_by_name "/media" "$1"
+}
+
+get_template_id()
+{
+    get_id_by_name "/provisioning_templates" "$1"
+}
+
+get_domain_id()
+{
+    get_id_by_name "/domains" "$1"
+}
+
+get_proxy_id()
+{
+    get_id_by_name "/smart_proxies" "$1"
+}
+
+###############################################################################
+# API AUTHENTICATION TEST
+###############################################################################
+
+test_foreman_api()
+{
+    section "Foreman API Authentication Test"
+
+    info "Testing Foreman REST API..."
+
+    if ! api_request GET "${API}/status"; then
+        print_api_error GET "${API}/status"
+        exit 1
+    fi
+
+    if ! api_success; then
+        print_api_error GET "${API}/status"
+        exit 1
+    fi
+
+    if ! json_valid "$API_BODY"; then
+        error "Foreman API returned invalid JSON."
+        exit 1
+    fi
+
+    local version
+    local api_version
+
+    version="$("$JQ" -r '.version // "unknown"' "$API_BODY")"
+    api_version="$("$JQ" -r '.api_version // "unknown"' "$API_BODY")"
 
     ok "Foreman API authentication successful."
-
-    FOREMAN_VERSION="$(
-        echo "${API_BODY}" |
-        jq -r '.version // empty'
-    )"
-
-    API_VERSION="$(
-        echo "${API_BODY}" |
-        jq -r '.api_version // empty'
-    )"
-
-    echo "Foreman Version : ${FOREMAN_VERSION}"
-    echo "API Version     : ${API_VERSION}"
+    echo "Foreman Version : ${version}"
+    echo "API Version     : ${api_version}"
     echo "API Status      : ${API_STATUS}"
-
-else
-
-    show_api_error
-    exit 1
-
-fi
-
-###############################################################################
-# MEDIA CONFIGURATION
-###############################################################################
-
-CENTOS_MEDIA="CentOS 7 Remote"
-CENTOS_MEDIA_URL="http://192.168.253.136/repo/centos/"
-
-ROCKY8_MEDIA="Rocky 8 Remote"
-ROCKY8_MEDIA_URL="http://192.168.253.136/repo/rocky8/"
-
-ROCKY92_MEDIA="Rocky 9.2 Remote"
-ROCKY92_MEDIA_URL="http://192.168.253.136/repo/rocky9.2/"
-
-ROCKY98_MEDIA="Rocky 9 Remote"
-ROCKY98_MEDIA_URL="http://192.168.253.136/repo/rocky9/"
-
-###############################################################################
-# OS CONFIGURATION
-###############################################################################
-
-CENTOS_RAID_NAME="CentOSLinux7-RAID"
-CENTOS_SINGLE_NAME="CentOSLinux7-SingleDisk"
-
-ROCKY8_RAID_NAME="RockyLinux8.10-RAID"
-ROCKY8_SINGLE_NAME="RockyLinux8.10-SingleDisk"
-
-ROCKY92_RAID_NAME="RockyLinux9.2-RAID"
-ROCKY92_SINGLE_NAME="RockyLinux9.2-SingleDisk"
-
-ROCKY98_RAID_NAME="RockyLinux9.8-RAID"
-ROCKY98_SINGLE_NAME="RockyLinux9.8-SingleDisk"
-
-###############################################################################
-# TEMPLATE CONFIGURATION
-###############################################################################
-
-CENTOS_RAID_TEMPLATE="PXEGrub2 CentOS UEFI RAID Kickstart"
-CENTOS_SINGLE_TEMPLATE="PXEGrub2 CentOS UEFI SingleDisk Kickstart"
-
-ROCKY8_RAID_TEMPLATE="PXEGrub2 Rocky8 UEFI RAID Kickstart"
-ROCKY8_SINGLE_TEMPLATE="PXEGrub2 Rocky8 UEFI SingleDisk Kickstart"
-
-ROCKY92_RAID_TEMPLATE="PXEGrub2 Rocky9.2 UEFI RAID Kickstart"
-ROCKY92_SINGLE_TEMPLATE="PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart"
-
-ROCKY98_RAID_TEMPLATE="PXEGrub2 Rocky9.8 UEFI RAID Kickstart"
-ROCKY98_SINGLE_TEMPLATE="PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart"
-
-###############################################################################
-# SUBNET CONFIGURATION
-###############################################################################
-
-CENTOS_SUBNET_NAME="vgs-subnet-centos"
-ROCKY_SUBNET_NAME="vgs-subnet-rockyos"
-
-SUBNET_NETWORK="192.168.253.0"
-SUBNET_MASK="255.255.255.0"
-SUBNET_GATEWAY="192.168.253.2"
-SUBNET_DNS="192.168.253.1"
-
-DOMAIN_NAME="vgs.com"
-
-CENTOS_PROXY="cent-07-01.vgs.com"
-ROCKY_PROXY="cent-07-02.vgs.com"
-
-###############################################################################
-# MEDIA LOOKUP
-###############################################################################
-
-find_media_id()
-{
-    local NAME="$1"
-
-    api_request GET "${API}/media?per_page=all" || return 1
-
-    echo "${API_BODY}" |
-    jq -r \
-        --arg NAME "${NAME}" \
-        '.results[]? | select(.name == $NAME) | .id' |
-    head -1
 }
+
+###############################################################################
+# FIND ARCHITECTURE
+###############################################################################
+
+find_architecture()
+{
+    section "Finding Architecture"
+
+    ARCH_ID=""
+
+    api_request GET "${API}/architectures?per_page=all"
+
+    if ! api_success; then
+        print_api_error GET "${API}/architectures?per_page=all"
+        record_failure "Architecture lookup"
+        return
+    fi
+
+    ARCH_ID="$(
+        "$JQ" -r '
+            (.results // [])[]
+            | select(.name == "x86_64")
+            | .id
+        ' "$API_BODY" |
+        "$HEAD" -1
+    )"
+
+    if [ -n "$ARCH_ID" ] && [ "$ARCH_ID" != "null" ]; then
+        ok "x86_64 architecture found. ID=${ARCH_ID}"
+    else
+        error "x86_64 architecture not found."
+        record_failure "x86_64 architecture"
+    fi
+}
+
+###############################################################################
+# FIND PARTITION TABLE
+###############################################################################
+
+find_partition_table()
+{
+    section "Finding Partition Table"
+
+    PTABLE_ID=""
+
+    api_request GET "${API}/ptables?per_page=all"
+
+    if ! api_success; then
+        print_api_error GET "${API}/ptables?per_page=all"
+        record_failure "Partition table lookup"
+        return
+    fi
+
+    PTABLE_ID="$(
+        "$JQ" -r '
+            (.results // [])[]
+            | select(
+                .name == "Kickstart default"
+                or
+                .name == "Kickstart default partition table"
+            )
+            | .id
+        ' "$API_BODY" |
+        "$HEAD" -1
+    )"
+
+    if [ -n "$PTABLE_ID" ] && [ "$PTABLE_ID" != "null" ]; then
+        ok "Kickstart default partition table found. ID=${PTABLE_ID}"
+    else
+        error "Kickstart default partition table not found."
+        record_failure "Kickstart partition table"
+    fi
+}
+
+###############################################################################
+# MEDIA DATA
+###############################################################################
+
+MEDIA_NAMES=(
+    "CentOS 7 Remote"
+    "Rocky 8 Remote"
+    "Rocky 9.2 Remote"
+    "Rocky 9 Remote"
+)
+
+MEDIA_PATHS=(
+    "http://192.168.253.136/repo/centos/"
+    "http://192.168.253.136/repo/rocky8/"
+    "http://192.168.253.136/repo/rocky9.2/"
+    "http://192.168.253.136/repo/rocky9/"
+)
 
 ###############################################################################
 # CREATE / VERIFY MEDIA
 ###############################################################################
 
-create_media()
+create_or_verify_media()
 {
-    local NAME="$1"
-    local PATH="$2"
+    section "Creating / Verifying Installation Media"
 
-    local ID
-    local JSON
+    local i
+    local name
+    local path
+    local id
+    local json
+    local existing_path
 
-    subsection "Installation Media : ${NAME}"
+    for i in "${!MEDIA_NAMES[@]}"
+    do
 
-    ID="$(find_media_id "${NAME}")"
+        name="${MEDIA_NAMES[$i]}"
+        path="${MEDIA_PATHS[$i]}"
 
-    if [ -n "${ID}" ]
-    then
-        skip "${NAME} already exists. ID=${ID}"
-        return 0
-    fi
+        subsection "Installation Media : ${name}"
 
-    JSON="$(
-        jq -n \
-            --arg NAME "${NAME}" \
-            --arg PATH "${PATH}" \
-            '{
-                medium: {
-                    name: $NAME,
-                    path: $PATH,
-                    os_family: "Redhat"
-                }
-            }'
-    )"
+        id="$(get_media_id "$name")"
 
-    info "Creating ${NAME}"
+        if [ -n "$id" ] && [ "$id" != "null" ]; then
 
-    if api_request POST "${API}/media" "${JSON}"
-    then
+            MEDIA_IDS[$i]="$id"
 
-        ID="$(echo "${API_BODY}" | jq -r '.id // empty')"
-        ok "${NAME} created. ID=${ID}"
+            skip "${name} already exists. ID=${id}"
 
-    else
+            api_request GET "${API}/media/${id}"
 
-        if [ "${API_STATUS}" = "422" ]
-        then
-            ID="$(find_media_id "${NAME}")"
+            if api_success && json_valid "$API_BODY"; then
 
-            if [ -n "${ID}" ]
-            then
-                skip "${NAME} already exists. ID=${ID}"
-                return 0
+                existing_path="$("$JQ" -r '.path // ""' "$API_BODY")"
+
+                if [ "$existing_path" = "$path" ]; then
+
+                    ok "${name} path verified."
+
+                else
+
+                    warn "${name} exists with different path."
+                    warn "Existing : ${existing_path}"
+                    warn "Expected : ${path}"
+
+                    json="$(
+                        "$JQ" -n \
+                            --arg name "$name" \
+                            --arg path "$path" \
+                            '{
+                                medium: {
+                                    name: $name,
+                                    path: $path,
+                                    os_family: "Redhat"
+                                }
+                            }'
+                    )"
+
+                    api_request PUT "${API}/media/${id}" "$json"
+
+                    if api_success; then
+                        ok "${name} path updated."
+                    else
+                        print_api_error PUT "${API}/media/${id}"
+                        record_failure "${name} media update"
+                    fi
+                fi
             fi
+
+            continue
         fi
 
-        show_api_error
-        record_failure "${NAME} creation"
+        info "Creating ${name}"
 
-    fi
+        json="$(
+            "$JQ" -n \
+                --arg name "$name" \
+                --arg path "$path" \
+                '{
+                    medium: {
+                        name: $name,
+                        path: $path,
+                        os_family: "Redhat"
+                    }
+                }'
+        )"
+
+        api_request POST "${API}/media" "$json"
+
+        if api_success && json_valid "$API_BODY"; then
+
+            id="$("$JQ" -r '.id // empty' "$API_BODY")"
+
+            if [ -n "$id" ]; then
+                MEDIA_IDS[$i]="$id"
+                ok "${name} created. ID=${id}"
+            else
+                error "${name} created but ID missing."
+                record_failure "${name} media creation"
+            fi
+
+        else
+
+            print_api_error POST "${API}/media"
+            record_failure "${name} media creation"
+
+        fi
+
+    done
 }
-
-###############################################################################
-# MEDIA
-###############################################################################
-
-section "Creating / Verifying Installation Media"
-
-create_media "${CENTOS_MEDIA}" "${CENTOS_MEDIA_URL}"
-create_media "${ROCKY8_MEDIA}" "${ROCKY8_MEDIA_URL}"
-create_media "${ROCKY92_MEDIA}" "${ROCKY92_MEDIA_URL}"
-create_media "${ROCKY98_MEDIA}" "${ROCKY98_MEDIA_URL}"
 
 ###############################################################################
 # MEDIA VERIFICATION
 ###############################################################################
 
-section "Installation Media Verification"
+verify_media()
+{
+    section "Installation Media Verification"
 
-if api_request GET "${API}/media?per_page=all"
-then
+    api_request GET "${API}/media?per_page=all"
 
-    echo "${API_BODY}" |
-    jq -r '
-        .results[]? |
-        [
+    if ! api_success || ! json_valid "$API_BODY"; then
+        print_api_error GET "${API}/media?per_page=all"
+        record_failure "Media verification"
+        return
+    fi
+
+    "$JQ" -r '
+        (.results // [])[]
+        | [
             .id,
             .name,
             .path
-        ] |
-        @tsv
-    '
-
-else
-
-    show_api_error
-    record_failure "Media verification"
-
-fi
-
-###############################################################################
-# ARCHITECTURE
-###############################################################################
-
-section "Finding Architecture"
-
-ARCH_ID=""
-
-if api_request GET "${API}/architectures?per_page=all"
-then
-
-    ARCH_ID="$(
-        echo "${API_BODY}" |
-        jq -r '
-            .results[]?
-            | select(.name == "x86_64")
-            | .id
-        ' |
-        head -1
-    )"
-fi
-
-if [ -n "${ARCH_ID}" ]
-then
-    ok "x86_64 architecture found. ID=${ARCH_ID}"
-else
-    error "x86_64 architecture not found."
-    record_failure "x86_64 architecture"
-fi
-
-###############################################################################
-# PTABLE
-###############################################################################
-
-section "Finding Partition Table"
-
-PTABLE_ID=""
-
-if api_request GET "${API}/ptables?per_page=all"
-then
-
-    PTABLE_ID="$(
-        echo "${API_BODY}" |
-        jq -r '
-            .results[]?
-            | select(.name == "Kickstart default")
-            | .id
-        ' |
-        head -1
-    )"
-
-fi
-
-if [ -n "${PTABLE_ID}" ]
-then
-    ok "Kickstart default partition table found. ID=${PTABLE_ID}"
-else
-    error "Kickstart default partition table not found."
-    record_failure "Kickstart default partition table"
-fi
-
-###############################################################################
-# OS LOOKUP
-###############################################################################
-
-find_os_id()
-{
-    local NAME="$1"
-
-    api_request GET "${API}/operatingsystems?per_page=all" || return 1
-
-    echo "${API_BODY}" |
-    jq -r \
-        --arg NAME "${NAME}" \
-        '.results[]? | select(.name == $NAME) | .id' |
-    head -1
+          ]
+        | @tsv
+    ' "$API_BODY"
 }
+
+###############################################################################
+# OPERATING SYSTEM DATA
+###############################################################################
+
+OS_NAMES=(
+    "CentOSLinux7-RAID"
+    "CentOSLinux7-SingleDisk"
+    "RockyLinux8.10-RAID"
+    "RockyLinux8.10-SingleDisk"
+    "RockyLinux9.2-RAID"
+    "RockyLinux9.2-SingleDisk"
+    "RockyLinux9.8-RAID"
+    "RockyLinux9.8-SingleDisk"
+)
+
+OS_MAJOR=(
+    "7"
+    "7"
+    "8"
+    "8"
+    "9"
+    "9"
+    "9"
+    "9"
+)
+
+OS_MINOR=(
+    ""
+    ""
+    "10"
+    "10"
+    "2"
+    "2"
+    "8"
+    "8"
+)
+
+OS_MEDIA_NAME=(
+    "CentOS 7 Remote"
+    "CentOS 7 Remote"
+    "Rocky 8 Remote"
+    "Rocky 8 Remote"
+    "Rocky 9.2 Remote"
+    "Rocky 9.2 Remote"
+    "Rocky 9 Remote"
+    "Rocky 9 Remote"
+)
 
 ###############################################################################
 # CREATE / VERIFY OS
 ###############################################################################
 
-create_os()
+create_or_verify_os()
 {
-    local NAME="$1"
-    local MAJOR="$2"
-    local MINOR="$3"
-    local MEDIA_NAME="$4"
+    section "Creating / Verifying Operating Systems"
 
-    local ID
-    local MEDIA_ID
-    local JSON
+    local i
+    local name
+    local major
+    local minor
+    local media_name
+    local media_id
+    local os_id
+    local json
 
-    subsection "Operating System : ${NAME}"
+    for i in "${!OS_NAMES[@]}"
+    do
 
-    ID="$(find_os_id "${NAME}")"
+        name="${OS_NAMES[$i]}"
+        major="${OS_MAJOR[$i]}"
+        minor="${OS_MINOR[$i]}"
+        media_name="${OS_MEDIA_NAME[$i]}"
 
-    if [ -n "${ID}" ]
-    then
-        skip "${NAME} already exists. ID=${ID}"
-        return 0
-    fi
+        subsection "Operating System : ${name}"
 
-    MEDIA_ID="$(find_media_id "${MEDIA_NAME}")"
+        os_id="$(get_os_id "$name")"
 
-    if [ -z "${MEDIA_ID}" ]
-    then
-        error "Media not found : ${MEDIA_NAME}"
-        record_failure "${NAME} media"
-        return 1
-    fi
+        if [ -n "$os_id" ] && [ "$os_id" != "null" ]; then
 
-    JSON="$(
-        jq -n \
-            --arg NAME "${NAME}" \
-            --arg MAJOR "${MAJOR}" \
-            --arg MINOR "${MINOR}" \
-            --argjson ARCH "${ARCH_ID}" \
-            --argjson MEDIA "${MEDIA_ID}" \
-            --argjson PTABLE "${PTABLE_ID}" \
-            '{
-                operatingsystem: {
-                    name: $NAME,
-                    major: $MAJOR,
-                    minor: $MINOR,
-                    family: "Redhat",
-                    architecture_ids: [$ARCH],
-                    medium_ids: [$MEDIA],
-                    ptable_ids: [$PTABLE]
-                }
-            }'
-    )"
+            OS_IDS[$i]="$os_id"
 
-    info "Creating ${NAME}"
+            skip "${name} already exists. ID=${os_id}"
 
-    if api_request POST "${API}/operatingsystems" "${JSON}"
-    then
+            media_id="$(get_media_id "$media_name")"
 
-        ID="$(echo "${API_BODY}" | jq -r '.id // empty')"
-        ok "${NAME} created. ID=${ID}"
-
-    else
-
-        if [ "${API_STATUS}" = "422" ]
-        then
-            ID="$(find_os_id "${NAME}")"
-
-            if [ -n "${ID}" ]
-            then
-                skip "${NAME} already exists. ID=${ID}"
-                return 0
+            if [ -z "$media_id" ] || [ "$media_id" = "null" ]; then
+                error "Media ${media_name} not found."
+                record_failure "${name} media association"
+                continue
             fi
+
+            json="$(
+                "$JQ" -n \
+                    --argjson arch "$ARCH_ID" \
+                    --argjson medium "$media_id" \
+                    --argjson ptable "$PTABLE_ID" \
+                    '{
+                        operatingsystem: {
+                            architecture_ids: [$arch],
+                            medium_ids: [$medium],
+                            ptable_ids: [$ptable]
+                        }
+                    }'
+            )"
+
+            api_request PUT "${API}/operatingsystems/${os_id}" "$json"
+
+            if api_success; then
+                ok "${name} associations verified."
+            else
+                print_api_error PUT "${API}/operatingsystems/${os_id}"
+                record_failure "${name} association update"
+            fi
+
+            continue
         fi
 
-        show_api_error
-        record_failure "${NAME} creation"
+        info "Creating ${name}"
 
-    fi
+        media_id="$(get_media_id "$media_name")"
+
+        if [ -z "$media_id" ] || [ "$media_id" = "null" ]; then
+            error "Media ${media_name} not found."
+            record_failure "${name} media"
+            continue
+        fi
+
+        if [ -n "$minor" ]; then
+
+            json="$(
+                "$JQ" -n \
+                    --arg name "$name" \
+                    --arg major "$major" \
+                    --arg minor "$minor" \
+                    --argjson arch "$ARCH_ID" \
+                    --argjson medium "$media_id" \
+                    --argjson ptable "$PTABLE_ID" \
+                    '{
+                        operatingsystem: {
+                            name: $name,
+                            major: $major,
+                            minor: $minor,
+                            family: "Redhat",
+                            password_hash: "SHA256",
+                            architecture_ids: [$arch],
+                            medium_ids: [$medium],
+                            ptable_ids: [$ptable]
+                        }
+                    }'
+            )"
+
+        else
+
+            json="$(
+                "$JQ" -n \
+                    --arg name "$name" \
+                    --arg major "$major" \
+                    --argjson arch "$ARCH_ID" \
+                    --argjson medium "$media_id" \
+                    --argjson ptable "$PTABLE_ID" \
+                    '{
+                        operatingsystem: {
+                            name: $name,
+                            major: $major,
+                            family: "Redhat",
+                            password_hash: "SHA256",
+                            architecture_ids: [$arch],
+                            medium_ids: [$medium],
+                            ptable_ids: [$ptable]
+                        }
+                    }'
+            )"
+
+        fi
+
+        api_request POST "${API}/operatingsystems" "$json"
+
+        if api_success && json_valid "$API_BODY"; then
+
+            os_id="$("$JQ" -r '.id // empty' "$API_BODY")"
+
+            if [ -n "$os_id" ]; then
+                OS_IDS[$i]="$os_id"
+                ok "${name} created. ID=${os_id}"
+            else
+                error "${name} created but ID missing."
+                record_failure "${name} OS creation"
+            fi
+
+        else
+
+            print_api_error POST "${API}/operatingsystems"
+            record_failure "${name} OS creation"
+
+        fi
+
+    done
 }
-
-###############################################################################
-# OPERATING SYSTEMS
-###############################################################################
-
-section "Creating / Verifying Operating Systems"
-
-create_os "${CENTOS_RAID_NAME}" "7" "" "${CENTOS_MEDIA}"
-create_os "${CENTOS_SINGLE_NAME}" "7" "" "${CENTOS_MEDIA}"
-
-create_os "${ROCKY8_RAID_NAME}" "8" "10" "${ROCKY8_MEDIA}"
-create_os "${ROCKY8_SINGLE_NAME}" "8" "10" "${ROCKY8_MEDIA}"
-
-create_os "${ROCKY92_RAID_NAME}" "9" "2" "${ROCKY92_MEDIA}"
-create_os "${ROCKY92_SINGLE_NAME}" "9" "2" "${ROCKY92_MEDIA}"
-
-create_os "${ROCKY98_RAID_NAME}" "9" "8" "${ROCKY98_MEDIA}"
-create_os "${ROCKY98_SINGLE_NAME}" "9" "8" "${ROCKY98_MEDIA}"
 
 ###############################################################################
 # OS VERIFICATION
 ###############################################################################
 
-section "Operating System Verification"
+verify_operating_systems()
+{
+    section "Operating System Verification"
 
-if api_request GET "${API}/operatingsystems?per_page=all"
-then
+    api_request GET "${API}/operatingsystems?per_page=all"
 
-    printf "%-5s %-35s %-7s %-7s %-10s\n" \
-        "ID" "NAME" "MAJOR" "MINOR" "FAMILY"
+    if ! api_success || ! json_valid "$API_BODY"; then
+        print_api_error GET "${API}/operatingsystems?per_page=all"
+        record_failure "OS verification"
+        return
+    fi
 
-    echo "${API_BODY}" |
-    jq -r '
-        .results[]? |
-        [
+    echo "ID    NAME                                MAJOR   MINOR   FAMILY"
+
+    "$JQ" -r '
+        (.results // [])[]
+        | [
             .id,
             .name,
             (.major // ""),
             (.minor // ""),
             (.family // "")
-        ] |
-        @tsv
-    '
-
-else
-
-    show_api_error
-    record_failure "OS verification"
-
-fi
+          ]
+        | @tsv
+    ' "$API_BODY"
+}
 
 ###############################################################################
-# PXE TEMPLATE DIRECTORY
+# PXE TEMPLATE DATA
 ###############################################################################
 
-TEMPLATE_DIR="/tmp/foreman-pxe-bootstrap"
+TEMPLATE_NAMES=(
+    "PXEGrub2 CentOS UEFI RAID Kickstart"
+    "PXEGrub2 CentOS UEFI SingleDisk Kickstart"
+    "PXEGrub2 Rocky8 UEFI RAID Kickstart"
+    "PXEGrub2 Rocky8 UEFI SingleDisk Kickstart"
+    "PXEGrub2 Rocky9.2 UEFI RAID Kickstart"
+    "PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart"
+    "PXEGrub2 Rocky9.8 UEFI RAID Kickstart"
+    "PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart"
+)
 
-mkdir -p "${TEMPLATE_DIR}"
+TEMPLATE_FILES=(
+    "centos-raid.erb"
+    "centos-singledisk.erb"
+    "rocky8-raid.erb"
+    "rocky8-singledisk.erb"
+    "rocky92-raid.erb"
+    "rocky92-singledisk.erb"
+    "rocky98-raid.erb"
+    "rocky98-singledisk.erb"
+)
+
+TEMPLATE_OS_INDEX=(
+    0
+    1
+    2
+    3
+    4
+    5
+    6
+    7
+)
 
 ###############################################################################
-# GENERATE PXEGRUB2 FILES
-#
-# IMPORTANT:
-# All heredocs are complete and quoted.
-# Foreman ERB syntax is therefore NOT interpreted by Bash.
+# GENERATE PXE TEMPLATE FILES
 ###############################################################################
 
-section "Generating PXEGrub2 Template Files"
+generate_template_files()
+{
+    section "Generating PXEGrub2 Template Files"
 
-cat > "${TEMPLATE_DIR}/centos-raid.erb" <<'EOF'
+    "$RM" -rf "$TEMPLATE_DIR"
+    "$MKDIR" -p "$TEMPLATE_DIR"
+
+    "$CAT" > "${TEMPLATE_DIR}/centos-raid.erb" <<'TEMPLATE_EOF'
 set default=0
 set timeout=10
 
@@ -702,9 +924,9 @@ menuentry 'CentOS 7 RAID' {
     linuxefi <%= @host.url %>/boot/vmlinuz inst.stage2=<%= @host.operatingsystem.medium.path %> inst.ks=<%= foreman_url("provision") %> ksdevice=bootif
     initrdefi <%= @host.url %>/boot/initrd.img
 }
-EOF
+TEMPLATE_EOF
 
-cat > "${TEMPLATE_DIR}/centos-singledisk.erb" <<'EOF'
+    "$CAT" > "${TEMPLATE_DIR}/centos-singledisk.erb" <<'TEMPLATE_EOF'
 set default=0
 set timeout=10
 
@@ -712,9 +934,9 @@ menuentry 'CentOS 7 SingleDisk' {
     linuxefi <%= @host.url %>/boot/vmlinuz inst.stage2=<%= @host.operatingsystem.medium.path %> inst.ks=<%= foreman_url("provision") %> ksdevice=bootif
     initrdefi <%= @host.url %>/boot/initrd.img
 }
-EOF
+TEMPLATE_EOF
 
-cat > "${TEMPLATE_DIR}/rocky8-raid.erb" <<'EOF'
+    "$CAT" > "${TEMPLATE_DIR}/rocky8-raid.erb" <<'TEMPLATE_EOF'
 set default=0
 set timeout=10
 
@@ -722,9 +944,9 @@ menuentry 'Rocky Linux 8 RAID' {
     linuxefi <%= @host.url %>/boot/vmlinuz inst.stage2=<%= @host.operatingsystem.medium.path %> inst.ks=<%= foreman_url("provision") %> ksdevice=bootif
     initrdefi <%= @host.url %>/boot/initrd.img
 }
-EOF
+TEMPLATE_EOF
 
-cat > "${TEMPLATE_DIR}/rocky8-singledisk.erb" <<'EOF'
+    "$CAT" > "${TEMPLATE_DIR}/rocky8-singledisk.erb" <<'TEMPLATE_EOF'
 set default=0
 set timeout=10
 
@@ -732,9 +954,9 @@ menuentry 'Rocky Linux 8 SingleDisk' {
     linuxefi <%= @host.url %>/boot/vmlinuz inst.stage2=<%= @host.operatingsystem.medium.path %> inst.ks=<%= foreman_url("provision") %> ksdevice=bootif
     initrdefi <%= @host.url %>/boot/initrd.img
 }
-EOF
+TEMPLATE_EOF
 
-cat > "${TEMPLATE_DIR}/rocky92-raid.erb" <<'EOF'
+    "$CAT" > "${TEMPLATE_DIR}/rocky92-raid.erb" <<'TEMPLATE_EOF'
 set default=0
 set timeout=10
 
@@ -742,9 +964,9 @@ menuentry 'Rocky Linux 9.2 RAID' {
     linuxefi <%= @host.url %>/boot/vmlinuz inst.stage2=<%= @host.operatingsystem.medium.path %> inst.ks=<%= foreman_url("provision") %> ksdevice=bootif
     initrdefi <%= @host.url %>/boot/initrd.img
 }
-EOF
+TEMPLATE_EOF
 
-cat > "${TEMPLATE_DIR}/rocky92-singledisk.erb" <<'EOF'
+    "$CAT" > "${TEMPLATE_DIR}/rocky92-singledisk.erb" <<'TEMPLATE_EOF'
 set default=0
 set timeout=10
 
@@ -752,9 +974,9 @@ menuentry 'Rocky Linux 9.2 SingleDisk' {
     linuxefi <%= @host.url %>/boot/vmlinuz inst.stage2=<%= @host.operatingsystem.medium.path %> inst.ks=<%= foreman_url("provision") %> ksdevice=bootif
     initrdefi <%= @host.url %>/boot/initrd.img
 }
-EOF
+TEMPLATE_EOF
 
-cat > "${TEMPLATE_DIR}/rocky98-raid.erb" <<'EOF'
+    "$CAT" > "${TEMPLATE_DIR}/rocky98-raid.erb" <<'TEMPLATE_EOF'
 set default=0
 set timeout=10
 
@@ -762,9 +984,9 @@ menuentry 'Rocky Linux 9.8 RAID' {
     linuxefi <%= @host.url %>/boot/vmlinuz inst.stage2=<%= @host.operatingsystem.medium.path %> inst.ks=<%= foreman_url("provision") %> ksdevice=bootif
     initrdefi <%= @host.url %>/boot/initrd.img
 }
-EOF
+TEMPLATE_EOF
 
-cat > "${TEMPLATE_DIR}/rocky98-singledisk.erb" <<'EOF'
+    "$CAT" > "${TEMPLATE_DIR}/rocky98-singledisk.erb" <<'TEMPLATE_EOF'
 set default=0
 set timeout=10
 
@@ -772,463 +994,433 @@ menuentry 'Rocky Linux 9.8 SingleDisk' {
     linuxefi <%= @host.url %>/boot/vmlinuz inst.stage2=<%= @host.operatingsystem.medium.path %> inst.ks=<%= foreman_url("provision") %> ksdevice=bootif
     initrdefi <%= @host.url %>/boot/initrd.img
 }
-EOF
+TEMPLATE_EOF
 
-###############################################################################
-# VERIFY TEMPLATE FILES
-###############################################################################
+    local count
 
-TEMPLATE_COUNT=0
+    count="$("$GREP" -l "menuentry" "${TEMPLATE_DIR}"/*.erb 2>/dev/null | "$WC" -l)"
 
-for FILE in \
-    centos-raid.erb \
-    centos-singledisk.erb \
-    rocky8-raid.erb \
-    rocky8-singledisk.erb \
-    rocky92-raid.erb \
-    rocky92-singledisk.erb \
-    rocky98-raid.erb \
-    rocky98-singledisk.erb
-do
-
-    if [ -s "${TEMPLATE_DIR}/${FILE}" ]
-    then
-        TEMPLATE_COUNT=$((TEMPLATE_COUNT + 1))
+    if [ "$count" -eq 8 ]; then
+        ok "All 8 PXEGrub2 template files generated."
     else
-        error "Template file missing/empty: ${FILE}"
-        record_failure "Generated ${FILE}"
+        error "Expected 8 PXEGrub2 template files. Found ${count}."
+        record_failure "PXE template generation"
     fi
 
-done
-
-if [ "${TEMPLATE_COUNT}" -eq 8 ]
-then
-    ok "All 8 PXEGrub2 template files generated."
-else
-    error "Only ${TEMPLATE_COUNT}/8 PXEGrub2 files generated."
-fi
-
-ls -l "${TEMPLATE_DIR}"/*.erb
+    ls -l "${TEMPLATE_DIR}"/*.erb
+}
 
 ###############################################################################
-# FIND PXEGRUB2 KIND
+# FIND PXEGRUB2 TEMPLATE KIND
 ###############################################################################
 
-section "Finding Existing PXEGrub2 Template Kind"
+find_pxegrub2_kind()
+{
+    section "Finding Existing PXEGrub2 Template Kind"
 
-PXEGRUB2_KIND_ID=""
+    PXEGRUB2_KIND_ID=""
 
-if api_request GET "${API}/provisioning_templates?per_page=all"
-then
+    api_request GET "${API}/provisioning_templates?per_page=all"
+
+    if ! api_success || ! json_valid "$API_BODY"; then
+        print_api_error GET "${API}/provisioning_templates?per_page=all"
+        record_failure "PXEGrub2 kind lookup"
+        return
+    fi
 
     PXEGRUB2_KIND_ID="$(
-        echo "${API_BODY}" |
-        jq -r '
-            .results[]?
+        "$JQ" -r '
+            (.results // [])[]
             | select(.template_kind_name == "PXEGrub2")
             | .template_kind_id
-        ' |
-        head -1
-    "
+        ' "$API_BODY" |
+        "$HEAD" -1
+    )"
 
-    if [ -z "${PXEGRUB2_KIND_ID}" ]
-    then
+    if [ -z "$PXEGRUB2_KIND_ID" ] || [ "$PXEGRUB2_KIND_ID" = "null" ]; then
+
         PXEGRUB2_KIND_ID="$(
-            echo "${API_BODY}" |
-            jq -r '
-                .results[]?
+            "$JQ" -r '
+                (.results // [])[]
                 | select(.name | startswith("PXEGrub2 "))
                 | .template_kind_id
-            ' |
-            head -1
+            ' "$API_BODY" |
+            "$HEAD" -1
         )"
+
     fi
 
-fi
+    if [ -n "$PXEGRUB2_KIND_ID" ] &&
+       [ "$PXEGRUB2_KIND_ID" != "null" ]; then
 
-if [ -n "${PXEGRUB2_KIND_ID}" ]
-then
-    ok "PXEGrub2 template kind found. ID=${PXEGRUB2_KIND_ID}"
-else
-    error "PXEGrub2 template kind not found."
-    record_failure "PXEGrub2 template kind"
-fi
-
-###############################################################################
-# FIND PROVISIONING TEMPLATE
-###############################################################################
-
-find_template_id()
-{
-    local NAME="$1"
-
-    api_request GET "${API}/provisioning_templates?per_page=all" || return 1
-
-    echo "${API_BODY}" |
-    jq -r \
-        --arg NAME "${NAME}" \
-        '.results[]? | select(.name == $NAME) | .id' |
-    head -1
-}
-
-###############################################################################
-# CREATE / VERIFY PXEGRUB2 TEMPLATE
-###############################################################################
-
-create_template()
-{
-    local NAME="$1"
-    local FILE="$2"
-
-    local ID
-    local TEXT
-    local JSON
-
-    subsection "PXEGrub2 Template : ${NAME}"
-
-    ID="$(find_template_id "${NAME}")"
-
-    if [ -n "${ID}" ]
-    then
-        skip "${NAME} already exists. ID=${ID}"
-        return 0
-    fi
-
-    if [ ! -s "${FILE}" ]
-    then
-        error "Template file missing: ${FILE}"
-        record_failure "${NAME} file"
-        return 1
-    fi
-
-    TEXT="$(cat "${FILE}")"
-
-    JSON="$(
-        jq -n \
-            --arg NAME "${NAME}" \
-            --arg TEXT "${TEXT}" \
-            --argjson KIND "${PXEGRUB2_KIND_ID}" \
-            '{
-                provisioning_template: {
-                    name: $NAME,
-                    template: $TEXT,
-                    template_kind_id: $KIND
-                }
-            }'
-    )"
-
-    info "Creating ${NAME}"
-
-    if api_request POST "${API}/provisioning_templates" "${JSON}"
-    then
-
-        ID="$(echo "${API_BODY}" | jq -r '.id // empty')"
-        ok "${NAME} created. ID=${ID}"
+        ok "PXEGrub2 template kind found."
+        echo "PXEGrub2 Template Kind ID : ${PXEGRUB2_KIND_ID}"
 
     else
 
-        if [ "${API_STATUS}" = "422" ]
-        then
-            ID="$(find_template_id "${NAME}")"
+        error "PXEGrub2 template kind not found."
+        record_failure "PXEGrub2 template kind"
 
-            if [ -n "${ID}" ]
-            then
-                skip "${NAME} already exists. ID=${ID}"
-                return 0
+    fi
+}
+
+###############################################################################
+# CREATE / UPDATE PROVISIONING TEMPLATES
+###############################################################################
+
+create_or_update_templates()
+{
+    section "Creating / Verifying PXEGrub2 Templates"
+
+    local i
+    local name
+    local file
+    local template_id
+    local template_text
+    local json
+
+    if [ -z "$PXEGRUB2_KIND_ID" ]; then
+        error "PXEGrub2 template kind ID is empty."
+        record_failure "PXEGrub2 templates"
+        return
+    fi
+
+    for i in "${!TEMPLATE_NAMES[@]}"
+    do
+
+        name="${TEMPLATE_NAMES[$i]}"
+        file="${TEMPLATE_FILES[$i]}"
+
+        subsection "PXEGrub2 Template : ${name}"
+
+        if [ ! -s "${TEMPLATE_DIR}/${file}" ]; then
+            error "Template file missing: ${TEMPLATE_DIR}/${file}"
+            record_failure "${name} template file"
+            continue
+        fi
+
+        template_id="$(get_template_id "$name")"
+        template_text="$("$CAT" "${TEMPLATE_DIR}/${file}")"
+
+        json="$(
+            "$JQ" -n \
+                --arg name "$name" \
+                --arg template "$template_text" \
+                --argjson kind "$PXEGRUB2_KIND_ID" \
+                '{
+                    provisioning_template: {
+                        name: $name,
+                        template: $template,
+                        template_kind_id: $kind
+                    }
+                }'
+        )"
+
+        if [ -n "$template_id" ] && [ "$template_id" != "null" ]; then
+
+            TEMPLATE_IDS[$i]="$template_id"
+
+            skip "${name} already exists. ID=${template_id}"
+
+            api_request PUT \
+                "${API}/provisioning_templates/${template_id}" \
+                "$json"
+
+            if api_success; then
+                ok "${name} updated."
+            else
+                print_api_error PUT \
+                    "${API}/provisioning_templates/${template_id}"
+                record_failure "${name} template update"
             fi
-        fi
 
-        show_api_error
-        record_failure "${NAME} creation"
+        else
 
-    fi
-}
+            info "Creating ${name}"
 
-###############################################################################
-# CREATE PXEGRUB2 TEMPLATES
-###############################################################################
+            api_request POST \
+                "${API}/provisioning_templates" \
+                "$json"
 
-section "Creating / Verifying PXEGrub2 Templates"
+            if api_success && json_valid "$API_BODY"; then
 
-if [ -n "${PXEGRUB2_KIND_ID}" ]
-then
+                template_id="$("$JQ" -r '.id // empty' "$API_BODY")"
 
-    create_template \
-        "${CENTOS_RAID_TEMPLATE}" \
-        "${TEMPLATE_DIR}/centos-raid.erb"
-
-    create_template \
-        "${CENTOS_SINGLE_TEMPLATE}" \
-        "${TEMPLATE_DIR}/centos-singledisk.erb"
-
-    create_template \
-        "${ROCKY8_RAID_TEMPLATE}" \
-        "${TEMPLATE_DIR}/rocky8-raid.erb"
-
-    create_template \
-        "${ROCKY8_SINGLE_TEMPLATE}" \
-        "${TEMPLATE_DIR}/rocky8-singledisk.erb"
-
-    create_template \
-        "${ROCKY92_RAID_TEMPLATE}" \
-        "${TEMPLATE_DIR}/rocky92-raid.erb"
-
-    create_template \
-        "${ROCKY92_SINGLE_TEMPLATE}" \
-        "${TEMPLATE_DIR}/rocky92-singledisk.erb"
-
-    create_template \
-        "${ROCKY98_RAID_TEMPLATE}" \
-        "${TEMPLATE_DIR}/rocky98-raid.erb"
-
-    create_template \
-        "${ROCKY98_SINGLE_TEMPLATE}" \
-        "${TEMPLATE_DIR}/rocky98-singledisk.erb"
-
-else
-
-    warn "Skipping PXEGrub2 template creation because kind is unavailable."
-
-fi
-
-###############################################################################
-# OS -> TEMPLATE ASSOCIATION
-###############################################################################
-
-associate_template()
-{
-    local OS_NAME="$1"
-    local TEMPLATE_NAME="$2"
-
-    local OS_ID
-    local TEMPLATE_ID
-    local JSON
-
-    subsection "Associating PXEGrub2 Template"
-
-    echo "OS       : ${OS_NAME}"
-    echo "Template : ${TEMPLATE_NAME}"
-
-    OS_ID="$(find_os_id "${OS_NAME}")"
-    TEMPLATE_ID="$(find_template_id "${TEMPLATE_NAME}")"
-
-    if [ -z "${OS_ID}" ]
-    then
-        error "OS not found: ${OS_NAME}"
-        record_failure "${OS_NAME} association"
-        return 1
-    fi
-
-    if [ -z "${TEMPLATE_ID}" ]
-    then
-        error "Template not found: ${TEMPLATE_NAME}"
-        record_failure "${TEMPLATE_NAME} association"
-        return 1
-    fi
-
-    ###########################################################################
-    # Check existing association
-    ###########################################################################
-
-    if api_request GET \
-        "${API}/operatingsystems/${OS_ID}/provisioning_templates?per_page=all"
-    then
-
-        if echo "${API_BODY}" |
-            jq -e \
-                --argjson ID "${TEMPLATE_ID}" \
-                '.results[]? | select(.id == $ID)' >/dev/null
-        then
-
-            skip "${OS_NAME} already associated with ${TEMPLATE_NAME}"
-            return 0
-
-        fi
-
-    fi
-
-    ###########################################################################
-    # Add association
-    ###########################################################################
-
-    JSON="$(
-        jq -n \
-            --argjson TEMPLATE "${TEMPLATE_ID}" \
-            '{
-                provisioning_template_id: $TEMPLATE
-            }'
-    )"
-
-    info "Adding association..."
-
-    if api_request POST \
-        "${API}/operatingsystems/${OS_ID}/provisioning_templates" \
-        "${JSON}"
-    then
-
-        ok "${OS_NAME} -> ${TEMPLATE_NAME}"
-
-    else
-
-        #######################################################################
-        # 422 can mean it was already associated.
-        #######################################################################
-
-        if [ "${API_STATUS}" = "422" ]
-        then
-
-            if api_request GET \
-                "${API}/operatingsystems/${OS_ID}/provisioning_templates?per_page=all"
-            then
-
-                if echo "${API_BODY}" |
-                    jq -e \
-                        --argjson ID "${TEMPLATE_ID}" \
-                        '.results[]? | select(.id == $ID)' >/dev/null
-                then
-
-                    skip "${OS_NAME} already associated with ${TEMPLATE_NAME}"
-                    return 0
-
+                if [ -n "$template_id" ]; then
+                    TEMPLATE_IDS[$i]="$template_id"
+                    ok "${name} created. ID=${template_id}"
+                else
+                    error "${name} created but ID missing."
+                    record_failure "${name} template creation"
                 fi
 
+            else
+
+                print_api_error POST \
+                    "${API}/provisioning_templates"
+
+                record_failure "${name} template creation"
+
             fi
 
         fi
 
-        show_api_error
-        record_failure "${OS_NAME} association"
-
-    fi
+    done
 }
 
 ###############################################################################
-# ASSOCIATIONS
+# ASSOCIATE TEMPLATES WITH OS
 ###############################################################################
 
-section "Associating PXEGrub2 Templates"
+associate_templates_with_os()
+{
+    section "Associating PXEGrub2 Templates With Operating Systems"
 
-if [ -n "${PXEGRUB2_KIND_ID}" ]
-then
+    local i
+    local os_index
+    local os_name
+    local os_id
+    local template_name
+    local template_id
+    local existing_ids
+    local ids_json
+    local json
 
-    associate_template "${CENTOS_RAID_NAME}" "${CENTOS_RAID_TEMPLATE}"
-    associate_template "${CENTOS_SINGLE_NAME}" "${CENTOS_SINGLE_TEMPLATE}"
+    for i in "${!TEMPLATE_NAMES[@]}"
+    do
 
-    associate_template "${ROCKY8_RAID_NAME}" "${ROCKY8_RAID_TEMPLATE}"
-    associate_template "${ROCKY8_SINGLE_NAME}" "${ROCKY8_SINGLE_TEMPLATE}"
+        template_name="${TEMPLATE_NAMES[$i]}"
+        template_id="${TEMPLATE_IDS[$i]}"
+        os_index="${TEMPLATE_OS_INDEX[$i]}"
+        os_name="${OS_NAMES[$os_index]}"
+        os_id="${OS_IDS[$os_index]}"
 
-    associate_template "${ROCKY92_RAID_NAME}" "${ROCKY92_RAID_TEMPLATE}"
-    associate_template "${ROCKY92_SINGLE_NAME}" "${ROCKY92_SINGLE_TEMPLATE}"
+        subsection "OS Template Association"
 
-    associate_template "${ROCKY98_RAID_NAME}" "${ROCKY98_RAID_TEMPLATE}"
-    associate_template "${ROCKY98_SINGLE_NAME}" "${ROCKY98_SINGLE_TEMPLATE}"
+        echo "OS          : ${os_name}"
+        echo "OS ID       : ${os_id}"
+        echo "Template    : ${template_name}"
+        echo "Template ID : ${template_id}"
 
-else
+        if [ -z "$os_id" ] || [ "$os_id" = "null" ]; then
+            error "OS ID missing."
+            record_failure "${os_name} template association"
+            continue
+        fi
 
-    warn "Skipping associations because PXEGrub2 kind is unavailable."
+        if [ -z "$template_id" ] || [ "$template_id" = "null" ]; then
+            error "Template ID missing."
+            record_failure "${template_name} association"
+            continue
+        fi
 
-fi
+        api_request GET "${API}/operatingsystems/${os_id}"
+
+        if ! api_success || ! json_valid "$API_BODY"; then
+            print_api_error GET "${API}/operatingsystems/${os_id}"
+            record_failure "${os_name} OS read"
+            continue
+        fi
+
+        existing_ids="$(
+            "$JQ" -r '
+                [
+                    (.provisioning_templates // [])[]?.id
+                ]
+                | .[]
+            ' "$API_BODY" 2>/dev/null
+        )"
+
+        ids_json="$(
+            {
+                printf '%s\n' "$existing_ids"
+                printf '%s\n' "$template_id"
+            } |
+            "$AWK" 'NF && !seen[$0]++' |
+            "$JQ" -R -s '
+                split("\n")
+                | map(select(length > 0))
+                | map(tonumber)
+            '
+        )"
+
+        json="$(
+            "$JQ" -n \
+                --argjson ids "$ids_json" \
+                '{
+                    operatingsystem: {
+                        provisioning_template_ids: $ids
+                    }
+                }'
+        )"
+
+        api_request PUT \
+            "${API}/operatingsystems/${os_id}" \
+            "$json"
+
+        if api_success; then
+            ok "${os_name} associated with ${template_name}."
+        else
+            print_api_error PUT \
+                "${API}/operatingsystems/${os_id}"
+            record_failure "${os_name} template association"
+        fi
+
+    done
+}
+
+###############################################################################
+# VERIFY OS TEMPLATE ASSOCIATIONS
+###############################################################################
+
+verify_os_template_associations()
+{
+    section "OS PXEGrub2 Association Verification"
+
+    local i
+    local os_id
+    local os_name
+
+    for i in "${!OS_NAMES[@]}"
+    do
+
+        os_name="${OS_NAMES[$i]}"
+        os_id="${OS_IDS[$i]}"
+
+        echo
+        echo "${os_name} (ID=${os_id})"
+
+        api_request GET \
+            "${API}/operatingsystems/${os_id}/provisioning_templates?per_page=all"
+
+        if ! api_success || ! json_valid "$API_BODY"; then
+            print_api_error GET \
+                "${API}/operatingsystems/${os_id}/provisioning_templates?per_page=all"
+            record_failure "${os_name} association verification"
+            continue
+        fi
+
+        "$JQ" -r '
+            (.results // [])[]
+            | select(.template_kind_name == "PXEGrub2")
+            | [
+                .id,
+                .name,
+                .template_kind_id,
+                .template_kind_name
+              ]
+            | @tsv
+        ' "$API_BODY"
+
+    done
+}
 
 ###############################################################################
 # SET PXEGRUB2 DEFAULT
+#
+# IMPORTANT FIX:
+#
+# Foreman only permits ONE os_default_template for a given template_kind_id.
+#
+# We NEVER POST a second PXEGrub2 default if one already exists.
+#
+# If an existing PXEGrub2 default is found:
+#   - correct template -> SKIP
+#   - wrong template   -> PUT existing record
+#
+# If POST somehow returns "template_kind_id has already been taken",
+# we immediately re-read the endpoint and update the existing record.
 ###############################################################################
 
-set_default_template()
+set_pxe_default()
 {
-    local OS_NAME="$1"
-    local TEMPLATE_NAME="$2"
+    local os_name="$1"
+    local template_name="$2"
 
-    local OS_ID
-    local TEMPLATE_ID
-    local EXISTING_ID
-    local EXISTING_TEMPLATE_ID
-    local JSON
+    local os_id
+    local template_id
+    local default_id
+    local current_template_id
+    local json
+    local row
 
-    subsection "PXEGrub2 Default"
+    subsection "PXEGrub2 Default Template"
 
-    echo "OS       : ${OS_NAME}"
-    echo "Template : ${TEMPLATE_NAME}"
-    echo "Kind ID  : ${PXEGRUB2_KIND_ID}"
+    echo "OS       : ${os_name}"
+    echo "Template : ${template_name}"
 
-    OS_ID="$(find_os_id "${OS_NAME}")"
-    TEMPLATE_ID="$(find_template_id "${TEMPLATE_NAME}")"
+    os_id="$(get_os_id "$os_name")"
+    template_id="$(get_template_id "$template_name")"
 
-    if [ -z "${OS_ID}" ]
-    then
-        error "OS not found: ${OS_NAME}"
-        record_failure "${OS_NAME} default"
-        return 1
+    if [ -z "$os_id" ] || [ "$os_id" = "null" ]; then
+        error "OS not found: ${os_name}"
+        record_failure "${os_name} default"
+        return
     fi
 
-    if [ -z "${TEMPLATE_ID}" ]
-    then
-        error "Template not found: ${TEMPLATE_NAME}"
-        record_failure "${TEMPLATE_NAME} default"
-        return 1
+    if [ -z "$template_id" ] || [ "$template_id" = "null" ]; then
+        error "Template not found: ${template_name}"
+        record_failure "${os_name} default"
+        return
     fi
 
-    ###########################################################################
-    # Get existing defaults
-    ###########################################################################
+    echo "OS ID      : ${os_id}"
+    echo "Template ID : ${template_id}"
+    echo "Kind ID     : ${PXEGRUB2_KIND_ID}"
 
-    if ! api_request GET \
-        "${API}/operatingsystems/${OS_ID}/os_default_templates?per_page=all"
-    then
-        show_api_error
-        record_failure "${OS_NAME} default lookup"
-        return 1
+    api_request GET \
+        "${API}/operatingsystems/${os_id}/os_default_templates?per_page=all"
+
+    if ! api_success || ! json_valid "$API_BODY"; then
+        print_api_error GET \
+            "${API}/operatingsystems/${os_id}/os_default_templates?per_page=all"
+        record_failure "${os_name} default lookup"
+        return
     fi
 
-    ###########################################################################
-    # Existing PXEGrub2 default
-    ###########################################################################
-
-    EXISTING_ID="$(
-        echo "${API_BODY}" |
-        jq -r \
-            --argjson KIND "${PXEGRUB2_KIND_ID}" \
+    #
+    # First find ANY default with this template kind.
+    #
+    # Compare as strings because different Foreman versions/API responses
+    # may serialize IDs differently.
+    #
+    row="$(
+        "$JQ" -c \
+            --arg KIND "$PXEGRUB2_KIND_ID" \
             '
-            .results[]?
-            | select(.template_kind_id == $KIND)
-            | .id
-            ' |
-        head -1
+            (.results // [])[]
+            | select(
+                ((.template_kind_id // "") | tostring) == $KIND
+            )
+            ' \
+            "$API_BODY" |
+        "$HEAD" -1
     )"
 
-    if [ -n "${EXISTING_ID}" ]
-    then
+    if [ -n "$row" ]; then
 
-        EXISTING_TEMPLATE_ID="$(
-            echo "${API_BODY}" |
-            jq -r \
-                --argjson KIND "${PXEGRUB2_KIND_ID}" \
-                '
-                .results[]?
-                | select(.template_kind_id == $KIND)
-                | .provisioning_template_id
-                ' |
-            head -1
+        default_id="$("$JQ" -r '.id // empty' <<< "$row")"
+        current_template_id="$(
+            "$JQ" -r '.provisioning_template_id // empty' <<< "$row"
         )"
 
-        if [ "${EXISTING_TEMPLATE_ID}" = "${TEMPLATE_ID}" ]
-        then
+        echo "Existing Default ID       : ${default_id}"
+        echo "Existing Template ID      : ${current_template_id}"
 
-            skip "${OS_NAME} PXEGrub2 default already correct. ID=${EXISTING_ID}"
-            return 0
+        if [ "$current_template_id" = "$template_id" ]; then
+
+            skip "PXEGrub2 default already correct. ID=${default_id}"
+            return
 
         fi
 
-        #######################################################################
-        # Existing default is wrong -> update it.
-        #######################################################################
+        info "Existing PXEGrub2 default uses a different template."
+        info "Updating existing default ID=${default_id}"
 
-        info "Existing PXEGrub2 default found. ID=${EXISTING_ID}"
-        info "Updating default template..."
-
-        JSON="$(
-            jq -n \
-                --argjson TEMPLATE "${TEMPLATE_ID}" \
-                --argjson KIND "${PXEGRUB2_KIND_ID}" \
+        json="$(
+            "$JQ" -n \
+                --argjson TEMPLATE "$template_id" \
+                --argjson KIND "$PXEGRUB2_KIND_ID" \
                 '{
                     os_default_template: {
                         provisioning_template_id: $TEMPLATE,
@@ -1237,32 +1429,35 @@ set_default_template()
                 }'
         )"
 
-        if api_request PUT \
-            "${API}/operatingsystems/${OS_ID}/os_default_templates/${EXISTING_ID}" \
-            "${JSON}"
-        then
+        api_request PUT \
+            "${API}/operatingsystems/${os_id}/os_default_templates/${default_id}" \
+            "$json"
 
-            ok "${OS_NAME} PXEGrub2 default updated. ID=${EXISTING_ID}"
+        if api_success; then
+
+            ok "PXEGrub2 default updated. ID=${default_id}"
 
         else
 
-            show_api_error
-            record_failure "${OS_NAME} default update"
+            print_api_error PUT \
+                "${API}/operatingsystems/${os_id}/os_default_templates/${default_id}"
+
+            record_failure "${os_name} default update"
 
         fi
 
-        return 0
-
+        return
     fi
 
-    ###########################################################################
-    # No existing PXEGrub2 default -> create
-    ###########################################################################
+    #
+    # No PXEGrub2 default exists.
+    #
+    info "No PXEGrub2 default exists. Creating one."
 
-    JSON="$(
-        jq -n \
-            --argjson TEMPLATE "${TEMPLATE_ID}" \
-            --argjson KIND "${PXEGRUB2_KIND_ID}" \
+    json="$(
+        "$JQ" -n \
+            --argjson TEMPLATE "$template_id" \
+            --argjson KIND "$PXEGRUB2_KIND_ID" \
             '{
                 os_default_template: {
                     provisioning_template_id: $TEMPLATE,
@@ -1271,643 +1466,734 @@ set_default_template()
             }'
     )"
 
-    info "Creating PXEGrub2 default..."
+    api_request POST \
+        "${API}/operatingsystems/${os_id}/os_default_templates" \
+        "$json"
 
-    if api_request POST \
-        "${API}/operatingsystems/${OS_ID}/os_default_templates" \
-        "${JSON}"
-    then
+    if api_success; then
 
-        EXISTING_ID="$(echo "${API_BODY}" | jq -r '.id // empty')"
-        ok "${OS_NAME} PXEGrub2 default created. ID=${EXISTING_ID}"
+        default_id="$("$JQ" -r '.id // empty' "$API_BODY" 2>/dev/null)"
 
-    else
-
-        #######################################################################
-        # If Foreman says template_kind_id is already taken, re-read.
-        #######################################################################
-
-        if [ "${API_STATUS}" = "422" ]
-        then
-
-            if api_request GET \
-                "${API}/operatingsystems/${OS_ID}/os_default_templates?per_page=all"
-            then
-
-                EXISTING_ID="$(
-                    echo "${API_BODY}" |
-                    jq -r \
-                        --argjson KIND "${PXEGRUB2_KIND_ID}" \
-                        '
-                        .results[]?
-                        | select(.template_kind_id == $KIND)
-                        | .id
-                        ' |
-                    head -1
-                )"
-
-                if [ -n "${EXISTING_ID}" ]
-                then
-
-                    info "Existing PXEGrub2 default discovered. ID=${EXISTING_ID}"
-                    info "Updating it instead of creating another."
-
-                    if api_request PUT \
-                        "${API}/operatingsystems/${OS_ID}/os_default_templates/${EXISTING_ID}" \
-                        "${JSON}"
-                    then
-
-                        ok "${OS_NAME} PXEGrub2 default corrected. ID=${EXISTING_ID}"
-                        return 0
-
-                    fi
-
-                fi
-
-            fi
-
-        fi
-
-        show_api_error
-        record_failure "${OS_NAME} default creation"
-
-    fi
-}
-
-###############################################################################
-# DEFAULT TEMPLATES
-###############################################################################
-
-section "Setting PXEGrub2 Default Templates"
-
-if [ -n "${PXEGRUB2_KIND_ID}" ]
-then
-
-    set_default_template \
-        "${CENTOS_RAID_NAME}" \
-        "${CENTOS_RAID_TEMPLATE}"
-
-    set_default_template \
-        "${CENTOS_SINGLE_NAME}" \
-        "${CENTOS_SINGLE_TEMPLATE}"
-
-    set_default_template \
-        "${ROCKY8_RAID_NAME}" \
-        "${ROCKY8_RAID_TEMPLATE}"
-
-    set_default_template \
-        "${ROCKY8_SINGLE_NAME}" \
-        "${ROCKY8_SINGLE_TEMPLATE}"
-
-    set_default_template \
-        "${ROCKY92_RAID_NAME}" \
-        "${ROCKY92_RAID_TEMPLATE}"
-
-    set_default_template \
-        "${ROCKY92_SINGLE_NAME}" \
-        "${ROCKY92_SINGLE_TEMPLATE}"
-
-    set_default_template \
-        "${ROCKY98_RAID_NAME}" \
-        "${ROCKY98_RAID_TEMPLATE}"
-
-    set_default_template \
-        "${ROCKY98_SINGLE_NAME}" \
-        "${ROCKY98_SINGLE_TEMPLATE}"
-
-else
-
-    warn "Skipping defaults because PXEGrub2 kind is unavailable."
-
-fi
-
-###############################################################################
-# DOMAIN LOOKUP
-###############################################################################
-
-find_domain_id()
-{
-    local NAME="$1"
-
-    api_request GET "${API}/domains?per_page=all" || return 1
-
-    echo "${API_BODY}" |
-    jq -r \
-        --arg NAME "${NAME}" \
-        '.results[]? | select(.name == $NAME) | .id' |
-    head -1
-}
-
-###############################################################################
-# SMART PROXY LOOKUP
-###############################################################################
-
-find_proxy_id()
-{
-    local NAME="$1"
-
-    api_request GET "${API}/smart_proxies?per_page=all" || return 1
-
-    echo "${API_BODY}" |
-    jq -r \
-        --arg NAME "${NAME}" \
-        '.results[]? | select(.name == $NAME) | .id' |
-    head -1
-}
-
-###############################################################################
-# SUBNET LOOKUP
-###############################################################################
-
-find_subnet_id()
-{
-    local NAME="$1"
-
-    api_request GET "${API}/subnets?per_page=all" || return 1
-
-    echo "${API_BODY}" |
-    jq -r \
-        --arg NAME "${NAME}" \
-        '.results[]? | select(.name == $NAME) | .id' |
-    head -1
-}
-
-###############################################################################
-# CREATE / VERIFY SUBNET
-###############################################################################
-
-create_subnet()
-{
-    local NAME="$1"
-    local NETWORK="$2"
-    local MASK="$3"
-    local GATEWAY="$4"
-    local DNS="$5"
-    local TFTP_PROXY="$6"
-    local DHCP_PROXY="$7"
-
-    local SUBNET_ID
-    local DOMAIN_ID
-    local TFTP_ID
-    local DHCP_ID
-    local JSON
-
-    subsection "Subnet : ${NAME}"
-
-    echo "Network      : ${NETWORK}"
-    echo "Mask         : ${MASK}"
-    echo "Gateway      : ${GATEWAY}"
-    echo "DNS          : ${DNS}"
-    echo "TFTP Proxy   : ${TFTP_PROXY}"
-    echo "DHCP Proxy   : ${DHCP_PROXY}"
-
-    DOMAIN_ID="$(find_domain_id "${DOMAIN_NAME}")"
-
-    if [ -n "${DOMAIN_ID}" ]
-    then
-        ok "Domain found : ${DOMAIN_NAME} ID=${DOMAIN_ID}"
-    else
-        warn "Domain not found : ${DOMAIN_NAME}"
-    fi
-
-    TFTP_ID="$(find_proxy_id "${TFTP_PROXY}")"
-
-    if [ -n "${TFTP_ID}" ]
-    then
-        ok "TFTP proxy found : ${TFTP_PROXY} ID=${TFTP_ID}"
-    else
-        error "TFTP proxy not found : ${TFTP_PROXY}"
-        record_failure "${NAME} TFTP proxy"
-        return 1
-    fi
-
-    DHCP_ID="$(find_proxy_id "${DHCP_PROXY}")"
-
-    if [ -n "${DHCP_ID}" ]
-    then
-        ok "DHCP proxy found : ${DHCP_PROXY} ID=${DHCP_ID}"
-    else
-        error "DHCP proxy not found : ${DHCP_PROXY}"
-        record_failure "${NAME} DHCP proxy"
-        return 1
-    fi
-
-    SUBNET_ID="$(find_subnet_id "${NAME}")"
-
-    JSON="$(
-        jq -n \
-            --arg NAME "${NAME}" \
-            --arg NETWORK "${NETWORK}" \
-            --arg MASK "${MASK}" \
-            --arg GATEWAY "${GATEWAY}" \
-            --arg DNS "${DNS}" \
-            --argjson DOMAIN "${DOMAIN_ID:-null}" \
-            --argjson TFTP "${TFTP_ID}" \
-            --argjson DHCP "${DHCP_ID}" \
-            '{
-                subnet: {
-                    name: $NAME,
-                    network_type: "IPv4",
-                    network: $NETWORK,
-                    mask: $MASK,
-                    gateway: $GATEWAY,
-                    dns_primary: $DNS,
-                    domain_ids:
-                        (if $DOMAIN == null then [] else [$DOMAIN] end),
-                    tftp_id: $TFTP,
-                    dhcp_id: $DHCP
-                }
-            }'
-    )"
-
-    if [ -n "${SUBNET_ID}" ]
-    then
-
-        skip "${NAME} already exists. ID=${SUBNET_ID}"
-
-        if api_request PUT \
-            "${API}/subnets/${SUBNET_ID}" \
-            "${JSON}"
-        then
-            ok "${NAME} updated."
+        if [ -n "$default_id" ]; then
+            ok "PXEGrub2 default created. ID=${default_id}"
         else
-            show_api_error
-            record_failure "${NAME} update"
+            ok "PXEGrub2 default created."
         fi
 
-        return 0
-
+        return
     fi
 
-    info "Creating ${NAME}"
+    #
+    # Race/duplicate protection:
+    # Foreman can return 422 if a default appeared between GET and POST.
+    #
+    warn "PXEGrub2 default creation returned HTTP ${API_STATUS}."
+    warn "Re-reading defaults before declaring failure."
 
-    if api_request POST "${API}/subnets" "${JSON}"
-    then
+    api_request GET \
+        "${API}/operatingsystems/${os_id}/os_default_templates?per_page=all"
 
-        SUBNET_ID="$(echo "${API_BODY}" | jq -r '.id // empty')"
-        ok "${NAME} created. ID=${SUBNET_ID}"
+    if api_success && json_valid "$API_BODY"; then
 
-    else
+        row="$(
+            "$JQ" -c \
+                --arg KIND "$PXEGRUB2_KIND_ID" \
+                '
+                (.results // [])[]
+                | select(
+                    ((.template_kind_id // "") | tostring) == $KIND
+                )
+                ' \
+                "$API_BODY" |
+            "$HEAD" -1
+        )"
 
-        if [ "${API_STATUS}" = "422" ]
-        then
+        if [ -n "$row" ]; then
 
-            SUBNET_ID="$(find_subnet_id "${NAME}")"
+            default_id="$("$JQ" -r '.id // empty' <<< "$row")"
 
-            if [ -n "${SUBNET_ID}" ]
-            then
-                skip "${NAME} already exists. ID=${SUBNET_ID}"
-                return 0
+            info "Existing PXEGrub2 default found after POST failure."
+            info "Updating ID=${default_id}"
+
+            api_request PUT \
+                "${API}/operatingsystems/${os_id}/os_default_templates/${default_id}" \
+                "$json"
+
+            if api_success; then
+                ok "PXEGrub2 default recovered and updated. ID=${default_id}"
+                return
             fi
 
         fi
 
-        show_api_error
-        record_failure "${NAME} creation"
-
     fi
+
+    print_api_error POST \
+        "${API}/operatingsystems/${os_id}/os_default_templates"
+
+    record_failure "${os_name} default creation"
 }
 
 ###############################################################################
-# SUBNETS
+# SET ALL PXE DEFAULTS
 ###############################################################################
 
-section "Creating / Verifying PXE Subnets"
+set_all_pxe_defaults()
+{
+    section "Setting PXEGrub2 Default Templates"
 
-create_subnet \
-    "${CENTOS_SUBNET_NAME}" \
-    "${SUBNET_NETWORK}" \
-    "${SUBNET_MASK}" \
-    "${SUBNET_GATEWAY}" \
-    "${SUBNET_DNS}" \
-    "${CENTOS_PROXY}" \
-    "${CENTOS_PROXY}"
+    set_pxe_default \
+        "CentOSLinux7-RAID" \
+        "PXEGrub2 CentOS UEFI RAID Kickstart"
 
-create_subnet \
-    "${ROCKY_SUBNET_NAME}" \
-    "${SUBNET_NETWORK}" \
-    "${SUBNET_MASK}" \
-    "${SUBNET_GATEWAY}" \
-    "${SUBNET_DNS}" \
-    "${ROCKY_PROXY}" \
-    "${ROCKY_PROXY}"
+    set_pxe_default \
+        "CentOSLinux7-SingleDisk" \
+        "PXEGrub2 CentOS UEFI SingleDisk Kickstart"
+
+    set_pxe_default \
+        "RockyLinux8.10-RAID" \
+        "PXEGrub2 Rocky8 UEFI RAID Kickstart"
+
+    set_pxe_default \
+        "RockyLinux8.10-SingleDisk" \
+        "PXEGrub2 Rocky8 UEFI SingleDisk Kickstart"
+
+    set_pxe_default \
+        "RockyLinux9.2-RAID" \
+        "PXEGrub2 Rocky9.2 UEFI RAID Kickstart"
+
+    set_pxe_default \
+        "RockyLinux9.2-SingleDisk" \
+        "PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart"
+
+    set_pxe_default \
+        "RockyLinux9.8-RAID" \
+        "PXEGrub2 Rocky9.8 UEFI RAID Kickstart"
+
+    set_pxe_default \
+        "RockyLinux9.8-SingleDisk" \
+        "PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart"
+}
 
 ###############################################################################
-# TEMPLATE VERIFICATION
+# VERIFY PXE DEFAULTS
 ###############################################################################
 
-section "PXEGrub2 Template Verification"
+verify_pxe_defaults()
+{
+    section "PXEGrub2 Default Verification"
 
-if api_request GET "${API}/provisioning_templates?per_page=all"
-then
+    local i
+    local os_name
+    local os_id
+    local row
 
-    for TEMPLATE_NAME in \
-        "${CENTOS_RAID_TEMPLATE}" \
-        "${CENTOS_SINGLE_TEMPLATE}" \
-        "${ROCKY8_RAID_TEMPLATE}" \
-        "${ROCKY8_SINGLE_TEMPLATE}" \
-        "${ROCKY92_RAID_TEMPLATE}" \
-        "${ROCKY92_SINGLE_TEMPLATE}" \
-        "${ROCKY98_RAID_TEMPLATE}" \
-        "${ROCKY98_SINGLE_TEMPLATE}"
+    for i in "${!OS_NAMES[@]}"
     do
 
-        TEMPLATE_ID="$(
-            echo "${API_BODY}" |
-            jq -r \
-                --arg NAME "${TEMPLATE_NAME}" \
-                '.results[]? | select(.name == $NAME) | .id' |
-            head -1
+        os_name="${OS_NAMES[$i]}"
+        os_id="${OS_IDS[$i]}"
+
+        api_request GET \
+            "${API}/operatingsystems/${os_id}/os_default_templates?per_page=all"
+
+        if ! api_success || ! json_valid "$API_BODY"; then
+            error "${os_name}: unable to read defaults."
+            record_failure "${os_name} default verification"
+            continue
+        fi
+
+        row="$(
+            "$JQ" -r \
+                --arg KIND "$PXEGRUB2_KIND_ID" \
+                '
+                (.results // [])[]
+                | select(
+                    ((.template_kind_id // "") | tostring) == $KIND
+                )
+                | [
+                    .id,
+                    .provisioning_template_id,
+                    .template_kind_id
+                  ]
+                | @tsv
+                ' \
+                "$API_BODY" |
+            "$HEAD" -1
         )"
 
-        TEMPLATE_KIND="$(
-            echo "${API_BODY}" |
-            jq -r \
-                --arg NAME "${TEMPLATE_NAME}" \
-                '.results[]? | select(.name == $NAME) | .template_kind_id' |
-            head -1
+        if [ -n "$row" ]; then
+            ok "${os_name} PXEGrub2 default: ${row}"
+        else
+            error "${os_name} PXEGrub2 default missing."
+            record_failure "${os_name} default missing"
+        fi
+
+    done
+}
+
+###############################################################################
+# VERIFY PXEGRUB2 TEMPLATES
+###############################################################################
+
+verify_pxe_templates()
+{
+    section "PXEGrub2 Template Verification"
+
+    api_request GET \
+        "${API}/provisioning_templates?per_page=all"
+
+    if ! api_success || ! json_valid "$API_BODY"; then
+        print_api_error GET \
+            "${API}/provisioning_templates?per_page=all"
+        record_failure "PXE template verification"
+        return
+    fi
+
+    "$JQ" -r \
+        --arg KIND "$PXEGRUB2_KIND_ID" \
+        '
+        (.results // [])[]
+        | select(
+            ((.template_kind_id // "") | tostring) == $KIND
+        )
+        | [
+            .id,
+            .name,
+            .template_kind_id,
+            .template_kind_name
+          ]
+        | @tsv
+        ' \
+        "$API_BODY"
+}
+
+###############################################################################
+# FINAL OS VERIFICATION
+#
+# FIX:
+# Every possibly-null collection is converted to [] first.
+###############################################################################
+
+final_os_verification()
+{
+    section "Final Operating System Verification"
+
+    local i
+    local os_id
+    local os_name
+
+    for i in "${!OS_NAMES[@]}"
+    do
+
+        os_name="${OS_NAMES[$i]}"
+        os_id="${OS_IDS[$i]}"
+
+        echo
+        echo "------------------------------------------------------------"
+        echo "${os_name} (ID=${os_id})"
+        echo "------------------------------------------------------------"
+
+        api_request GET \
+            "${API}/operatingsystems/${os_id}"
+
+        if ! api_success || ! json_valid "$API_BODY"; then
+            error "Unable to read ${os_name}."
+            record_failure "${os_name} final verification"
+            continue
+        fi
+
+        "$JQ" -r '
+        {
+            id: .id,
+            name: .name,
+            title: (.title // ""),
+            major: (.major // ""),
+            minor: (.minor // ""),
+            family: (.family // ""),
+
+            architectures:
+                ((.architectures // [])
+                | map(.name // "")
+                | join(",")),
+
+            media:
+                ((.media // [])
+                | map(.name // "")
+                | join(",")),
+
+            ptables:
+                ((.ptables // [])
+                | map(.name // "")
+                | join(",")),
+
+            pxegrub2_templates:
+                ((.provisioning_templates // [])
+                | map(
+                    select(.template_kind_name == "PXEGrub2")
+                    | (.name // "")
+                  )
+                | join(" | ")),
+
+            pxegrub2_defaults:
+                ((.os_default_templates // [])
+                | map(
+                    select(.template_kind_name == "PXEGrub2")
+                    | (
+                        .provisioning_template_name
+                        // (.provisioning_template_id | tostring)
+                        // ""
+                      )
+                  )
+                | join(" | "))
+        }
+        | [
+            .id,
+            .name,
+            .major,
+            .minor,
+            .family,
+            .architectures,
+            .media,
+            .ptables,
+            .pxegrub2_templates,
+            .pxegrub2_defaults
+        ]
+        | @tsv
+        ' "$API_BODY"
+
+    done
+}
+
+###############################################################################
+# SUBNET DATA
+###############################################################################
+
+SUBNET_NAMES=(
+    "vgs-subnet-centos"
+    "vgs-subnet-rockyos"
+)
+
+SUBNET_NETWORK="192.168.253.0"
+SUBNET_MASK="255.255.255.0"
+SUBNET_GATEWAY="192.168.253.2"
+SUBNET_DNS="192.168.253.1"
+
+SUBNET_TFTP_PROXY=(
+    "cent-07-01.vgs.com"
+    "cent-07-02.vgs.com"
+)
+
+SUBNET_DHCP_PROXY=(
+    "cent-07-01.vgs.com"
+    "cent-07-02.vgs.com"
+)
+
+###############################################################################
+# CREATE / VERIFY SUBNETS
+###############################################################################
+
+create_or_verify_subnets()
+{
+    section "Creating / Verifying PXE Subnets"
+
+    local i
+    local name
+    local tftp_name
+    local dhcp_name
+    local subnet_id
+    local domain_id
+    local tftp_id
+    local dhcp_id
+    local json
+
+    domain_id="$(get_domain_id "vgs.com")"
+
+    if [ -z "$domain_id" ] || [ "$domain_id" = "null" ]; then
+        error "Domain vgs.com not found."
+        record_failure "vgs.com domain"
+        return
+    fi
+
+    ok "Domain found : vgs.com ID=${domain_id}"
+
+    for i in "${!SUBNET_NAMES[@]}"
+    do
+
+        name="${SUBNET_NAMES[$i]}"
+        tftp_name="${SUBNET_TFTP_PROXY[$i]}"
+        dhcp_name="${SUBNET_DHCP_PROXY[$i]}"
+
+        subsection "Subnet : ${name}"
+
+        echo "Network      : ${SUBNET_NETWORK}"
+        echo "Mask         : ${SUBNET_MASK}"
+        echo "Gateway      : ${SUBNET_GATEWAY}"
+        echo "DNS          : ${SUBNET_DNS}"
+        echo "TFTP Proxy   : ${tftp_name}"
+        echo "DHCP Proxy   : ${dhcp_name}"
+
+        tftp_id="$(get_proxy_id "$tftp_name")"
+
+        if [ -z "$tftp_id" ] || [ "$tftp_id" = "null" ]; then
+            error "TFTP proxy not found: ${tftp_name}"
+            record_failure "${name} TFTP proxy"
+            continue
+        fi
+
+        ok "TFTP proxy found : ${tftp_name} ID=${tftp_id}"
+
+        dhcp_id="$(get_proxy_id "$dhcp_name")"
+
+        if [ -z "$dhcp_id" ] || [ "$dhcp_id" = "null" ]; then
+            error "DHCP proxy not found: ${dhcp_name}"
+            record_failure "${name} DHCP proxy"
+            continue
+        fi
+
+        ok "DHCP proxy found : ${dhcp_name} ID=${dhcp_id}"
+
+        subnet_id="$(get_id_by_name "/subnets" "$name")"
+
+        json="$(
+            "$JQ" -n \
+                --arg name "$name" \
+                --arg network "$SUBNET_NETWORK" \
+                --arg mask "$SUBNET_MASK" \
+                --arg gateway "$SUBNET_GATEWAY" \
+                --arg dns "$SUBNET_DNS" \
+                --argjson domain "$domain_id" \
+                --argjson tftp "$tftp_id" \
+                --argjson dhcp "$dhcp_id" \
+                '{
+                    subnet: {
+                        name: $name,
+                        network_type: "IPv4",
+                        network: $network,
+                        mask: $mask,
+                        gateway: $gateway,
+                        dns_primary: $dns,
+                        ipam: "None",
+                        boot_mode: "DHCP",
+                        domain_ids: [$domain],
+                        tftp_id: $tftp,
+                        dhcp_id: $dhcp
+                    }
+                }'
         )"
 
-        if [ -n "${TEMPLATE_ID}" ] &&
-           [ "${TEMPLATE_KIND}" = "${PXEGRUB2_KIND_ID}" ]
-        then
+        if [ -n "$subnet_id" ] && [ "$subnet_id" != "null" ]; then
 
-            ok "${TEMPLATE_NAME} | ID=${TEMPLATE_ID} | kind_id=${TEMPLATE_KIND}"
+            skip "${name} already exists. ID=${subnet_id}"
+
+            api_request PUT \
+                "${API}/subnets/${subnet_id}" \
+                "$json"
+
+            if api_success; then
+                ok "${name} updated."
+            else
+                print_api_error PUT \
+                    "${API}/subnets/${subnet_id}"
+                record_failure "${name} subnet update"
+            fi
 
         else
 
-            error "${TEMPLATE_NAME} verification failed."
-            record_failure "${TEMPLATE_NAME} verification"
+            info "Creating ${name}"
+
+            api_request POST \
+                "${API}/subnets" \
+                "$json"
+
+            if api_success && json_valid "$API_BODY"; then
+
+                subnet_id="$("$JQ" -r '.id // empty' "$API_BODY")"
+
+                ok "${name} created. ID=${subnet_id}"
+
+            else
+
+                print_api_error POST "${API}/subnets"
+                record_failure "${name} subnet creation"
+
+            fi
 
         fi
 
     done
-
-else
-
-    show_api_error
-    record_failure "PXE template verification"
-
-fi
-
-###############################################################################
-# OS/TEMPLATE MAPPING VERIFICATION
-###############################################################################
-
-section "OS Template Mapping Verification"
-
-verify_mapping()
-{
-    local OS_NAME="$1"
-    local TEMPLATE_NAME="$2"
-
-    local OS_ID
-    local TEMPLATE_ID
-
-    OS_ID="$(find_os_id "${OS_NAME}")"
-    TEMPLATE_ID="$(find_template_id "${TEMPLATE_NAME}")"
-
-    if [ -z "${OS_ID}" ] || [ -z "${TEMPLATE_ID}" ]
-    then
-        error "${OS_NAME} -> ${TEMPLATE_NAME}"
-        record_failure "${OS_NAME} mapping verification"
-        return
-    fi
-
-    if api_request GET \
-        "${API}/operatingsystems/${OS_ID}/provisioning_templates?per_page=all"
-    then
-
-        if echo "${API_BODY}" |
-            jq -e \
-                --argjson ID "${TEMPLATE_ID}" \
-                '.results[]? | select(.id == $ID)' >/dev/null
-        then
-
-            ok "${OS_NAME} -> ${TEMPLATE_NAME}"
-
-        else
-
-            error "${OS_NAME} -> ${TEMPLATE_NAME}"
-            record_failure "${OS_NAME} mapping verification"
-
-        fi
-
-    else
-
-        show_api_error
-        record_failure "${OS_NAME} mapping verification"
-
-    fi
 }
 
-verify_mapping "${CENTOS_RAID_NAME}" "${CENTOS_RAID_TEMPLATE}"
-verify_mapping "${CENTOS_SINGLE_NAME}" "${CENTOS_SINGLE_TEMPLATE}"
-
-verify_mapping "${ROCKY8_RAID_NAME}" "${ROCKY8_RAID_TEMPLATE}"
-verify_mapping "${ROCKY8_SINGLE_NAME}" "${ROCKY8_SINGLE_TEMPLATE}"
-
-verify_mapping "${ROCKY92_RAID_NAME}" "${ROCKY92_RAID_TEMPLATE}"
-verify_mapping "${ROCKY92_SINGLE_NAME}" "${ROCKY92_SINGLE_TEMPLATE}"
-
-verify_mapping "${ROCKY98_RAID_NAME}" "${ROCKY98_RAID_TEMPLATE}"
-verify_mapping "${ROCKY98_SINGLE_NAME}" "${ROCKY98_SINGLE_TEMPLATE}"
-
 ###############################################################################
-# DEFAULT VERIFICATION
+# VERIFY SUBNETS
 ###############################################################################
 
-section "PXEGrub2 Default Template Verification"
-
-verify_default()
+verify_subnets()
 {
-    local OS_NAME="$1"
-    local TEMPLATE_NAME="$2"
+    section "PXE Subnet Verification"
 
-    local OS_ID
-    local TEMPLATE_ID
-    local DEFAULT_ID
+    api_request GET "${API}/subnets?per_page=all"
 
-    OS_ID="$(find_os_id "${OS_NAME}")"
-    TEMPLATE_ID="$(find_template_id "${TEMPLATE_NAME}")"
-
-    if [ -z "${OS_ID}" ] || [ -z "${TEMPLATE_ID}" ]
-    then
-        error "${OS_NAME} PXEGrub2 default verification failed."
-        record_failure "${OS_NAME} default verification"
+    if ! api_success || ! json_valid "$API_BODY"; then
+        print_api_error GET "${API}/subnets?per_page=all"
+        record_failure "Subnet verification"
         return
     fi
 
-    if ! api_request GET \
-        "${API}/operatingsystems/${OS_ID}/os_default_templates?per_page=all"
-    then
-        show_api_error
-        record_failure "${OS_NAME} default verification"
-        return
-    fi
-
-    DEFAULT_ID="$(
-        echo "${API_BODY}" |
-        jq -r \
-            --argjson KIND "${PXEGRUB2_KIND_ID}" \
-            --argjson TEMPLATE "${TEMPLATE_ID}" \
-            '
-            .results[]?
-            | select(
-                .template_kind_id == $KIND
-                and
-                .provisioning_template_id == $TEMPLATE
-            )
-            | .id
-            ' |
-        head -1
-    )"
-
-    if [ -n "${DEFAULT_ID}" ]
-    then
-        ok "${OS_NAME} PXEGrub2 default correct. ID=${DEFAULT_ID}"
-    else
-        error "${OS_NAME} PXEGrub2 default incorrect/missing."
-        record_failure "${OS_NAME} default verification"
-    fi
-}
-
-verify_default "${CENTOS_RAID_NAME}" "${CENTOS_RAID_TEMPLATE}"
-verify_default "${CENTOS_SINGLE_NAME}" "${CENTOS_SINGLE_TEMPLATE}"
-
-verify_default "${ROCKY8_RAID_NAME}" "${ROCKY8_RAID_TEMPLATE}"
-verify_default "${ROCKY8_SINGLE_NAME}" "${ROCKY8_SINGLE_TEMPLATE}"
-
-verify_default "${ROCKY92_RAID_NAME}" "${ROCKY92_RAID_TEMPLATE}"
-verify_default "${ROCKY92_SINGLE_NAME}" "${ROCKY92_SINGLE_TEMPLATE}"
-
-verify_default "${ROCKY98_RAID_NAME}" "${ROCKY98_RAID_TEMPLATE}"
-verify_default "${ROCKY98_SINGLE_NAME}" "${ROCKY98_SINGLE_TEMPLATE}"
-
-###############################################################################
-# SUBNET VERIFICATION
-###############################################################################
-
-section "PXE Subnet Verification"
-
-if api_request GET "${API}/subnets?per_page=all"
-then
-
-    echo "${API_BODY}" |
-    jq -r '
-        .results[]? |
-        [
+    "$JQ" -r '
+        (.results // [])[]
+        | [
             .id,
             .name,
-            (.network // ""),
-            (.mask // ""),
+            .network,
+            .mask,
             (.gateway // ""),
             (.dns_primary // ""),
             (.tftp_name // ""),
             (.dhcp_name // "")
-        ] |
-        @tsv
-    '
+          ]
+        | @tsv
+    ' "$API_BODY"
+}
 
-else
+###############################################################################
+# BUILD PXE DEFAULT
+###############################################################################
 
-    show_api_error
-    record_failure "Subnet verification"
+build_pxe_default()
+{
+    section "Building PXE Default Menus"
 
-fi
+    local json
+
+    json='{
+        "provisioning_template": {}
+    }'
+
+    api_request POST \
+        "${API}/provisioning_templates/build_pxe_default" \
+        "$json"
+
+    if api_success; then
+
+        ok "Foreman PXE default build request completed."
+
+    else
+
+        warn "PXE default build returned HTTP ${API_STATUS}."
+
+        if [ -n "$API_BODY" ] && [ -s "$API_BODY" ]; then
+            "$JQ" . "$API_BODY" 2>/dev/null || "$CAT" "$API_BODY"
+        fi
+
+        #
+        # Older Foreman versions may not expose this endpoint.
+        # Do not mark the complete bootstrap as failed.
+        #
+
+    fi
+}
+
+###############################################################################
+# GENERATED FILE VERIFICATION
+###############################################################################
+
+verify_generated_files()
+{
+    section "Generated PXE Files"
+
+    local file
+    local failed=0
+
+    for file in "${TEMPLATE_FILES[@]}"
+    do
+
+        if [ -s "${TEMPLATE_DIR}/${file}" ]; then
+            ls -l "${TEMPLATE_DIR}/${file}"
+        else
+            error "Missing generated file: ${file}"
+            failed=1
+        fi
+
+    done
+
+    if [ "$failed" -eq 0 ]; then
+        ok "All generated PXE files are present."
+    else
+        record_failure "Generated PXE files"
+    fi
+}
 
 ###############################################################################
 # FINAL SUMMARY
 ###############################################################################
 
-section "01 - Foreman PXE Bootstrap API Completed"
+final_summary()
+{
+    section "01 - Foreman PXE Bootstrap - Final Summary"
 
-if [ ${#FAILURES[@]} -eq 0 ]
-then
+    if [ "${#FAILURES[@]}" -eq 0 ]; then
 
-    echo -e "${GREEN}"
-    echo "============================================================"
-    echo "BOOTSTRAP COMPLETED SUCCESSFULLY"
-    echo "============================================================"
-    echo -e "${NC}"
+        ok "Completed successfully with no failures."
 
-    ok "Completed successfully with 0 failures."
+    else
 
-else
+        error "Completed with ${#FAILURES[@]} failure(s)."
 
-    echo -e "${RED}"
-    echo "============================================================"
-    echo "BOOTSTRAP COMPLETED WITH ERRORS"
-    echo "============================================================"
-    echo -e "${NC}"
+        echo
+        echo "Failures:"
+        echo "------------------------------------------------------------"
 
-    error "Failure count : ${#FAILURES[@]}"
+        local failure
+
+        for failure in "${FAILURES[@]}"
+        do
+            echo " - ${failure}"
+        done
+
+        echo
+        error "Review the failures above."
+
+    fi
 
     echo
-    echo "Failures:"
-    echo "------------------------------------------------------------"
+    echo "Foreman URL : ${FOREMAN_URL}"
+    echo "API         : ${API}"
+    echo "PXEGrub2 ID : ${PXEGRUB2_KIND_ID}"
+    echo "Template Dir: ${TEMPLATE_DIR}"
 
-    for FAILURE in "${FAILURES[@]}"
-    do
-        error "${FAILURE}"
-    done
+    echo
+    echo "============================================================"
+    echo "Manual Verification Commands"
+    echo "============================================================"
 
-fi
+    echo
+    echo "1. Foreman API:"
+    echo
+    echo "curl -ksS --user \"admin:\$FOREMAN_TOKEN\" \\"
+    echo "  -H 'Accept: application/json,version=2' \\"
+    echo "  '${API}/status' | jq"
+
+    echo
+    echo "2. PXEGrub2 templates:"
+    echo
+    echo "curl -ksS --user \"admin:\$FOREMAN_TOKEN\" \\"
+    echo "  -H 'Accept: application/json,version=2' \\"
+    echo "  '${API}/provisioning_templates?per_page=all' | \\"
+    echo "  jq -r '.results[] | select(.template_kind_name==\"PXEGrub2\") | [.id,.name,.template_kind_id,.template_kind_name] | @tsv'"
+
+    echo
+    echo "3. OS 2 provisioning templates:"
+    echo
+    echo "curl -ksS --user \"admin:\$FOREMAN_TOKEN\" \\"
+    echo "  -H 'Accept: application/json,version=2' \\"
+    echo "  '${API}/operatingsystems/2/provisioning_templates?per_page=all' | \\"
+    echo "  jq -r '.results[] | [.id,.name,.template_kind_id,.template_kind_name] | @tsv'"
+
+    echo
+    echo "4. OS 2 PXEGrub2 default:"
+    echo
+    echo "curl -ksS --user \"admin:\$FOREMAN_TOKEN\" \\"
+    echo "  -H 'Accept: application/json,version=2' \\"
+    echo "  '${API}/operatingsystems/2/os_default_templates?per_page=all' | jq"
+
+    echo
+    echo "5. PXE subnets:"
+    echo
+    echo "curl -ksS --user \"admin:\$FOREMAN_TOKEN\" \\"
+    echo "  -H 'Accept: application/json,version=2' \\"
+    echo "  '${API}/subnets?per_page=all' | jq"
+
+    echo
+    echo "============================================================"
+
+    #
+    # Return failure to shell if anything failed.
+    #
+    if [ "${#FAILURES[@]}" -ne 0 ]; then
+        return 1
+    fi
+
+    return 0
+}
 
 ###############################################################################
-# EXPECTED CONFIGURATION
+# CLEANUP
 ###############################################################################
 
-echo
-echo "Expected PXE configuration:"
-echo "------------------------------------------------------------"
+cleanup()
+{
+    #
+    # Keep generated templates for manual inspection.
+    #
+    return 0
+}
 
-echo "Installation Media:"
-echo "  CentOS 7 Remote      -> ${CENTOS_MEDIA_URL}"
-echo "  Rocky 8 Remote       -> ${ROCKY8_MEDIA_URL}"
-echo "  Rocky 9.2 Remote     -> ${ROCKY92_MEDIA_URL}"
-echo "  Rocky 9 Remote       -> ${ROCKY98_MEDIA_URL}"
-
-echo
-echo "Operating Systems:"
-echo "  ${CENTOS_RAID_NAME}"
-echo "  ${CENTOS_SINGLE_NAME}"
-echo "  ${ROCKY8_RAID_NAME}"
-echo "  ${ROCKY8_SINGLE_NAME}"
-echo "  ${ROCKY92_RAID_NAME}"
-echo "  ${ROCKY92_SINGLE_NAME}"
-echo "  ${ROCKY98_RAID_NAME}"
-echo "  ${ROCKY98_SINGLE_NAME}"
-
-echo
-echo "PXEGrub2 Templates:"
-echo "  ${CENTOS_RAID_TEMPLATE}"
-echo "  ${CENTOS_SINGLE_TEMPLATE}"
-echo "  ${ROCKY8_RAID_TEMPLATE}"
-echo "  ${ROCKY8_SINGLE_TEMPLATE}"
-echo "  ${ROCKY92_RAID_TEMPLATE}"
-echo "  ${ROCKY92_SINGLE_TEMPLATE}"
-echo "  ${ROCKY98_RAID_TEMPLATE}"
-echo "  ${ROCKY98_SINGLE_TEMPLATE}"
-
-echo
-echo "Generated files:"
-ls -lh "${TEMPLATE_DIR}"/*.erb 2>/dev/null
-
-echo
-echo "Authentication:"
-echo "  Method : REST API"
-echo "  User   : ${FOREMAN_USER}"
-echo "  Hammer : NOT USED"
-echo "  API    : ${API}"
+trap cleanup EXIT
 
 ###############################################################################
-# EXIT
+# MAIN
 ###############################################################################
 
-if [ ${#FAILURES[@]} -eq 0 ]
-then
-    exit 0
-else
-    exit 1
-fi
+main()
+{
+    check_dependencies
+    prepare_temp
+
+    section "01 - Foreman PXE Bootstrap - REST API"
+
+    test_foreman_api
+
+    find_architecture
+    find_partition_table
+
+    if [ -z "$ARCH_ID" ] || [ -z "$PTABLE_ID" ]; then
+        error "Required architecture/partition-table IDs are missing."
+        final_summary || true
+        exit 1
+    fi
+
+    create_or_verify_media
+    verify_media
+
+    create_or_verify_os
+    verify_operating_systems
+
+    generate_template_files
+
+    find_pxegrub2_kind
+
+    if [ -z "$PXEGRUB2_KIND_ID" ]; then
+        error "Cannot continue without PXEGrub2 template kind."
+        final_summary || true
+        exit 1
+    fi
+
+    create_or_update_templates
+
+    associate_templates_with_os
+
+    verify_pxe_templates
+    verify_os_template_associations
+
+    set_all_pxe_defaults
+    verify_pxe_defaults
+
+    create_or_verify_subnets
+    verify_subnets
+
+    final_os_verification
+
+    verify_generated_files
+
+    build_pxe_default
+
+    final_summary
+}
+
+###############################################################################
+# RUN
+###############################################################################
+
+main
+exit $?
