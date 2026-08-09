@@ -2294,66 +2294,121 @@ main()
 {
     check_dependencies
 
-    section "01 - Foreman PXE Bootstrap - REST API"
+    header "01 - Foreman PXE Bootstrap - REST API"
+
+    ###########################################################################
+    # FOREMAN API
+    ###########################################################################
 
     test_api
 
-    create_or_verify_media
+    ###########################################################################
+    # INSTALLATION MEDIA
+    ###########################################################################
 
+    create_or_verify_media
     verify_media
 
-    find_architecture
+    ###########################################################################
+    # ARCHITECTURE / PARTITION TABLE
+    ###########################################################################
 
+    find_architecture
     find_partition_table
 
-    create_or_verify_operating_systems
+    if [ -z "$ARCH_ID" ]; then
+        error "Cannot continue without architecture."
+        exit 1
+    fi
 
+    if [ -z "$PARTITION_TABLE_ID" ]; then
+        error "Cannot continue without partition table."
+        exit 1
+    fi
+
+    ###########################################################################
+    # OPERATING SYSTEMS
+    ###########################################################################
+
+    create_or_verify_os
     verify_operating_systems
 
-    generate_pxe_templates
+    ###########################################################################
+    # PXE TEMPLATE FILES
+    ###########################################################################
 
-    find_pxegrub2_kind
+    generate_templates
+
+    ###########################################################################
+    # PXEGRUB2 TEMPLATE KIND
+    ###########################################################################
+
+    if ! find_pxegrub2_kind; then
+        error "Cannot continue with PXEGrub2 template kind."
+        exit 1
+    fi
+
+    if [ -z "$PXEGRUB2_KIND_ID" ]; then
+        error "PXEGrub2 template kind ID is empty."
+        exit 1
+    fi
+
+    ###########################################################################
+    # CREATE / UPDATE PXEGRUB2 TEMPLATES
+    ###########################################################################
 
     create_or_verify_templates
 
+    ###########################################################################
+    # ASSOCIATE TEMPLATES WITH OPERATING SYSTEMS
+    ###########################################################################
+
     associate_all_templates
+
+    ###########################################################################
+    # SET PXEGRUB2 DEFAULTS
+    ###########################################################################
 
     set_all_pxe_defaults
 
+    ###########################################################################
+    # CREATE / VERIFY PXE SUBNETS
+    ###########################################################################
+
     create_subnets
+
+    ###########################################################################
+    # VERIFICATION
+    ###########################################################################
 
     verify_subnets
 
-    verify_templates
+    verify_pxe_templates
 
-    verify_os_associations
+    verify_os_template_associations
 
-    verify_defaults
+    verify_pxe_defaults
 
     final_os_verification
 
     verify_generated_files
 
+    ###########################################################################
+    # REBUILD PXE
+    ###########################################################################
+
     rebuild_pxe
 
+    ###########################################################################
+    # FINAL SUMMARY
+    ###########################################################################
+
     final_summary
-
-    manual_verification
-
-    ###########################################################################
-    # Exit status
-    ###########################################################################
-
-    if [ "${FAILURES:-0}" -gt 0 ]; then
-        return 1
-    fi
-
-    return 0
 }
 
-
 ###############################################################################
-# SCRIPT ENTRY POINT
+# RUN
 ###############################################################################
 
-main "$@"
+main
+exit $?
