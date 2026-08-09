@@ -391,9 +391,26 @@ get_ptable_id()
 
 get_kind_id()
 {
-    lookup_from_collection \
-        /api/provisioning_template_kinds \
-        "PXEGrub2"
+    # Foreman 3.2.1 may return HTML for
+    # /api/provisioning_template_kinds.
+    # Use provisioning templates to resolve PXEGrub2 kind ID.
+
+    api_get "/api/provisioning_templates?per_page=all" >/dev/null
+
+    if [[ ! "$HTTP_STATUS" =~ ^2[0-9][0-9]$ ]]
+    then
+        return 1
+    fi
+
+    jq -r '
+        (.results // [])
+        | map(select(
+            (.template_kind_name // "") == "PXEGrub2"
+        ))
+        | .[0]
+        | .template_kind_id // empty
+    ' "$BODY" |
+    head -1
 }
 
 get_subnet_id()
@@ -1343,27 +1360,23 @@ set_default_template()
     then
 
         if jq -e '
-            (
-                .errors.template_kind_id // []
-            )[]
-        ' "$BODY" 2>/dev/null |
-            grep -qiE 'already been taken|taken|already'
+            .error.errors.template_kind_id[]?
+            | test("already|taken|exist"; "i")
+        ' "$BODY" >/dev/null 2>&1
         then
 
             skip "PXEGrub2 default already exists. Template kind already taken."
-
             return 0
 
         fi
 
-        if jq -r '
-            .full_messages[]? // empty
-        ' "$BODY" 2>/dev/null |
-            grep -qiE 'template kind.*taken|already'
+        if jq -e '
+            .error.full_messages[]?
+            | test("template kind.*taken|already|exist"; "i")
+        ' "$BODY" >/dev/null 2>&1
         then
 
             skip "PXEGrub2 default already exists. Template kind already taken."
-
             return 0
 
         fi
@@ -1611,33 +1624,44 @@ verify_default_mapping()
 
 verify_single_disk_hostgroups()
 {
-    header "[4/5] Single Disk Hostgroup Verification"
+header "[4/5] Single Disk Hostgroup Verification"
 
-    ###########################################################################
-    # CentOS 7
-    ###########################################################################
+###########################################################################
+# CentOS 7
+###########################################################################
+
+verify_hostgroup \
+    "CentOSLinux7-SingleDisk"
+
+###########################################################################
+# Rocky Linux 8.10
+###########################################################################
+
+verify_hostgroup \
+    "RockyLinux8.10-SingleDisk"
+
+###########################################################################
+# Rocky Linux 9.2
+###########################################################################
+
+if [ "${TARGET_VERSION}" = "9.2" ]
+then
 
     verify_hostgroup \
-        "${CENTOS_HOSTGROUP}"
+        "RockyLinux9.2-SingleDisk"
 
-    ###########################################################################
-    # Rocky Linux 8.10
-    ###########################################################################
+###########################################################################
+# Rocky Linux 9.8
+###########################################################################
+
+elif [ "${TARGET_VERSION}" = "9.8" ]
+then
 
     verify_hostgroup \
-        "${ROCKY8_HOSTGROUP}"
+        "RockyLinux9.8-SingleDisk"
 
-    ###########################################################################
-    # Rocky Linux 9
-    ###########################################################################
+fi
 
-    for HOSTGROUP in "${ROCKY_HOSTGROUPS[@]}"
-    do
-
-        verify_hostgroup \
-            "${HOSTGROUP}"
-
-    done
 }
 
 ###############################################################################
@@ -2159,59 +2183,12 @@ EOF
 }
 
 ###############################################################################
-# Main
+# Exit
 ###############################################################################
 
-main()
-{
-    check_dependencies
-
-    print_configuration
-
-    test_foreman_api
-
-    resolve_resources
-
-    resolve_media
-
-    select_configuration
-
-    resolve_domain
-
-    create_single_disk_hostgroups
-
-    configure_single_disk_templates
-
-    configure_single_disk_defaults
-
-    verify_single_disk_hostgroups
-
-    verify_single_disk_templates
-
-    verify_single_disk_defaults
-
-    final_verification
-
-    configuration_summary
-
-    final_status
-
-    manual_verification
-
-    ###########################################################################
-    # Exit
-    ###########################################################################
-
-    if [ "${#FAILED_STEPS[@]}" -eq 0 ]
-    then
-        exit 0
-    else
-        exit 1
-    fi
-}
-
-###############################################################################
-# Execute
-###############################################################################
-
-main "$@"
+if [ "${#FAILED_STEPS[@]}" -eq 0 ]
+then
+    exit 0
+else
+    exit 1
+fi
