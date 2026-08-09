@@ -760,8 +760,8 @@ create_or_verify_os()
                             minor: $minor,
                             family: "Redhat",
                             architecture_ids: [$arch],
-                            media_ids: [$media],
-                            ptables: [$pt]
+                            medium_ids: [$media],
+                            ptable_ids: [$pt]
                         }
                     }'
             )"
@@ -781,8 +781,8 @@ create_or_verify_os()
                             major: $major,
                             family: "Redhat",
                             architecture_ids: [$arch],
-                            media_ids: [$media],
-                            ptables: [$pt]
+                            medium_ids: [$media],
+                            ptable_ids: [$pt]
                         }
                     }'
             )"
