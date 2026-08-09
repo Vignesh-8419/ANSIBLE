@@ -1,4 +1,5 @@
 #!/bin/bash
+
 ###############################################################################
 # 01_foreman_pxe_bootstrap_api.sh
 #
@@ -6,38 +7,93 @@
 #
 # Tested design target:
 #   Foreman 3.2.x
-#
-# Creates / verifies:
-#   - Installation Media
-#   - Architectures
-#   - Partition Table
-#   - Operating Systems
-#   - PXEGrub2 provisioning templates
-#   - OS <-> PXEGrub2 associations
-#   - PXEGrub2 default templates
-#   - PXE subnets
-#
-# IMPORTANT:
-#   Existing objects are detected by EXACT NAME.
-#   Existing objects are updated where appropriate.
-#
 ###############################################################################
-# ============================================================
-# Terminal Colors
-# ============================================================
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-WHITE='\033[1;37m'
-BOLD='\033[1m'
-RESET='\033[0m'
+###############################################################################
+# TERMINAL COLORS
+###############################################################################
 
-set -u
-set -o pipefail
+if [ -t 1 ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    BLUE='\033[0;34m'
+    CYAN='\033[0;36m'
+    MAGENTA='\033[0;35m'
+    WHITE='\033[1;37m'
+    BOLD='\033[1m'
+    RESET='\033[0m'
+else
+    RED=''
+    GREEN=''
+    YELLOW=''
+    BLUE=''
+    CYAN=''
+    MAGENTA=''
+    WHITE=''
+    BOLD=''
+    RESET=''
+fi
+
+
+###############################################################################
+# LOGGING FUNCTIONS
+###############################################################################
+
+header()
+{
+    echo
+    printf "${MAGENTA}${BOLD}============================================================${RESET}\n"
+    printf "${MAGENTA}${BOLD}%s${RESET}\n" "$1"
+    printf "${MAGENTA}${BOLD}============================================================${RESET}\n"
+}
+
+section()
+{
+    echo
+    printf "${CYAN}${BOLD}============================================================${RESET}\n"
+    printf "${CYAN}${BOLD}%s${RESET}\n" "$1"
+    printf "${CYAN}${BOLD}============================================================${RESET}\n"
+}
+
+subsection()
+{
+    echo
+    printf "${BLUE}------------------------------------------------------------${RESET}\n"
+    printf "${BLUE}${BOLD}%s${RESET}\n" "$1"
+    printf "${BLUE}------------------------------------------------------------${RESET}\n"
+}
+
+info()
+{
+    printf "${CYAN}[INFO]${RESET} %s\n" "$1"
+}
+
+ok()
+{
+    printf "${GREEN}[OK]${RESET} %s\n" "$1"
+}
+
+skip()
+{
+    printf "${BLUE}[SKIP]${RESET} %s\n" "$1"
+}
+
+warn()
+{
+    printf "${YELLOW}[WARN]${RESET} %s\n" "$1"
+}
+
+error()
+{
+    printf "${RED}[ERROR]${RESET} %s\n" "$1"
+}
+
+record_failure()
+{
+    FAILURES=$((FAILURES + 1))
+}
+
 
 ###############################################################################
 # CONFIGURATION
