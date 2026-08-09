@@ -1,42 +1,29 @@
 #!/bin/bash
 ###############################################################################
-# 05 - Foreman Katello Bootstrap
-# EL8 -> EL9 Upgrade Bootstrap
+# 05 - Foreman Katello Bootstrap - REST API
+# EL8 -> EL9 Rocky Linux Migration Bootstrap
 #
-# REST API ONLY
+# Based on the working 04 EL7->EL8 REST API pattern:
+#   - API paths are passed to api_request()
+#   - api_request() writes JSON to BODY
+#   - all jq reads use BODY
+#   - existing resources are reused
 #
-# Supports:
-#   - Rocky Linux 9.2
-#   - Rocky Linux 9.8
+# Supported targets:
+#   TARGET_VERSION=9.2
+#   TARGET_VERSION=9.8
 #
-# Foreman:
-#   https://cent-07-01.vgs.com
-#   Foreman 3.2.1
-#
-# IMPORTANT:
-#   - NO Hammer CLI
-#   - /api/status uses Accept: version=2,application/json
-#   - /katello/api/* uses Accept: application/json
-#   - Library is resolved from Content View API
-#   - Content View publish uses force:true
+# Run:
+#   export FOREMAN_PASSWORD='...'
+#   TARGET_VERSION=9.2 ./05-bootstrap-el8toel9_api.sh
+#   TARGET_VERSION=9.8 ./05-bootstrap-el8toel9_api.sh
 ###############################################################################
 
 set +e
 
-###############################################################################
-# Failure Tracking
-###############################################################################
-
 FAILED_STEPS=()
 
-record_failure()
-{
-    FAILED_STEPS+=("$1")
-}
-
-###############################################################################
-# Colors
-###############################################################################
+record_failure() { FAILED_STEPS+=("$1"); }
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -46,1853 +33,1234 @@ CYAN='\033[1;36m'
 WHITE='\033[1;37m'
 NC='\033[0m'
 
-###############################################################################
-# Logging Functions
-###############################################################################
+info()  { echo -e "${CYAN}[INFO]${NC} $1"; }
+ok()    { echo -e "${GREEN}[OK]${NC} $1"; }
+skip()  { echo -e "${YELLOW}[SKIP]${NC} $1"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-info()
-{
-    echo -e "${CYAN}[INFO]${NC} $1"
-}
-
-ok()
-{
-    echo -e "${GREEN}[OK]${NC} $1"
-}
-
-skip()
-{
-    echo -e "${YELLOW}[SKIP]${NC} $1"
-}
-
-warn()
-{
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-error()
-{
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-header()
-{
+header() {
     echo
     echo -e "${BLUE}============================================================${NC}"
     echo -e "${WHITE}$1${NC}"
     echo -e "${BLUE}============================================================${NC}"
 }
 
-###############################################################################
-# Dependency Check
-###############################################################################
-
-header "Dependency Check"
-
-REQUIRED_COMMANDS=(
-    curl
-    jq
-    grep
-    awk
-    mktemp
-    rm
-    head
-    sed
-    date
-)
-
-DEPENDENCY_FAILED=0
-
-for CMD in "${REQUIRED_COMMANDS[@]}"
-do
-    PATH_FOUND=$(command -v "${CMD}" 2>/dev/null)
-
-    if [ -n "${PATH_FOUND}" ]
-    then
-        ok "${CMD} found: ${PATH_FOUND}"
-    else
-        error "${CMD} not found."
-        DEPENDENCY_FAILED=1
-    fi
-done
-
-if [ "${DEPENDENCY_FAILED}" -ne 0 ]
-then
-    error "Required dependencies are missing."
-    exit 1
-fi
+subheader() {
+    echo
+    echo "------------------------------------------------------------"
+    echo "$1"
+    echo "------------------------------------------------------------"
+}
 
 ###############################################################################
-# Foreman Configuration
+# Foreman configuration
 ###############################################################################
 
 FOREMAN_URL="${FOREMAN_URL:-https://cent-07-01.vgs.com}"
-
 FOREMAN_USER="${FOREMAN_USER:-admin}"
+API_VERSION="${API_VERSION:-2}"
 
-#
-# Existing password behaviour retained.
-# You can override it with:
-#
-# export FOREMAN_PASSWORD='password'
-#
-FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
+ORG_NAME="Default Organization"
+LOCATION_NAME="Default Location"
 
-ORG="${ORG:-Default Organization}"
-
-LOCATION="${LOCATION:-Default Location}"
-
-###############################################################################
-# API Headers
-###############################################################################
-
-#
-# Foreman 3.2.1:
-#
-# /api/status
-#   Accept: version=2,application/json
-#
-# /katello/api/*
-#   Accept: application/json
-#
-KATELLO_ACCEPT="Accept: application/json"
-CONTENT_TYPE="Content-Type: application/json"
-
-###############################################################################
-# Target Version
-###############################################################################
+if [ -z "${FOREMAN_PASSWORD:-}" ]; then
+    error "FOREMAN_PASSWORD is not set."
+    echo "Example: export FOREMAN_PASSWORD='your-password'"
+    exit 1
+fi
 
 TARGET_VERSION="${TARGET_VERSION:-9.8}"
 
 case "${TARGET_VERSION}" in
-
     9.2)
-
         ROCKY_VERSION="9.2"
-
+        TARGET_PRODUCT="Rocky Linux 9.2"
         CONTENT_VIEW="Rocky9.2-CV"
-
         ACTIVATION_KEY="rocky9.2-key"
-
-        ELEVATE_REPO_NAME="Rocky-08-EL8toEL9-9.2"
-
-        ELEVATE_REPO_URL="http://192.168.253.136/repo/leapp/9.2/el8toel9"
-
+        ELEVATE_REPO="Rocky-08-EL8toEL9-9.2"
+        ELEVATE_URL="http://192.168.253.136/repo/leapp/9.2/el8toel9"
         ;;
-
     9.8)
-
         ROCKY_VERSION="9.8"
-
+        TARGET_PRODUCT="Rocky Linux 9.8"
         CONTENT_VIEW="Rocky9.8-CV"
-
         ACTIVATION_KEY="rocky9.8-key"
-
-        ELEVATE_REPO_NAME="Rocky-08-EL8toEL9-9.8"
-
-        ELEVATE_REPO_URL="http://192.168.253.136/repo/leapp/9/el8toel9"
-
+        ELEVATE_REPO="Rocky-08-EL8toEL9-9.8"
+        ELEVATE_URL="http://192.168.253.136/repo/leapp/9/el8toel9"
         ;;
-
     *)
-
         error "Unsupported TARGET_VERSION=${TARGET_VERSION}"
-
-        echo
-        echo "Supported versions:"
-        echo "  9.2"
-        echo "  9.8"
-
+        echo "Supported versions: 9.2 9.8"
         exit 1
-
         ;;
-
 esac
 
-###############################################################################
-# Product / Repository Configuration
-###############################################################################
-
-PRODUCT="Rocky Linux 8"
+SOURCE_PRODUCT="Rocky Linux 8"
 
 BASE_REPO="Rocky-08-BaseOS"
-
-APPSTREAM_REPO="Rocky-08-AppStream"
-
 BASE_URL="http://192.168.253.136/repo/rocky8/BaseOS"
 
+APPSTREAM_REPO="Rocky-08-AppStream"
 APPSTREAM_URL="http://192.168.253.136/repo/rocky8/AppStream"
 
-###############################################################################
-# Runtime IDs
-###############################################################################
-
 ORG_ID=""
-
-PRODUCT_ID=""
+LIBRARY_ID=""
+SOURCE_PRODUCT_ID=""
+TARGET_PRODUCT_ID=""
 
 BASE_REPO_ID=""
-
 APPSTREAM_REPO_ID=""
-
 ELEVATE_REPO_ID=""
 
+TARGET_REPO_IDS=()
+TARGET_REPO_NAMES=()
+TARGET_REPO_URLS=()
+
 CONTENT_VIEW_ID=""
-
-LIBRARY_ENVIRONMENT_ID=""
-
-LIBRARY_ENVIRONMENT_NAME="Library"
-
 ACTIVATION_KEY_ID=""
 
+BODY="$(mktemp)"
+trap 'rm -f "${BODY}"' EXIT
+
 ###############################################################################
-# Temporary Files
+# API request - same pattern as working 04
 ###############################################################################
 
-TMP_DIR=$(mktemp -d /tmp/foreman-el8toel9-api.XXXXXX)
+api_request() {
+    local METHOD="$1"
+    local API_PATH="$2"
+    local PAYLOAD="${3:-}"
 
-cleanup()
-{
-    rm -rf "${TMP_DIR}" >/dev/null 2>&1
+    HTTP_STATUS=""
+
+    if [ -n "${PAYLOAD}" ]; then
+        HTTP_STATUS="$(
+            /bin/curl -ksS -g \
+                --user "${FOREMAN_USER}:${FOREMAN_PASSWORD}" \
+                -H "Accept: application/json" \
+                -H "Content-Type: application/json" \
+                -X "${METHOD}" \
+                -d "${PAYLOAD}" \
+                -o "${BODY}" \
+                -w '%{http_code}' \
+                "${FOREMAN_URL}${API_PATH}"
+        )"
+    else
+        HTTP_STATUS="$(
+            /bin/curl -ksS -g \
+                --user "${FOREMAN_USER}:${FOREMAN_PASSWORD}" \
+                -H "Accept: application/json" \
+                -H "Content-Type: application/json" \
+                -X "${METHOD}" \
+                -o "${BODY}" \
+                -w '%{http_code}' \
+                "${FOREMAN_URL}${API_PATH}"
+        )"
+    fi
+
+    return 0
 }
 
-trap cleanup EXIT
+api_success() {
+    [[ "${HTTP_STATUS}" =~ ^2[0-9][0-9]$ ]]
+}
 
-###############################################################################
-# Display Configuration
-###############################################################################
-
-header "05 - Foreman Katello Bootstrap EL8 To EL9 - REST API"
-
-echo "Foreman URL    : ${FOREMAN_URL}"
-echo "API Version    : 2"
-echo "Organization   : ${ORG}"
-echo "Location       : ${LOCATION}"
-echo
-echo "Target Version : ${ROCKY_VERSION}"
-echo "Product        : ${PRODUCT}"
-echo "BaseOS         : ${BASE_REPO}"
-echo "AppStream      : ${APPSTREAM_REPO}"
-echo "ELevate        : ${ELEVATE_REPO_NAME}"
-echo "Content View   : ${CONTENT_VIEW}"
-echo "Activation Key : ${ACTIVATION_KEY}"
-
-###############################################################################
-# Generic Katello API Request
-###############################################################################
-#
-# Usage:
-#
-# katello_api METHOD URL [JSON_DATA]
-#
-# Result:
-#
-# API_HTTP_STATUS
-# API_RESPONSE
-#
-###############################################################################
-
-katello_api()
-{
-    METHOD="$1"
-    URL="$2"
-    DATA="${3:-}"
-
-    RESPONSE_FILE="${TMP_DIR}/api_response"
-    HEADER_FILE="${TMP_DIR}/api_headers"
-    STATUS_FILE="${TMP_DIR}/http_status"
-
-    rm -f \
-        "${RESPONSE_FILE}" \
-        "${HEADER_FILE}" \
-        "${STATUS_FILE}"
-
-    if [ -n "${DATA}" ]
-    then
-
-        curl -ksS \
-            --user "${FOREMAN_USER}:${FOREMAN_PASSWORD}" \
-            -X "${METHOD}" \
-            -H "${KATELLO_ACCEPT}" \
-            -H "${CONTENT_TYPE}" \
-            -d "${DATA}" \
-            -D "${HEADER_FILE}" \
-            -o "${RESPONSE_FILE}" \
-            -w '%{http_code}' \
-            "${URL}" \
-            > "${STATUS_FILE}"
-
-    else
-
-        curl -ksS \
-            --user "${FOREMAN_USER}:${FOREMAN_PASSWORD}" \
-            -X "${METHOD}" \
-            -H "${KATELLO_ACCEPT}" \
-            -D "${HEADER_FILE}" \
-            -o "${RESPONSE_FILE}" \
-            -w '%{http_code}' \
-            "${URL}" \
-            > "${STATUS_FILE}"
-
-    fi
-
-    RC=$?
-
-    API_HTTP_STATUS=$(cat "${STATUS_FILE}" 2>/dev/null)
-
-    API_RESPONSE=$(cat "${RESPONSE_FILE}" 2>/dev/null)
-
-    if [ ${RC} -ne 0 ]
-    then
-        error "curl failed."
-        return 1
-    fi
-
-    if [ "${API_HTTP_STATUS}" -ge 200 ] 2>/dev/null &&
-       [ "${API_HTTP_STATUS}" -lt 300 ] 2>/dev/null
-    then
-        return 0
-    fi
+show_api_error() {
+    local METHOD="$1"
+    local API_PATH="$2"
 
     error "API request failed."
-    error "HTTP Status : ${API_HTTP_STATUS}"
+    error "HTTP Status : ${HTTP_STATUS}"
     error "Method      : ${METHOD}"
-    error "URL         : ${URL}"
+    error "URL         : ${FOREMAN_URL}${API_PATH}"
 
-    if [ -n "${API_RESPONSE}" ]
-    then
-        echo "${API_RESPONSE}" |
-            jq . 2>/dev/null ||
-            echo "${API_RESPONSE}"
+    if [ -s "${BODY}" ]; then
+        /bin/jq . "${BODY}" 2>/dev/null
+    else
+        error "Empty API response."
     fi
-
-    return 1
 }
 
 ###############################################################################
-# Foreman API Authentication Test
+# Dependencies / configuration
 ###############################################################################
 
-test_api()
-{
+check_dependencies() {
+    header "Dependency Check"
+
+    local COMMAND
+    for COMMAND in curl jq head grep awk mktemp rm ls; do
+        if command -v "${COMMAND}" >/dev/null 2>&1; then
+            ok "${COMMAND} found: $(command -v "${COMMAND}")"
+        else
+            error "${COMMAND} not found."
+            record_failure "Dependency ${COMMAND}"
+        fi
+    done
+
+    [ "${#FAILED_STEPS[@]}" -eq 0 ]
+}
+
+print_configuration() {
+    header "05 - Foreman Katello Bootstrap EL8 To EL9 - REST API"
+
+    echo "Foreman URL    : ${FOREMAN_URL}"
+    echo "API Version    : ${API_VERSION}"
+    echo "Organization   : ${ORG_NAME}"
+    echo "Location       : ${LOCATION_NAME}"
+    echo
+    echo "Target Version : ${ROCKY_VERSION}"
+    echo "Source Product : ${SOURCE_PRODUCT}"
+    echo "Target Product : ${TARGET_PRODUCT}"
+    echo "BaseOS         : ${BASE_REPO}"
+    echo "AppStream      : ${APPSTREAM_REPO}"
+    echo "ELevate        : ${ELEVATE_REPO}"
+    echo "Content View   : ${CONTENT_VIEW}"
+    echo "Activation Key : ${ACTIVATION_KEY}"
+}
+
+###############################################################################
+# Foreman resources
+###############################################################################
+
+test_foreman_api() {
     header "Foreman API Authentication Test"
 
     info "Testing Foreman REST API..."
+    api_request GET "/api/status"
 
-    RESPONSE=$(
-        curl -ksS \
-            --user "${FOREMAN_USER}:${FOREMAN_PASSWORD}" \
-            -H "Accept: version=2,application/json" \
-            "${FOREMAN_URL}/api/status" \
-            2>/dev/null
-    )
+    if ! api_success; then
+        show_api_error GET "/api/status"
+        record_failure "Foreman API Authentication"
+        return 1
+    fi
 
-    if echo "${RESPONSE}" |
-        jq -e '.status == 200' >/dev/null 2>&1
-    then
+    VERSION="$(/bin/jq -r '.version // empty' "${BODY}" 2>/dev/null)"
+    STATUS="$(/bin/jq -r '.status // empty' "${BODY}" 2>/dev/null)"
+    API="$(/bin/jq -r '.api_version // empty' "${BODY}" 2>/dev/null)"
 
+    if [ -n "${VERSION}" ]; then
         ok "Foreman API authentication successful."
-
-        echo "Foreman Version : $(echo "${RESPONSE}" | jq -r '.version')"
-        echo "API Version     : $(echo "${RESPONSE}" | jq -r '.api_version')"
-        echo "API Status      : $(echo "${RESPONSE}" | jq -r '.status')"
-
+        echo "Foreman Version : ${VERSION}"
+        echo "API Version     : ${API}"
+        echo "API Status      : ${STATUS}"
         return 0
     fi
 
-    error "Foreman API authentication failed."
-
-    echo "${RESPONSE}" |
-        jq . 2>/dev/null ||
-        echo "${RESPONSE}"
-
+    error "Invalid Foreman API response."
+    /bin/jq . "${BODY}" 2>/dev/null
     record_failure "Foreman API Authentication"
-
     return 1
 }
 
-###############################################################################
-# Resolve Organization
-###############################################################################
+resolve_organization() {
+    info "Finding Organization : ${ORG_NAME}"
 
-resolve_organization()
-{
-    header "Resolving Foreman Resources"
+    api_request GET "/api/organizations?search=$(printf '%s' "${ORG_NAME}" | sed 's/ /%20/g')"
 
-    info "Finding Organization : ${ORG}"
-
-    URL="${FOREMAN_URL}/katello/api/organizations?per_page=100"
-
-    if ! katello_api GET "${URL}"
-    then
-        record_failure "Organization"
-        return 1
+    if api_success; then
+        ORG_ID="$(
+            /bin/jq -r \
+                --arg NAME "${ORG_NAME}" \
+                '(.results // [])[] | select(.name == $NAME) | .id' \
+                "${BODY}" 2>/dev/null | head -n 1
+        )"
     fi
 
-    ORGANIZATION_JSON="${API_RESPONSE}"
+    if [ -z "${ORG_ID}" ]; then
+        ORG_ID="1"
+        info "Checking Organization ID : ${ORG_ID}"
+        api_request GET "/api/organizations/${ORG_ID}"
 
-    ORG_ID=$(
-        echo "${ORGANIZATION_JSON}" |
-        jq -r --arg NAME "${ORG}" '
-            .results[]
-            | select(.name == $NAME)
-            | .id
-        ' |
-        head -1
-    )
+        if ! api_success; then
+            show_api_error GET "/api/organizations/${ORG_ID}"
+            ORG_ID=""
+            record_failure "Organization ${ORG_NAME}"
+            return 1
+        fi
 
-    if [ -z "${ORG_ID}" ] ||
-       [ "${ORG_ID}" = "null" ]
-    then
+        API_ORG_ID="$(/bin/jq -r '.id // empty' "${BODY}" 2>/dev/null)"
+        API_ORG_NAME="$(/bin/jq -r '.name // empty' "${BODY}" 2>/dev/null)"
 
-        error "Organization not found : ${ORG}"
-
-        echo "${ORGANIZATION_JSON}" |
-            jq -r '.results[] | "\(.id) : \(.name)"' 2>/dev/null
-
-        record_failure "Organization ${ORG}"
-
-        return 1
+        if [ "${API_ORG_ID}" != "${ORG_ID}" ] || [ "${API_ORG_NAME}" != "${ORG_NAME}" ]; then
+            error "Organization verification failed."
+            ORG_ID=""
+            record_failure "Organization ${ORG_NAME}"
+            return 1
+        fi
     fi
 
     ok "Organization found."
-
     echo "Organization ID   : ${ORG_ID}"
-    echo "Organization Name : ${ORG}"
+    echo "Organization Name : ${ORG_NAME}"
+    return 0
 }
 
-###############################################################################
-# Resolve Library From Content Views
-###############################################################################
-#
-# Do NOT use:
-#
-#   /katello/api/environments
-#
-# Foreman 3.2.1 returns 406 for that endpoint in this environment.
-#
-###############################################################################
-
-resolve_library_environment()
-{
+resolve_library_environment() {
     info "Resolving Lifecycle Environment : Library"
 
-    info "Reading Content Views to resolve Library environment..."
+    api_request GET "/katello/api/environments?organization_id=${ORG_ID}&per_page=all"
 
-    URL="${FOREMAN_URL}/katello/api/content_views?organization_id=${ORG_ID}&per_page=100"
-
-    if ! katello_api GET "${URL}"
-    then
-        error "Unable to read Content Views."
-        record_failure "Content Views for Library Environment"
-        return 1
+    if api_success; then
+        LIBRARY_ID="$(
+            /bin/jq -r '
+                (.results // [])[] |
+                select(.name == "Library" or .label == "Library") |
+                .id
+            ' "${BODY}" 2>/dev/null | head -n 1
+        )"
     fi
 
-    CV_LIST_JSON="${API_RESPONSE}"
-
-    LIBRARY_ENVIRONMENT_ID=$(
-        echo "${CV_LIST_JSON}" |
-        jq -r '
-            [
-                .results[]?.environments[]?
-                | select(
-                    (.name == "Library")
-                    or
-                    (.label == "Library")
-                )
-                | .id
-            ]
-            | unique
-            | .[0]
-        '
-    )
-
-    LIBRARY_ENVIRONMENT_NAME=$(
-        echo "${CV_LIST_JSON}" |
-        jq -r '
-            [
-                .results[]?.environments[]?
-                | select(
-                    (.name == "Library")
-                    or
-                    (.label == "Library")
-                )
-                | .name
-            ]
-            | unique
-            | .[0]
-        '
-    )
-
-    if [ -z "${LIBRARY_ENVIRONMENT_ID}" ] ||
-       [ "${LIBRARY_ENVIRONMENT_ID}" = "null" ]
-    then
-
-        error "Library lifecycle environment could not be resolved."
-
-        echo
-        echo "Available lifecycle environments:"
-        echo "${CV_LIST_JSON}" |
-            jq -r '
-                [
-                    .results[]?.environments[]?
-                    | "\(.id) : \(.name)"
-                ]
-                | unique[]
-            ' 2>/dev/null
-
-        record_failure "Library Environment"
-
-        return 1
-    fi
-
-    ok "Library lifecycle environment resolved."
-
-    echo "Library Environment ID   : ${LIBRARY_ENVIRONMENT_ID}"
-    echo "Library Environment Name : ${LIBRARY_ENVIRONMENT_NAME}"
-}
-
-###############################################################################
-# Create Product
-###############################################################################
-
-create_product()
-{
-    header "Checking Product"
-
-    info "Product : ${PRODUCT}"
-
-    URL="${FOREMAN_URL}/katello/api/organizations/${ORG_ID}/products?per_page=100"
-
-    if ! katello_api GET "${URL}"
-    then
-        record_failure "Product lookup"
-        return 1
-    fi
-
-    PRODUCT_JSON="${API_RESPONSE}"
-
-    PRODUCT_ID=$(
-        echo "${PRODUCT_JSON}" |
-        jq -r --arg NAME "${PRODUCT}" '
-            (.results // [])[]
-            | select(.name == $NAME)
-            | .id
-        ' |
-        head -1
-    )
-
-    if [ -n "${PRODUCT_ID}" ] &&
-       [ "${PRODUCT_ID}" != "null" ]
-    then
-
-        skip "Product ${PRODUCT} already exists. ID=${PRODUCT_ID}"
-
+    if [ -n "${LIBRARY_ID}" ]; then
+        ok "Library lifecycle environment resolved."
+        echo "Library Environment ID   : ${LIBRARY_ID}"
+        echo "Library Environment Name : Library"
         return 0
     fi
 
-    info "Creating Product : ${PRODUCT}"
+    LIBRARY_ID="1"
+    api_request GET "/katello/api/environments/${LIBRARY_ID}"
+    CHECK_NAME="$(/bin/jq -r '.name // empty' "${BODY}" 2>/dev/null)"
 
-    DATA=$(
-        jq -n \
-            --arg name "${PRODUCT}" \
-            --argjson organization_id "${ORG_ID}" '
-            {
-                name: $name,
-                organization_id: $organization_id
-            }
-            '
-    )
-
-    URL="${FOREMAN_URL}/katello/api/products"
-
-    if ! katello_api POST "${URL}" "${DATA}"
-    then
-
-        record_failure "Product ${PRODUCT}"
-
-        return 1
-    fi
-
-    PRODUCT_ID=$(echo "${API_RESPONSE}" | jq -r '.id')
-
-    if [ -z "${PRODUCT_ID}" ] ||
-       [ "${PRODUCT_ID}" = "null" ]
-    then
-
-        error "Product creation returned no ID."
-
-        record_failure "Product ${PRODUCT}"
-
-        return 1
-    fi
-
-    ok "Product created. ID=${PRODUCT_ID}"
-}
-
-###############################################################################
-# Get Repository
-###############################################################################
-
-get_repository()
-{
-    REPO_NAME="$1"
-
-    URL="${FOREMAN_URL}/katello/api/products/${PRODUCT_ID}/repositories?per_page=100"
-
-    if ! katello_api GET "${URL}"
-    then
-        return 1
-    fi
-
-    echo "${API_RESPONSE}" |
-        jq -r --arg NAME "${REPO_NAME}" '
-            .results[]
-            | select(.name == $NAME)
-            | .id
-        ' |
-        head -1
-}
-
-###############################################################################
-# Create Repository
-###############################################################################
-
-create_repository()
-{
-    REPO_NAME="$1"
-    REPO_URL="$2"
-
-    info "Checking Repository : ${REPO_NAME}"
-
-    REPO_ID="$(get_repository "${REPO_NAME}")"
-
-    if [ -n "${REPO_ID}" ] &&
-       [ "${REPO_ID}" != "null" ]
-    then
-
-        skip "${REPO_NAME} already exists. ID=${REPO_ID}"
-
-        case "${REPO_NAME}" in
-            "${BASE_REPO}")
-                BASE_REPO_ID="${REPO_ID}"
-                ;;
-            "${APPSTREAM_REPO}")
-                APPSTREAM_REPO_ID="${REPO_ID}"
-                ;;
-            "${ELEVATE_REPO_NAME}")
-                ELEVATE_REPO_ID="${REPO_ID}"
-                ;;
-        esac
-
+    if [ "${CHECK_NAME}" = "Library" ]; then
+        ok "Library lifecycle environment resolved."
+        echo "Library Environment ID   : ${LIBRARY_ID}"
+        echo "Library Environment Name : Library"
         return 0
     fi
 
-    info "Creating Repository : ${REPO_NAME}"
+    error "Library lifecycle environment not found."
+    LIBRARY_ID=""
+    record_failure "Library Environment"
+    return 1
+}
 
-    DATA=$(
-        jq -n \
+resolve_resources() {
+    header "Resolving Foreman Resources"
+
+    resolve_organization || return 1
+    [ -n "${ORG_ID}" ] || return 1
+    resolve_library_environment || return 1
+}
+
+###############################################################################
+# Product lookup / creation
+###############################################################################
+
+get_product_id() {
+    local PRODUCT_NAME="$1"
+
+    info "Checking Product : ${PRODUCT_NAME}" >&2
+
+    # IMPORTANT:
+    # api_request expects an API PATH, not a complete URL.
+    api_request GET \
+        "/katello/api/organizations/${ORG_ID}/products?per_page=100&page=1"
+
+    if ! api_success; then
+        warn "Unable to query products." >&2
+        show_api_error GET \
+            "/katello/api/organizations/${ORG_ID}/products?per_page=100&page=1" >&2
+        return 1
+    fi
+
+    /bin/jq -r \
+        --arg NAME "${PRODUCT_NAME}" \
+        '(.results // [])[] | select(.name == $NAME) | .id' \
+        "${BODY}" 2>/dev/null |
+    /usr/bin/head -n 1
+}
+
+ensure_source_product() {
+    header "Source Product"
+
+    SOURCE_PRODUCT_ID="$(get_product_id "${SOURCE_PRODUCT}")"
+
+    if [ -n "${SOURCE_PRODUCT_ID}" ] && [ "${SOURCE_PRODUCT_ID}" != "null" ]; then
+        skip "Source Product already exists. ID=${SOURCE_PRODUCT_ID}"
+        return 0
+    fi
+
+    info "Creating Product : ${SOURCE_PRODUCT}"
+
+    PAYLOAD="$(
+        /bin/jq -n \
+            --arg name "${SOURCE_PRODUCT}" \
+            --argjson organization_id "${ORG_ID}" \
+            '{name:$name, organization_id:$organization_id}'
+    )"
+
+    api_request POST "/katello/api/products" "${PAYLOAD}"
+
+    if api_success; then
+        SOURCE_PRODUCT_ID="$(/bin/jq -r '.id // .product.id // empty' "${BODY}" 2>/dev/null)"
+    fi
+
+    if [ -z "${SOURCE_PRODUCT_ID}" ]; then
+        SOURCE_PRODUCT_ID="$(get_product_id "${SOURCE_PRODUCT}")"
+    fi
+
+    if [ -n "${SOURCE_PRODUCT_ID}" ]; then
+        ok "Source Product available. ID=${SOURCE_PRODUCT_ID}"
+        return 0
+    fi
+
+    show_api_error POST "/katello/api/products"
+    record_failure "Source Product ${SOURCE_PRODUCT}"
+    return 1
+}
+
+ensure_target_product() {
+    header "Target Product"
+
+    TARGET_PRODUCT_ID="$(get_product_id "${TARGET_PRODUCT}")"
+
+    if [ -n "${TARGET_PRODUCT_ID}" ] && [ "${TARGET_PRODUCT_ID}" != "null" ]; then
+        skip "Target Product already exists. ID=${TARGET_PRODUCT_ID}"
+        return 0
+    fi
+
+    error "Target Product does not exist: ${TARGET_PRODUCT}"
+    error "The script will NOT create a target product automatically."
+    error "Create/sync ${TARGET_PRODUCT} in Katello first."
+    record_failure "Target Product ${TARGET_PRODUCT}"
+    return 1
+}
+
+###############################################################################
+# Repository lookup
+###############################################################################
+
+get_repo_id() {
+    local PRODUCT_ID_ARG="$1"
+    local REPO_NAME="$2"
+
+    api_request GET \
+        "/katello/api/products/${PRODUCT_ID_ARG}/repositories?per_page=100&page=1"
+
+    if ! api_success; then
+        return 1
+    fi
+
+    /bin/jq -r \
+        --arg NAME "${REPO_NAME}" \
+        '(.results // [])[] | select(.name == $NAME) | .id' \
+        "${BODY}" 2>/dev/null |
+    /usr/bin/head -n 1
+}
+
+get_repo_detail_url() {
+    local REPO_ID="$1"
+    api_request GET "/katello/api/repositories/${REPO_ID}"
+    api_success || return 1
+    /bin/jq -r '.url // empty' "${BODY}" 2>/dev/null
+}
+
+ensure_repo() {
+    local PRODUCT_ID_ARG="$1"
+    local REPO_NAME="$2"
+    local REPO_URL="$3"
+    local REPO_ID
+
+    subheader "Repository : ${REPO_NAME}" >&2
+
+    REPO_ID="$(get_repo_id "${PRODUCT_ID_ARG}" "${REPO_NAME}")"
+
+    if [ -n "${REPO_ID}" ] && [ "${REPO_ID}" != "null" ]; then
+        skip "${REPO_NAME} already exists. ID=${REPO_ID}" >&2
+
+        CURRENT_URL="$(get_repo_detail_url "${REPO_ID}")"
+        if [ -n "${CURRENT_URL}" ] && [ "${CURRENT_URL}" != "${REPO_URL}" ]; then
+            warn "${REPO_NAME} URL differs." >&2
+            echo "Current URL  : ${CURRENT_URL}" >&2
+            echo "Expected URL : ${REPO_URL}" >&2
+            warn "Existing repository will NOT be recreated." >&2
+        fi
+
+        printf '%s\n' "${REPO_ID}"
+        return 0
+    fi
+
+    info "Creating Repository : ${REPO_NAME}" >&2
+    info "URL : ${REPO_URL}" >&2
+
+    PAYLOAD="$(
+        /bin/jq -n \
             --arg name "${REPO_NAME}" \
             --arg url "${REPO_URL}" \
-            --argjson product_id "${PRODUCT_ID}" \
-            --argjson organization_id "${ORG_ID}" '
-            {
-                name: $name,
-                url: $url,
-                product_id: $product_id,
-                organization_id: $organization_id,
-                content_type: "yum"
-            }
-            '
-    )
+            --argjson product_id "${PRODUCT_ID_ARG}" \
+            '{
+                name:$name,
+                product_id:$product_id,
+                url:$url,
+                content_type:"yum"
+            }'
+    )"
 
-    URL="${FOREMAN_URL}/katello/api/repositories"
+    api_request POST "/katello/api/repositories" "${PAYLOAD}"
 
-    if ! katello_api POST "${URL}" "${DATA}"
-    then
-
-        record_failure "${REPO_NAME}"
-
-        return 1
+    if api_success; then
+        REPO_ID="$(/bin/jq -r '.id // .repository.id // empty' "${BODY}" 2>/dev/null)"
     fi
 
-    NEW_ID=$(echo "${API_RESPONSE}" | jq -r '.id')
-
-    if [ -z "${NEW_ID}" ] ||
-       [ "${NEW_ID}" = "null" ]
-    then
-
-        error "Repository creation returned no ID."
-
-        record_failure "${REPO_NAME}"
-
-        return 1
+    if [ -z "${REPO_ID}" ]; then
+        REPO_ID="$(get_repo_id "${PRODUCT_ID_ARG}" "${REPO_NAME}")"
     fi
 
-    ok "${REPO_NAME} created. ID=${NEW_ID}"
-
-    case "${REPO_NAME}" in
-        "${BASE_REPO}")
-            BASE_REPO_ID="${NEW_ID}"
-            ;;
-        "${APPSTREAM_REPO}")
-            APPSTREAM_REPO_ID="${NEW_ID}"
-            ;;
-        "${ELEVATE_REPO_NAME}")
-            ELEVATE_REPO_ID="${NEW_ID}"
-            ;;
-    esac
-}
-
-###############################################################################
-# Update Repository URL
-###############################################################################
-
-update_repository_url()
-{
-    REPO_NAME="$1"
-    REPO_ID="$2"
-    REPO_URL="$3"
-
-    info "Checking Repository URL : ${REPO_NAME}"
-
-    URL="${FOREMAN_URL}/katello/api/repositories/${REPO_ID}"
-
-    if ! katello_api GET "${URL}"
-    then
-        record_failure "${REPO_NAME} lookup"
-        return 1
-    fi
-
-    CURRENT_URL=$(
-        echo "${API_RESPONSE}" |
-        jq -r '.url // empty'
-    )
-
-    if [ "${CURRENT_URL}" = "${REPO_URL}" ]
-    then
-
-        skip "${REPO_NAME} URL already correct."
-
+    if [ -n "${REPO_ID}" ]; then
+        ok "${REPO_NAME} available. ID=${REPO_ID}" >&2
+        printf '%s\n' "${REPO_ID}"
         return 0
     fi
 
-    info "Updating Repository URL : ${REPO_NAME}"
-
-    DATA=$(
-        jq -n \
-            --arg url "${REPO_URL}" '
-            {
-                url: $url
-            }
-            '
-    )
-
-    if ! katello_api PUT "${URL}" "${DATA}"
-    then
-        record_failure "${REPO_NAME} URL"
-        return 1
-    fi
-
-    ok "${REPO_NAME} URL updated."
-}
-
-###############################################################################
-# Create All Repositories
-###############################################################################
-
-create_repositories()
-{
-    header "[1/6] Creating Rocky Linux 8 Repositories"
-
-    create_repository \
-        "${BASE_REPO}" \
-        "${BASE_URL}"
-
-    create_repository \
-        "${APPSTREAM_REPO}" \
-        "${APPSTREAM_URL}"
-
-    create_repository \
-        "${ELEVATE_REPO_NAME}" \
-        "${ELEVATE_REPO_URL}"
-
-    header "Updating Repository URLs"
-
-    if [ -n "${BASE_REPO_ID}" ]
-    then
-        update_repository_url \
-            "${BASE_REPO}" \
-            "${BASE_REPO_ID}" \
-            "${BASE_URL}"
-    fi
-
-    if [ -n "${APPSTREAM_REPO_ID}" ]
-    then
-        update_repository_url \
-            "${APPSTREAM_REPO}" \
-            "${APPSTREAM_REPO_ID}" \
-            "${APPSTREAM_URL}"
-    fi
-
-    if [ -n "${ELEVATE_REPO_ID}" ]
-    then
-        update_repository_url \
-            "${ELEVATE_REPO_NAME}" \
-            "${ELEVATE_REPO_ID}" \
-            "${ELEVATE_REPO_URL}"
-    fi
-}
-
-###############################################################################
-# Extract Task ID
-###############################################################################
-
-extract_task_id()
-{
-    JSON="$1"
-
-    echo "${JSON}" |
-        jq -r '
-            .id
-            // .task_id
-            // .task_group_id
-            // .task_group.id
-            // .task.id
-            // empty
-        ' |
-        head -1
-}
-
-###############################################################################
-# Monitor Foreman Task
-###############################################################################
-
-monitor_task()
-{
-    TASK_ID="$1"
-    TASK_NAME="$2"
-
-    if [ -z "${TASK_ID}" ] ||
-       [ "${TASK_ID}" = "null" ]
-    then
-        warn "No task ID returned for ${TASK_NAME}."
-        return 0
-    fi
-
-    info "Monitoring Foreman task..."
-    echo "Task ID : ${TASK_ID}"
-
-    MAX_LOOPS=180
-    LOOP=0
-
-    while [ ${LOOP} -lt ${MAX_LOOPS} ]
-    do
-
-        URL="${FOREMAN_URL}/foreman_tasks/api/tasks/${TASK_ID}"
-
-        if ! katello_api GET "${URL}"
-        then
-
-            warn "Unable to query task ${TASK_ID}."
-
-            sleep 5
-
-            LOOP=$((LOOP + 1))
-
-            continue
-        fi
-
-        TASK_JSON="${API_RESPONSE}"
-
-        STATE=$(
-            echo "${TASK_JSON}" |
-            jq -r '.state // .status // "unknown"'
-        )
-
-        RESULT=$(
-            echo "${TASK_JSON}" |
-            jq -r '.result // "unknown"'
-        )
-
-        PROGRESS=$(
-            echo "${TASK_JSON}" |
-            jq -r '
-                .progress
-                // .percentage
-                // .progress_percent
-                // 0
-            '
-        )
-
-        printf '\r[SYNC] %-30s Progress: %6s%% State: %-12s Result: %-10s' \
-            "${TASK_NAME}" \
-            "${PROGRESS}" \
-            "${STATE}" \
-            "${RESULT}"
-
-        if [ "${RESULT}" = "success" ]
-        then
-
-            echo
-
-            ok "${TASK_NAME} completed successfully."
-
-            return 0
-        fi
-
-        if [ "${RESULT}" = "error" ] ||
-           [ "${RESULT}" = "failure" ] ||
-           {
-               [ "${STATE}" = "stopped" ] &&
-               [ "${RESULT}" != "success" ] &&
-               [ "${RESULT}" != "unknown" ];
-           }
-        then
-
-            echo
-
-            error "${TASK_NAME} task failed."
-
-            echo "${TASK_JSON}" |
-                jq . 2>/dev/null
-
-            return 1
-        fi
-
-        sleep 5
-
-        LOOP=$((LOOP + 1))
-
-    done
-
-    echo
-
-    warn "${TASK_NAME} task monitoring timed out."
-
+    show_api_error POST "/katello/api/repositories" >&2
+    record_failure "${REPO_NAME}"
     return 1
 }
 
 ###############################################################################
-# Synchronize Repository
+# Source repositories
 ###############################################################################
 
-sync_repository()
-{
-    REPO_NAME="$1"
-    REPO_ID="$2"
+resolve_source_repositories() {
+    header "Resolving Source Repositories"
 
-    if [ -z "${REPO_ID}" ]
-    then
+    BASE_REPO_ID="$(ensure_repo "${SOURCE_PRODUCT_ID}" "${BASE_REPO}" "${BASE_URL}")" || return 1
+    APPSTREAM_REPO_ID="$(ensure_repo "${SOURCE_PRODUCT_ID}" "${APPSTREAM_REPO}" "${APPSTREAM_URL}")" || return 1
+    ELEVATE_REPO_ID="$(ensure_repo "${SOURCE_PRODUCT_ID}" "${ELEVATE_REPO}" "${ELEVATE_URL}")" || return 1
 
-        error "Repository ID missing for ${REPO_NAME}."
+    echo "BaseOS Repository ID    : ${BASE_REPO_ID}"
+    echo "AppStream Repository ID : ${APPSTREAM_REPO_ID}"
+    echo "ELevate Repository ID   : ${ELEVATE_REPO_ID}"
+}
 
-        record_failure "Sync ${REPO_NAME}"
+###############################################################################
+# Target repositories
+###############################################################################
 
+resolve_target_repositories() {
+    header "Resolving Target Product Repositories"
+
+    TARGET_REPO_IDS=()
+    TARGET_REPO_NAMES=()
+    TARGET_REPO_URLS=()
+
+    api_request GET \
+        "/katello/api/products/${TARGET_PRODUCT_ID}/repositories?per_page=100&page=1"
+
+    if ! api_success; then
+        show_api_error GET \
+            "/katello/api/products/${TARGET_PRODUCT_ID}/repositories?per_page=100&page=1"
+        record_failure "Target Product repositories"
         return 1
     fi
 
-    echo
-    echo "------------------------------------------------------------"
-    echo "Repository Sync : ${REPO_NAME}"
-    echo "------------------------------------------------------------"
+    while IFS=$'\t' read -r ID NAME URL; do
+        [ -n "${ID}" ] || continue
+        TARGET_REPO_IDS+=("${ID}")
+        TARGET_REPO_NAMES+=("${NAME}")
+        TARGET_REPO_URLS+=("${URL}")
+        ok "Target repository found: ${NAME} ID=${ID}"
+    done < <(
+        /bin/jq -r '
+            (.results // [])[] |
+            [.id, .name, (.url // "")] |
+            @tsv
+        ' "${BODY}" 2>/dev/null
+    )
 
-    info "Repository ID : ${REPO_ID}"
-
-    URL="${FOREMAN_URL}/katello/api/repositories/${REPO_ID}"
-
-    if ! katello_api GET "${URL}"
-    then
-
-        record_failure "Sync status ${REPO_NAME}"
-
+    if [ "${#TARGET_REPO_IDS[@]}" -eq 0 ]; then
+        error "No repositories found under ${TARGET_PRODUCT}."
+        record_failure "Target Product repositories"
         return 1
     fi
 
-    REPO_JSON="${API_RESPONSE}"
+    echo "Target Repo IDs : ${TARGET_REPO_IDS[*]}"
+}
 
-    SYNC_STATE=$(
-        echo "${REPO_JSON}" |
-        jq -r '
-            .sync_state
-            // .sync_state_label
-            // .last_sync.result
-            // empty
-        '
-    )
+###############################################################################
+# Sync
+###############################################################################
 
-    LAST_RESULT=$(
-        echo "${REPO_JSON}" |
-        jq -r '
-            .last_sync.result
-            // empty
-        '
-    )
+extract_task_id() {
+    /bin/jq -r '
+        .id //
+        .task_id //
+        .task.id //
+        .task.uuid //
+        empty
+    ' "${BODY}" 2>/dev/null | head -n 1
+}
 
-    if echo "${SYNC_STATE}" |
-        grep -Eqi 'complete|success|synced'
-    then
+resume_paused_tasks() {
+    header "Recovering Paused Foreman Tasks"
 
-        skip "${REPO_NAME} already synchronized."
+    api_request GET \
+        "/foreman_tasks/api/tasks?search=state%20%3D%20paused&per_page=100&page=1"
 
+    if ! api_success; then
+        warn "Unable to query paused Foreman tasks."
         return 0
     fi
 
-    if [ "${LAST_RESULT}" = "success" ]
-    then
+    COUNT="$(/bin/jq -r '(.results // []) | length' "${BODY}" 2>/dev/null)"
+    COUNT="${COUNT:-0}"
 
-        skip "${REPO_NAME} last synchronization was successful."
-
+    if [ "${COUNT}" -eq 0 ]; then
+        ok "No paused tasks found."
         return 0
     fi
 
-    info "Starting synchronization : ${REPO_NAME}"
+    warn "Found ${COUNT} paused task(s)."
 
-    SYNC_DATA='{"skip_metadata_check":true}'
+    while read -r TASK_ID; do
+        [ -n "${TASK_ID}" ] || continue
+        info "Attempting to resume task: ${TASK_ID}"
 
-    URL="${FOREMAN_URL}/katello/api/repositories/${REPO_ID}/sync"
+        api_request PUT \
+            "/foreman_tasks/api/tasks/${TASK_ID}/resume" \
+            '{}'
 
-    if ! katello_api POST "${URL}" "${SYNC_DATA}"
-    then
-
-        if echo "${API_RESPONSE}" |
-            grep -qiE 'lock|already running'
-        then
-
-            warn "Repository lock detected."
-
-            sleep 10
-
-            info "Retrying synchronization..."
-
-            if ! katello_api POST "${URL}" "${SYNC_DATA}"
-            then
-
-                error "Retry failed."
-
-                record_failure "Sync ${REPO_NAME}"
-
-                return 1
-            fi
-
+        if api_success; then
+            ok "Task resumed: ${TASK_ID}"
         else
-
-            error "Repository synchronization failed."
-
-            record_failure "Sync ${REPO_NAME}"
-
-            return 1
+            warn "Unable to resume task: ${TASK_ID}"
         fi
-    fi
-
-    TASK_ID=$(extract_task_id "${API_RESPONSE}")
-
-    if [ -n "${TASK_ID}" ]
-    then
-
-        ok "${REPO_NAME} synchronization started."
-
-        echo "Task : ${TASK_ID}"
-
-        if ! monitor_task \
-            "${TASK_ID}" \
-            "${REPO_NAME}"
-        then
-
-            record_failure "Sync ${REPO_NAME}"
-
-            return 1
-        fi
-
-    else
-
-        ok "${REPO_NAME} synchronization request accepted."
-
-        sleep 5
-    fi
+    done < <(
+        /bin/jq -r '(.results // [])[] | .id // empty' "${BODY}" 2>/dev/null
+    )
 }
 
-###############################################################################
-# Synchronize All Repositories
-###############################################################################
+repository_sync_status() {
+    local REPO_ID="$1"
 
-sync_repositories()
-{
-    header "[2/6] Synchronizing Rocky Linux 8 Repositories"
+    api_request GET \
+        "/katello/api/repositories/${REPO_ID}"
 
-    sync_repository \
-        "${BASE_REPO}" \
-        "${BASE_REPO_ID}"
-
-    sync_repository \
-        "${APPSTREAM_REPO}" \
-        "${APPSTREAM_REPO_ID}"
-
-    sync_repository \
-        "${ELEVATE_REPO_NAME}" \
-        "${ELEVATE_REPO_ID}"
-}
-
-###############################################################################
-# Resolve Content View
-###############################################################################
-
-resolve_content_view()
-{
-    info "Checking Content View : ${CONTENT_VIEW}"
-
-    URL="${FOREMAN_URL}/katello/api/content_views?organization_id=${ORG_ID}&per_page=100"
-
-    if ! katello_api GET "${URL}"
-    then
-        record_failure "Content View lookup"
+    if ! api_success; then
         return 1
     fi
 
-    CONTENT_VIEW_LIST_JSON="${API_RESPONSE}"
+    /bin/jq -r '
+        if .last_sync then
+            (.last_sync.result // .last_sync.state // "")
+        else
+            (.sync_state // "")
+        end
+    ' "${BODY}" 2>/dev/null
+}
 
-    CONTENT_VIEW_ID=$(
-        echo "${CONTENT_VIEW_LIST_JSON}" |
-        jq -r \
-            --arg NAME "${CONTENT_VIEW}" '
-            .results[]
-            | select(.name == $NAME)
-            | .id
-            ' |
-        head -1
-    )
+sync_repository() {
+    local REPO_NAME="$1"
+    local REPO_ID="$2"
+    local STATE
 
-    if [ -n "${CONTENT_VIEW_ID}" ] &&
-       [ "${CONTENT_VIEW_ID}" != "null" ]
-    then
+    subheader "Repository Sync : ${REPO_NAME}"
 
-        skip "Content View ${CONTENT_VIEW} already exists. ID=${CONTENT_VIEW_ID}"
+    STATE="$(repository_sync_status "${REPO_ID}")"
 
+    if [ "${STATE}" = "success" ] || [ "${STATE}" = "Syncing Complete." ]; then
+        skip "${REPO_NAME} already has a successful sync."
         return 0
     fi
 
+    info "Starting sync : ${REPO_NAME}"
+
+    api_request POST \
+        "/katello/api/repositories/${REPO_ID}/sync" \
+        '{}'
+
+    if api_success; then
+        TASK_ID="$(extract_task_id)"
+        if [ -n "${TASK_ID}" ]; then
+            ok "${REPO_NAME} sync started. Task=${TASK_ID}"
+        else
+            ok "${REPO_NAME} sync request accepted."
+        fi
+        return 0
+    fi
+
+    if grep -qiE "already|running|syncing|task" "${BODY}" 2>/dev/null; then
+        warn "${REPO_NAME} may already be syncing."
+        return 0
+    fi
+
+    show_api_error POST "/katello/api/repositories/${REPO_ID}/sync"
+    record_failure "${REPO_NAME} sync"
     return 1
 }
 
+sync_repositories() {
+    header "Synchronizing Migration Repositories"
+
+    sync_repository "${BASE_REPO}" "${BASE_REPO_ID}"
+    sync_repository "${APPSTREAM_REPO}" "${APPSTREAM_REPO_ID}"
+    sync_repository "${ELEVATE_REPO}" "${ELEVATE_REPO_ID}"
+
+    local i
+    for i in "${!TARGET_REPO_IDS[@]}"; do
+        sync_repository \
+            "${TARGET_REPO_NAMES[$i]}" \
+            "${TARGET_REPO_IDS[$i]}"
+    done
+}
+
 ###############################################################################
-# Create Content View
+# Content View
 ###############################################################################
 
-create_content_view()
-{
-    header "[3/6] Creating Content View"
+get_content_view_id() {
+    api_request GET \
+        "/katello/api/organizations/${ORG_ID}/content_views?per_page=100&page=1"
 
-    if resolve_content_view
-    then
+    if ! api_success; then
+        return 1
+    fi
+
+    /bin/jq -r \
+        --arg NAME "${CONTENT_VIEW}" \
+        '(.results // [])[] | select(.name == $NAME) | .id' \
+        "${BODY}" 2>/dev/null |
+    head -n 1
+}
+
+create_content_view() {
+    header "Content View"
+
+    CONTENT_VIEW_ID="$(get_content_view_id)"
+
+    if [ -n "${CONTENT_VIEW_ID}" ]; then
+        skip "Content View already exists. ID=${CONTENT_VIEW_ID}"
         return 0
     fi
 
     info "Creating Content View : ${CONTENT_VIEW}"
 
-    DATA=$(
-        jq -n \
+    PAYLOAD="$(
+        /bin/jq -n \
             --arg name "${CONTENT_VIEW}" \
-            --argjson organization_id "${ORG_ID}" '
-            {
-                name: $name,
-                organization_id: $organization_id,
-                composite: false,
-                auto_publish: false,
-                solve_dependencies: false,
-                import_only: false
-            }
-            '
-    )
+            --argjson organization_id "${ORG_ID}" \
+            '{name:$name, organization_id:$organization_id}'
+    )"
 
-    URL="${FOREMAN_URL}/katello/api/content_views"
+    api_request POST \
+        "/katello/api/organizations/${ORG_ID}/content_views" \
+        "${PAYLOAD}"
 
-    if ! katello_api POST "${URL}" "${DATA}"
-    then
-
-        record_failure "${CONTENT_VIEW}"
-
-        return 1
+    if api_success; then
+        CONTENT_VIEW_ID="$(/bin/jq -r '.id // empty' "${BODY}" 2>/dev/null)"
     fi
 
-    CONTENT_VIEW_ID=$(echo "${API_RESPONSE}" | jq -r '.id')
-
-    if [ -z "${CONTENT_VIEW_ID}" ] ||
-       [ "${CONTENT_VIEW_ID}" = "null" ]
-    then
-
-        error "Content View creation returned no ID."
-
-        record_failure "${CONTENT_VIEW}"
-
-        return 1
+    if [ -z "${CONTENT_VIEW_ID}" ]; then
+        CONTENT_VIEW_ID="$(get_content_view_id)"
     fi
 
-    ok "Content View created. ID=${CONTENT_VIEW_ID}"
+    if [ -n "${CONTENT_VIEW_ID}" ]; then
+        ok "Content View available. ID=${CONTENT_VIEW_ID}"
+        return 0
+    fi
+
+    show_api_error POST \
+        "/katello/api/organizations/${ORG_ID}/content_views"
+    record_failure "${CONTENT_VIEW}"
+    return 1
 }
 
-###############################################################################
-# Get Content View
-###############################################################################
-
-get_content_view()
-{
-    URL="${FOREMAN_URL}/katello/api/content_views/${CONTENT_VIEW_ID}"
-
-    katello_api GET "${URL}"
+get_cv_repository_ids() {
+    api_request GET "/katello/api/content_views/${CONTENT_VIEW_ID}"
+    api_success || return 1
+    /bin/jq -c '.repository_ids // []' "${BODY}" 2>/dev/null
 }
 
-###############################################################################
-# Configure Content View Repositories
-###############################################################################
+add_repo_to_cv() {
+    local REPO_NAME="$1"
+    local REPO_ID="$2"
+    local CURRENT_IDS
+    local NEW_IDS
 
-configure_content_view()
-{
-    header "Configuring Content View Repositories"
+    [ -n "${REPO_ID}" ] || return 1
 
-    if ! get_content_view
-    then
-        record_failure "Content View read"
+    CURRENT_IDS="$(get_cv_repository_ids)"
+    [ -n "${CURRENT_IDS}" ] || CURRENT_IDS="[]"
+
+    if /bin/jq -e \
+        --argjson ID "${REPO_ID}" \
+        'index($ID) != null' \
+        <<< "${CURRENT_IDS}" >/dev/null 2>&1; then
+        skip "${REPO_NAME} already assigned to ${CONTENT_VIEW}."
+        return 0
+    fi
+
+    NEW_IDS="$(
+        /bin/jq -c \
+            --argjson ID "${REPO_ID}" \
+            '. + [$ID] | unique' \
+            <<< "${CURRENT_IDS}"
+    )"
+
+    info "Adding ${REPO_NAME} to ${CONTENT_VIEW}"
+
+    PAYLOAD="$(
+        /bin/jq -n \
+            --argjson repository_ids "${NEW_IDS}" \
+            '{repository_ids:$repository_ids}'
+    )"
+
+    api_request PUT \
+        "/katello/api/content_views/${CONTENT_VIEW_ID}" \
+        "${PAYLOAD}"
+
+    if api_success; then
+        ok "${REPO_NAME} added to ${CONTENT_VIEW}."
+        return 0
+    fi
+
+    if grep -qiE "already|taken|exists" "${BODY}" 2>/dev/null; then
+        skip "${REPO_NAME} already assigned."
+        return 0
+    fi
+
+    show_api_error PUT "/katello/api/content_views/${CONTENT_VIEW_ID}"
+    record_failure "${REPO_NAME} Content View"
+    return 1
+}
+
+configure_content_view() {
+    header "Configuring Content View"
+
+    add_repo_to_cv "${BASE_REPO}" "${BASE_REPO_ID}"
+    add_repo_to_cv "${APPSTREAM_REPO}" "${APPSTREAM_REPO_ID}"
+    add_repo_to_cv "${ELEVATE_REPO}" "${ELEVATE_REPO_ID}"
+
+    local i
+    for i in "${!TARGET_REPO_IDS[@]}"; do
+        add_repo_to_cv \
+            "${TARGET_REPO_NAMES[$i]}" \
+            "${TARGET_REPO_IDS[$i]}"
+    done
+}
+
+verify_content_view() {
+    header "Verifying Content View"
+
+    local CURRENT_IDS
+    local FAILED=0
+
+    CURRENT_IDS="$(get_cv_repository_ids)"
+
+    if [ -z "${CURRENT_IDS}" ]; then
+        error "Unable to read Content View repository IDs."
+        record_failure "Content View Verification"
         return 1
     fi
 
-    CURRENT_REPOSITORIES=$(
-        echo "${API_RESPONSE}" |
-        jq -c '.repository_ids // []'
-    )
+    echo "Content View Repository IDs : ${CURRENT_IDS}"
 
-    DESIRED_REPOSITORIES=$(
-        jq -n \
-            --argjson base "${BASE_REPO_ID}" \
-            --argjson appstream "${APPSTREAM_REPO_ID}" \
-            --argjson elevate "${ELEVATE_REPO_ID}" '
-            [
-                $base,
-                $appstream,
-                $elevate
-            ]
-            | unique
-            '
-    )
+    check_cv_repo() {
+        local NAME="$1"
+        local ID="$2"
 
-    echo
-    echo "Current Repository IDs : ${CURRENT_REPOSITORIES}"
-    echo "Desired Repository IDs : ${DESIRED_REPOSITORIES}"
-
-    if [ "${CURRENT_REPOSITORIES}" = "${DESIRED_REPOSITORIES}" ]
-    then
-
-        skip "All required repositories already assigned."
-
-    else
-
-        info "Updating Content View repository assignments..."
-
-        DATA=$(
-            jq -n \
-                --argjson repository_ids "${DESIRED_REPOSITORIES}" '
-                {
-                    repository_ids: $repository_ids
-                }
-                '
-        )
-
-        URL="${FOREMAN_URL}/katello/api/content_views/${CONTENT_VIEW_ID}"
-
-        if ! katello_api PUT "${URL}" "${DATA}"
-        then
-
-            record_failure "Content View repository configuration"
-
-            return 1
+        if /bin/jq -e \
+            --argjson ID "${ID}" \
+            'index($ID) != null' \
+            <<< "${CURRENT_IDS}" >/dev/null 2>&1; then
+            ok "${NAME} attached (ID=${ID})"
+        else
+            error "${NAME} missing (ID=${ID})"
+            FAILED=1
         fi
+    }
 
-        ok "Content View repository configuration updated."
-    fi
+    check_cv_repo "${BASE_REPO}" "${BASE_REPO_ID}"
+    check_cv_repo "${APPSTREAM_REPO}" "${APPSTREAM_REPO_ID}"
+    check_cv_repo "${ELEVATE_REPO}" "${ELEVATE_REPO_ID}"
 
-    verify_content_view
-}
+    local i
+    for i in "${!TARGET_REPO_IDS[@]}"; do
+        check_cv_repo "${TARGET_REPO_NAMES[$i]}" "${TARGET_REPO_IDS[$i]}"
+    done
 
-###############################################################################
-# Verify Content View Repository Mapping
-###############################################################################
-
-verify_content_view()
-{
-    if ! get_content_view
-    then
-        record_failure "Content View verification"
-        return 1
-    fi
-
-    CV_REPOSITORIES=$(
-        echo "${API_RESPONSE}" |
-        jq -c '.repository_ids // []'
-    )
-
-    FAILED=0
-
-    if jq -e \
-        --argjson ID "${BASE_REPO_ID}" \
-        'index($ID) != null' \
-        <<< "${CV_REPOSITORIES}" \
-        >/dev/null 2>&1
-    then
-        ok "${BASE_REPO} attached to ${CONTENT_VIEW}."
-    else
-        error "${BASE_REPO} missing from ${CONTENT_VIEW}."
-        FAILED=1
-    fi
-
-    if jq -e \
-        --argjson ID "${APPSTREAM_REPO_ID}" \
-        'index($ID) != null' \
-        <<< "${CV_REPOSITORIES}" \
-        >/dev/null 2>&1
-    then
-        ok "${APPSTREAM_REPO} attached to ${CONTENT_VIEW}."
-    else
-        error "${APPSTREAM_REPO} missing from ${CONTENT_VIEW}."
-        FAILED=1
-    fi
-
-    if jq -e \
-        --argjson ID "${ELEVATE_REPO_ID}" \
-        'index($ID) != null' \
-        <<< "${CV_REPOSITORIES}" \
-        >/dev/null 2>&1
-    then
-        ok "${ELEVATE_REPO_NAME} attached to ${CONTENT_VIEW}."
-    else
-        error "${ELEVATE_REPO_NAME} missing from ${CONTENT_VIEW}."
-        FAILED=1
-    fi
-
-    if [ "${FAILED}" -ne 0 ]
-    then
-
-        error "Content View repository verification failed."
-
+    if [ "${FAILED}" -eq 1 ]; then
         record_failure "Content View Repository Verification"
-
         return 1
     fi
 
     ok "All required repositories verified."
-
     return 0
 }
 
-###############################################################################
-# Publish Content View
-###############################################################################
-#
-# IMPORTANT:
-#
-# Your Foreman 3.2.1 returned:
-#
-#   Cannot promote environment out of sequence.
-#   Use force to bypass restriction.
-#
-# Therefore force:true is intentionally used below.
-#
-###############################################################################
+publish_content_view() {
+    header "Publishing Content View"
 
-publish_content_view()
-{
-    header "[4/6] Publishing Content View"
-
-    if ! verify_content_view
-    then
-        error "Publishing skipped because repository mapping failed."
+    if ! verify_content_view; then
+        error "Content View validation failed. Publish skipped."
         return 1
     fi
+
+    api_request GET "/katello/api/content_views/${CONTENT_VIEW_ID}"
+
+    if ! api_success; then
+        show_api_error GET "/katello/api/content_views/${CONTENT_VIEW_ID}"
+        record_failure "${CONTENT_VIEW} lookup"
+        return 1
+    fi
+
+    NEEDS_PUBLISH="$(/bin/jq -r '.needs_publish // true' "${BODY}" 2>/dev/null)"
+    LATEST_VERSION="$(/bin/jq -r '.latest_version // empty' "${BODY}" 2>/dev/null)"
+    LAST_TASK="$(/bin/jq -r '.last_task.id // empty' "${BODY}" 2>/dev/null)"
+
+    if [ "${NEEDS_PUBLISH}" = "false" ] && [ -n "${LATEST_VERSION}" ]; then
+        skip "${CONTENT_VIEW} already published. Version=${LATEST_VERSION}"
+        return 0
+    fi
+
+    if [ -n "${LAST_TASK}" ]; then
+        warn "${CONTENT_VIEW} has an existing task: ${LAST_TASK}"
+        skip "Publish not duplicated."
+        return 0
+    fi
+
+    DESCRIPTION="EL8 To EL9 Rocky ${ROCKY_VERSION} $(date '+%F %T')"
+    PAYLOAD="$(
+        /bin/jq -n --arg description "${DESCRIPTION}" \
+            '{description:$description}'
+    )"
 
     info "Publishing ${CONTENT_VIEW}"
 
-    DATA=$(
-        jq -n \
-            --arg description \
-                "EL8 to EL9 Migration Rocky ${ROCKY_VERSION} $(date '+%F %T')" \
-            --argjson environment_ids \
-                "[${LIBRARY_ENVIRONMENT_ID}]" '
-            {
-                description: $description,
-                environment_ids: $environment_ids,
-                force: true
-            }
-            '
-    )
+    api_request POST \
+        "/katello/api/content_views/${CONTENT_VIEW_ID}/publish" \
+        "${PAYLOAD}"
 
-    URL="${FOREMAN_URL}/katello/api/content_views/${CONTENT_VIEW_ID}/publish"
-
-    if ! katello_api POST "${URL}" "${DATA}"
-    then
-
-        if echo "${API_RESPONSE}" |
-            grep -qiE 'Required lock is already taken|lock'
-        then
-
-            warn "Content View publish lock detected."
-
-            sleep 10
-
-            info "Retrying Content View publish..."
-
-            if ! katello_api POST "${URL}" "${DATA}"
-            then
-
-                error "Content View publish retry failed."
-
-                record_failure "${CONTENT_VIEW} publish"
-
-                return 1
-            fi
-
+    if api_success; then
+        TASK_ID="$(extract_task_id)"
+        if [ -n "${TASK_ID}" ]; then
+            ok "${CONTENT_VIEW} publish started. Task=${TASK_ID}"
         else
-
-            error "Content View publish failed."
-
-            record_failure "${CONTENT_VIEW} publish"
-
-            return 1
+            ok "${CONTENT_VIEW} publish started."
         fi
+        return 0
     fi
 
-    TASK_ID=$(extract_task_id "${API_RESPONSE}")
+    if grep -qiE "lock.*taken|already running|Required lock" "${BODY}" 2>/dev/null; then
+        warn "Content View publish lock detected."
+        resume_paused_tasks
+        sleep 5
 
-    if [ -n "${TASK_ID}" ]
-    then
+        api_request POST \
+            "/katello/api/content_views/${CONTENT_VIEW_ID}/publish" \
+            "${PAYLOAD}"
 
-        ok "${CONTENT_VIEW} publish started."
-
-        echo "Task : ${TASK_ID}"
-
-        if ! monitor_task \
-            "${TASK_ID}" \
-            "${CONTENT_VIEW} publish"
-        then
-
-            record_failure "${CONTENT_VIEW} publish"
-
-            return 1
-        fi
-
-    else
-
-        ok "${CONTENT_VIEW} publish request accepted."
-    fi
-}
-
-###############################################################################
-# Get Repository Content Label
-###############################################################################
-
-get_repository_content_label()
-{
-    REPO_ID="$1"
-
-    URL="${FOREMAN_URL}/katello/api/repositories/${REPO_ID}"
-
-    if ! katello_api GET "${URL}"
-    then
-        return 1
-    fi
-
-    echo "${API_RESPONSE}" |
-        jq -r '.content_label // empty'
-}
-
-###############################################################################
-# Create Activation Key
-###############################################################################
-
-create_activation_key()
-{
-    header "[5/6] Creating Activation Key"
-
-    info "Checking Activation Key : ${ACTIVATION_KEY}"
-
-    URL="${FOREMAN_URL}/katello/api/organizations/${ORG_ID}/activation_keys?per_page=100"
-
-    if ! katello_api GET "${URL}"
-    then
-        record_failure "Activation Key lookup"
-        return 1
-    fi
-
-    ACTIVATION_KEY_ID=$(
-        echo "${API_RESPONSE}" |
-        jq -r \
-            --arg NAME "${ACTIVATION_KEY}" '
-            .results[]
-            | select(.name == $NAME)
-            | .id
-            ' |
-        head -1
-    )
-
-    if [ -n "${ACTIVATION_KEY_ID}" ] &&
-       [ "${ACTIVATION_KEY_ID}" != "null" ]
-    then
-
-        skip "Activation Key ${ACTIVATION_KEY} already exists. ID=${ACTIVATION_KEY_ID}"
-
-        info "Updating Activation Key Content View"
-
-        DATA=$(
-            jq -n \
-                --argjson content_view_id "${CONTENT_VIEW_ID}" \
-                --argjson environment_id "${LIBRARY_ENVIRONMENT_ID}" '
-                {
-                    content_view_id: $content_view_id,
-                    environment_id: $environment_id
-                }
-                '
-        )
-
-        URL="${FOREMAN_URL}/katello/api/activation_keys/${ACTIVATION_KEY_ID}"
-
-        if katello_api PUT "${URL}" "${DATA}"
-        then
-            ok "Activation Key updated."
+        if api_success; then
+            ok "${CONTENT_VIEW} publish retry accepted."
             return 0
         fi
-
-        record_failure "${ACTIVATION_KEY} update"
-
-        return 1
     fi
 
-    info "Creating Activation Key"
-
-    DATA=$(
-        jq -n \
-            --arg name "${ACTIVATION_KEY}" \
-            --argjson organization_id "${ORG_ID}" \
-            --argjson content_view_id "${CONTENT_VIEW_ID}" \
-            --argjson environment_id "${LIBRARY_ENVIRONMENT_ID}" '
-            {
-                name: $name,
-                organization_id: $organization_id,
-                content_view_id: $content_view_id,
-                environment_id: $environment_id,
-                unlimited_hosts: true
-            }
-            '
-    )
-
-    URL="${FOREMAN_URL}/katello/api/activation_keys"
-
-    if ! katello_api POST "${URL}" "${DATA}"
-    then
-
-        record_failure "${ACTIVATION_KEY}"
-
-        return 1
-    fi
-
-    ACTIVATION_KEY_ID=$(echo "${API_RESPONSE}" | jq -r '.id')
-
-    if [ -z "${ACTIVATION_KEY_ID}" ] ||
-       [ "${ACTIVATION_KEY_ID}" = "null" ]
-    then
-
-        error "Activation Key creation returned no ID."
-
-        record_failure "${ACTIVATION_KEY}"
-
-        return 1
-    fi
-
-    ok "Activation Key created. ID=${ACTIVATION_KEY_ID}"
+    show_api_error POST "/katello/api/content_views/${CONTENT_VIEW_ID}/publish"
+    record_failure "${CONTENT_VIEW} publish"
+    return 1
 }
 
 ###############################################################################
-# Configure Activation Key
+# Activation Key
 ###############################################################################
 
-configure_activation_key()
-{
-    header "Configuring Activation Key Repositories"
+get_activation_key_id() {
+    ACTIVATION_KEY_ID=""
 
-    for REPO_ID in \
-        "${BASE_REPO_ID}" \
-        "${APPSTREAM_REPO_ID}" \
-        "${ELEVATE_REPO_ID}"
-    do
+    api_request GET \
+        "/katello/api/organizations/${ORG_ID}/activation_keys?per_page=100&page=1"
 
-        if [ -z "${REPO_ID}" ]
-        then
+    if ! api_success; then
+        return 1
+    fi
+
+    ACTIVATION_KEY_ID="$(
+        /bin/jq -r \
+            --arg NAME "${ACTIVATION_KEY}" \
+            '(.results // [])[] | select(.name == $NAME) | .id' \
+            "${BODY}" 2>/dev/null |
+        head -n 1
+    )"
+
+    [ -n "${ACTIVATION_KEY_ID}" ]
+}
+
+create_activation_key() {
+    header "Activation Key"
+
+    if get_activation_key_id; then
+        skip "Activation Key already exists. ID=${ACTIVATION_KEY_ID}"
+    else
+        info "Creating Activation Key : ${ACTIVATION_KEY}"
+
+        PAYLOAD="$(
+            /bin/jq -n \
+                --arg name "${ACTIVATION_KEY}" \
+                --argjson organization_id "${ORG_ID}" \
+                --argjson content_view_id "${CONTENT_VIEW_ID}" \
+                --argjson environment_id "${LIBRARY_ID}" \
+                '{
+                    name:$name,
+                    organization_id:$organization_id,
+                    content_view_id:$content_view_id,
+                    environment_id:$environment_id,
+                    unlimited_hosts:true
+                }'
+        )"
+
+        api_request POST "/katello/api/activation_keys" "${PAYLOAD}"
+
+        if api_success; then
+            ACTIVATION_KEY_ID="$(
+                /bin/jq -r '.id // .activation_key.id // empty' "${BODY}" 2>/dev/null
+            )"
+        fi
+
+        if [ -z "${ACTIVATION_KEY_ID}" ]; then
+            get_activation_key_id
+        fi
+
+        if [ -z "${ACTIVATION_KEY_ID}" ]; then
+            show_api_error POST "/katello/api/activation_keys"
+            record_failure "${ACTIVATION_KEY}"
+            return 1
+        fi
+
+        ok "Activation Key available. ID=${ACTIVATION_KEY_ID}"
+    fi
+
+    # Reuse existing key but correct its CV/environment mapping if needed.
+    api_request GET "/katello/api/activation_keys/${ACTIVATION_KEY_ID}"
+
+    if ! api_success; then
+        show_api_error GET "/katello/api/activation_keys/${ACTIVATION_KEY_ID}"
+        record_failure "${ACTIVATION_KEY} lookup"
+        return 1
+    fi
+
+    CURRENT_CV_ID="$(/bin/jq -r '.content_view_id // empty' "${BODY}" 2>/dev/null)"
+    CURRENT_ENV_ID="$(/bin/jq -r '.environment_id // empty' "${BODY}" 2>/dev/null)"
+
+    if [ "${CURRENT_CV_ID}" = "${CONTENT_VIEW_ID}" ] &&
+       [ "${CURRENT_ENV_ID}" = "${LIBRARY_ID}" ]; then
+        skip "Activation Key already points to ${CONTENT_VIEW} / Library."
+        return 0
+    fi
+
+    info "Updating Activation Key mapping."
+
+    PAYLOAD="$(
+        /bin/jq -n \
+            --argjson organization_id "${ORG_ID}" \
+            --argjson content_view_id "${CONTENT_VIEW_ID}" \
+            --argjson environment_id "${LIBRARY_ID}" \
+            '{
+                organization_id:$organization_id,
+                content_view_id:$content_view_id,
+                environment_id:$environment_id
+            }'
+    )"
+
+    api_request PUT \
+        "/katello/api/activation_keys/${ACTIVATION_KEY_ID}" \
+        "${PAYLOAD}"
+
+    if api_success; then
+        ok "Activation Key mapping updated."
+        return 0
+    fi
+
+    show_api_error PUT "/katello/api/activation_keys/${ACTIVATION_KEY_ID}"
+    record_failure "${ACTIVATION_KEY} mapping"
+    return 1
+}
+
+get_content_label() {
+    local REPO_ID="$1"
+
+    api_request GET "/katello/api/repositories/${REPO_ID}"
+    api_success || return 1
+
+    /bin/jq -r '.content_label // empty' "${BODY}" 2>/dev/null
+}
+
+configure_activation_key() {
+    header "Configuring Activation Key Content"
+
+    local REPO_ID LABEL REPO_NAME
+    local REPO_IDS=()
+    local REPO_NAMES=()
+
+    REPO_IDS+=("${BASE_REPO_ID}")
+    REPO_NAMES+=("${BASE_REPO}")
+    REPO_IDS+=("${APPSTREAM_REPO_ID}")
+    REPO_NAMES+=("${APPSTREAM_REPO}")
+    REPO_IDS+=("${ELEVATE_REPO_ID}")
+    REPO_NAMES+=("${ELEVATE_REPO}")
+
+    local i
+    for i in "${!TARGET_REPO_IDS[@]}"; do
+        REPO_IDS+=("${TARGET_REPO_IDS[$i]}")
+        REPO_NAMES+=("${TARGET_REPO_NAMES[$i]}")
+    done
+
+    for i in "${!REPO_IDS[@]}"; do
+        REPO_ID="${REPO_IDS[$i]}"
+        REPO_NAME="${REPO_NAMES[$i]}"
+
+        LABEL="$(get_content_label "${REPO_ID}")"
+
+        if [ -z "${LABEL}" ]; then
+            warn "Content label not found for ${REPO_NAME}; skipping override."
             continue
         fi
 
-        LABEL="$(get_repository_content_label "${REPO_ID}")"
-
-        if [ -z "${LABEL}" ]
-        then
-
-            warn "Content label not found for repository ID ${REPO_ID}"
-
-            record_failure \
-                "Repository ${REPO_ID} content label"
-
+        # Build this payload without jq object-key parsing.
+        # Some older jq builds used with this Foreman host reject
+        # content_label in this object expression as a parser error.
+        # The repository content label is generated by Foreman and is
+        # therefore JSON-escaped below before constructing the payload.
+        LABEL_JSON="$(printf '%s' "${LABEL}" | /bin/jq -Rsa .)" || {
+            error "Unable to JSON-encode content label for ${REPO_NAME}."
+            record_failure "${REPO_NAME} activation-key content"
             continue
-        fi
+        }
 
-        info "Enabling Repository"
-        echo "Repository ID : ${REPO_ID}"
-        echo "Content Label  : ${LABEL}"
+        PAYLOAD="$(printf '{"content_overrides":[{"content_label":%s,"value":"1"}]}' "${LABEL_JSON}")"
 
-        DATA=$(
-            jq -n \
-                --arg label "${LABEL}" '
-                {
-                    content_override: [
-                        {
-                            content_label: $label,
-                            value: "1"
-                        }
-                    ]
-                }
-                '
-        )
+        api_request PUT \
+            "/katello/api/activation_keys/${ACTIVATION_KEY_ID}/content_override" \
+            "${PAYLOAD}"
 
-        URL="${FOREMAN_URL}/katello/api/activation_keys/${ACTIVATION_KEY_ID}/content_override"
-
-        if katello_api PUT "${URL}" "${DATA}"
-        then
-            ok "Repository ${REPO_ID} enabled."
+        if api_success; then
+            ok "${REPO_NAME} enabled on Activation Key."
         else
-
-            #
-            # Some Katello versions use the plural endpoint.
-            #
-            URL="${FOREMAN_URL}/katello/api/activation_keys/${ACTIVATION_KEY_ID}/content_overrides"
-
-            DATA=$(
-                jq -n \
-                    --arg label "${LABEL}" '
-                    {
-                        content_label: $label,
-                        value: "1"
-                    }
-                    '
-            )
-
-            if katello_api POST "${URL}" "${DATA}"
-            then
-                ok "Repository ${REPO_ID} enabled."
-            else
-
-                warn "Unable to enable repository ${REPO_ID}."
-
-                record_failure \
-                    "Repository ${REPO_ID} activation key"
-            fi
+            show_api_error PUT \
+                "/katello/api/activation_keys/${ACTIVATION_KEY_ID}/content_override"
+            record_failure "${REPO_NAME} activation key"
         fi
     done
 }
 
-###############################################################################
-# Verify Activation Key
-###############################################################################
-
-verify_activation_key()
-{
+verify_activation_key() {
     header "Verifying Activation Key"
 
-    if [ -z "${ACTIVATION_KEY_ID}" ]
-    then
+    api_request GET "/katello/api/activation_keys/${ACTIVATION_KEY_ID}"
 
-        error "Activation Key ID is empty."
-
-        record_failure "Activation Key verification"
-
+    if ! api_success; then
+        show_api_error GET "/katello/api/activation_keys/${ACTIVATION_KEY_ID}"
+        record_failure "${ACTIVATION_KEY} verification"
         return 1
     fi
 
-    URL="${FOREMAN_URL}/katello/api/activation_keys/${ACTIVATION_KEY_ID}"
+    CURRENT_CV_ID="$(/bin/jq -r '.content_view_id // empty' "${BODY}" 2>/dev/null)"
+    CURRENT_ENV_ID="$(/bin/jq -r '.environment_id // empty' "${BODY}" 2>/dev/null)"
 
-    if ! katello_api GET "${URL}"
-    then
+    /bin/jq '{
+        id,
+        name,
+        organization_id,
+        content_view_id,
+        environment_id,
+        unlimited_hosts,
+        auto_attach
+    }' "${BODY}" 2>/dev/null
 
-        record_failure "Activation Key verification"
-
-        return 1
+    if [ "${CURRENT_CV_ID}" = "${CONTENT_VIEW_ID}" ] &&
+       [ "${CURRENT_ENV_ID}" = "${LIBRARY_ID}" ]; then
+        ok "Activation Key verification completed."
+        return 0
     fi
 
-    AK_NAME=$(echo "${API_RESPONSE}" | jq -r '.name // empty')
-
-    AK_CV_ID=$(echo "${API_RESPONSE}" | jq -r '.content_view_id // empty')
-
-    AK_ENV_ID=$(echo "${API_RESPONSE}" | jq -r '.environment_id // empty')
-
-    echo
-    echo "Activation Key"
-    echo "------------------------------------------------------------"
-    echo "ID               : ${ACTIVATION_KEY_ID}"
-    echo "Name             : ${AK_NAME}"
-    echo "Content View ID  : ${AK_CV_ID}"
-    echo "Environment ID   : ${AK_ENV_ID}"
-    echo
-
-    if [ "${AK_NAME}" != "${ACTIVATION_KEY}" ]
-    then
-
-        error "Activation Key name mismatch."
-
-        record_failure "Activation Key name"
-
-        return 1
-    fi
-
-    if [ "${AK_CV_ID}" != "${CONTENT_VIEW_ID}" ]
-    then
-
-        error "Activation Key Content View mismatch."
-
-        echo "Expected : ${CONTENT_VIEW_ID}"
-        echo "Actual   : ${AK_CV_ID}"
-
-        record_failure "Activation Key Content View"
-
-        return 1
-    fi
-
-    if [ "${AK_ENV_ID}" != "${LIBRARY_ENVIRONMENT_ID}" ]
-    then
-
-        error "Activation Key Lifecycle Environment mismatch."
-
-        echo "Expected : ${LIBRARY_ENVIRONMENT_ID}"
-        echo "Actual   : ${AK_ENV_ID}"
-
-        record_failure "Activation Key Environment"
-
-        return 1
-    fi
-
-    ok "Activation Key verification successful."
-
-    return 0
+    error "Activation Key mapping is incorrect."
+    echo "Expected Content View ID : ${CONTENT_VIEW_ID}"
+    echo "Actual Content View ID   : ${CURRENT_CV_ID}"
+    echo "Expected Environment ID  : ${LIBRARY_ID}"
+    echo "Actual Environment ID    : ${CURRENT_ENV_ID}"
+    record_failure "${ACTIVATION_KEY} verification"
+    return 1
 }
 
 ###############################################################################
-# Generate Bootstrap Command
+# Summary / commands
 ###############################################################################
 
-generate_bootstrap_command()
-{
+generate_bootstrap_command() {
     header "Generating Rocky Linux 8 Bootstrap Command"
 
-    echo
-    echo "Run on Rocky Linux 8 source server"
-    echo
-    echo "------------------------------------------------------------"
-    echo
+    cat <<EOF
 
-    echo "subscription-manager register \\"
-    echo "  --org=\"${ORG}\" \\"
-    echo "  --activationkey=\"${ACTIVATION_KEY}\""
+Run this on the Rocky Linux 8 source server:
 
-    echo
-    echo "------------------------------------------------------------"
-    echo
+------------------------------------------------------------
 
-    echo "After registration:"
-    echo
-    echo "dnf clean all"
-    echo "dnf repolist"
+rpm -Uvh http://192.168.253.136/pub/katello-ca-consumer-latest.noarch.rpm
 
-    echo
-    echo "Install ELevate packages:"
-    echo
-    echo "dnf install -y leapp-upgrade leapp-data-rocky"
+subscription-manager register \\
+  --org="${ORG_NAME}" \\
+  --activationkey="${ACTIVATION_KEY}"
 
-    echo
-    echo "Run upgrade checks:"
-    echo
-    echo "leapp preupgrade"
+dnf clean all
+dnf repolist
 
-    echo
-    echo "Execute migration:"
-    echo
-    echo "leapp upgrade"
+dnf install -y leapp-upgrade leapp-data-rocky
 
-    echo
-    echo "Reboot:"
-    echo
-    echo "reboot"
+leapp preupgrade
+leapp upgrade
+reboot
+
+------------------------------------------------------------
+
+Target Version : Rocky Linux ${ROCKY_VERSION}
+Content View   : ${CONTENT_VIEW}
+Activation Key : ${ACTIVATION_KEY}
+
+EOF
 }
 
-###############################################################################
-# Content View Summary
-###############################################################################
+summary() {
+    header "EL8 To EL9 Bootstrap Summary"
 
-content_view_summary()
-{
-    header "Content View Summary"
-
-    if [ -z "${CONTENT_VIEW_ID}" ]
-    then
-        error "Content View ID is empty."
-        return 1
-    fi
-
-    URL="${FOREMAN_URL}/katello/api/content_views/${CONTENT_VIEW_ID}"
-
-    if ! katello_api GET "${URL}"
-    then
-        return 1
-    fi
+    echo "Source Product : ${SOURCE_PRODUCT} (ID=${SOURCE_PRODUCT_ID})"
+    echo "Target Product : ${TARGET_PRODUCT} (ID=${TARGET_PRODUCT_ID})"
+    echo "Content View   : ${CONTENT_VIEW} (ID=${CONTENT_VIEW_ID})"
+    echo "Activation Key : ${ACTIVATION_KEY} (ID=${ACTIVATION_KEY_ID})"
+    echo
+    echo "Source Repositories:"
+    echo "  ${BASE_REPO}       ID=${BASE_REPO_ID}"
+    echo "  ${APPSTREAM_REPO}  ID=${APPSTREAM_REPO_ID}"
+    echo "  ${ELEVATE_REPO}    ID=${ELEVATE_REPO_ID}"
+    echo
+    echo "Target Repositories:"
+    local i
+    for i in "${!TARGET_REPO_IDS[@]}"; do
+        echo "  ${TARGET_REPO_NAMES[$i]}  ID=${TARGET_REPO_IDS[$i]}"
+    done
 
     echo
-    echo "Content View"
-    echo "------------------------------------------------------------"
-
-    echo "${API_RESPONSE}" |
-        jq '{
+    echo "Content View:"
+    api_request GET "/katello/api/content_views/${CONTENT_VIEW_ID}"
+    if api_success; then
+        /bin/jq '{
             id,
             name,
             label,
-            organization_id,
-            repository_ids,
+            version_count,
             latest_version,
             latest_version_id,
-            version_count,
-            latest_version_environments,
-            environments,
-            last_published
-        }' 2>/dev/null
-}
-
-###############################################################################
-# Activation Key Summary
-###############################################################################
-
-activation_key_summary()
-{
-    header "Activation Key Summary"
-
-    if [ -z "${ACTIVATION_KEY_ID}" ]
-    then
-        error "Activation Key ID is empty."
-        return 1
-    fi
-
-    URL="${FOREMAN_URL}/katello/api/activation_keys/${ACTIVATION_KEY_ID}"
-
-    if ! katello_api GET "${URL}"
-    then
-        return 1
+            repository_ids,
+            needs_publish
+        }' "${BODY}" 2>/dev/null
     fi
 
     echo
-    echo "Activation Key"
-    echo "------------------------------------------------------------"
-
-    echo "${API_RESPONSE}" |
-        jq '{
+    echo "Activation Key:"
+    api_request GET "/katello/api/activation_keys/${ACTIVATION_KEY_ID}"
+    if api_success; then
+        /bin/jq '{
             id,
             name,
             organization_id,
@@ -1900,230 +1268,144 @@ activation_key_summary()
             environment_id,
             unlimited_hosts,
             auto_attach
-        }' 2>/dev/null
+        }' "${BODY}" 2>/dev/null
+    fi
+}
+
+manual_verification() {
+    header "Manual Verification Commands"
+
+    cat <<EOF
+
+1. Foreman API:
+curl -ksS \\
+  --user "admin:\$FOREMAN_PASSWORD" \\
+  -H 'Accept: application/json' \\
+  "${FOREMAN_URL}/api/status" | jq
+
+2. Products:
+curl -ksS \\
+  --user "admin:\$FOREMAN_PASSWORD" \\
+  -H 'Accept: application/json' \\
+  "${FOREMAN_URL}/katello/api/organizations/${ORG_ID}/products?per_page=100&page=1" |
+jq -r '.results[] | [.id,.name,.label,.repository_count] | @tsv'
+
+3. Rocky Linux 8 repositories:
+curl -ksS \\
+  --user "admin:\$FOREMAN_PASSWORD" \\
+  -H 'Accept: application/json' \\
+  "${FOREMAN_URL}/katello/api/products/${SOURCE_PRODUCT_ID}/repositories?per_page=100&page=1" |
+jq -r '.results[] | [.id,.name,.url] | @tsv'
+
+4. Target repositories:
+curl -ksS \\
+  --user "admin:\$FOREMAN_PASSWORD" \\
+  -H 'Accept: application/json' \\
+  "${FOREMAN_URL}/katello/api/products/${TARGET_PRODUCT_ID}/repositories?per_page=100&page=1" |
+jq -r '.results[] | [.id,.name,.url] | @tsv'
+
+5. Content View:
+curl -ksS \\
+  --user "admin:\$FOREMAN_PASSWORD" \\
+  -H 'Accept: application/json' \\
+  "${FOREMAN_URL}/katello/api/content_views/${CONTENT_VIEW_ID}" | jq
+
+6. Activation Key:
+curl -ksS \\
+  --user "admin:\$FOREMAN_PASSWORD" \\
+  -H 'Accept: application/json' \\
+  "${FOREMAN_URL}/katello/api/activation_keys/${ACTIVATION_KEY_ID}" | jq
+
+EOF
+}
+
+final_status() {
+    header "05 - EL8 To EL9 Bootstrap Completed"
+
+    if [ "${#FAILED_STEPS[@]}" -eq 0 ]; then
+        ok "EL8 To EL9 Bootstrap completed successfully."
+        return 0
+    fi
+
+    warn "Bootstrap completed with ${#FAILED_STEPS[@]} failure(s)."
+    local ITEM
+    for ITEM in "${FAILED_STEPS[@]}"; do
+        error "${ITEM}"
+    done
+    return 1
 }
 
 ###############################################################################
-# Final Summary
+# MAIN
 ###############################################################################
 
-summary()
-{
-    header "EL8 To EL9 Bootstrap Summary"
-
-    echo
-
-    echo "## Product"
-    echo "------------------------------------------------------------"
-    echo "Name : ${PRODUCT}"
-    echo "ID   : ${PRODUCT_ID}"
-
-    echo
-
-    echo "## Repositories"
-    echo "------------------------------------------------------------"
-
-    echo
-    echo "BaseOS"
-    echo "Name : ${BASE_REPO}"
-    echo "ID   : ${BASE_REPO_ID}"
-    echo "URL  : ${BASE_URL}"
-
-    echo
-    echo "AppStream"
-    echo "Name : ${APPSTREAM_REPO}"
-    echo "ID   : ${APPSTREAM_REPO_ID}"
-    echo "URL  : ${APPSTREAM_URL}"
-
-    echo
-    echo "ELevate"
-    echo "Name : ${ELEVATE_REPO_NAME}"
-    echo "ID   : ${ELEVATE_REPO_ID}"
-    echo "URL  : ${ELEVATE_REPO_URL}"
-
-    echo
-
-    echo "## Content View"
-    echo "------------------------------------------------------------"
-    echo "Name          : ${CONTENT_VIEW}"
-    echo "ID            : ${CONTENT_VIEW_ID}"
-    echo "Environment   : ${LIBRARY_ENVIRONMENT_NAME}"
-    echo "Environment ID: ${LIBRARY_ENVIRONMENT_ID}"
-
-    echo
-
-    echo "## Activation Key"
-    echo "------------------------------------------------------------"
-    echo "Name : ${ACTIVATION_KEY}"
-    echo "ID   : ${ACTIVATION_KEY_ID}"
-
-    echo
-
-    echo "## Migration Configuration"
-    echo "------------------------------------------------------------"
-    echo "Target Version : ${ROCKY_VERSION}"
-    echo "Product        : ${PRODUCT}"
-    echo "Content View   : ${CONTENT_VIEW}"
-    echo "Activation Key : ${ACTIVATION_KEY}"
+check_dependencies || {
+    final_status
+    exit 1
 }
 
-###############################################################################
-# Main Execution
-###############################################################################
+print_configuration
 
-header "05 - Foreman Katello Bootstrap EL8 To EL9"
-
-###############################################################################
-# API Test
-###############################################################################
-
-if ! test_api
-then
-    summary
+test_foreman_api || {
+    final_status
     exit 1
-fi
+}
 
-###############################################################################
-# Organization
-###############################################################################
-
-if ! resolve_organization
-then
-    summary
+resolve_resources || {
+    final_status
     exit 1
-fi
+}
 
-###############################################################################
-# Library Environment
-###############################################################################
+resume_paused_tasks
 
-if ! resolve_library_environment
-then
-    summary
+ensure_source_product || {
+    final_status
     exit 1
-fi
+}
 
-###############################################################################
-# Product
-###############################################################################
-
-if ! create_product
-then
-    summary
+ensure_target_product || {
+    final_status
     exit 1
-fi
+}
 
-###############################################################################
-# Repositories
-###############################################################################
-
-create_repositories
-
-if [ -z "${BASE_REPO_ID}" ] ||
-   [ -z "${APPSTREAM_REPO_ID}" ] ||
-   [ -z "${ELEVATE_REPO_ID}" ]
-then
-
-    error "One or more repository IDs are missing."
-
-    summary
-
+resolve_source_repositories || {
+    final_status
     exit 1
-fi
+}
 
-###############################################################################
-# Synchronization
-###############################################################################
+resolve_target_repositories || {
+    final_status
+    exit 1
+}
 
 sync_repositories
 
-###############################################################################
-# Content View
-###############################################################################
+create_content_view || {
+    final_status
+    exit 1
+}
 
-if ! create_content_view
-then
-    summary
+configure_content_view
+
+if ! publish_content_view; then
+    final_status
     exit 1
 fi
 
-###############################################################################
-# Configure Content View
-###############################################################################
-
-if ! configure_content_view
-then
-    summary
+create_activation_key || {
+    final_status
     exit 1
-fi
-
-###############################################################################
-# Publish Content View
-###############################################################################
-
-if ! publish_content_view
-then
-    summary
-    exit 1
-fi
-
-###############################################################################
-# Activation Key
-###############################################################################
-
-if ! create_activation_key
-then
-    summary
-    exit 1
-fi
-
-###############################################################################
-# Configure Activation Key
-###############################################################################
+}
 
 configure_activation_key
 
-###############################################################################
-# Verify Activation Key
-###############################################################################
-
-if ! verify_activation_key
-then
-    summary
-    exit 1
-fi
-
-###############################################################################
-# Output Commands / Summaries
-###############################################################################
+verify_activation_key
 
 generate_bootstrap_command
-
-content_view_summary
-
-activation_key_summary
-
 summary
+manual_verification
 
-###############################################################################
-# Final Status
-###############################################################################
+final_status
+EXIT_STATUS=$?
 
-if [ ${#FAILED_STEPS[@]} -gt 0 ]
-then
-
-    echo
-    error "Failed steps: ${#FAILED_STEPS[@]}"
-
-    for STEP in "${FAILED_STEPS[@]}"
-    do
-        error "${STEP}"
-    done
-
-    exit 1
-fi
-
-echo
-ok "EL8 To EL9 Bootstrap completed successfully."
-
-exit 0
+exit "${EXIT_STATUS}"
