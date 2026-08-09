@@ -171,6 +171,385 @@ create_os "${ROCKY98_RAID_NAME}" "${ROCKY98_RAID_TITLE}" 9 8 "${ROCKY98_MEDIA}"
 create_os "${ROCKY98_SINGLE_NAME}" "${ROCKY98_SINGLE_TITLE}" 9 8 "${ROCKY98_MEDIA}"
 header "Operating System Verification"
 $HAMMER os list
+
+###############################################################################
+# PXE TEMPLATE FILE GENERATION
+###############################################################################
+
+generate_templates()
+{
+    section "Generating PXEGrub2 Template Files"
+
+    "$MKDIR" -p "$TMP_DIR"
+
+    ###########################################################################
+    # CentOS 7 RAID Template
+    ###########################################################################
+
+    info "Generating CentOS 7 RAID template..."
+
+    "$CAT" > "${TMP_DIR}/centos-raid.erb" <<'EOF_CENTOS_RAID'
+<%#
+name: PXEGrub2 CentOS UEFI RAID Kickstart
+kind: PXEGrub2
+oses:
+- CentOSLinux
+%>
+
+set default=0
+set timeout=5
+
+menuentry 'Install CentOS 7 RAID' {
+    linuxefi /centos/vmlinuz \
+        inst.stage2=http://192.168.253.136/repo/centos/ \
+        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/centos7-kickstarts/centos7.cfg \
+        inst.text \
+        inst.ks.device=bootif \
+        BOOTIF=01-${net_default_mac} \
+        hostname=<%= @host.name %>
+
+    initrdefi /centos/initrd.img
+}
+EOF_CENTOS_RAID
+
+    ok "CentOS RAID template generated."
+
+
+    ###########################################################################
+    # CentOS 7 Single Disk Template
+    ###########################################################################
+
+    info "Generating CentOS 7 Single Disk template..."
+
+    "$CAT" > "${TMP_DIR}/centos-singledisk.erb" <<'EOF_CENTOS_SINGLE'
+<%#
+name: PXEGrub2 CentOS UEFI SingleDisk Kickstart
+kind: PXEGrub2
+oses:
+- CentOSLinux
+%>
+
+set default=0
+set timeout=5
+
+menuentry 'Install CentOS 7 Single Disk' {
+    linuxefi /centos/vmlinuz \
+        inst.stage2=http://192.168.253.136/repo/centos/ \
+        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/centos7-kickstarts/centos7.cfg \
+        inst.text \
+        inst.ks.device=bootif \
+        BOOTIF=01-${net_default_mac} \
+        hostname=<%= @host.name %>
+
+    initrdefi /centos/initrd.img
+}
+EOF_CENTOS_SINGLE
+
+    ok "CentOS Single Disk template generated."
+
+
+    ###########################################################################
+    # Rocky Linux 8 RAID Template
+    ###########################################################################
+
+    info "Generating Rocky Linux 8 RAID template..."
+
+    "$CAT" > "${TMP_DIR}/rocky8-raid.erb" <<'EOF_ROCKY8_RAID'
+<%#
+name: PXEGrub2 Rocky8 UEFI RAID Kickstart
+kind: PXEGrub2
+oses:
+- RockyLinux
+%>
+
+set default=0
+set timeout=5
+
+menuentry 'Install Rocky Linux 8.10 RAID' {
+    linuxefi /rocky8/vmlinuz \
+        inst.stage2=http://192.168.253.136/repo/rocky8/ \
+        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky8-kickstarts/rockyos.cfg \
+        inst.text \
+        inst.ks.device=bootif \
+        BOOTIF=01-${net_default_mac} \
+        hostname=<%= @host.name %>
+
+    initrdefi /rocky8/initrd.img
+}
+EOF_ROCKY8_RAID
+
+    ok "Rocky Linux 8 RAID template generated."
+
+
+    ###########################################################################
+    # Rocky Linux 8 Single Disk Template
+    ###########################################################################
+
+    info "Generating Rocky Linux 8 Single Disk template..."
+
+    "$CAT" > "${TMP_DIR}/rocky8-singledisk.erb" <<'EOF_ROCKY8_SINGLE'
+<%#
+name: PXEGrub2 Rocky8 UEFI SingleDisk Kickstart
+kind: PXEGrub2
+oses:
+- RockyLinux
+%>
+
+set default=0
+set timeout=5
+
+menuentry 'Install Rocky Linux 8.10 Single Disk' {
+    linuxefi /rocky8/vmlinuz \
+        inst.stage2=http://192.168.253.136/repo/rocky8/ \
+        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky8-kickstarts/rockyos.cfg \
+        inst.text \
+        inst.ks.device=bootif \
+        BOOTIF=01-${net_default_mac} \
+        hostname=<%= @host.name %>
+
+    initrdefi /rocky8/initrd.img
+}
+EOF_ROCKY8_SINGLE
+
+    ok "Rocky Linux 8 Single Disk template generated."
+
+
+    ###########################################################################
+    # Rocky Linux 9.2 RAID Template
+    ###########################################################################
+
+    info "Generating Rocky Linux 9.2 RAID template..."
+
+    "$CAT" > "${TMP_DIR}/rocky92-raid.erb" <<'EOF_ROCKY92_RAID'
+<%#
+name: PXEGrub2 Rocky9.2 UEFI RAID Kickstart
+kind: PXEGrub2
+oses:
+- RockyLinux
+%>
+
+set default=0
+set timeout=5
+
+menuentry 'Install Rocky Linux 9.2 RAID' {
+    linuxefi /rocky92/vmlinuz \
+        ip=dhcp \
+        BOOTIF=01-${net_default_mac} \
+        inst.repo=http://192.168.253.136/repo/rocky9.2/ \
+        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky9-kickstart/rocky9.cfg \
+        inst.text \
+        inst.ks.device=bootif \
+        hostname=<%= @host.name %>
+
+    initrdefi /rocky92/initrd.img
+}
+EOF_ROCKY92_RAID
+
+    ok "Rocky Linux 9.2 RAID template generated."
+
+
+    ###########################################################################
+    # Rocky Linux 9.2 Single Disk Template
+    ###########################################################################
+
+    info "Generating Rocky Linux 9.2 Single Disk template..."
+
+    "$CAT" > "${TMP_DIR}/rocky92-singledisk.erb" <<'EOF_ROCKY92_SINGLE'
+<%#
+name: PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart
+kind: PXEGrub2
+oses:
+- RockyLinux
+%>
+
+set default=0
+set timeout=5
+
+menuentry 'Install Rocky Linux 9.2 Single Disk' {
+    linuxefi /rocky92/vmlinuz \
+        ip=dhcp \
+        BOOTIF=01-${net_default_mac} \
+        inst.repo=http://192.168.253.136/repo/rocky9.2/ \
+        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky9-kickstart/rocky9.cfg \
+        inst.text \
+        inst.ks.device=bootif \
+        hostname=<%= @host.name %>
+
+    initrdefi /rocky92/initrd.img
+}
+EOF_ROCKY92_SINGLE
+
+    ok "Rocky Linux 9.2 Single Disk template generated."
+
+
+    ###########################################################################
+    # Rocky Linux 9.8 RAID Template
+    ###########################################################################
+
+    info "Generating Rocky Linux 9.8 RAID template..."
+
+    "$CAT" > "${TMP_DIR}/rocky98-raid.erb" <<'EOF_ROCKY98_RAID'
+<%#
+name: PXEGrub2 Rocky9.8 UEFI RAID Kickstart
+kind: PXEGrub2
+oses:
+- RockyLinux
+%>
+
+set default=0
+set timeout=5
+
+menuentry 'Install Rocky Linux 9.8 RAID' {
+    linuxefi /rocky9/vmlinuz \
+        ip=dhcp \
+        BOOTIF=01-${net_default_mac} \
+        inst.repo=http://192.168.253.136/repo/rocky9/ \
+        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky9_8-kickstart/rocky9.cfg \
+        inst.text \
+        inst.ks.device=bootif \
+        hostname=<%= @host.name %>
+
+    initrdefi /rocky9/initrd.img
+}
+EOF_ROCKY98_RAID
+
+    ok "Rocky Linux 9.8 RAID template generated."
+
+
+    ###########################################################################
+    # Rocky Linux 9.8 Single Disk Template
+    ###########################################################################
+
+    info "Generating Rocky Linux 9.8 Single Disk template..."
+
+    "$CAT" > "${TMP_DIR}/rocky98-singledisk.erb" <<'EOF_ROCKY98_SINGLE'
+<%#
+name: PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart
+kind: PXEGrub2
+oses:
+- RockyLinux
+%>
+
+set default=0
+set timeout=5
+
+menuentry 'Install Rocky Linux 9.8 Single Disk' {
+    linuxefi /rocky9/vmlinuz \
+        ip=dhcp \
+        BOOTIF=01-${net_default_mac} \
+        inst.repo=http://192.168.253.136/repo/rocky9/ \
+        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky9_8-kickstart/rocky9.cfg \
+        inst.text \
+        inst.ks.device=bootif \
+        hostname=<%= @host.name %>
+
+    initrdefi /rocky9/initrd.img
+}
+EOF_ROCKY98_SINGLE
+
+    ok "Rocky Linux 9.8 Single Disk template generated."
+
+
+    ###########################################################################
+    # Verification
+    ###########################################################################
+
+    ok "All 8 PXEGrub2 template files generated."
+
+    "$LS" -lh "${TMP_DIR}"/*.erb
+}
+
+
+###############################################################################
+# Hammer Template Creation
+###############################################################################
+
+create_hammer_template()
+{
+    local TEMPLATE_NAME="$1"
+    local TEMPLATE_FILE="$2"
+
+    echo
+    echo "------------------------------------------------------------"
+    echo "Template : ${TEMPLATE_NAME}"
+    echo "------------------------------------------------------------"
+
+    info "Checking Template : ${TEMPLATE_NAME}"
+
+    if hammer template info \
+        --name "${TEMPLATE_NAME}" \
+        --organization "${ORGANIZATION}" \
+        --location "${LOCATION}" >/dev/null 2>&1; then
+
+        skip "Template already exists. ${TEMPLATE_NAME}"
+        return 0
+    fi
+
+    if [ ! -f "${TEMPLATE_FILE}" ]; then
+        error "Template file missing : ${TEMPLATE_FILE}"
+        return 1
+    fi
+
+    info "Creating Template : ${TEMPLATE_NAME}"
+
+    if hammer template create \
+        --name "${TEMPLATE_NAME}" \
+        --file "${TEMPLATE_FILE}" \
+        --type "PXEGrub2" \
+        --organization "${ORGANIZATION}" \
+        --location "${LOCATION}"; then
+
+        ok "Template created : ${TEMPLATE_NAME}"
+        return 0
+    fi
+
+    error "Failed to create Template : ${TEMPLATE_NAME}"
+    return 1
+}
+
+
+###############################################################################
+# Create All 8 Hammer Templates
+###############################################################################
+
+create_all_hammer_templates()
+{
+    section "Creating PXEGrub2 Hammer Templates"
+
+    create_hammer_template \
+        "PXEGrub2 CentOS UEFI RAID Kickstart" \
+        "${TMP_DIR}/centos-raid.erb"
+
+    create_hammer_template \
+        "PXEGrub2 CentOS UEFI SingleDisk Kickstart" \
+        "${TMP_DIR}/centos-singledisk.erb"
+
+    create_hammer_template \
+        "PXEGrub2 Rocky8 UEFI RAID Kickstart" \
+        "${TMP_DIR}/rocky8-raid.erb"
+
+    create_hammer_template \
+        "PXEGrub2 Rocky8 UEFI SingleDisk Kickstart" \
+        "${TMP_DIR}/rocky8-singledisk.erb"
+
+    create_hammer_template \
+        "PXEGrub2 Rocky9.2 UEFI RAID Kickstart" \
+        "${TMP_DIR}/rocky92-raid.erb"
+
+    create_hammer_template \
+        "PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart" \
+        "${TMP_DIR}/rocky92-singledisk.erb"
+
+    create_hammer_template \
+        "PXEGrub2 Rocky9.8 UEFI RAID Kickstart" \
+        "${TMP_DIR}/rocky98-raid.erb"
+
+    create_hammer_template \
+        "PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart" \
+        "${TMP_DIR}/rocky98-singledisk.erb"
+
+    ok "All 8 PXEGrub2 Hammer templates processed."
+}
 ###############################################################################
 #Attach Provisioning Template
 ###############################################################################
