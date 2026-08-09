@@ -96,21 +96,21 @@ cat <<EOF > /etc/yum.repos.d/vault.repo
 name=CentOS Vault Base
 baseurl=https://vault.centos.org/centos/7/os/\$basearch/
 enabled=1
-gpgcheck=1
+gpgcheck=0
 gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 
 [updates]
 name=CentOS Vault Updates
 baseurl=https://vault.centos.org/centos/7/updates/\$basearch/
 enabled=1
-gpgcheck=1
+gpgcheck=0
 gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 
 [extras]
 name=CentOS Vault Extras
 baseurl=https://vault.centos.org/centos/7/extras/\$basearch/
 enabled=1
-gpgcheck=1
+gpgcheck0
 gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 EOF
 
@@ -191,6 +191,8 @@ echo "${JUST_IP} ${NEW_HOSTNAME}.vgs.com ${NEW_HOSTNAME}" >> /etc/hosts
 
 grep "${NEW_HOSTNAME}.vgs.com" /etc/hosts
 
+yum clean all
+rm -rf /var/cache/yum
 yum makecache
 
 # -------------------------------
