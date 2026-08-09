@@ -191,6 +191,7 @@ echo "${JUST_IP} ${NEW_HOSTNAME}.vgs.com ${NEW_HOSTNAME}" >> /etc/hosts
 
 grep "${NEW_HOSTNAME}.vgs.com" /etc/hosts
 
+yum makecache
 
 # -------------------------------
 # STEP 6: Run Foreman Installer
