@@ -2,7 +2,7 @@
 ###############################################################################
 # Foreman Katello Bootstrap - REST API v2
 #
-# Script Name:
+# Script:
 #   02_foreman_katello_bootstrap_api.sh
 #
 # Supports:
@@ -11,39 +11,19 @@
 #   Rocky Linux 9.2
 #   Rocky Linux 9.8
 #
-# Creates:
+# Creates / Verifies:
 #   Products
 #   Repositories
 #   Content Views
 #   Activation Keys
-#
-# Synchronizes:
-#   Repositories
-#
-# Publishes:
-#   Content Views
-#
-# Attaches:
-#   Subscriptions to Activation Keys
+#   Subscriptions
 #
 # API:
 #   Foreman API v2
 #   Katello API v2
-#
 ###############################################################################
 
 set +e
-
-###############################################################################
-# Failure Tracking
-###############################################################################
-
-FAILED_STEPS=()
-
-record_failure()
-{
-    FAILED_STEPS+=("$1")
-}
 
 ###############################################################################
 # Colors
@@ -55,6 +35,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[1;34m'
 CYAN='\033[1;36m'
 WHITE='\033[1;37m'
+MAGENTA='\033[1;35m'
 NC='\033[0m'
 
 ###############################################################################
@@ -63,7 +44,7 @@ NC='\033[0m'
 
 info()
 {
-    echo -e "${CYAN}$1${NC}"
+    echo -e "${CYAN}[INFO]${NC} $1"
 }
 
 ok()
@@ -94,56 +75,60 @@ header()
     echo -e "${BLUE}============================================================${NC}"
 }
 
+section()
+{
+    echo
+    echo -e "${BLUE}------------------------------------------------------------${NC}"
+    echo -e "${WHITE}$1${NC}"
+    echo -e "${BLUE}------------------------------------------------------------${NC}"
+}
+
 summary_ok()
 {
-    printf "%-35s ${GREEN}[OK]${NC}\n" "$1"
+    printf "%-45s ${GREEN}[OK]${NC}\n" "$1"
+}
+
+###############################################################################
+# Failure Tracking
+###############################################################################
+
+FAILED_STEPS=()
+
+record_failure()
+{
+    FAILED_STEPS+=("$1")
 }
 
 ###############################################################################
 # Variables
 ###############################################################################
 
-FOREMAN_URL="${FOREMAN_URL:-https://cent-07-01.vgs.com}"
-
 FOREMAN_USER="${FOREMAN_USER:-admin}"
-
 FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-zqs977dXzqfEvTML}"
 
-ORGANIZATION="Default Organization"
+FOREMAN_URL="${FOREMAN_URL:-https://cent-07-01.vgs.com}"
+
+ORGANIZATION="${ORGANIZATION:-Default Organization}"
 
 TARGET_VERSION="${TARGET_VERSION:-9.8}"
 
 ###############################################################################
-# API Version
+# API VERSION
 ###############################################################################
 
 API_VERSION="2"
 
-###############################################################################
-# API Headers
-###############################################################################
-
-ACCEPT_HEADER="Accept: application/json,version=${API_VERSION}"
-
-CONTENT_HEADER="Content-Type: application/json"
+# Explicit API v2 route.
+FOREMAN_API="${FOREMAN_URL}/api/v2"
+KATELLO_API="${FOREMAN_URL}/katello/api/v2"
 
 ###############################################################################
-# Temporary Files
+# Temporary Directory
 ###############################################################################
 
-TMP_DIR="/tmp/foreman-katello-bootstrap-api"
+TMP_DIR="/tmp/foreman-katello-bootstrap"
 
 mkdir -p "${TMP_DIR}"
-
-###############################################################################
-# API Endpoints
-###############################################################################
-
-FOREMAN_API="${FOREMAN_URL}/api"
-
-KATELLO_API="${FOREMAN_URL}/katello/api"
-
-TASK_API="${FOREMAN_URL}/foreman_tasks/api"
 
 ###############################################################################
 # Dependency Check
@@ -151,7 +136,7 @@ TASK_API="${FOREMAN_URL}/foreman_tasks/api"
 
 header "Dependency Check"
 
-REQUIRED_COMMANDS=(
+DEPENDENCIES=(
     curl
     jq
     cat
@@ -167,27 +152,63 @@ REQUIRED_COMMANDS=(
     date
 )
 
-for CMD in "${REQUIRED_COMMANDS[@]}"
+for CMD in "${DEPENDENCIES[@]}"
 do
+    CMD_PATH="$(command -v "${CMD}" 2>/dev/null)"
 
-    if command -v "${CMD}" >/dev/null 2>&1
+    if [ -n "${CMD_PATH}" ]
     then
-        ok "${CMD} found: $(command -v "${CMD}")"
+        ok "${CMD} found: ${CMD_PATH}"
     else
         error "${CMD} not found."
         record_failure "Dependency: ${CMD}"
     fi
-
 done
 
-if [ ${#FAILED_STEPS[@]} -ne 0 ]
+if [ "${#FAILED_STEPS[@]}" -ne 0 ]
 then
     error "Required dependencies are missing."
     exit 1
 fi
 
 ###############################################################################
-# Generic REST API Function
+# Target Version
+###############################################################################
+
+case "${TARGET_VERSION}" in
+
+    9.2)
+        PRODUCT_NAME="Rocky Linux 9.2"
+        REPO_PATH="rocky9.2"
+        CONTENT_VIEW="Rocky9.2-CV"
+        ACTIVATION_KEY="rocky9.2-prod-key"
+        ;;
+
+    9.8)
+        PRODUCT_NAME="Rocky Linux 9.8"
+        REPO_PATH="rocky9"
+        CONTENT_VIEW="Rocky9.8-CV"
+        ACTIVATION_KEY="rocky9.8-prod-key"
+        ;;
+
+    *)
+        error "Unsupported TARGET_VERSION : ${TARGET_VERSION}"
+        exit 1
+        ;;
+esac
+
+###############################################################################
+# Start
+###############################################################################
+
+header "02 - Foreman Katello Bootstrap - REST API"
+
+echo "Foreman URL   : ${FOREMAN_URL}"
+echo "API Version   : ${API_VERSION}"
+echo "Target Version: ${TARGET_VERSION}"
+
+###############################################################################
+# API Helper
 ###############################################################################
 
 API_RESPONSE=""
@@ -197,63 +218,60 @@ api_request()
 {
     METHOD="$1"
     URL="$2"
-    DATA="${3:-}"
+    DATA="$3"
 
-    RESPONSE_FILE="$(mktemp)"
+    RESPONSE_FILE="$(mktemp "${TMP_DIR}/response.XXXXXX")"
+    STATUS_FILE="$(mktemp "${TMP_DIR}/status.XXXXXX")"
 
-    if [ -n "${DATA}" ]
+    if [ "${METHOD}" = "GET" ]
     then
 
-        API_STATUS=$(
-            curl -ksS \
-                -u "${FOREMAN_USER}:${FOREMAN_PASSWORD}" \
-                -H "${ACCEPT_HEADER}" \
-                -H "${CONTENT_HEADER}" \
-                -X "${METHOD}" \
-                -d "${DATA}" \
-                -o "${RESPONSE_FILE}" \
-                -w "%{http_code}" \
-                "${URL}"
-        )
+        curl \
+            --globoff \
+            --silent \
+            --show-error \
+            --insecure \
+            --user "${FOREMAN_USER}:${FOREMAN_PASSWORD}" \
+            --request GET \
+            --header "Accept: application/json" \
+            --output "${RESPONSE_FILE}" \
+            --write-out "%{http_code}" \
+            "${URL}" \
+            > "${STATUS_FILE}" 2>/dev/null
 
     else
 
-        API_STATUS=$(
-            curl -ksS \
-                -u "${FOREMAN_USER}:${FOREMAN_PASSWORD}" \
-                -H "${ACCEPT_HEADER}" \
-                -X "${METHOD}" \
-                -o "${RESPONSE_FILE}" \
-                -w "%{http_code}" \
-                "${URL}"
-        )
+        curl \
+            --globoff \
+            --silent \
+            --show-error \
+            --insecure \
+            --user "${FOREMAN_USER}:${FOREMAN_PASSWORD}" \
+            --request "${METHOD}" \
+            --header "Accept: application/json" \
+            --header "Content-Type: application/json" \
+            --data "${DATA}" \
+            --output "${RESPONSE_FILE}" \
+            --write-out "%{http_code}" \
+            "${URL}" \
+            > "${STATUS_FILE}" 2>/dev/null
 
     fi
 
+    API_STATUS="$(cat "${STATUS_FILE}" 2>/dev/null)"
     API_RESPONSE="$(cat "${RESPONSE_FILE}" 2>/dev/null)"
 
-    rm -f "${RESPONSE_FILE}"
+    rm -f "${RESPONSE_FILE}" "${STATUS_FILE}"
+
+    if [ "${API_STATUS}" != "200" ] &&
+       [ "${API_STATUS}" != "201" ] &&
+       [ "${API_STATUS}" != "202" ] &&
+       [ "${API_STATUS}" != "204" ]
+    then
+        return 1
+    fi
 
     return 0
-}
-
-###############################################################################
-# API Success Test
-###############################################################################
-
-api_success()
-{
-    case "${API_STATUS}" in
-
-        200|201|202|204)
-            return 0
-            ;;
-
-        *)
-            return 1
-            ;;
-
-    esac
 }
 
 ###############################################################################
@@ -269,32 +287,55 @@ show_api_error()
 
     if [ -n "${API_RESPONSE}" ]
     then
-        echo
         echo "${API_RESPONSE}" | jq . 2>/dev/null || echo "${API_RESPONSE}"
-        echo
     fi
 }
 
 ###############################################################################
-# Organization ID
+# Foreman API Authentication Test
 ###############################################################################
 
-ORGANIZATION_ID=""
+header "Foreman API Authentication Test"
 
-get_organization_id()
-{
-    api_request \
-        GET \
-        "${FOREMAN_API}/organizations?search=$(printf '%s' "${ORGANIZATION}" | sed 's/ /%20/g')&per_page=100"
+info "Testing Foreman REST API..."
 
-    if ! api_success
-    then
-        show_api_error GET "${FOREMAN_API}/organizations"
-        record_failure "Organization lookup"
-        return 1
-    fi
+if api_request \
+    "GET" \
+    "${FOREMAN_URL}/api/status" \
+    ""
+then
 
-    ORGANIZATION_ID=$(
+    FOREMAN_VERSION="$(echo "${API_RESPONSE}" | jq -r '.version // .foreman_version // empty' 2>/dev/null)"
+
+    ok "Foreman API authentication successful."
+
+    echo "Foreman Version : ${FOREMAN_VERSION}"
+    echo "API Version     : ${API_VERSION}"
+    echo "API Status      : ${API_STATUS}"
+
+else
+
+    show_api_error \
+        "GET" \
+        "${FOREMAN_URL}/api/status"
+
+    exit 1
+fi
+
+###############################################################################
+# Organization
+###############################################################################
+
+ORG_ID=""
+
+api_request \
+    "GET" \
+    "${FOREMAN_URL}/api/organizations?search=$(printf '%s' "${ORGANIZATION}" | sed 's/ /%20/g')" \
+    ""
+
+if [ $? -eq 0 ]
+then
+    ORG_ID="$(
         echo "${API_RESPONSE}" |
         jq -r --arg NAME "${ORGANIZATION}" '
             (.results // [])[]
@@ -302,62 +343,20 @@ get_organization_id()
             | .id
         ' |
         head -n 1
-    )
+    )"
+fi
 
-    if [ -z "${ORGANIZATION_ID}" ] || [ "${ORGANIZATION_ID}" = "null" ]
-    then
-        error "Organization not found : ${ORGANIZATION}"
-        record_failure "Organization : ${ORGANIZATION}"
-        return 1
-    fi
+if [ -z "${ORG_ID}" ] || [ "${ORG_ID}" = "null" ]
+then
+    error "Organization not found : ${ORGANIZATION}"
+    record_failure "Organization : ${ORGANIZATION}"
+    exit 1
+fi
 
-    ok "Organization found : ${ORGANIZATION} ID=${ORGANIZATION_ID}"
-
-    return 0
-}
+ok "Organization found : ${ORGANIZATION} ID=${ORG_ID}"
 
 ###############################################################################
-# Foreman API Authentication
-###############################################################################
-
-test_foreman_api()
-{
-    header "Foreman API Authentication Test"
-
-    info "Testing Foreman REST API..."
-
-    api_request \
-        GET \
-        "${FOREMAN_API}/status"
-
-    if ! api_success
-    then
-        show_api_error GET "${FOREMAN_API}/status"
-        record_failure "Foreman API authentication"
-        return 1
-    fi
-
-    VERSION=$(
-        echo "${API_RESPONSE}" |
-        jq -r '.version // .foreman_version // "unknown"'
-    )
-
-    API_REPORTED_VERSION=$(
-        echo "${API_RESPONSE}" |
-        jq -r '.api_version // "2"'
-    )
-
-    ok "Foreman API authentication successful."
-
-    echo "Foreman Version : ${VERSION}"
-    echo "API Version     : ${API_REPORTED_VERSION}"
-    echo "API Status      : ${API_STATUS}"
-
-    return 0
-}
-
-###############################################################################
-# Resume Paused Tasks
+# Recover Paused Tasks
 ###############################################################################
 
 resume_paused_tasks()
@@ -365,142 +364,58 @@ resume_paused_tasks()
     header "Recovering Paused Foreman Tasks"
 
     api_request \
-        GET \
-        "${TASK_API}/tasks?search=state%20%3D%20paused&per_page=100"
+        "GET" \
+        "${FOREMAN_URL}/foreman_tasks/api/tasks?search=state%20%3D%20paused&per_page=100" \
+        ""
 
-    if ! api_success
+    if [ $? -ne 0 ]
     then
-        warn "Could not query Foreman tasks."
+        warn "Unable to query paused Foreman tasks."
         return 0
     fi
 
-    COUNT=$(
+    PAUSED_IDS="$(
         echo "${API_RESPONSE}" |
-        jq '[.results // [] | .[] | select(.state == "paused")] | length'
-    )
+        jq -r '
+            (.results // [])[]
+            | select(.state == "paused")
+            | .id
+        '
+    )"
 
-    if [ "${COUNT}" -eq 0 ]
+    if [ -z "${PAUSED_IDS}" ]
     then
         ok "No paused tasks found."
         return 0
     fi
 
+    COUNT="$(echo "${PAUSED_IDS}" | grep -c .)"
+
     warn "Found ${COUNT} paused task(s)."
 
-    DATA='{"search":"state = paused"}'
-
-    api_request \
-        POST \
-        "${TASK_API}/tasks/bulk_resume" \
-        "${DATA}"
-
-    if api_success
-    then
-        ok "Paused task recovery request completed."
-    else
-        warn "Unable to resume paused tasks."
-        show_api_error POST "${TASK_API}/tasks/bulk_resume"
-    fi
-
-    for i in 1 2 3 4 5 6
+    while read -r TASK_ID
     do
-
-        sleep 10
+        [ -z "${TASK_ID}" ] && continue
 
         api_request \
-            GET \
-            "${TASK_API}/tasks?search=state%20%3D%20paused&per_page=100"
+            "POST" \
+            "${FOREMAN_URL}/foreman_tasks/api/tasks/${TASK_ID}/resume" \
+            "{}"
 
-        if ! api_success
+        if [ $? -eq 0 ]
         then
-            continue
+            ok "Resumed task ID=${TASK_ID}"
+        else
+            warn "Unable to resume task ID=${TASK_ID}"
         fi
 
-        COUNT=$(
-            echo "${API_RESPONSE}" |
-            jq '[.results // [] | .[] | select(.state == "paused")] | length'
-        )
-
-        if [ "${COUNT}" -eq 0 ]
-        then
-            ok "Paused tasks cleared."
-            return 0
-        fi
-
-        warn "${COUNT} paused task(s) still remain."
-
-    done
-
-    warn "Some paused tasks still remain."
+    done <<< "${PAUSED_IDS}"
 
     return 0
 }
 
 ###############################################################################
-# Start
-###############################################################################
-
-header "02 - Foreman Katello Bootstrap - REST API"
-
-info "Foreman URL  : ${FOREMAN_URL}"
-info "API Version  : ${API_VERSION}"
-info "Target Version : ${TARGET_VERSION}"
-
-###############################################################################
-# TARGET VERSION
-###############################################################################
-
-case "${TARGET_VERSION}" in
-
-    9.2)
-
-        PRODUCT_NAME="Rocky Linux 9.2"
-        REPO_PATH="rocky9.2"
-        CONTENT_VIEW="Rocky9.2-CV"
-        ACTIVATION_KEY="rocky9.2-prod-key"
-
-        ;;
-
-    9.8)
-
-        PRODUCT_NAME="Rocky Linux 9.8"
-        REPO_PATH="rocky9"
-        CONTENT_VIEW="Rocky9.8-CV"
-        ACTIVATION_KEY="rocky9.8-prod-key"
-
-        ;;
-
-    *)
-
-        error "Unsupported TARGET_VERSION : ${TARGET_VERSION}"
-        exit 1
-
-        ;;
-
-esac
-
-###############################################################################
-# Authentication
-###############################################################################
-
-test_foreman_api
-
-###############################################################################
-# Organization
-###############################################################################
-
-get_organization_id
-
-###############################################################################
-# Product IDs
-###############################################################################
-
-CENTOS_PRODUCT_ID=""
-ROCKY8_PRODUCT_ID=""
-ROCKY9_PRODUCT_ID=""
-
-###############################################################################
-# Product Lookup
+# Product Functions
 ###############################################################################
 
 get_product_id()
@@ -508,116 +423,85 @@ get_product_id()
     PRODUCT="$1"
 
     api_request \
-        GET \
-        "${KATELLO_API}/organizations/${ORGANIZATION_ID}/products?search=$(printf '%s' "name = ${PRODUCT}" | sed 's/ /%20/g')&per_page=100"
+        "GET" \
+        "${KATELLO_API}/organizations/${ORG_ID}/products?per_page=100&search=$(printf '%s' "${PRODUCT}" | sed 's/ /%20/g')" \
+        ""
 
-    if ! api_success
+    if [ $? -ne 0 ]
     then
-        show_api_error GET "${KATELLO_API}/organizations/${ORGANIZATION_ID}/products"
         return 1
     fi
 
     echo "${API_RESPONSE}" |
-        jq -r --arg NAME "${PRODUCT}" '
-            (.results // [])[]
-            | select(.name == $NAME)
-            | .id
-        ' |
-        head -n 1
+    jq -r --arg NAME "${PRODUCT}" '
+        (.results // [])[]
+        | select(.name == $NAME)
+        | .id
+    ' |
+    head -n 1
 }
-
-###############################################################################
-# Create Product
-###############################################################################
 
 create_product()
 {
     PRODUCT="$1"
 
-    info "Checking Product : ${PRODUCT}"
+    section "Product : ${PRODUCT}"
 
     PRODUCT_ID="$(get_product_id "${PRODUCT}")"
 
-    if [ -n "${PRODUCT_ID}" ] && [ "${PRODUCT_ID}" != "null" ]
+    if [ -n "${PRODUCT_ID}" ] &&
+       [ "${PRODUCT_ID}" != "null" ]
     then
-
         skip "Product '${PRODUCT}' already exists. ID=${PRODUCT_ID}"
-
-    else
-
-        info "Creating Product : ${PRODUCT}"
-
-        DATA=$(
-            jq -n \
-                --arg name "${PRODUCT}" \
-                --argjson org "${ORGANIZATION_ID}" \
-                '{
-                    organization_id: $org,
-                    product: {
-                        name: $name
-                    }
-                }'
-        )
-
-        api_request \
-            POST \
-            "${KATELLO_API}/products" \
-            "${DATA}"
-
-        if api_success
-        then
-
-            PRODUCT_ID=$(
-                echo "${API_RESPONSE}" |
-                jq -r '.id // empty'
-            )
-
-            ok "Product created. ID=${PRODUCT_ID}"
-
-        else
-
-            show_api_error POST "${KATELLO_API}/products"
-
-            record_failure "${PRODUCT} Product"
-
-            echo
-
-            return 1
-
-        fi
-
+        echo "${PRODUCT_ID}"
+        return 0
     fi
 
-    case "${PRODUCT}" in
+    info "Creating Product : ${PRODUCT}"
 
-        "CentOS 7")
-            CENTOS_PRODUCT_ID="${PRODUCT_ID}"
-            ;;
+    PAYLOAD="$(
+        jq -n \
+            --argjson organization_id "${ORG_ID}" \
+            --arg name "${PRODUCT}" \
+            '{
+                organization_id: $organization_id,
+                name: $name
+            }'
+    )"
 
-        "Rocky Linux 8")
-            ROCKY8_PRODUCT_ID="${PRODUCT_ID}"
-            ;;
+    if api_request \
+        "POST" \
+        "${KATELLO_API}/products" \
+        "${PAYLOAD}"
+    then
 
-        "${PRODUCT_NAME}")
-            ROCKY9_PRODUCT_ID="${PRODUCT_ID}"
-            ;;
+        PRODUCT_ID="$(echo "${API_RESPONSE}" | jq -r '.id // empty')"
 
-    esac
+        if [ -n "${PRODUCT_ID}" ]
+        then
+            ok "Product created. ID=${PRODUCT_ID}"
+            echo "${PRODUCT_ID}"
+            return 0
+        fi
+    fi
 
-    echo
+    show_api_error \
+        "POST" \
+        "${KATELLO_API}/products"
+
+    record_failure "${PRODUCT} Product"
+    return 1
 }
 
 ###############################################################################
-# [1/6] Create Products
+# Products
 ###############################################################################
 
 header "[1/6] Creating Katello Products"
 
-create_product "CentOS 7"
-
-create_product "Rocky Linux 8"
-
-create_product "${PRODUCT_NAME}"
+CENTOS_PRODUCT_ID="$(create_product "CentOS 7" | tail -n 1)"
+ROCKY8_PRODUCT_ID="$(create_product "Rocky Linux 8" | tail -n 1)"
+ROCKY9_PRODUCT_ID="$(create_product "${PRODUCT_NAME}" | tail -n 1)"
 
 ###############################################################################
 # Product Verification
@@ -626,31 +510,29 @@ create_product "${PRODUCT_NAME}"
 header "Product Verification"
 
 api_request \
-    GET \
-    "${KATELLO_API}/organizations/${ORGANIZATION_ID}/products?per_page=100"
+    "GET" \
+    "${KATELLO_API}/organizations/${ORG_ID}/products?per_page=100" \
+    ""
 
-if api_success
+if [ $? -eq 0 ]
 then
 
     echo "${API_RESPONSE}" |
-        jq -r '
-            (.results // [])[] |
-            [.id,.name,.label] |
-            @tsv
-        '
+    jq -r '
+        (.results // [])[]
+        | [.id,.name,.label,.custom]
+        | @tsv
+    '
 
 else
 
-    show_api_error GET "${KATELLO_API}/organizations/${ORGANIZATION_ID}/products"
-
+    show_api_error \
+        "GET" \
+        "${KATELLO_API}/organizations/${ORG_ID}/products"
 fi
 
 ###############################################################################
-# Repository IDs
-###############################################################################
-
-###############################################################################
-# Repository Lookup
+# Repository Functions
 ###############################################################################
 
 get_repository_id()
@@ -658,27 +540,30 @@ get_repository_id()
     PRODUCT_ID="$1"
     REPO="$2"
 
-    api_request \
-        GET \
-        "${KATELLO_API}/products/${PRODUCT_ID}/repositories?search=$(printf '%s' "name = ${REPO}" | sed 's/ /%20/g')&per_page=100"
+    if [ -z "${PRODUCT_ID}" ] ||
+       [ "${PRODUCT_ID}" = "null" ]
+    then
+        return 1
+    fi
 
-    if ! api_success
+    api_request \
+        "GET" \
+        "${KATELLO_API}/products/${PRODUCT_ID}/repositories?per_page=100" \
+        ""
+
+    if [ $? -ne 0 ]
     then
         return 1
     fi
 
     echo "${API_RESPONSE}" |
-        jq -r --arg NAME "${REPO}" '
-            (.results // [])[]
-            | select(.name == $NAME)
-            | .id
-        ' |
-        head -n 1
+    jq -r --arg NAME "${REPO}" '
+        (.results // [])[]
+        | select(.name == $NAME)
+        | .id
+    ' |
+    head -n 1
 }
-
-###############################################################################
-# Create Repository
-###############################################################################
 
 create_repository()
 {
@@ -687,137 +572,171 @@ create_repository()
     REPO="$3"
     URL="$4"
 
-    info "Checking Repository : ${REPO}"
+    section "Repository : ${REPO}"
+
+    if [ -z "${PRODUCT_ID}" ] ||
+       [ "${PRODUCT_ID}" = "null" ]
+    then
+        error "Product ID unavailable for ${PRODUCT}"
+        record_failure "${PRODUCT} -> ${REPO}"
+        return 1
+    fi
 
     REPO_ID="$(get_repository_id "${PRODUCT_ID}" "${REPO}")"
 
-    if [ -n "${REPO_ID}" ] && [ "${REPO_ID}" != "null" ]
+    if [ -n "${REPO_ID}" ] &&
+       [ "${REPO_ID}" != "null" ]
     then
-
         skip "Repository '${REPO}' already exists. ID=${REPO_ID}"
-
-        echo
-
+        echo "${REPO_ID}"
         return 0
-
     fi
 
     info "Creating Repository : ${REPO}"
 
-    DATA=$(
+    PAYLOAD="$(
         jq -n \
+            --argjson organization_id "${ORG_ID}" \
+            --argjson product_id "${PRODUCT_ID}" \
             --arg name "${REPO}" \
             --arg url "${URL}" \
-            --argjson product "${PRODUCT_ID}" \
-            --argjson org "${ORGANIZATION_ID}" \
             '{
-                organization_id: $org,
-                product_id: $product,
-                repository: {
-                    name: $name,
-                    content_type: "yum",
-                    url: $url
-                }
+                organization_id: $organization_id,
+                product_id: $product_id,
+                name: $name,
+                content_type: "yum",
+                url: $url
             }'
-    )
+    )"
 
-    api_request \
-        POST \
+    if api_request \
+        "POST" \
         "${KATELLO_API}/repositories" \
-        "${DATA}"
-
-    if api_success
+        "${PAYLOAD}"
     then
 
-        REPO_ID=$(
-            echo "${API_RESPONSE}" |
-            jq -r '.id // empty'
-        )
+        REPO_ID="$(echo "${API_RESPONSE}" | jq -r '.id // empty')"
 
-        ok "Repository created. ID=${REPO_ID}"
-
-    else
-
-        show_api_error POST "${KATELLO_API}/repositories"
-
-        record_failure "${PRODUCT} -> ${REPO}"
-
+        if [ -n "${REPO_ID}" ]
+        then
+            ok "Repository created. ID=${REPO_ID}"
+            echo "${REPO_ID}"
+            return 0
+        fi
     fi
 
-    echo
+    show_api_error \
+        "POST" \
+        "${KATELLO_API}/repositories"
+
+    record_failure "${PRODUCT} -> ${REPO}"
+    return 1
 }
 
 ###############################################################################
-# [2/6] Create Repositories
+# Repository URLs
 ###############################################################################
 
-header "[2/6] Creating Katello Repositories"
+CENTOS_BASE_URL="http://192.168.253.136/repo/centos/"
+CENTOS_UPDATES_URL="http://192.168.253.136/repo/installed_rhel7/"
+
+ROCKY8_BASE_URL="http://192.168.253.136/repo/rocky8/BaseOS/"
+ROCKY8_APP_URL="http://192.168.253.136/repo/rocky8/AppStream/"
+ROCKY8_INSTALLED_URL="http://192.168.253.136/repo/installed_rhel8/"
+
+ROCKY9_BASE_URL="http://192.168.253.136/repo/${REPO_PATH}/BaseOS/"
+ROCKY9_APP_URL="http://192.168.253.136/repo/${REPO_PATH}/AppStream/"
+ROCKY9_INSTALLED_URL="http://192.168.253.136/repo/installed_rhel9/"
 
 ###############################################################################
-# CentOS 7
+# CentOS 7 Repositories
 ###############################################################################
 
 header "Creating CentOS 7 Repositories"
 
-create_repository \
-    "CentOS 7" \
-    "${CENTOS_PRODUCT_ID}" \
-    "CentOS-07-BaseOS" \
-    "http://192.168.253.136/repo/centos/"
+CENTOS_BASE_ID="$(
+    create_repository \
+        "CentOS 7" \
+        "${CENTOS_PRODUCT_ID}" \
+        "CentOS-07-BaseOS" \
+        "${CENTOS_BASE_URL}" |
+    tail -n 1
+)"
 
-create_repository \
-    "CentOS 7" \
-    "${CENTOS_PRODUCT_ID}" \
-    "CentOS-07-Updates" \
-    "http://192.168.253.136/repo/installed_rhel7/"
+CENTOS_UPDATES_ID="$(
+    create_repository \
+        "CentOS 7" \
+        "${CENTOS_PRODUCT_ID}" \
+        "CentOS-07-Updates" \
+        "${CENTOS_UPDATES_URL}" |
+    tail -n 1
+)"
 
 ###############################################################################
-# Rocky 8
+# Rocky Linux 8 Repositories
 ###############################################################################
 
 header "Creating Rocky Linux 8 Repositories"
 
-create_repository \
-    "Rocky Linux 8" \
-    "${ROCKY8_PRODUCT_ID}" \
-    "Rocky-08-BaseOS" \
-    "http://192.168.253.136/repo/rocky8/BaseOS/"
+ROCKY8_BASE_ID="$(
+    create_repository \
+        "Rocky Linux 8" \
+        "${ROCKY8_PRODUCT_ID}" \
+        "Rocky-08-BaseOS" \
+        "${ROCKY8_BASE_URL}" |
+    tail -n 1
+)"
 
-create_repository \
-    "Rocky Linux 8" \
-    "${ROCKY8_PRODUCT_ID}" \
-    "Rocky-08-AppStream" \
-    "http://192.168.253.136/repo/rocky8/AppStream/"
+ROCKY8_APP_ID="$(
+    create_repository \
+        "Rocky Linux 8" \
+        "${ROCKY8_PRODUCT_ID}" \
+        "Rocky-08-AppStream" \
+        "${ROCKY8_APP_URL}" |
+    tail -n 1
+)"
 
-create_repository \
-    "Rocky Linux 8" \
-    "${ROCKY8_PRODUCT_ID}" \
-    "Rocky-08-RHEL-Installed" \
-    "http://192.168.253.136/repo/installed_rhel8/"
+ROCKY8_INSTALLED_ID="$(
+    create_repository \
+        "Rocky Linux 8" \
+        "${ROCKY8_PRODUCT_ID}" \
+        "Rocky-08-RHEL-Installed" \
+        "${ROCKY8_INSTALLED_URL}" |
+    tail -n 1
+)"
 
 ###############################################################################
-# Rocky 9
+# Rocky Linux 9 Repositories
 ###############################################################################
 
 header "Creating ${PRODUCT_NAME} Repositories"
 
-create_repository \
-    "${PRODUCT_NAME}" \
-    "${ROCKY9_PRODUCT_ID}" \
-    "Rocky-09-BaseOS" \
-    "http://192.168.253.136/repo/${REPO_PATH}/BaseOS/"
+ROCKY9_BASE_ID="$(
+    create_repository \
+        "${PRODUCT_NAME}" \
+        "${ROCKY9_PRODUCT_ID}" \
+        "Rocky-09-BaseOS" \
+        "${ROCKY9_BASE_URL}" |
+    tail -n 1
+)"
 
-create_repository \
-    "${PRODUCT_NAME}" \
-    "${ROCKY9_PRODUCT_ID}" \
-    "Rocky-09-AppStream" \
-    "http://192.168.253.136/repo/${REPO_PATH}/AppStream/"
+ROCKY9_APP_ID="$(
+    create_repository \
+        "${PRODUCT_NAME}" \
+        "${ROCKY9_PRODUCT_ID}" \
+        "Rocky-09-AppStream" \
+        "${ROCKY9_APP_URL}" |
+    tail -n 1
+)"
 
-create_repository \
-    "${PRODUCT_NAME}" \
-    "${ROCKY9_PRODUCT_ID}" \
-    "Rocky-09-RHEL-Installed" \
-    "http://192.168.253.136/repo/installed_rhel9/"
+ROCKY9_INSTALLED_ID="$(
+    create_repository \
+        "${PRODUCT_NAME}" \
+        "${ROCKY9_PRODUCT_ID}" \
+        "Rocky-09-RHEL-Installed" \
+        "${ROCKY9_INSTALLED_URL}" |
+    tail -n 1
+)"
 
 ###############################################################################
 # Repository Verification
@@ -825,55 +744,26 @@ create_repository \
 
 header "Repository Verification"
 
-echo
-info "CentOS 7"
-
 api_request \
-    GET \
-    "${KATELLO_API}/products/${CENTOS_PRODUCT_ID}/repositories?per_page=100"
+    "GET" \
+    "${KATELLO_API}/organizations/${ORG_ID}/repositories?per_page=100" \
+    ""
 
-if api_success
+if [ $? -eq 0 ]
 then
+
     echo "${API_RESPONSE}" |
-        jq -r '
-            (.results // [])[] |
-            [.id,.name,.url,.content_type] |
-            @tsv
-        '
-fi
+    jq -r '
+        (.results // [])[]
+        | [.id,.name,.url,.sync_state]
+        | @tsv
+    '
 
-echo
-info "Rocky Linux 8"
+else
 
-api_request \
-    GET \
-    "${KATELLO_API}/products/${ROCKY8_PRODUCT_ID}/repositories?per_page=100"
-
-if api_success
-then
-    echo "${API_RESPONSE}" |
-        jq -r '
-            (.results // [])[] |
-            [.id,.name,.url,.content_type] |
-            @tsv
-        '
-fi
-
-echo
-info "${PRODUCT_NAME}"
-
-api_request \
-    GET \
-    "${KATELLO_API}/products/${ROCKY9_PRODUCT_ID}/repositories?per_page=100"
-
-if api_success
-then
-    echo "${API_RESPONSE}" |
-        jq -r '
-            (.results // [])[] |
-            [.id,.name,.url,.content_type] |
-            @tsv
-        '
+    show_api_error \
+        "GET" \
+        "${KATELLO_API}/organizations/${ORG_ID}/repositories"
 fi
 
 ###############################################################################
@@ -882,245 +772,153 @@ fi
 
 sync_repository()
 {
-PRODUCT="$1"
-PRODUCT_ID="$2"
-REPO="$3"
+    PRODUCT="$1"
+    REPO_ID="$2"
+    REPO="$3"
 
-info "Checking Repository : ${REPO}"
+    section "Synchronizing Repository : ${REPO}"
 
-REPO_ID="$(get_repository_id "${PRODUCT_ID}" "${REPO}")"
-
-if [ -z "${REPO_ID}" ] || [ "${REPO_ID}" = "null" ]
-then
-
-    error "Repository not found : ${REPO}"
-
-    record_failure "${PRODUCT} -> ${REPO}"
-
-    return 1
-
-fi
-
-###############################################################################
-# Check Sync State
-###############################################################################
-
-api_request \
-    GET \
-    "${KATELLO_API}/repositories/${REPO_ID}"
-
-if api_success
-then
-
-    SYNC_STATUS=$(
-        echo "${API_RESPONSE}" |
-        jq -r '
-            .sync_state
-            // .sync_state_aggregated
-            // "unknown"
-        '
-    )
-
-else
-
-    SYNC_STATUS="unknown"
-
-fi
-
-if echo "${SYNC_STATUS}" | grep -qi "running"
-then
-
-    skip "Synchronization already running."
-
-    return 0
-
-fi
-
-###############################################################################
-# Start Sync
-###############################################################################
-
-info "Starting synchronization : ${REPO}"
-
-DATA='{"repository":{}}'
-
-api_request \
-    POST \
-    "${KATELLO_API}/repositories/${REPO_ID}/sync" \
-    "${DATA}"
-
-if api_success
-then
-
-    ok "Synchronization started."
-
-    return 0
-
-fi
-
-###############################################################################
-# Lock Recovery
-###############################################################################
-
-if echo "${API_RESPONSE}" | grep -qi "Required lock is already taken"
-then
-
-    warn "Repository lock detected."
-
-    resume_paused_tasks
-
-    sleep 10
-
-    api_request \
-        POST \
-        "${KATELLO_API}/repositories/${REPO_ID}/sync" \
-        "${DATA}"
-
-    if api_success
+    if [ -z "${REPO_ID}" ] ||
+       [ "${REPO_ID}" = "null" ]
     then
-
-        ok "Synchronization started after recovery."
-
-        return 0
-
+        error "Repository ID unavailable : ${REPO}"
+        record_failure "${PRODUCT} -> ${REPO}"
+        return 1
     fi
 
-fi
+    api_request \
+        "GET" \
+        "${KATELLO_API}/repositories/${REPO_ID}" \
+        ""
 
-error "Synchronization failed : ${REPO}"
+    if [ $? -ne 0 ]
+    then
+        error "Repository not found : ${REPO}"
+        record_failure "${PRODUCT} -> ${REPO}"
+        return 1
+    fi
 
-show_api_error POST "${KATELLO_API}/repositories/${REPO_ID}/sync"
+    SYNC_STATE="$(
+        echo "${API_RESPONSE}" |
+        jq -r '.sync_state // empty'
+    )"
 
-record_failure "${PRODUCT} -> ${REPO}"
+    if echo "${SYNC_STATE}" | grep -qi "running"
+    then
+        skip "Synchronization already running : ${REPO}"
+        return 0
+    fi
 
-return 1
+    info "Starting synchronization : ${REPO}"
+
+    if api_request \
+        "POST" \
+        "${KATELLO_API}/repositories/${REPO_ID}/sync" \
+        "{}"
+    then
+
+        TASK_ID="$(
+            echo "${API_RESPONSE}" |
+            jq -r '.id // .task_id // empty'
+        )"
+
+        if [ -n "${TASK_ID}" ]
+        then
+            ok "Synchronization started. Task=${TASK_ID}"
+        else
+            ok "Synchronization started."
+        fi
+
+        return 0
+    fi
+
+    if echo "${API_RESPONSE}" | grep -qi "Required lock is already taken"
+    then
+        warn "Repository lock detected : ${REPO}"
+
+        resume_paused_tasks
+
+        sleep 10
+
+        if api_request \
+            "POST" \
+            "${KATELLO_API}/repositories/${REPO_ID}/sync" \
+            "{}"
+        then
+            ok "Synchronization started after recovery."
+            return 0
+        fi
+    fi
+
+    show_api_error \
+        "POST" \
+        "${KATELLO_API}/repositories/${REPO_ID}/sync"
+
+    error "Synchronization failed : ${REPO}"
+    record_failure "${PRODUCT} -> ${REPO}"
+    return 1
 }
 
 ###############################################################################
-# Repository Sync - CentOS 7
+# CentOS 7 Sync
 ###############################################################################
 
 header "Synchronizing CentOS 7"
 
 sync_repository \
     "CentOS 7" \
-    "${CENTOS_PRODUCT_ID}" \
+    "${CENTOS_BASE_ID}" \
     "CentOS-07-BaseOS"
 
 sync_repository \
     "CentOS 7" \
-    "${CENTOS_PRODUCT_ID}" \
+    "${CENTOS_UPDATES_ID}" \
     "CentOS-07-Updates"
 
 ###############################################################################
-# Repository Sync - Rocky 8
+# Rocky 8 Sync
 ###############################################################################
 
 header "Synchronizing Rocky Linux 8"
 
 sync_repository \
     "Rocky Linux 8" \
-    "${ROCKY8_PRODUCT_ID}" \
+    "${ROCKY8_BASE_ID}" \
     "Rocky-08-BaseOS"
 
 sync_repository \
     "Rocky Linux 8" \
-    "${ROCKY8_PRODUCT_ID}" \
+    "${ROCKY8_APP_ID}" \
     "Rocky-08-AppStream"
 
 sync_repository \
     "Rocky Linux 8" \
-    "${ROCKY8_PRODUCT_ID}" \
+    "${ROCKY8_INSTALLED_ID}" \
     "Rocky-08-RHEL-Installed"
 
 ###############################################################################
-# Repository Sync - Rocky 9
+# Rocky 9 Sync
 ###############################################################################
 
 header "Synchronizing ${PRODUCT_NAME}"
 
 sync_repository \
     "${PRODUCT_NAME}" \
-    "${ROCKY9_PRODUCT_ID}" \
+    "${ROCKY9_BASE_ID}" \
     "Rocky-09-BaseOS"
 
 sync_repository \
     "${PRODUCT_NAME}" \
-    "${ROCKY9_PRODUCT_ID}" \
+    "${ROCKY9_APP_ID}" \
     "Rocky-09-AppStream"
 
 sync_repository \
     "${PRODUCT_NAME}" \
-    "${ROCKY9_PRODUCT_ID}" \
+    "${ROCKY9_INSTALLED_ID}" \
     "Rocky-09-RHEL-Installed"
 
 ###############################################################################
-# Sync Verification
-###############################################################################
-
-header "Repository Synchronization Verification"
-
-echo
-info "CentOS 7"
-
-api_request \
-    GET \
-    "${KATELLO_API}/products/${CENTOS_PRODUCT_ID}/repositories?per_page=100"
-
-if api_success
-then
-    echo "${API_RESPONSE}" |
-        jq -r '
-            (.results // [])[] |
-            [.id,.name,.sync_state,.last_sync] |
-            @tsv
-        '
-fi
-
-echo
-info "Rocky Linux 8"
-
-api_request \
-    GET \
-    "${KATELLO_API}/products/${ROCKY8_PRODUCT_ID}/repositories?per_page=100"
-
-if api_success
-then
-    echo "${API_RESPONSE}" |
-        jq -r '
-            (.results // [])[] |
-            [.id,.name,.sync_state,.last_sync] |
-            @tsv
-        '
-fi
-
-echo
-info "${PRODUCT_NAME}"
-
-api_request \
-    GET \
-    "${KATELLO_API}/products/${ROCKY9_PRODUCT_ID}/repositories?per_page=100"
-
-if api_success
-then
-    echo "${API_RESPONSE}" |
-        jq -r '
-            (.results // [])[] |
-            [.id,.name,.sync_state,.last_sync] |
-            @tsv
-        '
-fi
-
-###############################################################################
-# Content View IDs
-###############################################################################
-
-CENTOS_CV_ID=""
-ROCKY8_CV_ID=""
-ROCKY9_CV_ID=""
-
-###############################################################################
-# Content View Lookup
+# Content View Functions
 ###############################################################################
 
 get_content_view_id()
@@ -1128,113 +926,75 @@ get_content_view_id()
     CV_NAME="$1"
 
     api_request \
-        GET \
-        "${KATELLO_API}/organizations/${ORGANIZATION_ID}/content_views?search=$(printf '%s' "name = ${CV_NAME}" | sed 's/ /%20/g')&per_page=100"
+        "GET" \
+        "${KATELLO_API}/organizations/${ORG_ID}/content_views?per_page=100" \
+        ""
 
-    if ! api_success
+    if [ $? -ne 0 ]
     then
         return 1
     fi
 
     echo "${API_RESPONSE}" |
-        jq -r --arg NAME "${CV_NAME}" '
-            (.results // [])[]
-            | select(.name == $NAME)
-            | .id
-        ' |
-        head -n 1
+    jq -r --arg NAME "${CV_NAME}" '
+        (.results // [])[]
+        | select(.name == $NAME)
+        | .id
+    ' |
+    head -n 1
 }
-
-###############################################################################
-# Create Content View
-###############################################################################
 
 create_content_view()
 {
     CV_NAME="$1"
 
-    info "Checking Content View : ${CV_NAME}"
+    section "Content View : ${CV_NAME}"
 
     CV_ID="$(get_content_view_id "${CV_NAME}")"
 
-    if [ -n "${CV_ID}" ] && [ "${CV_ID}" != "null" ]
+    if [ -n "${CV_ID}" ] &&
+       [ "${CV_ID}" != "null" ]
     then
-
         skip "Content View '${CV_NAME}' already exists. ID=${CV_ID}"
-
-    else
-
-        info "Creating Content View : ${CV_NAME}"
-
-        DATA=$(
-            jq -n \
-                --arg name "${CV_NAME}" \
-                --argjson org "${ORGANIZATION_ID}" \
-                '{
-                    organization_id: $org,
-                    content_view: {
-                        name: $name
-                    }
-                }'
-        )
-
-        api_request \
-            POST \
-            "${KATELLO_API}/content_views" \
-            "${DATA}"
-
-        if api_success
-        then
-
-            CV_ID=$(
-                echo "${API_RESPONSE}" |
-                jq -r '.id // empty'
-            )
-
-            ok "Content View created. ID=${CV_ID}"
-
-        else
-
-            show_api_error POST "${KATELLO_API}/content_views"
-
-            record_failure "Content View : ${CV_NAME}"
-
-            return 1
-
-        fi
-
+        echo "${CV_ID}"
+        return 0
     fi
 
-    case "${CV_NAME}" in
+    info "Creating Content View : ${CV_NAME}"
 
-        "CentOS7-CV")
-            CENTOS_CV_ID="${CV_ID}"
-            ;;
+    PAYLOAD="$(
+        jq -n \
+            --argjson organization_id "${ORG_ID}" \
+            --arg name "${CV_NAME}" \
+            '{
+                organization_id: $organization_id,
+                name: $name
+            }'
+    )"
 
-        "Rocky8-CV")
-            ROCKY8_CV_ID="${CV_ID}"
-            ;;
+    if api_request \
+        "POST" \
+        "${KATELLO_API}/organizations/${ORG_ID}/content_views" \
+        "${PAYLOAD}"
+    then
 
-        "${CONTENT_VIEW}")
-            ROCKY9_CV_ID="${CV_ID}"
-            ;;
+        CV_ID="$(echo "${API_RESPONSE}" | jq -r '.id // empty')"
 
-    esac
+        if [ -n "${CV_ID}" ]
+        then
+            ok "Content View created. ID=${CV_ID}"
+            echo "${CV_ID}"
+            return 0
+        fi
+    fi
 
-    echo
+    show_api_error \
+        "POST" \
+        "${KATELLO_API}/organizations/${ORG_ID}/content_views"
+
+    record_failure "Content View : ${CV_NAME}"
+    return 1
 }
-
-###############################################################################
-# [4/6] Create Content Views
-###############################################################################
-
-header "[4/6] Creating Content Views"
-
-create_content_view "CentOS7-CV"
-
-create_content_view "Rocky8-CV"
-
-create_content_view "${CONTENT_VIEW}"
 
 ###############################################################################
 # Add Repository To Content View
@@ -1242,200 +1002,161 @@ create_content_view "${CONTENT_VIEW}"
 
 add_repository_to_cv()
 {
-CV="$1"
-CV_ID="$2"
-PRODUCT="$3"
-PRODUCT_ID="$4"
-REPO="$5"
+    CV="$1"
+    CV_ID="$2"
+    REPO="$3"
+    REPO_ID="$4"
 
-info "Checking Repository : ${REPO} in ${CV}"
+    section "Adding ${REPO} -> ${CV}"
 
-REPO_ID="$(get_repository_id "${PRODUCT_ID}" "${REPO}")"
+    if [ -z "${CV_ID}" ] ||
+       [ "${CV_ID}" = "null" ]
+    then
+        error "Content View ID unavailable : ${CV}"
+        record_failure "${REPO} -> ${CV}"
+        return 1
+    fi
 
-if [ -z "${REPO_ID}" ] || [ "${REPO_ID}" = "null" ]
-then
+    if [ -z "${REPO_ID}" ] ||
+       [ "${REPO_ID}" = "null" ]
+    then
+        error "Repository ID unavailable : ${REPO}"
+        record_failure "${REPO} -> ${CV}"
+        return 1
+    fi
 
-    error "Repository not found : ${REPO}"
+    api_request \
+        "GET" \
+        "${KATELLO_API}/content_views/${CV_ID}/repositories?per_page=100" \
+        ""
 
-    record_failure "${REPO} -> ${CV}"
-
-    return 1
-
-fi
-
-###############################################################################
-# Current CV repositories
-###############################################################################
-
-api_request \
-    GET \
-    "${KATELLO_API}/content_views/${CV_ID}/repositories?per_page=100"
-
-if api_success
-then
-
-    ALREADY_ASSIGNED=$(
-        echo "${API_RESPONSE}" |
-        jq -r --argjson ID "${REPO_ID}" '
-            [
-                (.results // [])[] |
-                select(.id == $ID)
-            ] |
-            length
-        '
-    )
-
-    if [ "${ALREADY_ASSIGNED}" -gt 0 ]
+    if [ $? -eq 0 ]
     then
 
-        skip "Repository already assigned."
+        EXISTS="$(
+            echo "${API_RESPONSE}" |
+            jq -r --argjson RID "${REPO_ID}" '
+                (.results // [])[]
+                | select(.id == $RID)
+                | .id
+            ' |
+            head -n 1
+        )"
 
-        echo
+        if [ -n "${EXISTS}" ]
+        then
+            skip "Repository already assigned."
+            return 0
+        fi
+    fi
 
+    info "Adding Repository : ${REPO}"
+
+    PAYLOAD="$(
+        jq -n \
+            --argjson repository_ids "[${REPO_ID}]" \
+            '{repository_ids: $repository_ids}'
+    )"
+
+    if api_request \
+        "PUT" \
+        "${KATELLO_API}/content_views/${CV_ID}" \
+        "${PAYLOAD}"
+    then
+
+        ok "Repository added."
         return 0
 
     fi
 
-fi
-
-###############################################################################
-# Get Existing Repository IDs
-###############################################################################
-
-CURRENT_REPO_IDS=$(
-    echo "${API_RESPONSE}" |
-    jq -r '
-        [
-            (.results // [])[] |
-            .id
-        ] |
-        join(",")
-    '
-)
-
-if [ -z "${CURRENT_REPO_IDS}" ]
-then
-
-    NEW_REPO_IDS="${REPO_ID}"
-
-else
-
-    NEW_REPO_IDS="${CURRENT_REPO_IDS},${REPO_ID}"
-
-fi
-
-###############################################################################
-# Update Content View
-###############################################################################
-
-info "Adding Repository : ${REPO}"
-
-DATA=$(
-    jq -n \
-        --argjson org "${ORGANIZATION_ID}" \
-        --argjson cv "${CV_ID}" \
-        --argjson repo "${REPO_ID}" \
-        --arg ids "${NEW_REPO_IDS}" '
-        {
-            organization_id: $org,
-            content_view: {
-                repository_ids:
-                    ($ids | split(",") | map(tonumber))
-            }
-        }
-    '
-)
-
-api_request \
-    PUT \
-    "${KATELLO_API}/content_views/${CV_ID}" \
-    "${DATA}"
-
-if api_success
-then
-
-    ok "Repository added."
-
-else
-
-    error "Failed adding repository."
-
-    show_api_error PUT "${KATELLO_API}/content_views/${CV_ID}"
+    show_api_error \
+        "PUT" \
+        "${KATELLO_API}/content_views/${CV_ID}"
 
     record_failure "${REPO} -> ${CV}"
-
-fi
-
-echo
+    return 1
 }
 
 ###############################################################################
-# CentOS 7 Content View
+# Content Views
+###############################################################################
+
+header "[4/6] Creating Content Views"
+
+CENTOS_CV_ID="$(
+    create_content_view "CentOS7-CV" |
+    tail -n 1
+)"
+
+ROCKY8_CV_ID="$(
+    create_content_view "Rocky8-CV" |
+    tail -n 1
+)"
+
+ROCKY9_CV_ID="$(
+    create_content_view "${CONTENT_VIEW}" |
+    tail -n 1
+)"
+
+###############################################################################
+# Add CentOS Repositories
 ###############################################################################
 
 add_repository_to_cv \
     "CentOS7-CV" \
     "${CENTOS_CV_ID}" \
-    "CentOS 7" \
-    "${CENTOS_PRODUCT_ID}" \
-    "CentOS-07-BaseOS"
+    "CentOS-07-BaseOS" \
+    "${CENTOS_BASE_ID}"
 
 add_repository_to_cv \
     "CentOS7-CV" \
     "${CENTOS_CV_ID}" \
-    "CentOS 7" \
-    "${CENTOS_PRODUCT_ID}" \
-    "CentOS-07-Updates"
+    "CentOS-07-Updates" \
+    "${CENTOS_UPDATES_ID}"
 
 ###############################################################################
-# Rocky 8 Content View
+# Add Rocky 8 Repositories
 ###############################################################################
 
 add_repository_to_cv \
     "Rocky8-CV" \
     "${ROCKY8_CV_ID}" \
-    "Rocky Linux 8" \
-    "${ROCKY8_PRODUCT_ID}" \
-    "Rocky-08-BaseOS"
+    "Rocky-08-BaseOS" \
+    "${ROCKY8_BASE_ID}"
 
 add_repository_to_cv \
     "Rocky8-CV" \
     "${ROCKY8_CV_ID}" \
-    "Rocky Linux 8" \
-    "${ROCKY8_PRODUCT_ID}" \
-    "Rocky-08-AppStream"
+    "Rocky-08-AppStream" \
+    "${ROCKY8_APP_ID}"
 
 add_repository_to_cv \
     "Rocky8-CV" \
     "${ROCKY8_CV_ID}" \
-    "Rocky Linux 8" \
-    "${ROCKY8_PRODUCT_ID}" \
-    "Rocky-08-RHEL-Installed"
+    "Rocky-08-RHEL-Installed" \
+    "${ROCKY8_INSTALLED_ID}"
 
 ###############################################################################
-# Rocky 9 Content View
+# Add Rocky 9 Repositories
 ###############################################################################
 
 add_repository_to_cv \
     "${CONTENT_VIEW}" \
     "${ROCKY9_CV_ID}" \
-    "${PRODUCT_NAME}" \
-    "${ROCKY9_PRODUCT_ID}" \
-    "Rocky-09-BaseOS"
+    "Rocky-09-BaseOS" \
+    "${ROCKY9_BASE_ID}"
 
 add_repository_to_cv \
     "${CONTENT_VIEW}" \
     "${ROCKY9_CV_ID}" \
-    "${PRODUCT_NAME}" \
-    "${ROCKY9_PRODUCT_ID}" \
-    "Rocky-09-AppStream"
+    "Rocky-09-AppStream" \
+    "${ROCKY9_APP_ID}"
 
 add_repository_to_cv \
     "${CONTENT_VIEW}" \
     "${ROCKY9_CV_ID}" \
-    "${PRODUCT_NAME}" \
-    "${ROCKY9_PRODUCT_ID}" \
-    "Rocky-09-RHEL-Installed"
+    "Rocky-09-RHEL-Installed" \
+    "${ROCKY9_INSTALLED_ID}"
 
 ###############################################################################
 # Publish Content View
@@ -1446,67 +1167,72 @@ publish_content_view()
     CV="$1"
     CV_ID="$2"
 
-    info "Publishing Content View : ${CV}"
+    section "Publishing Content View : ${CV}"
 
-    DATA=$(
-        jq -n \
-            --arg desc "Bootstrap Publish $(date '+%F %T')" \
-            '{
-                description: $desc
-            }'
-    )
-
-    api_request \
-        POST \
-        "${KATELLO_API}/content_views/${CV_ID}/publish" \
-        "${DATA}"
-
-    if api_success
+    if [ -z "${CV_ID}" ] ||
+       [ "${CV_ID}" = "null" ]
     then
-
-        ok "Content View publish request completed."
-
-        return 0
-
+        error "Content View ID unavailable : ${CV}"
+        record_failure "Publish : ${CV}"
+        return 1
     fi
 
-###############################################################################
-# Lock Recovery
-###############################################################################
+    PAYLOAD="$(
+        jq -n \
+            --arg description "Bootstrap Publish $(date '+%F %T')" \
+            '{
+                description: $description
+            }'
+    )"
+
+    info "Publishing Content View : ${CV}"
+
+    if api_request \
+        "POST" \
+        "${KATELLO_API}/content_views/${CV_ID}/publish" \
+        "${PAYLOAD}"
+    then
+
+        TASK_ID="$(
+            echo "${API_RESPONSE}" |
+            jq -r '.id // .task_id // empty'
+        )"
+
+        if [ -n "${TASK_ID}" ]
+        then
+            ok "Content View publish started. Task=${TASK_ID}"
+        else
+            ok "Content View published."
+        fi
+
+        return 0
+    fi
 
     if echo "${API_RESPONSE}" | grep -qi "Required lock is already taken"
     then
 
-        warn "Content View publish locked."
+        warn "Content View publish lock detected."
 
         resume_paused_tasks
 
         sleep 10
 
-        api_request \
-            POST \
+        if api_request \
+            "POST" \
             "${KATELLO_API}/content_views/${CV_ID}/publish" \
-            "${DATA}"
-
-        if api_success
+            "${PAYLOAD}"
         then
-
             ok "Content View published after recovery."
-
             return 0
-
         fi
-
     fi
 
-    error "Content View publish failed."
-
     show_api_error \
-        POST \
+        "POST" \
         "${KATELLO_API}/content_views/${CV_ID}/publish"
 
+    error "Content View publish failed : ${CV}"
     record_failure "Publish : ${CV}"
-
     return 1
 }
 
@@ -1527,15 +1253,32 @@ publish_content_view \
     "${ROCKY9_CV_ID}"
 
 ###############################################################################
-# Activation Key IDs
+# Lifecycle Environment
 ###############################################################################
 
-CENTOS_AK_ID=""
-ROCKY8_AK_ID=""
-ROCKY9_AK_ID=""
+get_library_environment_id()
+{
+    api_request \
+        "GET" \
+        "${KATELLO_API}/organizations/${ORG_ID}/environments?per_page=100" \
+        ""
+
+    if [ $? -ne 0 ]
+    then
+        return 1
+    fi
+
+    echo "${API_RESPONSE}" |
+    jq -r '
+        (.results // [])[]
+        | select(.library == true or .name == "Library")
+        | .id
+    ' |
+    head -n 1
+}
 
 ###############################################################################
-# Activation Key Lookup
+# Activation Key Functions
 ###############################################################################
 
 get_activation_key_id()
@@ -1543,170 +1286,168 @@ get_activation_key_id()
     KEY="$1"
 
     api_request \
-        GET \
-        "${KATELLO_API}/organizations/${ORGANIZATION_ID}/activation_keys?name=$(printf '%s' "${KEY}" | sed 's/ /%20/g')&per_page=100"
+        "GET" \
+        "${KATELLO_API}/organizations/${ORG_ID}/activation_keys?per_page=100" \
+        ""
 
-    if ! api_success
+    if [ $? -ne 0 ]
     then
         return 1
     fi
 
     echo "${API_RESPONSE}" |
-        jq -r --arg NAME "${KEY}" '
-            (.results // [])[]
-            | select(.name == $NAME)
-            | .id
-        ' |
-        head -n 1
+    jq -r --arg NAME "${KEY}" '
+        (.results // [])[]
+        | select(.name == $NAME)
+        | .id
+    ' |
+    head -n 1
 }
-
-###############################################################################
-# Create Activation Key
-###############################################################################
 
 create_activation_key()
 {
     KEY="$1"
     CV="$2"
     CV_ID="$3"
+    ENV_ID="$4"
 
-    info "Checking Activation Key : ${KEY}"
+    section "Activation Key : ${KEY}"
+
+    if [ -z "${CV_ID}" ] ||
+       [ "${CV_ID}" = "null" ]
+    then
+        error "Content View ID unavailable : ${CV}"
+        record_failure "Activation Key : ${KEY}"
+        return 1
+    fi
+
+    if [ -z "${ENV_ID}" ] ||
+       [ "${ENV_ID}" = "null" ]
+    then
+        error "Library environment ID unavailable."
+        record_failure "Activation Key : ${KEY}"
+        return 1
+    fi
 
     KEY_ID="$(get_activation_key_id "${KEY}")"
 
-    if [ -n "${KEY_ID}" ] && [ "${KEY_ID}" != "null" ]
+    if [ -n "${KEY_ID}" ] &&
+       [ "${KEY_ID}" != "null" ]
     then
 
         skip "Activation Key '${KEY}' already exists. ID=${KEY_ID}"
 
-        #######################################################################
-        # Update existing activation key
-        #######################################################################
-
-        DATA=$(
+        PAYLOAD="$(
             jq -n \
-                --argjson org "${ORGANIZATION_ID}" \
-                --argjson cv "${CV_ID}" '
-                {
-                    organization_id: $org,
-                    activation_key: {
-                        content_view_id: $cv
-                    }
-                }
-            '
-        )
+                --argjson organization_id "${ORG_ID}" \
+                --argjson environment_id "${ENV_ID}" \
+                --argjson content_view_id "${CV_ID}" \
+                '{
+                    organization_id: $organization_id,
+                    environment_id: $environment_id,
+                    content_view_id: $content_view_id
+                }'
+        )"
 
-        api_request \
-            PUT \
+        if api_request \
+            "PUT" \
             "${KATELLO_API}/activation_keys/${KEY_ID}" \
-            "${DATA}"
-
-        if api_success
+            "${PAYLOAD}"
         then
             ok "Activation Key updated."
         else
             warn "Activation Key exists but update failed."
-            show_api_error PUT "${KATELLO_API}/activation_keys/${KEY_ID}"
         fi
 
-    else
-
-        info "Creating Activation Key : ${KEY}"
-
-        DATA=$(
-            jq -n \
-                --arg name "${KEY}" \
-                --argjson org "${ORGANIZATION_ID}" \
-                --argjson cv "${CV_ID}" '
-                {
-                    organization_id: $org,
-                    activation_key: {
-                        name: $name,
-                        unlimited_hosts: true,
-                        auto_attach: true,
-                        content_view_id: $cv
-                    }
-                }
-            '
-        )
-
-        api_request \
-            POST \
-            "${KATELLO_API}/activation_keys" \
-            "${DATA}"
-
-        if api_success
-        then
-
-            KEY_ID=$(
-                echo "${API_RESPONSE}" |
-                jq -r '.id // empty'
-            )
-
-            ok "Activation Key created. ID=${KEY_ID}"
-
-        else
-
-            show_api_error POST "${KATELLO_API}/activation_keys"
-
-            record_failure "Activation Key : ${KEY}"
-
-            return 1
-
-        fi
-
+        echo "${KEY_ID}"
+        return 0
     fi
 
-    case "${KEY}" in
+    info "Creating Activation Key : ${KEY}"
 
-        "centos7-prod-key")
-            CENTOS_AK_ID="${KEY_ID}"
-            ;;
+    PAYLOAD="$(
+        jq -n \
+            --argjson organization_id "${ORG_ID}" \
+            --arg name "${KEY}" \
+            --argjson environment_id "${ENV_ID}" \
+            --argjson content_view_id "${CV_ID}" \
+            '{
+                organization_id: $organization_id,
+                name: $name,
+                environment_id: $environment_id,
+                content_view_id: $content_view_id
+            }'
+    )"
 
-        "rocky8-prod-key")
-            ROCKY8_AK_ID="${KEY_ID}"
-            ;;
+    if api_request \
+        "POST" \
+        "${KATELLO_API}/activation_keys" \
+        "${PAYLOAD}"
+    then
 
-        "${ACTIVATION_KEY}")
-            ROCKY9_AK_ID="${KEY_ID}"
-            ;;
+        KEY_ID="$(echo "${API_RESPONSE}" | jq -r '.id // empty')"
 
-    esac
+        if [ -n "${KEY_ID}" ]
+        then
+            ok "Activation Key created. ID=${KEY_ID}"
+            echo "${KEY_ID}"
+            return 0
+        fi
+    fi
 
-    echo
+    show_api_error \
+        "POST" \
+        "${KATELLO_API}/activation_keys"
+
+    record_failure "Activation Key : ${KEY}"
+    return 1
 }
 
 ###############################################################################
-# [5/6] Create Activation Keys
+# Activation Keys
 ###############################################################################
 
 header "[5/6] Creating Activation Keys"
 
-create_activation_key \
-    "centos7-prod-key" \
-    "CentOS7-CV" \
-    "${CENTOS_CV_ID}"
+LIBRARY_ENV_ID="$(get_library_environment_id)"
 
-create_activation_key \
-    "rocky8-prod-key" \
-    "Rocky8-CV" \
-    "${ROCKY8_CV_ID}"
+if [ -n "${LIBRARY_ENV_ID}" ]
+then
+    ok "Library environment found. ID=${LIBRARY_ENV_ID}"
+else
+    error "Library environment not found."
+    record_failure "Library Environment"
+fi
 
-create_activation_key \
-    "${ACTIVATION_KEY}" \
-    "${CONTENT_VIEW}" \
-    "${ROCKY9_CV_ID}"
+CENTOS_KEY_ID="$(
+    create_activation_key \
+        "centos7-prod-key" \
+        "CentOS7-CV" \
+        "${CENTOS_CV_ID}" \
+        "${LIBRARY_ENV_ID}" |
+    tail -n 1
+)"
+
+ROCKY8_KEY_ID="$(
+    create_activation_key \
+        "rocky8-prod-key" \
+        "Rocky8-CV" \
+        "${ROCKY8_CV_ID}" \
+        "${LIBRARY_ENV_ID}" |
+    tail -n 1
+)"
+
+ROCKY9_KEY_ID="$(
+    create_activation_key \
+        "${ACTIVATION_KEY}" \
+        "${CONTENT_VIEW}" \
+        "${ROCKY9_CV_ID}" \
+        "${LIBRARY_ENV_ID}" |
+    tail -n 1
+)"
 
 ###############################################################################
-# Subscription IDs
-###############################################################################
-
-CENTOS_SUB_ID=""
-ROCKY8_SUB_ID=""
-ROCKY9_SUB_ID=""
-
-###############################################################################
-# Get Subscription ID
+# Subscription Functions
 ###############################################################################
 
 get_subscription_id()
@@ -1714,38 +1455,27 @@ get_subscription_id()
     PRODUCT="$1"
 
     api_request \
-        GET \
-        "${KATELLO_API}/organizations/${ORGANIZATION_ID}/subscriptions?per_page=100"
+        "GET" \
+        "${KATELLO_API}/organizations/${ORG_ID}/subscriptions?per_page=100" \
+        ""
 
-    if ! api_success
+    if [ $? -ne 0 ]
     then
-
-        show_api_error \
-            GET \
-            "${KATELLO_API}/organizations/${ORGANIZATION_ID}/subscriptions"
-
         return 1
-
     fi
 
     echo "${API_RESPONSE}" |
-        jq -r --arg PRODUCT "${PRODUCT}" '
-            (.results // [])[]
-            |
-            select(
-                .product_name == $PRODUCT
-                or
-                .name == $PRODUCT
-            )
-            |
-            .id
-        ' |
-        head -n 1
+    jq -r --arg PRODUCT "${PRODUCT}" '
+        (.results // [])[]
+        | select(
+            .product_name == $PRODUCT
+            or
+            .product.name == $PRODUCT
+        )
+        | .id
+    ' |
+    head -n 1
 }
-
-###############################################################################
-# Attach Subscription
-###############################################################################
 
 attach_subscription()
 {
@@ -1754,144 +1484,88 @@ attach_subscription()
     SUB_ID="$3"
     PRODUCT="$4"
 
-    info "Attaching Subscription : ${PRODUCT}"
+    section "Attaching Subscription : ${PRODUCT}"
 
-    if [ -z "${SUB_ID}" ] || [ "${SUB_ID}" = "null" ]
+    if [ -z "${KEY_ID}" ] ||
+       [ "${KEY_ID}" = "null" ]
     then
-
-        error "Subscription ID not found : ${PRODUCT}"
-
-        record_failure "${PRODUCT} Subscription"
-
-        return 1
-
-    fi
-
-    if [ -z "${KEY_ID}" ] || [ "${KEY_ID}" = "null" ]
-    then
-
         error "Activation Key ID not found : ${KEY}"
-
         record_failure "${KEY} Activation Key"
-
         return 1
-
     fi
 
-###############################################################################
-# Check existing activation-key subscriptions
-###############################################################################
-
-    api_request \
-        GET \
-        "${KATELLO_API}/activation_keys/${KEY_ID}/subscriptions?per_page=100"
-
-    if api_success
+    if [ -z "${SUB_ID}" ] ||
+       [ "${SUB_ID}" = "null" ]
     then
-
-        ALREADY_ATTACHED=$(
-            echo "${API_RESPONSE}" |
-            jq -r --argjson SID "${SUB_ID}" '
-                [
-                    (.results // [])[] |
-                    select(.id == $SID)
-                ] |
-                length
-            '
-        )
-
-        if [ "${ALREADY_ATTACHED}" -gt 0 ]
-        then
-
-            skip "${PRODUCT} subscription already attached."
-
-            return 0
-
-        fi
-
+        warn "Subscription ID not found for ${PRODUCT}."
+        warn "Skipping subscription attachment."
+        return 0
     fi
 
-###############################################################################
-# Attach
-###############################################################################
-
-    DATA=$(
+    PAYLOAD="$(
         jq -n \
-            --argjson org "${ORGANIZATION_ID}" \
-            --argjson sub "${SUB_ID}" '
-            {
-                organization_id: $org,
-                subscription_id: $sub,
-                activation_key: {
-                    organization_id: $org
-                }
-            }
-        '
-    )
+            --argjson subscription_id "${SUB_ID}" \
+            --argjson organization_id "${ORG_ID}" \
+            '{
+                subscription_id: $subscription_id,
+                organization_id: $organization_id
+            }'
+    )"
 
-    api_request \
-        PUT \
+    if api_request \
+        "PUT" \
         "${KATELLO_API}/activation_keys/${KEY_ID}/add_subscriptions" \
-        "${DATA}"
-
-    if api_success
+        "${PAYLOAD}"
     then
 
         ok "${PRODUCT} subscription attached."
-
-    else
-
-        if echo "${API_RESPONSE}" | grep -qi "already"
-        then
-
-            skip "${PRODUCT} subscription already attached."
-
-        else
-
-            error "${PRODUCT} subscription failed."
-
-            show_api_error \
-                PUT \
-                "${KATELLO_API}/activation_keys/${KEY_ID}/add_subscriptions"
-
-            record_failure "${PRODUCT} Subscription"
-
-        fi
-
+        return 0
     fi
+
+    if echo "${API_RESPONSE}" | grep -qi "already"
+    then
+        skip "${PRODUCT} subscription already attached."
+        return 0
+    fi
+
+    show_api_error \
+        "PUT" \
+        "${KATELLO_API}/activation_keys/${KEY_ID}/add_subscriptions"
+
+    error "${PRODUCT} subscription failed."
+    record_failure "${PRODUCT} Subscription"
+    return 1
 }
 
 ###############################################################################
-# Get Subscription IDs
+# Subscription IDs
+###############################################################################
+
+CENTOS_SUB_ID="$(get_subscription_id "CentOS 7")"
+ROCKY8_SUB_ID="$(get_subscription_id "Rocky Linux 8")"
+ROCKY9_SUB_ID="$(get_subscription_id "${PRODUCT_NAME}")"
+
+###############################################################################
+# Attach Subscriptions
 ###############################################################################
 
 header "Attaching Subscriptions"
 
-CENTOS_SUB_ID="$(get_subscription_id "CentOS 7")"
-
-ROCKY8_SUB_ID="$(get_subscription_id "Rocky Linux 8")"
-
-ROCKY9_SUB_ID="$(get_subscription_id "${PRODUCT_NAME}")"
-
-###############################################################################
-# Attach
-###############################################################################
-
 attach_subscription \
     "centos7-prod-key" \
-    "${CENTOS_AK_ID}" \
+    "${CENTOS_KEY_ID}" \
     "${CENTOS_SUB_ID}" \
     "CentOS 7"
 
 attach_subscription \
     "rocky8-prod-key" \
-    "${ROCKY8_AK_ID}" \
+    "${ROCKY8_KEY_ID}" \
     "${ROCKY8_SUB_ID}" \
     "Rocky Linux 8"
 
 attach_subscription \
     "${ACTIVATION_KEY}" \
-    "${ROCKY9_AK_ID}" \
+    "${ROCKY9_KEY_ID}" \
     "${ROCKY9_SUB_ID}" \
     "${PRODUCT_NAME}"
 
@@ -1902,31 +1576,66 @@ attach_subscription \
 header "[6/6] Verification"
 
 ###############################################################################
+# Products
+###############################################################################
+
+header "Products"
+
+api_request \
+    "GET" \
+    "${KATELLO_API}/organizations/${ORG_ID}/products?per_page=100" \
+    ""
+
+if [ $? -eq 0 ]
+then
+    echo "${API_RESPONSE}" |
+    jq -r '
+        (.results // [])[]
+        | [.id,.name,.label]
+        | @tsv
+    '
+fi
+
+###############################################################################
+# Repositories
+###############################################################################
+
+header "Repositories"
+
+api_request \
+    "GET" \
+    "${KATELLO_API}/organizations/${ORG_ID}/repositories?per_page=100" \
+    ""
+
+if [ $? -eq 0 ]
+then
+    echo "${API_RESPONSE}" |
+    jq -r '
+        (.results // [])[]
+        | [.id,.name,.url,.sync_state]
+        | @tsv
+    '
+fi
+
+###############################################################################
 # Content Views
 ###############################################################################
 
 header "Content Views"
 
 api_request \
-    GET \
-    "${KATELLO_API}/organizations/${ORGANIZATION_ID}/content_views?per_page=100"
+    "GET" \
+    "${KATELLO_API}/organizations/${ORG_ID}/content_views?per_page=100" \
+    ""
 
-if api_success
+if [ $? -eq 0 ]
 then
-
     echo "${API_RESPONSE}" |
-        jq -r '
-            (.results // [])[] |
-            [.id,.name,.label] |
-            @tsv
-        '
-
-else
-
-    show_api_error \
-        GET \
-        "${KATELLO_API}/organizations/${ORGANIZATION_ID}/content_views"
-
+    jq -r '
+        (.results // [])[]
+        | [.id,.name,.label]
+        | @tsv
+    '
 fi
 
 ###############################################################################
@@ -1936,88 +1645,45 @@ fi
 header "Activation Keys"
 
 api_request \
-    GET \
-    "${KATELLO_API}/organizations/${ORGANIZATION_ID}/activation_keys?per_page=100"
+    "GET" \
+    "${KATELLO_API}/organizations/${ORG_ID}/activation_keys?per_page=100" \
+    ""
 
-if api_success
+if [ $? -eq 0 ]
 then
-
     echo "${API_RESPONSE}" |
-        jq -r '
-            (.results // [])[] |
-            [.id,.name,.content_view.name,.environment.name] |
-            @tsv
-        '
-
-else
-
-    show_api_error \
-        GET \
-        "${KATELLO_API}/organizations/${ORGANIZATION_ID}/activation_keys"
-
+    jq -r '
+        (.results // [])[]
+        | [.id,.name,.content_view_id,.environment_id]
+        | @tsv
+    '
 fi
 
 ###############################################################################
-# Repositories
+# Subscriptions
 ###############################################################################
 
-header "Repositories"
-
-echo
-info "CentOS 7"
+header "Subscriptions"
 
 api_request \
-    GET \
-    "${KATELLO_API}/products/${CENTOS_PRODUCT_ID}/repositories?per_page=100"
+    "GET" \
+    "${KATELLO_API}/organizations/${ORG_ID}/subscriptions?per_page=100" \
+    ""
 
-if api_success
+if [ $? -eq 0 ]
 then
-
     echo "${API_RESPONSE}" |
-        jq -r '
-            (.results // [])[] |
-            [.id,.name,.url,.sync_state] |
-            @tsv
-        '
-
-fi
-
-echo
-info "Rocky Linux 8"
-
-api_request \
-    GET \
-    "${KATELLO_API}/products/${ROCKY8_PRODUCT_ID}/repositories?per_page=100"
-
-if api_success
-then
-
-    echo "${API_RESPONSE}" |
-        jq -r '
-            (.results // [])[] |
-            [.id,.name,.url,.sync_state] |
-            @tsv
-        '
-
-fi
-
-echo
-info "${PRODUCT_NAME}"
-
-api_request \
-    GET \
-    "${KATELLO_API}/products/${ROCKY9_PRODUCT_ID}/repositories?per_page=100"
-
-if api_success
-then
-
-    echo "${API_RESPONSE}" |
-        jq -r '
-            (.results // [])[] |
-            [.id,.name,.url,.sync_state] |
-            @tsv
-        '
-
+    jq -r '
+        (.results // [])[]
+        | [
+            .id,
+            .name,
+            (.product_name // .product.name // ""),
+            .available,
+            .consumed
+        ]
+        | @tsv
+    '
 fi
 
 ###############################################################################
@@ -2030,27 +1696,43 @@ echo
 
 info "CentOS 7"
 
-echo "subscription-manager register \\"
-echo "  --org=\"Default_Organization\" \\"
-echo "  --activationkey=\"centos7-prod-key\""
+echo 'subscription-manager register \'
+echo '  --org="Default_Organization" \'
+echo '  --activationkey="centos7-prod-key"'
 
 echo
 
 info "Rocky Linux 8"
 
-echo "subscription-manager register \\"
-echo "  --org=\"Default_Organization\" \\"
-echo "  --activationkey=\"rocky8-prod-key\""
+echo 'subscription-manager register \'
+echo '  --org="Default_Organization" \'
+echo '  --activationkey="rocky8-prod-key"'
 
 echo
 
 info "${PRODUCT_NAME}"
 
-echo "subscription-manager register \\"
-echo "  --org=\"Default_Organization\" \\"
+echo 'subscription-manager register \'
+echo '  --org="Default_Organization" \'
 echo "  --activationkey=\"${ACTIVATION_KEY}\""
 
+###############################################################################
+# API Endpoint Summary
+###############################################################################
+
+header "API Endpoint Summary"
+
 echo
+echo "Foreman API:"
+echo "  ${FOREMAN_API}"
+
+echo
+echo "Katello API:"
+echo "  ${KATELLO_API}"
+
+echo
+echo "API Version:"
+echo "  ${API_VERSION}"
 
 ###############################################################################
 # Final Summary
@@ -2058,23 +1740,22 @@ echo
 
 header "02 - Foreman Katello Bootstrap API Completed"
 
-if [ ${#FAILED_STEPS[@]} -eq 0 ]
+if [ "${#FAILED_STEPS[@]}" -eq 0 ]
 then
 
-    ok "Foreman Katello Bootstrap API completed successfully."
+    ok "Foreman Katello Bootstrap completed successfully."
 
 else
 
     warn "Bootstrap completed with ${#FAILED_STEPS[@]} failure(s)."
 
+    echo
+
     for STEP in "${FAILED_STEPS[@]}"
     do
         error "${STEP}"
     done
-
 fi
-
-echo
 
 ###############################################################################
 # Manual Verification
@@ -2086,67 +1767,56 @@ echo
 
 echo "1. Foreman API Status:"
 echo
-echo "curl -ksS --user \"${FOREMAN_USER}:\${FOREMAN_PASSWORD}\" \\"
-echo "  -H 'Accept: application/json,version=2' \\"
-echo "  '${FOREMAN_API}/status' | jq"
+echo "curl -ksS \\"
+echo "  --user \"${FOREMAN_USER}:\${FOREMAN_PASSWORD}\" \\"
+echo "  -H 'Accept: application/json' \\"
+echo "  '${FOREMAN_URL}/api/status' | jq"
 
 echo
 
 echo "2. Products:"
 echo
-echo "curl -ksS --user \"${FOREMAN_USER}:\${FOREMAN_PASSWORD}\" \\"
-echo "  -H 'Accept: application/json,version=2' \\"
-echo "  '${KATELLO_API}/organizations/${ORGANIZATION_ID}/products?per_page=100' | \\"
-echo "  jq -r '.results[] | [.id,.name,.label] | @tsv'"
+echo "curl -ksS \\"
+echo "  --user \"${FOREMAN_USER}:\${FOREMAN_PASSWORD}\" \\"
+echo "  -H 'Accept: application/json' \\"
+echo "  '${KATELLO_API}/organizations/${ORG_ID}/products?per_page=100' | jq"
 
 echo
 
 echo "3. Repositories:"
 echo
-echo "curl -ksS --user \"${FOREMAN_USER}:\${FOREMAN_PASSWORD}\" \\"
-echo "  -H 'Accept: application/json,version=2' \\"
-echo "  '${KATELLO_API}/repositories?per_page=100' | \\"
-echo "  jq -r '.results[] | [.id,.name,.url,.sync_state] | @tsv'"
+echo "curl -ksS \\"
+echo "  --user \"${FOREMAN_USER}:\${FOREMAN_PASSWORD}\" \\"
+echo "  -H 'Accept: application/json' \\"
+echo "  '${KATELLO_API}/organizations/${ORG_ID}/repositories?per_page=100' | jq"
 
 echo
 
 echo "4. Content Views:"
 echo
-echo "curl -ksS --user \"${FOREMAN_USER}:\${FOREMAN_PASSWORD}\" \\"
-echo "  -H 'Accept: application/json,version=2' \\"
-echo "  '${KATELLO_API}/content_views?per_page=100' | \\"
-echo "  jq -r '.results[] | [.id,.name,.label] | @tsv'"
+echo "curl -ksS \\"
+echo "  --user \"${FOREMAN_USER}:\${FOREMAN_PASSWORD}\" \\"
+echo "  -H 'Accept: application/json' \\"
+echo "  '${KATELLO_API}/organizations/${ORG_ID}/content_views?per_page=100' | jq"
 
 echo
 
 echo "5. Activation Keys:"
 echo
-echo "curl -ksS --user \"${FOREMAN_USER}:\${FOREMAN_PASSWORD}\" \\"
-echo "  -H 'Accept: application/json,version=2' \\"
-echo "  '${KATELLO_API}/activation_keys?per_page=100' | \\"
-echo "  jq -r '.results[] | [.id,.name] | @tsv'"
+echo "curl -ksS \\"
+echo "  --user \"${FOREMAN_USER}:\${FOREMAN_PASSWORD}\" \\"
+echo "  -H 'Accept: application/json' \\"
+echo "  '${KATELLO_API}/organizations/${ORG_ID}/activation_keys?per_page=100' | jq"
 
 echo
 
 echo "6. Subscriptions:"
 echo
-echo "curl -ksS --user \"${FOREMAN_USER}:\${FOREMAN_PASSWORD}\" \\"
-echo "  -H 'Accept: application/json,version=2' \\"
-echo "  '${KATELLO_API}/organizations/${ORGANIZATION_ID}/subscriptions?per_page=100' | \\"
-echo "  jq -r '.results[] | [.id,.name,.product_name,.available,.consumed] | @tsv'"
+echo "curl -ksS \\"
+echo "  --user \"${FOREMAN_USER}:\${FOREMAN_PASSWORD}\" \\"
+echo "  -H 'Accept: application/json' \\"
+echo "  '${KATELLO_API}/organizations/${ORG_ID}/subscriptions?per_page=100' | jq"
 
 echo
-
-echo "7. Foreman Tasks:"
-echo
-echo "curl -ksS --user \"${FOREMAN_USER}:\${FOREMAN_PASSWORD}\" \\"
-echo "  -H 'Accept: application/json,version=2' \\"
-echo "  '${TASK_API}/tasks?per_page=100' | jq"
-
-echo
-
-###############################################################################
-# Exit
-###############################################################################
 
 exit 0
