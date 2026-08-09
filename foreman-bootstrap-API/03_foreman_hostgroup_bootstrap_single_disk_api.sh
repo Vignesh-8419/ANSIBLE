@@ -247,14 +247,24 @@ header "Foreman API Authentication Test"
 
 info "Testing Foreman REST API..."
 
-STATUS="$(api_get /api/status)"
+###############################################################################
+# IMPORTANT:
+# Do NOT use:
+#
+#     STATUS="$(api_get /api/status)"
+#
+# because command substitution runs api_get in a subshell and
+# HTTP_STATUS will not be available in the parent shell.
+###############################################################################
+
+api_get /api/status >/dev/null
 
 if [[ "$HTTP_STATUS" =~ ^2[0-9][0-9]$ ]]
 then
 
     ok "Foreman API authentication successful."
 
-    echo "Foreman Version : $(echo "$STATUS" | jq -r '.version // empty')"
+    echo "Foreman Version : $(jq -r '.version // empty' "$BODY")"
     echo "API Version     : ${API_VERSION}"
     echo "API Status      : ${HTTP_STATUS}"
 
