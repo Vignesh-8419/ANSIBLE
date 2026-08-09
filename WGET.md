@@ -200,3 +200,28 @@ chmod +x enable-verbose-boot.sh
 wget -r -np -nH --cut-dirs=4 \
   https://1407433742.rsc.cdn77.org/c7.2009.u.x86_64/cyrus-sasl/20220224132553/2.1.26-24.el7_9.x86_64/
 ```
+
+```text
+curl -L -o 01_foreman_pxe_bootstrap_api.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap-API/01_foreman_pxe_bootstrap_api.sh?$(date +%s)" && \
+curl -L -o 02_foreman_katello_bootstrap_api.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap-API/02_foreman_katello_bootstrap_api.sh?$(date +%s)" && \
+curl -L -o 02_foreman_pxe_bootstrap_single_disk_api.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap-API/02_foreman_pxe_bootstrap_single_disk_api.sh?$(date +%s)" && \
+curl -L -o 03_foreman_hostgroup_bootstrap_raid_api.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap-API/03_foreman_hostgroup_bootstrap_raid_api.sh?$(date +%s)" && \
+curl -L -o 03_foreman_hostgroup_bootstrap_single_disk_api.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap-API/03_foreman_hostgroup_bootstrap_single_disk_api.sh?$(date +%s)" && \
+curl -L -o 04-bootstrap-el7toel8_api.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap-API/04-bootstrap-el7toel8_api.sh?$(date +%s)" && \
+curl -L -o 05-bootstrap-el8toel9_api.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap-API/05-bootstrap-el8toel9_api.sh?$(date +%s)" && \
+chmod +x \
+01_foreman_pxe_bootstrap_api.sh \
+02_foreman_katello_bootstrap_api.sh \
+02_foreman_pxe_bootstrap_single_disk_api.sh \
+03_foreman_hostgroup_bootstrap_raid_api.sh \
+03_foreman_hostgroup_bootstrap_single_disk_api.sh \
+04-bootstrap-el7toel8_api.sh \
+05-bootstrap-el8toel9_api.sh
+```
