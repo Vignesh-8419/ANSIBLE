@@ -93,25 +93,22 @@ EOF
 echo "📝 Creating vault.repo..."
 cat <<EOF > /etc/yum.repos.d/vault.repo
 [base]
-name=CentOS Vault Base
-baseurl=https://vault.centos.org/centos/7/os/\$basearch/
+name=CentOS 7.9.2009 - Base
+baseurl=https://vault.centos.org/centos/7.9.2009/os/x86_64/
 enabled=1
 gpgcheck=0
-gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 
 [updates]
-name=CentOS Vault Updates
-baseurl=https://vault.centos.org/centos/7/updates/\$basearch/
+name=CentOS 7.9.2009 - Updates
+baseurl=https://vault.centos.org/centos/7.9.2009/updates/x86_64/
 enabled=1
 gpgcheck=0
-gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 
 [extras]
-name=CentOS Vault Extras
-baseurl=https://vault.centos.org/centos/7/extras/\$basearch/
+name=CentOS 7.9.2009 - Extras
+baseurl=https://vault.centos.org/centos/7.9.2009/extras/x86_64/
 enabled=1
-gpgcheck0
-gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+gpgcheck=0
 EOF
 
 echo "🧠 Installing SSH PASS..."
