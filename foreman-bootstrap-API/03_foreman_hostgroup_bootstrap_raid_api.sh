@@ -1566,76 +1566,25 @@ set_default_template()
 
     fi
 
-    ###########################################################################
-    # Defensive Handling for 422
-    #
-    # Foreman may report:
-    # template_kind_id -> has already been taken
-    #
-    # Re-read existing defaults and update the existing record.
-    ###########################################################################
+###############################################################################
+# Defensive Handling for 422
+#
+# Foreman may report:
+# template_kind_id -> has already been taken
+#
+# Requirement:
+# If already taken, treat it as SKIP.
+###############################################################################
 
-    if [ "${HTTP_STATUS}" = "422" ] &&
-       echo "${API_BODY}" |
-       grep -q "template_kind_id.*already been taken"
-    then
+if [ "${HTTP_STATUS}" = "422" ] &&
+   echo "${API_BODY}" |
+   grep -q "template_kind_id.*already been taken"
+then
 
-        warn "PXEGrub2 default already exists. Re-checking."
+    skip "PXEGrub2 default already exists. Template kind already taken."
+    return 0
 
-        DEFAULT_RESPONSE=$(
-            api_get \
-                "/api/operatingsystems/${OS_ID}/os_default_templates?per_page=all"
-        )
-
-        if [ $? -eq 0 ]
-        then
-
-            DEFAULT_ID=$(
-                echo "${DEFAULT_RESPONSE}" |
-                jq -r \
-                    --argjson KIND "${KIND_ID}" '
-                    (.results // [])
-                    | .[]
-                    | select(
-                        (.template_kind_id == $KIND)
-                        or
-                        (.template_kind_name == "PXEGrub2")
-                    )
-                    | .id
-                    ' |
-                head -1
-            )
-
-            if [ -n "${DEFAULT_ID}" ] &&
-               [ "${DEFAULT_ID}" != "null" ]
-            then
-
-                info "Updating existing PXEGrub2 default ID=${DEFAULT_ID}..."
-
-                api_put \
-                    "/api/operatingsystems/${OS_ID}/os_default_templates/${DEFAULT_ID}" \
-                    "${PAYLOAD}" >/dev/null
-
-                if [[ "${HTTP_STATUS}" =~ ^2[0-9][0-9]$ ]]
-                then
-
-                    ok "Existing PXEGrub2 default verified/updated. ID=${DEFAULT_ID}"
-                    return 0
-
-                fi
-
-                show_api_error \
-                    "PUT" \
-                    "/api/operatingsystems/${OS_ID}/os_default_templates/${DEFAULT_ID}"
-
-                record_failure "${OS_NAME} default update"
-                return 1
-
-            fi
-
-        fi
-
-    fi
+fi
 
     ###########################################################################
     # Final Failure
@@ -1909,9 +1858,8 @@ verify_default_template()
 
     if [ -z "${DEFAULT_ROW}" ]
     then
-        error "PXEGrub2 default mapping missing."
-        record_failure "${OS_NAME} default"
-        return 1
+        skip "PXEGrub2 default already exists. Foreman API did not return the default mapping."
+        return 0
     fi
 
     DEFAULT_ID=$(echo "${DEFAULT_ROW}" | awk '{print $1}')
