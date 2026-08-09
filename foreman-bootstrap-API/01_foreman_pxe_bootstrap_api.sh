@@ -226,16 +226,20 @@ then
     exit 1
 fi
 
-FOREMAN_VERSION="$(echo "${STATUS_RESPONSE}" | jq -r '.foreman_version // empty')"
+FOREMAN_VERSION="$(echo "${STATUS_RESPONSE}" | jq -r '.version // empty')"
 API_VERSION="$(echo "${STATUS_RESPONSE}" | jq -r '.api_version // empty')"
+RESULT="$(echo "${STATUS_RESPONSE}" | jq -r '.result // empty')"
+STATUS="$(echo "${STATUS_RESPONSE}" | jq -r '.status // empty')"
 
-if [ -n "${FOREMAN_VERSION}" ]
+if [ "${RESULT}" = "ok" ] && [ "${STATUS}" = "200" ] && [ -n "${FOREMAN_VERSION}" ]
 then
     ok "Foreman API authentication successful."
     echo "Foreman Version : ${FOREMAN_VERSION}"
     echo "API Version     : ${API_VERSION}"
+    echo "API Status      : ${STATUS}"
 else
     error "Unable to read Foreman API status."
+    echo "Response: ${STATUS_RESPONSE}"
     exit 1
 fi
 
