@@ -2181,6 +2181,29 @@ EOF
 
     echo
 }
+###############################################################################
+# Execute Single Disk Bootstrap
+###############################################################################
+
+create_single_disk_hostgroups
+
+configure_single_disk_templates
+
+configure_single_disk_defaults
+
+verify_single_disk_hostgroups
+
+verify_single_disk_templates
+
+verify_single_disk_defaults
+
+final_verification
+
+configuration_summary
+
+final_status
+
+manual_verification
 
 ###############################################################################
 # Exit
