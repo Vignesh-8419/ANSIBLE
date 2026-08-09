@@ -1500,92 +1500,86 @@ verify_template_association()
     fi
 }
 
-###############################################################################
-# VERIFY PXEGRUB2 DEFAULT
-###############################################################################
-
 verify_pxe_default()
 {
-    local os_name="$1"
-    local expected_template="$2"
-
-    local os_id=""
-    local template_id=""
-    local match=""
+    OS_NAME="$1"
+    EXPECTED_TEMPLATE="$2"
 
     echo
+    info "PXEGrub2 Default Verification"
     echo "------------------------------------------------------------"
-    echo "OS       : ${os_name}"
-    echo "Expected : ${expected_template}"
+    echo "OS       : ${OS_NAME}"
+    echo "Expected : ${EXPECTED_TEMPLATE}"
     echo "------------------------------------------------------------"
 
-    os_id="$(get_os_id "${os_name}")"
+    # Get Operating System ID
+    OS_ID=$(
+        api_get "/api/operatingsystems?search=name=\"${OS_NAME}\"&per_page=100" |
+        jq -r --arg NAME "${OS_NAME}" '
+            .results[]
+            | select(.name == $NAME)
+            | .id
+        ' |
+        head -1
+    )
 
-    if [ -z "$os_id" ]; then
-
-        error "Operating System not found : ${os_name}"
-
-        record_failure "${os_name} default verification"
-
-        return
-
-    fi
-
-    template_id="$(get_template_id "${expected_template}")"
-
-    if [ -z "$template_id" ]; then
-
-        error "Template not found : ${expected_template}"
-
-        record_failure "${expected_template} default verification"
-
-        return
-
-    fi
-
-    if ! api_request GET \
-        "${API}/operatingsystems/${os_id}/os_default_templates?per_page=all"
+    if [ -z "${OS_ID}" ] || [ "${OS_ID}" = "null" ]
     then
-
-        print_api_error \
-            GET \
-            "${API}/operatingsystems/${os_id}/os_default_templates"
-
-        record_failure "${os_name} default verification"
-
-        return
-
+        error "Operating System not found : ${OS_NAME}"
+        record_failure "${OS_NAME} PXEGrub2 default verification"
+        return 1
     fi
 
-    match="$(
-        printf '%s\n' "$API_BODY" |
-            "$JQ" -r \
-                --argjson TEMPLATE "$template_id" \
-                --argjson KIND "$PXEGRUB2_KIND_ID" \
-                '
-                (.results // [])
-                | .[]
-                | select(
-                    .provisioning_template_id == $TEMPLATE
-                    and
-                    .template_kind_id == $KIND
-                )
-                | .provisioning_template_name
-                ' |
-            "$HEAD" -1
-    )"
+    ok "Operating System ID : ${OS_ID}"
 
-    if [ -n "$match" ]; then
+    # Read the complete Operating System object.
+    # Foreman 3.2.1 exposes os_default_templates here reliably.
+    OS_JSON=$(api_get "/api/operatingsystems/${OS_ID}")
 
-        ok "PXEGrub2 default mapping correct."
+    if [ -z "${OS_JSON}" ]
+    then
+        error "Unable to read Operating System : ${OS_NAME}"
+        record_failure "${OS_NAME} PXEGrub2 default verification"
+        return 1
+    fi
 
-    else
+    # Find the PXEGrub2 default (template_kind_id = 4)
+    DEFAULT_JSON=$(
+        echo "${OS_JSON}" |
+        jq -c '
+            .os_default_templates[]
+            | select(.template_kind_id == 4)
+        ' |
+        head -1
+    )
 
+    if [ -z "${DEFAULT_JSON}" ]
+    then
         error "PXEGrub2 default mapping missing."
-
-        record_failure "${os_name} -> ${expected_template} default"
-
+        record_failure "${OS_NAME} -> ${EXPECTED_TEMPLATE}"
+        return 1
     fi
+
+    DEFAULT_ID=$(echo "${DEFAULT_JSON}" | jq -r '.id')
+    DEFAULT_TEMPLATE_ID=$(echo "${DEFAULT_JSON}" | jq -r '.provisioning_template_id')
+    DEFAULT_TEMPLATE_NAME=$(echo "${DEFAULT_JSON}" | jq -r '.provisioning_template_name')
+
+    echo "Default ID          : ${DEFAULT_ID}"
+    echo "Template ID         : ${DEFAULT_TEMPLATE_ID}"
+    echo "Template Name       : ${DEFAULT_TEMPLATE_NAME}"
+
+    if [ "${DEFAULT_TEMPLATE_NAME}" = "${EXPECTED_TEMPLATE}" ]
+    then
+        ok "PXEGrub2 default mapping correct."
+        return 0
+    fi
+
+    error "PXEGrub2 default mapping points to wrong template."
+    error "Expected : ${EXPECTED_TEMPLATE}"
+    error "Actual   : ${DEFAULT_TEMPLATE_NAME}"
+
+    record_failure "${OS_NAME} -> ${EXPECTED_TEMPLATE}"
+    return 1
 }
 
 ###############################################################################
