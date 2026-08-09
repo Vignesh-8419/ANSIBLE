@@ -2111,81 +2111,35 @@ verify_generated_files()
 
 
 ###############################################################################
-# REBUILD FOREMAN PXE
+# REBUILD PXE
 ###############################################################################
 
 rebuild_pxe()
 {
     section "Rebuilding PXE Configuration"
 
+    local json='{"provisioning_template":{}}'
+
     info "Requesting Foreman PXE rebuild..."
 
-    ###########################################################################
-    # Foreman 3.x does not require a special global PXE API endpoint here.
-    # Trigger the provisioning templates cache/build through the Foreman
-    # maintenance task endpoint when available.
-    ###########################################################################
+    if api_request POST \
+        "${API}/provisioning_templates/build_pxe_default" \
+        "$json"; then
 
-    local json
+        ok "Foreman PXE default build request completed."
 
-    json="$(
-        "$JQ" -n \
-            '{
-                task: {
-                    label: "Actions::RemoteExecution::RunHostsJob"
-                }
-            }'
-    )"
+    else
 
-    ###########################################################################
-    # First try the Foreman smart-proxy/TFTP rebuild endpoint if available.
-    ###########################################################################
+        warn "Foreman PXE default build request failed."
 
-    if api_request GET "${API}/smart_proxies?per_page=all"; then
+        print_api_error \
+            POST \
+            "${API}/provisioning_templates/build_pxe_default"
 
-        local proxy_id
-
-        proxy_id="$(
-            printf '%s\n' "$API_BODY" |
-                "$JQ" -r \
-                    --arg NAME "$TFTP_PROXY_CENTOS" \
-                    '
-                    (.results // [])[]
-                    | select(.name == $NAME)
-                    | .id
-                    ' |
-                "$HEAD" -1
-        )"
-
-        if [ -n "$proxy_id" ] &&
-           [ "$proxy_id" != "null" ]; then
-
-            info "TFTP smart proxy found. ID=${proxy_id}"
-
-            ###################################################################
-            # No destructive action is required here.
-            #
-            # Foreman regenerates PXE configuration when a host is provisioned
-            # or when the associated provisioning template is requested.
-            ###################################################################
-
-            ok "Foreman PXE configuration is ready."
-
-            return 0
-        fi
+        warn "PXE rebuild is an additional deployment step."
+        warn "Existing PXE templates and subnet configuration were preserved."
     fi
-
-    ###########################################################################
-    # If no proxy was returned, don't fail the whole bootstrap.
-    ###########################################################################
-
-    warn "TFTP smart proxy could not be resolved through API."
-
-    warn "PXE templates and subnet configuration are already configured."
-
-    return 0
 }
-
 
 ###############################################################################
 # FINAL SUMMARY
@@ -2383,11 +2337,11 @@ main()
 
     verify_subnets
 
-    verify_pxe_templates
+    verify_templates
 
-    verify_os_template_associations
+    verify_os_associations
 
-    verify_pxe_defaults
+    verify_defaults
 
     final_os_verification
 
