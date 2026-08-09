@@ -1399,6 +1399,10 @@ get_template_id()
 
 ###############################################################################
 # ASSOCIATE TEMPLATE WITH OS
+#
+# Foreman 3.2.1:
+# Use PUT /api/operatingsystems/:id
+# with provisioning_template_ids.
 ###############################################################################
 
 associate_template()
@@ -1408,6 +1412,8 @@ associate_template()
     local template_name="$3"
     local template_id="$4"
 
+    local existing_ids
+    local ids_json
     local json
 
     subsection "OS Template Association"
@@ -1418,78 +1424,118 @@ associate_template()
     echo "Template ID : ${template_id}"
 
     ###########################################################################
-    # Check existing association
+    # Validate IDs
     ###########################################################################
 
-    if api_request GET \
-        "${API}/operatingsystems/${os_id}/provisioning_templates"; then
+    if [ -z "$os_id" ] || [ "$os_id" = "null" ]; then
+        error "OS ID missing."
+        record_failure "${os_name} template association"
+        return 1
+    fi
 
-        if printf '%s\n' "$API_BODY" |
-            "$JQ" -e \
-                --argjson ID "$template_id" \
-                '
-                (.results // [])
-                | any(.[]; .id == $ID)
-                ' >/dev/null 2>&1
-        then
-
-            skip "${os_name} already associated with ${template_name}."
-
-            return 0
-
-        fi
+    if [ -z "$template_id" ] || [ "$template_id" = "null" ]; then
+        error "Template ID missing."
+        record_failure "${template_name} association"
+        return 1
     fi
 
     ###########################################################################
-    # Create association
+    # Read existing provisioning template associations
+    ###########################################################################
+
+    if ! api_request GET \
+        "${API}/operatingsystems/${os_id}"; then
+
+        print_api_error \
+            GET \
+            "${API}/operatingsystems/${os_id}"
+
+        record_failure "${os_name} OS read"
+        return 1
+    fi
+
+    if ! json_valid "$API_BODY"; then
+
+        error "Invalid OS API response."
+        print_api_error \
+            GET \
+            "${API}/operatingsystems/${os_id}"
+
+        record_failure "${os_name} OS read"
+        return 1
+    fi
+
+    ###########################################################################
+    # Extract existing provisioning template IDs
+    ###########################################################################
+
+    existing_ids="$(
+        "$JQ" -r '
+            [
+                .provisioning_templates[]?.id
+            ]
+            | map(select(. != null))
+            | .[]
+        ' "$API_BODY" 2>/dev/null
+    )"
+
+    ###########################################################################
+    # Add our template ID without creating duplicates
+    ###########################################################################
+
+    ids_json="$(
+        printf '%s\n' \
+            "$existing_ids" \
+            "$template_id" |
+        "$AWK" '
+            NF && !seen[$0]++
+        ' |
+        "$JQ" -R -s '
+            split("\n")
+            | map(select(length > 0))
+            | map(tonumber)
+        '
+    )"
+
+    if [ -z "$ids_json" ] || [ "$ids_json" = "null" ]; then
+        error "Unable to build provisioning_template_ids."
+        record_failure "${os_name} template association"
+        return 1
+    fi
+
+    ###########################################################################
+    # Build Foreman OS update payload
     ###########################################################################
 
     json="$(
         "$JQ" -n \
-            --argjson id "$template_id" \
+            --argjson ids "$ids_json" \
             '{
-                provisioning_template_id: $id
+                operatingsystem: {
+                    provisioning_template_ids: $ids
+                }
             }'
     )"
 
-    if api_request POST \
-        "${API}/operatingsystems/${os_id}/provisioning_templates" \
+    ###########################################################################
+    # Update OS
+    ###########################################################################
+
+    if api_request PUT \
+        "${API}/operatingsystems/${os_id}" \
         "$json"; then
 
         ok "${os_name} associated with ${template_name}."
-
         return 0
     fi
 
     ###########################################################################
-    # Foreman may return 422 because association already exists.
+    # Error
     ###########################################################################
 
-    if [ "$API_STATUS" = "422" ]; then
-
-        if api_request GET \
-            "${API}/operatingsystems/${os_id}/provisioning_templates"; then
-
-            if printf '%s\n' "$API_BODY" |
-                "$JQ" -e \
-                    --argjson ID "$template_id" \
-                    '
-                    (.results // [])
-                    | any(.[]; .id == $ID)
-                    ' >/dev/null 2>&1
-            then
-
-                skip "${os_name} association already exists."
-
-                return 0
-
-            fi
-        fi
-    fi
-
     print_api_error \
-        POST \
-        "${API}/operatingsystems/${os_id}/provisioning_templates"
+        PUT \
+        "${API}/operatingsystems/${os_id}"
 
     record_failure "${os_name} template association"
 
