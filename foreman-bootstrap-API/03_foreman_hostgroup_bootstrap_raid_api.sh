@@ -506,8 +506,7 @@ get_organization_id()
     NAME="$1"
 
     RESPONSE=$(
-        api_get \
-            "/api/organizations?per_page=all"
+        api_get "/api/organizations/1"
     )
 
     if [ $? -ne 0 ]
@@ -517,12 +516,12 @@ get_organization_id()
 
     echo "${RESPONSE}" |
     jq -r --arg NAME "${NAME}" '
-        .results[]?
-        | select(.name == $NAME)
-        | .id
+        select(.name == $NAME) |
+        .id
     ' |
     head -1
 }
+
 
 ###############################################################################
 # Location ID Lookup
@@ -533,8 +532,7 @@ get_location_id()
     NAME="$1"
 
     RESPONSE=$(
-        api_get \
-            "/api/locations?per_page=all"
+        api_get "/api/organizations/1"
     )
 
     if [ $? -ne 0 ]
@@ -544,9 +542,9 @@ get_location_id()
 
     echo "${RESPONSE}" |
     jq -r --arg NAME "${NAME}" '
-        .results[]?
-        | select(.name == $NAME)
-        | .id
+        .locations[]? |
+        select(.name == $NAME) |
+        .id
     ' |
     head -1
 }
