@@ -79,8 +79,9 @@ header()
 
 header "01 - Foreman PXE Bootstrap - REST API"
 
-FOREMAN_URL="${FOREMAN_URL:-https://localhost}"
-FOREMAN_USER="${FOREMAN_USER:-admin}"
+FOREMAN_URL="https://cent-07-01.vgs.com"
+FOREMAN_USER="admin"
+FOREMAN_TOKEN="oUzg-aMfjcT3q_wZ8NRLfQ"
 
 if [ -z "${FOREMAN_TOKEN}" ]
 then
