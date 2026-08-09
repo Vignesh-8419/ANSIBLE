@@ -2296,7 +2296,7 @@ main()
 
     section "01 - Foreman PXE Bootstrap - REST API"
 
-    test_foreman_api
+    test_api
 
     create_or_verify_media
 
