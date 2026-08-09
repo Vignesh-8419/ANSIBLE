@@ -1368,11 +1368,8 @@ set_default_template()
 
     if [ -z "${OS_ID}" ]
     then
-
         error "Operating System not found : ${OS_NAME}"
-
-        record_failure "${OS_NAME}"
-
+        record_failure "${OS_NAME} default"
         return 1
     fi
 
@@ -1388,11 +1385,8 @@ set_default_template()
 
     if [ -z "${TEMPLATE_ID}" ]
     then
-
         error "Template not found : ${TEMPLATE_NAME}"
-
-        record_failure "${TEMPLATE_NAME}"
-
+        record_failure "${OS_NAME} default"
         return 1
     fi
 
@@ -1407,7 +1401,7 @@ set_default_template()
     ok "PXEGrub2 Template Kind ID : ${KIND_ID}"
 
     ###########################################################################
-    # Existing Defaults
+    # Read Existing Defaults
     ###########################################################################
 
     DEFAULT_RESPONSE=$(
@@ -1417,64 +1411,88 @@ set_default_template()
 
     if [ $? -ne 0 ]
     then
-
         show_api_error \
             "GET" \
             "/api/operatingsystems/${OS_ID}/os_default_templates"
 
         record_failure "${OS_NAME} default lookup"
-
         return 1
     fi
 
     ###########################################################################
-    # Find PXEGrub2 Default
+    # Find Existing PXEGrub2 Default
+    #
+    # IMPORTANT:
+    # Use (.results // []) so missing/null results does not break lookup.
     ###########################################################################
 
     DEFAULT_ID=$(
         echo "${DEFAULT_RESPONSE}" |
         jq -r \
             --argjson KIND "${KIND_ID}" '
-            .results[]
-            | select(.template_kind_id == $KIND)
+            (.results // [])
+            | .[]
+            | select(
+                (.template_kind_id == $KIND)
+                or
+                (.template_kind_name == "PXEGrub2")
+            )
             | .id
-        ' |
-        head -1
-    )
-
-    EXISTING_DEFAULT_TEMPLATE_ID=$(
-        echo "${DEFAULT_RESPONSE}" |
-        jq -r \
-            --argjson KIND "${KIND_ID}" '
-            .results[]
-            | select(.template_kind_id == $KIND)
-            | .provisioning_template_id
-        ' |
+            ' |
         head -1
     )
 
     ###########################################################################
-    # Correct Default Already Exists
+    # Existing PXEGrub2 Default Found
     ###########################################################################
 
     if [ -n "${DEFAULT_ID}" ] &&
-       [ "${EXISTING_DEFAULT_TEMPLATE_ID}" = "${TEMPLATE_ID}" ]
+       [ "${DEFAULT_ID}" != "null" ]
     then
 
-        skip "PXEGrub2 default already exists for ${OS_NAME}. Nothing to change."
+        EXISTING_TEMPLATE_ID=$(
+            echo "${DEFAULT_RESPONSE}" |
+            jq -r \
+                --argjson ID "${DEFAULT_ID}" '
+                (.results // [])
+                | .[]
+                | select(.id == $ID)
+                | .provisioning_template_id
+                ' |
+            head -1
+        )
 
-        return 0
-    fi
+        EXISTING_KIND_ID=$(
+            echo "${DEFAULT_RESPONSE}" |
+            jq -r \
+                --argjson ID "${DEFAULT_ID}" '
+                (.results // [])
+                | .[]
+                | select(.id == $ID)
+                | .template_kind_id
+                ' |
+            head -1
+        )
 
-    ###########################################################################
-    # Existing PXEGrub2 Default But Wrong Template
-    ###########################################################################
+        #######################################################################
+        # Already Correct
+        #######################################################################
 
-    if [ -n "${DEFAULT_ID}" ]
-    then
+        if [ "${EXISTING_TEMPLATE_ID}" = "${TEMPLATE_ID}" ] &&
+           [ "${EXISTING_KIND_ID}" = "${KIND_ID}" ]
+        then
+
+            skip "PXEGrub2 default already correct. ID=${DEFAULT_ID}"
+            return 0
+
+        fi
+
+        #######################################################################
+        # Existing Default But Wrong Template
+        #######################################################################
 
         warn "PXEGrub2 default exists with another template."
-        info "Updating existing default instead of creating duplicate."
+        info "Updating existing default ID=${DEFAULT_ID}..."
 
         PAYLOAD=$(
             jq -n \
@@ -1486,7 +1504,7 @@ set_default_template()
                         template_kind_id: $KIND
                     }
                 }
-            '
+                '
         )
 
         api_put \
@@ -1496,7 +1514,7 @@ set_default_template()
         if [[ "${HTTP_STATUS}" =~ ^2[0-9][0-9]$ ]]
         then
 
-            ok "PXEGrub2 default updated."
+            ok "PXEGrub2 default updated. ID=${DEFAULT_ID}"
             return 0
 
         else
@@ -1506,16 +1524,17 @@ set_default_template()
                 "/api/operatingsystems/${OS_ID}/os_default_templates/${DEFAULT_ID}"
 
             record_failure "${OS_NAME} default update"
-
             return 1
+
         fi
+
     fi
 
     ###########################################################################
-    # Create New Default
+    # No Existing Default Found
     ###########################################################################
 
-    info "Creating PXEGrub2 default..."
+    info "No PXEGrub2 default found. Creating one..."
 
     PAYLOAD=$(
         jq -n \
@@ -1527,7 +1546,7 @@ set_default_template()
                     template_kind_id: $KIND
                 }
             }
-        '
+            '
     )
 
     api_post \
@@ -1543,51 +1562,55 @@ set_default_template()
         )
 
         ok "PXEGrub2 default created. ID=${CREATED_DEFAULT_ID}"
+        return 0
 
-    else
+    fi
 
-        #
-        # Defensive handling:
-        # If Foreman says template_kind_id is already taken,
-        # re-read and update rather than reporting a failure.
-        #
-        if echo "${API_BODY}" |
-            grep -q "template_kind_id.*already been taken"
+    ###########################################################################
+    # Defensive Handling for 422
+    #
+    # Foreman may report:
+    # template_kind_id -> has already been taken
+    #
+    # Re-read existing defaults and update the existing record.
+    ###########################################################################
+
+    if [ "${HTTP_STATUS}" = "422" ] &&
+       echo "${API_BODY}" |
+       grep -q "template_kind_id.*already been taken"
+    then
+
+        warn "PXEGrub2 default already exists. Re-checking."
+
+        DEFAULT_RESPONSE=$(
+            api_get \
+                "/api/operatingsystems/${OS_ID}/os_default_templates?per_page=all"
+        )
+
+        if [ $? -eq 0 ]
         then
-
-            warn "PXEGrub2 default already exists. Re-checking."
-
-            DEFAULT_RESPONSE=$(
-                api_get \
-                    "/api/operatingsystems/${OS_ID}/os_default_templates?per_page=all"
-            )
 
             DEFAULT_ID=$(
                 echo "${DEFAULT_RESPONSE}" |
                 jq -r \
                     --argjson KIND "${KIND_ID}" '
-                    .results[]
-                    | select(.template_kind_id == $KIND)
+                    (.results // [])
+                    | .[]
+                    | select(
+                        (.template_kind_id == $KIND)
+                        or
+                        (.template_kind_name == "PXEGrub2")
+                    )
                     | .id
-                ' |
+                    ' |
                 head -1
             )
 
-            if [ -n "${DEFAULT_ID}" ]
+            if [ -n "${DEFAULT_ID}" ] &&
+               [ "${DEFAULT_ID}" != "null" ]
             then
 
-                PAYLOAD=$(
-                    jq -n \
-                        --argjson TEMPLATE "${TEMPLATE_ID}" \
-                        --argjson KIND "${KIND_ID}" '
-                        {
-                            os_default_template: {
-                                provisioning_template_id: $TEMPLATE,
-                                template_kind_id: $KIND
-                            }
-                        }
-                    '
-                )
+                info "Updating existing PXEGrub2 default ID=${DEFAULT_ID}..."
 
                 api_put \
                     "/api/operatingsystems/${OS_ID}/os_default_templates/${DEFAULT_ID}" \
@@ -1596,40 +1619,34 @@ set_default_template()
                 if [[ "${HTTP_STATUS}" =~ ^2[0-9][0-9]$ ]]
                 then
 
-                    ok "Existing PXEGrub2 default verified/updated."
-
-                else
-
-                    show_api_error \
-                        "PUT" \
-                        "/api/operatingsystems/${OS_ID}/os_default_templates/${DEFAULT_ID}"
-
-                    record_failure "${OS_NAME} default"
+                    ok "Existing PXEGrub2 default verified/updated. ID=${DEFAULT_ID}"
+                    return 0
 
                 fi
 
-            else
-
                 show_api_error \
-                    "POST" \
-                    "/api/operatingsystems/${OS_ID}/os_default_templates"
+                    "PUT" \
+                    "/api/operatingsystems/${OS_ID}/os_default_templates/${DEFAULT_ID}"
 
-                record_failure "${OS_NAME} default"
+                record_failure "${OS_NAME} default update"
+                return 1
 
             fi
 
-        else
-
-            show_api_error \
-                "POST" \
-                "/api/operatingsystems/${OS_ID}/os_default_templates"
-
-            record_failure "${OS_NAME} default"
-
         fi
+
     fi
 
-    echo
+    ###########################################################################
+    # Final Failure
+    ###########################################################################
+
+    show_api_error \
+        "POST" \
+        "/api/operatingsystems/${OS_ID}/os_default_templates"
+
+    record_failure "${OS_NAME} default"
+    return 1
 }
 
 ###############################################################################
@@ -1837,11 +1854,8 @@ verify_default_template()
 
     if [ -z "${OS_ID}" ]
     then
-
         error "Operating System not found : ${OS_NAME}"
-
-        record_failure "${OS_NAME}"
-
+        record_failure "${OS_NAME} default verification"
         return 1
     fi
 
@@ -1851,11 +1865,8 @@ verify_default_template()
 
     if [ -z "${TEMPLATE_ID}" ]
     then
-
         error "Template not found : ${EXPECTED_TEMPLATE}"
-
-        record_failure "${EXPECTED_TEMPLATE}"
-
+        record_failure "${OS_NAME} default verification"
         return 1
     fi
 
@@ -1866,66 +1877,71 @@ verify_default_template()
 
     if [ $? -ne 0 ]
     then
-
         show_api_error \
             "GET" \
             "/api/operatingsystems/${OS_ID}/os_default_templates"
 
         record_failure "${OS_NAME} default verification"
-
         return 1
     fi
 
-    DEFAULT_ID=$(
+    DEFAULT_ROW=$(
         echo "${DEFAULT_RESPONSE}" |
         jq -r \
             --argjson KIND "${PXEGRUB2_KIND_ID}" '
-            .results[]
-            | select(.template_kind_id == $KIND)
-            | .id
-        ' |
+            (.results // [])
+            | .[]
+            | select(
+                (.template_kind_id == $KIND)
+                or
+                (.template_kind_name == "PXEGrub2")
+            )
+            | [
+                .id,
+                .provisioning_template_id,
+                .template_kind_id,
+                .provisioning_template_name
+              ]
+            | @tsv
+            ' |
         head -1
     )
 
-    DEFAULT_TEMPLATE_ID=$(
-        echo "${DEFAULT_RESPONSE}" |
-        jq -r \
-            --argjson KIND "${PXEGRUB2_KIND_ID}" '
-            .results[]
-            | select(.template_kind_id == $KIND)
-            | .provisioning_template_id
-        ' |
-        head -1
-    )
+    if [ -z "${DEFAULT_ROW}" ]
+    then
+        error "PXEGrub2 default mapping missing."
+        record_failure "${OS_NAME} default"
+        return 1
+    fi
 
-    DEFAULT_TEMPLATE_NAME=$(
-        echo "${DEFAULT_RESPONSE}" |
-        jq -r \
-            --argjson KIND "${PXEGRUB2_KIND_ID}" '
-            .results[]
-            | select(.template_kind_id == $KIND)
-            | .provisioning_template_name
-        ' |
-        head -1
-    )
+    DEFAULT_ID=$(echo "${DEFAULT_ROW}" | awk '{print $1}')
+    DEFAULT_TEMPLATE_ID=$(echo "${DEFAULT_ROW}" | awk '{print $2}')
+    DEFAULT_KIND_ID=$(echo "${DEFAULT_ROW}" | awk '{print $3}')
+    DEFAULT_TEMPLATE_NAME=$(echo "${DEFAULT_ROW}" | cut -f4-)
 
-    if [ -n "${DEFAULT_ID}" ] &&
-       [ "${DEFAULT_TEMPLATE_ID}" = "${TEMPLATE_ID}" ]
+    echo "Default ID    : ${DEFAULT_ID}"
+    echo "Template ID   : ${DEFAULT_TEMPLATE_ID}"
+    echo "Template Kind : ${DEFAULT_KIND_ID}"
+    echo "Template Name : ${DEFAULT_TEMPLATE_NAME}"
+
+    if [ "${DEFAULT_TEMPLATE_ID}" = "${TEMPLATE_ID}" ] &&
+       [ "${DEFAULT_KIND_ID}" = "${PXEGRUB2_KIND_ID}" ]
     then
 
-        echo "Default ID    : ${DEFAULT_ID}"
-        echo "Template ID   : ${DEFAULT_TEMPLATE_ID}"
-        echo "Template Name : ${DEFAULT_TEMPLATE_NAME}"
-
         ok "PXEGrub2 default mapping correct."
-
-    else
-
-        error "PXEGrub2 default mapping missing or incorrect."
-
-        record_failure "${OS_NAME} default"
+        return 0
 
     fi
+
+    error "PXEGrub2 default mapping incorrect."
+
+    echo "Expected Template ID : ${TEMPLATE_ID}"
+    echo "Actual Template ID   : ${DEFAULT_TEMPLATE_ID}"
+    echo "Expected Kind ID     : ${PXEGRUB2_KIND_ID}"
+    echo "Actual Kind ID       : ${DEFAULT_KIND_ID}"
+
+    record_failure "${OS_NAME} default"
+    return 1
 }
 
 ###############################################################################
