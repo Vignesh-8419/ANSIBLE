@@ -861,7 +861,7 @@ verify_operating_systems()
 case "${TARGET_VERSION}" in
 
     9.2)
-        ROCKY_OS="${ROCKY92_SINGLE_OS}"
+        ROCKY_OS="RockyLinux9.2-SingleDisk"
         ROCKY_TEMPLATE="PXEGrub2 Rocky9.2 UEFI SingleDisk Kickstart"
         ROCKY_TEMPLATE_FILE="/tmp/rocky92-singledisk.erb"
         ROCKY_KERNEL="/rocky92/vmlinuz"
@@ -871,7 +871,7 @@ case "${TARGET_VERSION}" in
         ;;
 
     9.8)
-        ROCKY_OS="${ROCKY98_SINGLE_OS}"
+        ROCKY_OS="RockyLinux9.8-SingleDisk"
         ROCKY_TEMPLATE="PXEGrub2 Rocky9.8 UEFI SingleDisk Kickstart"
         ROCKY_TEMPLATE_FILE="/tmp/rocky98-singledisk.erb"
         ROCKY_KERNEL="/rocky9/vmlinuz"
