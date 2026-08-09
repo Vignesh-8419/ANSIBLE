@@ -150,42 +150,48 @@ trap 'rm -f "${BODY}"' EXIT
 api_request()
 {
     local METHOD="$1"
-    local PATH="$2"
+    local API_PATH="$2"
     local PAYLOAD="${3:-}"
+
+    if [ ! -x /bin/curl ]
+    then
+        error "curl executable not found: /bin/curl"
+        HTTP_STATUS=""
+        return 1
+    fi
 
     if [ -n "${PAYLOAD}" ]
     then
 
         HTTP_STATUS="$(
-            curl -ksS \
+            /bin/curl -ksS \
                 --user "${FOREMAN_USER}:${FOREMAN_PASSWORD}" \
-                -H "Accept: application/json,version=${API_VERSION}" \
+                -H "Accept: application/json" \
                 -H "Content-Type: application/json" \
                 -X "${METHOD}" \
                 -d "${PAYLOAD}" \
                 -o "${BODY}" \
                 -w '%{http_code}' \
-                "${FOREMAN_URL}${PATH}"
+                "${FOREMAN_URL}${API_PATH}"
         )"
 
     else
 
         HTTP_STATUS="$(
-            curl -ksS \
+            /bin/curl -ksS \
                 --user "${FOREMAN_USER}:${FOREMAN_PASSWORD}" \
-                -H "Accept: application/json,version=${API_VERSION}" \
+                -H "Accept: application/json" \
                 -H "Content-Type: application/json" \
                 -X "${METHOD}" \
                 -o "${BODY}" \
                 -w '%{http_code}' \
-                "${FOREMAN_URL}${PATH}"
+                "${FOREMAN_URL}${API_PATH}"
         )"
 
     fi
 
     return 0
 }
-
 ###############################################################################
 # API Success Check
 ###############################################################################
@@ -211,7 +217,7 @@ show_api_error()
 
     if [ -s "${BODY}" ]
     then
-        jq . "${BODY}" 2>/dev/null || cat "${BODY}"
+        jq . "${BODY}" 2>/dev/null || /bin/cat "${BODY}"
     fi
 }
 
@@ -320,30 +326,55 @@ resolve_organization()
 
     info "Finding Organization : ${ORG_NAME}"
 
+    # The organization list endpoint on this Foreman installation
+    # reports total=1 but returns an empty results array.
+    # Therefore use the known organization ID directly and verify it.
+
+    ORG_ID="1"
+
+    info "Checking Organization ID : ${ORG_ID}"
+
     api_request \
         GET \
-        "/katello/api/organizations?per_page=all"
+        "/api/organizations/${ORG_ID}"
 
-    ORG_ID="$(
-        jq -r \
-            --arg NAME "${ORG_NAME}" \
-            '
-            .results[]
-            | select(.name == $NAME)
-            | .id
-            ' \
-            "${BODY}" 2>/dev/null |
-        head -n 1
-    )"
-
-    if [ -n "${ORG_ID}" ]
+    if ! api_success
     then
-        ok "Organization ID : ${ORG_ID}"
-    else
-        error "Organization not found : ${ORG_NAME}"
+        show_api_error \
+            GET \
+            "/api/organizations/${ORG_ID}"
+
+        ORG_ID=""
         record_failure "Organization ${ORG_NAME}"
         return 1
     fi
+
+    API_ORG_ID="$(
+        jq -r '.id // empty' "${BODY}" 2>/dev/null
+    )"
+
+    API_ORG_NAME="$(
+        jq -r '.name // empty' "${BODY}" 2>/dev/null
+    )"
+
+    if [ "${API_ORG_ID}" = "${ORG_ID}" ] &&
+       [ "${API_ORG_NAME}" = "${ORG_NAME}" ]
+    then
+        ok "Organization found."
+        echo "Organization ID   : ${API_ORG_ID}"
+        echo "Organization Name : ${API_ORG_NAME}"
+        return 0
+    fi
+
+    error "Organization verification failed."
+    error "Expected ID   : ${ORG_ID}"
+    error "Expected Name : ${ORG_NAME}"
+    error "Returned ID   : ${API_ORG_ID}"
+    error "Returned Name : ${API_ORG_NAME}"
+
+    ORG_ID=""
+    record_failure "Organization ${ORG_NAME}"
+    return 1
 }
 
 ###############################################################################
@@ -356,12 +387,25 @@ resolve_library_environment()
 
     api_request \
         GET \
-        "/katello/api/organizations/${ORG_ID}/environments?per_page=all"
+        "/katello/api/environments?organization_id=${ORG_ID}"
+
+    if ! api_success
+    then
+        show_api_error \
+            GET \
+            "/katello/api/environments?organization_id=${ORG_ID}"
+
+        record_failure "Library Environment"
+        return 1
+    fi
 
     LIBRARY_ID="$(
         jq -r '
             .results[]
-            | select(.name == "Library" or .label == "Library" or .label == "library")
+            | select(
+                .name == "Library" or
+                .label == "Library"
+            )
             | .id
         ' \
         "${BODY}" 2>/dev/null |
@@ -370,12 +414,18 @@ resolve_library_environment()
 
     if [ -n "${LIBRARY_ID}" ]
     then
-        ok "Library Environment ID : ${LIBRARY_ID}"
-    else
-        error "Library lifecycle environment not found."
-        record_failure "Library Environment"
-        return 1
+        ok "Library Environment found. ID=${LIBRARY_ID}"
+        return 0
     fi
+
+    error "Library lifecycle environment not found."
+
+    echo
+    echo "API Response:"
+    jq . "${BODY}" 2>/dev/null
+
+    record_failure "Library Environment"
+    return 1
 }
 
 ###############################################################################
@@ -386,7 +436,12 @@ get_product_id()
 {
     api_request \
         GET \
-        "/katello/api/organizations/${ORG_ID}/products?per_page=all"
+        "/katello/api/organizations/${ORG_ID}/products"
+
+    if ! api_success
+    then
+        return 1
+    fi
 
     jq -r \
         --arg NAME "${PRODUCT_NAME}" \
@@ -409,7 +464,12 @@ get_repo_id()
 
     api_request \
         GET \
-        "/katello/api/products/${PRODUCT_ID}/repositories?per_page=all"
+        "/katello/api/products/${PRODUCT_ID}/repositories"
+
+    if ! api_success
+    then
+        return 1
+    fi
 
     jq -r \
         --arg NAME "${REPO_NAME}" \
@@ -430,7 +490,12 @@ get_content_view_id()
 {
     api_request \
         GET \
-        "/katello/api/organizations/${ORG_ID}/content_views?per_page=all"
+        "/katello/api/organizations/${ORG_ID}/content_views"
+
+    if ! api_success
+    then
+        return 1
+    fi
 
     jq -r \
         --arg NAME "${CONTENT_VIEW}" \
@@ -451,7 +516,12 @@ get_activation_key_id()
 {
     api_request \
         GET \
-        "/katello/api/organizations/${ORG_ID}/activation_keys?per_page=all"
+        "/katello/api/organizations/${ORG_ID}/activation_keys"
+
+    if ! api_success
+    then
+        return 1
+    fi
 
     jq -r \
         --arg NAME "${ACTIVATION_KEY}" \
@@ -463,7 +533,6 @@ get_activation_key_id()
         "${BODY}" 2>/dev/null |
     head -n 1
 }
-
 ###############################################################################
 # Resolve All Resources
 ###############################################################################
@@ -905,19 +974,50 @@ sync_repository()
 
     info "Starting synchronization : ${REPO_NAME}"
 
-    api_request \
-        POST \
-        "/katello/api/repositories/${REPO_ID}/sync" \
-        '{}'
+api_request \
+    POST \
+    "/katello/api/repositories/${REPO_ID}/sync" \
+    '{}'
 
-    if api_success
+if api_success
+then
+
+    ok "${REPO_NAME} synchronization started."
+
+    ###########################################################################
+    # Capture task ID if returned by the API
+    ###########################################################################
+
+    SYNC_TASK_ID="$(
+        jq -r '
+            .id //
+            .task_id //
+            .task.id //
+            empty
+        ' "${BODY}" 2>/dev/null
+    )"
+
+    if [ -n "${SYNC_TASK_ID}" ]
     then
-        ok "${REPO_NAME} synchronization started."
-        wait_for_repository_sync \
-            "${REPO_ID}" \
+        info "Sync Task ID : ${SYNC_TASK_ID}"
+
+        wait_for_foreman_task \
+            "${SYNC_TASK_ID}" \
             "${REPO_NAME}"
+
         return $?
     fi
+
+    ###########################################################################
+    # Fall back to repository sync status
+    ###########################################################################
+
+    wait_for_repository_sync \
+        "${REPO_ID}" \
+        "${REPO_NAME}"
+
+    return $?
+fi
 
     if grep -qiE \
         "Required lock is already taken|lock.*taken|already running" \
@@ -967,6 +1067,169 @@ sync_repository()
         "/katello/api/repositories/${REPO_ID}/sync"
 
     record_failure "Sync ${REPO_NAME}"
+    return 1
+}
+
+###############################################################################
+# Wait For Foreman Task - LIVE PROGRESS
+###############################################################################
+
+wait_for_foreman_task()
+{
+    local TASK_ID="$1"
+    local REPO_NAME="$2"
+
+    local TRY
+    local STATE
+    local RESULT
+    local PROGRESS
+    local LABEL
+    local STARTED
+    local ENDED
+
+    info "Monitoring Foreman task..."
+    info "Task ID : ${TASK_ID}"
+
+    for TRY in $(seq 1 720)
+    do
+
+        #######################################################################
+        # Get main task
+        #######################################################################
+
+        api_request \
+            GET \
+            "/foreman_tasks/api/tasks/${TASK_ID}"
+
+        if ! api_success
+        then
+            warn "Unable to query Foreman task ${TASK_ID}"
+            sleep 5
+            continue
+        fi
+
+        #######################################################################
+        # Extract task information
+        #######################################################################
+
+        STATE="$(
+            jq -r '.state // ""' "${BODY}" 2>/dev/null
+        )"
+
+        RESULT="$(
+            jq -r '.result // ""' "${BODY}" 2>/dev/null
+        )"
+
+        PROGRESS="$(
+            jq -r '
+                if .progress != null
+                then (.progress | tonumber? // 0)
+                else 0
+                end
+            ' "${BODY}" 2>/dev/null
+        )"
+
+        LABEL="$(
+            jq -r '.label // .action // ""' "${BODY}" 2>/dev/null
+        )"
+
+        STARTED="$(
+            jq -r '.started_at // ""' "${BODY}" 2>/dev/null
+        )"
+
+        ENDED="$(
+            jq -r '.ended_at // ""' "${BODY}" 2>/dev/null
+        )"
+
+        #######################################################################
+        # Display live task progress
+        #######################################################################
+
+        printf "\r[SYNC] %-25s Progress: %6.1f%%  State: %-10s Result: %-10s" \
+            "${REPO_NAME}" \
+            "${PROGRESS:-0}" \
+            "${STATE:-unknown}" \
+            "${RESULT:-unknown}"
+
+        #######################################################################
+        # Successful completion
+        #######################################################################
+
+        if [ "${STATE}" = "stopped" ] &&
+           [ "${RESULT}" = "success" ]
+        then
+
+            echo
+            ok "${REPO_NAME} synchronization completed successfully."
+
+            echo
+            echo "Task : ${TASK_ID}"
+
+            if [ -n "${STARTED}" ]
+            then
+                echo "Started : ${STARTED}"
+            fi
+
+            if [ -n "${ENDED}" ]
+            then
+                echo "Ended   : ${ENDED}"
+            fi
+
+            return 0
+        fi
+
+        #######################################################################
+        # Failed task
+        #######################################################################
+
+        if [ "${STATE}" = "stopped" ] &&
+           [ "${RESULT}" = "error" ]
+        then
+
+            echo
+
+            error "${REPO_NAME} synchronization FAILED."
+
+            echo
+            echo "Task Details"
+            echo "------------------------------------------------------------"
+
+            jq '{
+                id,
+                label,
+                action,
+                state,
+                result,
+                progress,
+                started_at,
+                ended_at,
+                humanized,
+                errors,
+                warnings
+            }' "${BODY}" 2>/dev/null
+
+            return 1
+        fi
+
+        #######################################################################
+        # Paused task
+        #######################################################################
+
+        if [ "${STATE}" = "paused" ]
+        then
+            echo
+            warn "${REPO_NAME} synchronization is PAUSED."
+            warn "Task ID : ${TASK_ID}"
+        fi
+
+        sleep 5
+
+    done
+
+    echo
+    warn "${REPO_NAME} synchronization polling timeout."
+    warn "Task ID : ${TASK_ID}"
+
     return 1
 }
 
@@ -1176,11 +1439,41 @@ verify_content_view()
     header "Verifying Content View"
 
     local FAILED=0
+    local REPOSITORY_IDS
     local REPO
+    local REPO_ID
+
+    ###########################################################################
+    # Get Content View ONCE
+    ###########################################################################
 
     api_request \
         GET \
         "/katello/api/content_views/${CONTENT_VIEW_ID}"
+
+    if ! api_success
+    then
+        show_api_error \
+            GET \
+            "/katello/api/content_views/${CONTENT_VIEW_ID}"
+
+        record_failure "Content View Verification"
+        return 1
+    fi
+
+    ###########################################################################
+    # Save repository_ids BEFORE calling get_repo_id()
+    ###########################################################################
+
+    REPOSITORY_IDS="$(
+        jq -c '.repository_ids // []' "${BODY}" 2>/dev/null
+    )"
+
+    info "Content View Repository IDs : ${REPOSITORY_IDS}"
+
+    ###########################################################################
+    # Verify each repository
+    ###########################################################################
 
     for REPO in \
         "${BASE_REPO}" \
@@ -1190,21 +1483,30 @@ verify_content_view()
 
         REPO_ID="$(get_repo_id "${REPO}")"
 
+        if [ -z "${REPO_ID}" ]
+        then
+            error "${REPO} repository ID could not be resolved."
+            FAILED=1
+            continue
+        fi
+
         if jq -e \
             --argjson ID "${REPO_ID}" \
-            '
-            (.repository_ids // [])
-            | index($ID) != null
-            ' \
-            "${BODY}" >/dev/null 2>&1
+            'index($ID) != null' \
+            <<< "${REPOSITORY_IDS}" \
+            >/dev/null 2>&1
         then
-            ok "${REPO} attached to ${CONTENT_VIEW}"
+            ok "${REPO} attached to ${CONTENT_VIEW} (ID=${REPO_ID})"
         else
-            error "${REPO} missing from ${CONTENT_VIEW}"
+            error "${REPO} missing from ${CONTENT_VIEW} (ID=${REPO_ID})"
             FAILED=1
         fi
 
     done
+
+    ###########################################################################
+    # Final result
+    ###########################################################################
 
     if [ "${FAILED}" -eq 1 ]
     then
@@ -1213,6 +1515,7 @@ verify_content_view()
     fi
 
     ok "All repositories verified."
+    return 0
 }
 
 ###############################################################################
@@ -1698,14 +2001,14 @@ manual_verification()
 ------------------------------------------------------------
 curl -ksS \\
   --user "admin:\\\$FOREMAN_PASSWORD" \\
-  -H 'Accept: application/json,version=2' \\
+  -H 'Accept: application/json' \\
   "${FOREMAN_URL}/api/status" | jq
 
 2. Product
 ------------------------------------------------------------
 curl -ksS \\
   --user "admin:\\\$FOREMAN_PASSWORD" \\
-  -H 'Accept: application/json,version=2' \\
+  -H 'Accept: application/json' \\
   "${FOREMAN_URL}/katello/api/organizations/${ORG_ID}/products?per_page=all" |
 jq -r '.results[] | select(.name=="${PRODUCT_NAME}")'
 
@@ -1713,7 +2016,7 @@ jq -r '.results[] | select(.name=="${PRODUCT_NAME}")'
 ------------------------------------------------------------
 curl -ksS \\
   --user "admin:\\\$FOREMAN_PASSWORD" \\
-  -H 'Accept: application/json,version=2' \\
+  -H 'Accept: application/json' \\
   "${FOREMAN_URL}/katello/api/products/${PRODUCT_ID}/repositories?per_page=all" |
 jq
 
@@ -1721,7 +2024,7 @@ jq
 ------------------------------------------------------------
 curl -ksS \\
   --user "admin:\\\$FOREMAN_PASSWORD" \\
-  -H 'Accept: application/json,version=2' \\
+  -H 'Accept: application/json' \\
   "${FOREMAN_URL}/katello/api/content_views/${CONTENT_VIEW_ID}" |
 jq
 
@@ -1729,7 +2032,7 @@ jq
 ------------------------------------------------------------
 curl -ksS \\
   --user "admin:\\\$FOREMAN_PASSWORD" \\
-  -H 'Accept: application/json,version=2' \\
+  -H 'Accept: application/json' \\
   "${FOREMAN_URL}/katello/api/activation_keys/${ACTIVATION_KEY_ID}" |
 jq
 
@@ -1737,7 +2040,7 @@ jq
 ------------------------------------------------------------
 curl -ksS \\
   --user "admin:\\\$FOREMAN_PASSWORD" \\
-  -H 'Accept: application/json,version=2' \\
+  -H 'Accept: application/json' \\
   "${FOREMAN_URL}/katello/api/repositories/REPOSITORY_ID/sync" |
 jq
 
