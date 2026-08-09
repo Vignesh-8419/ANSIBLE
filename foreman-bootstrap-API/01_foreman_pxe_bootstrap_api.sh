@@ -9,10 +9,6 @@
 #   - curl
 #   - jq
 #
-# Authentication:
-#   FOREMAN_USER=admin
-#   FOREMAN_TOKEN=<Foreman Personal Access Token>
-#
 ###############################################################################
 
 set +e
@@ -84,49 +80,21 @@ header()
 header "01 - Foreman PXE Bootstrap - REST API"
 
 FOREMAN_URL="${FOREMAN_URL:-https://localhost}"
-
 FOREMAN_USER="${FOREMAN_USER:-admin}"
 
-# DO NOT hard-code the token here.
-#
-# Example:
-# export FOREMAN_TOKEN='YOUR_FOREMAN_PAT'
-#
 if [ -z "${FOREMAN_TOKEN}" ]
 then
     error "FOREMAN_TOKEN is not set."
-
     echo
     echo "Set the Foreman Personal Access Token first:"
     echo
     echo "export FOREMAN_USER='admin'"
-    echo "export FOREMAN_TOKEN='YOUR_FOREMAN_PAT'"
+    echo "export FOREMAN_TOKEN='YOUR_NEW_FOREMAN_PAT'"
     echo
-    echo "Then run:"
-    echo
-    echo "./01_foreman_pxe_bootstrap_api.sh"
-    echo
-
     exit 1
 fi
 
-###############################################################################
-# SSL Verification
-###############################################################################
-#
-# Set:
-#
-#   export FOREMAN_INSECURE=true
-#
-# if Foreman uses a self-signed certificate.
-#
-###############################################################################
-
 FOREMAN_INSECURE="${FOREMAN_INSECURE:-true}"
-
-###############################################################################
-# API URL
-###############################################################################
 
 API="${FOREMAN_URL}/api"
 
@@ -143,13 +111,9 @@ fi
 if ! command -v jq >/dev/null 2>&1
 then
     error "jq is not installed."
-
-    echo
-    echo "Install jq:"
     echo
     echo "dnf install -y jq"
     echo
-
     exit 1
 fi
 
@@ -166,15 +130,6 @@ fi
 
 ###############################################################################
 # API Helper
-###############################################################################
-#
-# Usage:
-#
-# api_request METHOD URL [JSON_DATA]
-#
-# Returns:
-#   JSON response on stdout
-#
 ###############################################################################
 
 api_request()
@@ -239,27 +194,15 @@ api_request()
     return 1
 }
 
-###############################################################################
-# API GET
-###############################################################################
-
 api_get()
 {
     api_request GET "$1"
 }
 
-###############################################################################
-# API POST
-###############################################################################
-
 api_post()
 {
     api_request POST "$1" "$2"
 }
-
-###############################################################################
-# API PUT
-###############################################################################
 
 api_put()
 {
