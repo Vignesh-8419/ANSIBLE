@@ -767,8 +767,162 @@ else
 fi
 
 ###############################################################################
-# Repository Synchronization
+# Repository Synchronization - LIVE SEQUENTIAL
 ###############################################################################
+
+wait_for_foreman_task()
+{
+    TASK_ID="$1"
+    TASK_NAME="$2"
+
+    info "Waiting for task completion : ${TASK_NAME}"
+    info "Task ID : ${TASK_ID}"
+
+    while true
+    do
+        #######################################################################
+        # Fetch task status LIVE from Foreman
+        #######################################################################
+
+        if api_request \
+            "GET" \
+            "${FOREMAN_URL}/foreman_tasks/api/tasks/${TASK_ID}" \
+            ""
+        then
+
+            TASK_STATE="$(
+                echo "${API_RESPONSE}" |
+                jq -r '
+                    .state //
+                    .task.state //
+                    empty
+                ' |
+                head -n 1
+            )"
+
+            TASK_RESULT="$(
+                echo "${API_RESPONSE}" |
+                jq -r '
+                    .result //
+                    .task.result //
+                    empty
+                ' |
+                head -n 1
+            )"
+
+            TASK_PROGRESS="$(
+                echo "${API_RESPONSE}" |
+                jq -r '
+                    .progress //
+                    .task.progress //
+                    0
+                ' |
+                head -n 1
+            )"
+
+            ###################################################################
+            # Normalize progress
+            ###################################################################
+
+            if ! echo "${TASK_PROGRESS}" | grep -qE '^[0-9]+([.][0-9]+)?$'
+            then
+                TASK_PROGRESS="0"
+            fi
+
+            ###################################################################
+            # LIVE STATUS
+            #
+            # \r keeps updating the same terminal line.
+            ###################################################################
+
+            printf "\r${CYAN}[LIVE]${NC} %-32s | State: %-10s | Result: %-10s | Progress: %6s%%" \
+                "${TASK_NAME}" \
+                "${TASK_STATE:-unknown}" \
+                "${TASK_RESULT:-unknown}" \
+                "${TASK_PROGRESS}"
+
+            ###################################################################
+            # SUCCESS
+            ###################################################################
+
+            if echo "${TASK_RESULT}" |
+                grep -qiE '^success$'
+            then
+                printf "\n"
+                ok "Synchronization completed : ${TASK_NAME}"
+                ok "Task ${TASK_ID} finished successfully."
+                return 0
+            fi
+
+            if echo "${TASK_STATE}" |
+                grep -qiE '^stopped$' &&
+                echo "${TASK_RESULT}" |
+                grep -qiE '^success$'
+            then
+                printf "\n"
+                ok "Synchronization completed : ${TASK_NAME}"
+                return 0
+            fi
+
+            ###################################################################
+            # FAILURE
+            ###################################################################
+
+            if echo "${TASK_STATE}" |
+                grep -qiE 'error|failed|cancelled|canceled'
+            then
+                printf "\n"
+
+                error "Synchronization failed : ${TASK_NAME}"
+                error "Task ID : ${TASK_ID}"
+                error "State   : ${TASK_STATE}"
+                error "Result  : ${TASK_RESULT}"
+
+                echo
+                echo "${API_RESPONSE}" | jq . 2>/dev/null || true
+
+                return 1
+            fi
+
+            if echo "${TASK_RESULT}" |
+                grep -qiE 'error|failed|cancelled|canceled'
+            then
+                printf "\n"
+
+                error "Synchronization failed : ${TASK_NAME}"
+                error "Task ID : ${TASK_ID}"
+                error "Result  : ${TASK_RESULT}"
+
+                echo
+                echo "${API_RESPONSE}" | jq . 2>/dev/null || true
+
+                return 1
+            fi
+
+        else
+
+            ###################################################################
+            # Temporary API failure.
+            #
+            # Do NOT consider the sync failed immediately.
+            # Try fetching the task again.
+            ###################################################################
+
+            printf "\n"
+            warn "Unable to fetch task status. Retrying..."
+        fi
+
+        #######################################################################
+        # Poll Foreman again.
+        #
+        # This is NOT waiting blindly.
+        # Every 5 seconds we fetch the LIVE task status again.
+        #######################################################################
+
+        sleep 5
+    done
+}
+
 
 sync_repository()
 {
@@ -778,6 +932,10 @@ sync_repository()
 
     section "Synchronizing Repository : ${REPO}"
 
+    ###########################################################################
+    # Validate Repository ID
+    ###########################################################################
+
     if [ -z "${REPO_ID}" ] ||
        [ "${REPO_ID}" = "null" ]
     then
@@ -786,12 +944,14 @@ sync_repository()
         return 1
     fi
 
-    api_request \
+    ###########################################################################
+    # Get Repository Information
+    ###########################################################################
+
+    if ! api_request \
         "GET" \
         "${KATELLO_API}/repositories/${REPO_ID}" \
         ""
-
-    if [ $? -ne 0 ]
     then
         error "Repository not found : ${REPO}"
         record_failure "${PRODUCT} -> ${REPO}"
@@ -803,11 +963,108 @@ sync_repository()
         jq -r '.sync_state // empty'
     )"
 
-    if echo "${SYNC_STATE}" | grep -qi "running"
+    ###########################################################################
+    # If repository is already syncing:
+    #
+    # DO NOT SKIP IT.
+    # Find the running Foreman task and wait for it.
+    ###########################################################################
+
+    if echo "${SYNC_STATE}" | grep -qiE 'running|syncing'
     then
-        skip "Synchronization already running : ${REPO}"
-        return 0
+
+        warn "Synchronization already running : ${REPO}"
+
+        #######################################################################
+        # Find running task belonging to this repository.
+        #######################################################################
+
+        SEARCH_TERM="resource_id = ${REPO_ID}"
+
+        ENCODED_SEARCH="$(
+            printf '%s' "${SEARCH_TERM}" |
+            sed \
+                -e 's/ /%20/g' \
+                -e 's/=/%3D/g'
+        )"
+
+        if api_request \
+            "GET" \
+            "${FOREMAN_URL}/foreman_tasks/api/tasks?search=${ENCODED_SEARCH}&per_page=100" \
+            ""
+        then
+
+            EXISTING_TASK_ID="$(
+                echo "${API_RESPONSE}" |
+                jq -r --arg RID "${REPO_ID}" '
+                    (.results // [])[]
+                    |
+                    select(
+                        (.resource_id | tostring) == $RID
+                        and
+                        (.state // "") |
+                        test("running|pending|planned"; "i")
+                    )
+                    |
+                    .id
+                ' |
+                head -n 1
+            )"
+
+            if [ -n "${EXISTING_TASK_ID}" ] &&
+               [ "${EXISTING_TASK_ID}" != "null" ]
+            then
+
+                ok "Existing synchronization task found."
+                ok "Task=${EXISTING_TASK_ID}"
+
+                wait_for_foreman_task \
+                    "${EXISTING_TASK_ID}" \
+                    "${REPO}"
+
+                if [ $? -ne 0 ]
+                then
+                    record_failure "${PRODUCT} -> ${REPO}"
+                    return 1
+                fi
+
+                return 0
+            fi
+        fi
+
+        #######################################################################
+        # Repository says running but task could not be identified.
+        #######################################################################
+
+        warn "Repository reports running but active task was not found."
+        warn "Re-checking repository status..."
+
+        sleep 5
+
+        if api_request \
+            "GET" \
+            "${KATELLO_API}/repositories/${REPO_ID}" \
+            ""
+        then
+
+            SYNC_STATE="$(
+                echo "${API_RESPONSE}" |
+                jq -r '.sync_state // empty'
+            )"
+
+            if echo "${SYNC_STATE}" | grep -qiE 'running|syncing'
+            then
+                warn "Repository is still running."
+                warn "Skipping new sync request to avoid duplicate synchronization."
+
+                return 0
+            fi
+        fi
     fi
+
+    ###########################################################################
+    # Start NEW synchronization
+    ###########################################################################
 
     info "Starting synchronization : ${REPO}"
 
@@ -819,36 +1076,123 @@ sync_repository()
 
         TASK_ID="$(
             echo "${API_RESPONSE}" |
-            jq -r '.id // .task_id // empty'
+            jq -r '
+                .id //
+                .task_id //
+                .task.uuid //
+                .uuid //
+                empty
+            ' |
+            head -n 1
         )"
 
-        if [ -n "${TASK_ID}" ]
+        #######################################################################
+        # Task ID is required because we need to monitor it LIVE.
+        #######################################################################
+
+        if [ -z "${TASK_ID}" ] ||
+           [ "${TASK_ID}" = "null" ]
         then
-            ok "Synchronization started. Task=${TASK_ID}"
-        else
-            ok "Synchronization started."
+            error "Synchronization started but Task ID was not returned."
+            echo "${API_RESPONSE}" | jq . 2>/dev/null || true
+
+            record_failure "${PRODUCT} -> ${REPO}"
+            return 1
         fi
+
+        ok "Synchronization started. Task=${TASK_ID}"
+
+        #######################################################################
+        # IMPORTANT:
+        #
+        # DO NOT RETURN HERE.
+        #
+        # Stay inside this function until the repository sync is complete.
+        #######################################################################
+
+        wait_for_foreman_task \
+            "${TASK_ID}" \
+            "${REPO}"
+
+        if [ $? -ne 0 ]
+        then
+            record_failure "${PRODUCT} -> ${REPO}"
+            return 1
+        fi
+
+        #######################################################################
+        # Only now can the next repository start.
+        #######################################################################
 
         return 0
     fi
 
-    if echo "${API_RESPONSE}" | grep -qi "Required lock is already taken"
+    ###########################################################################
+    # Repository lock recovery
+    ###########################################################################
+
+    if echo "${API_RESPONSE}" |
+        grep -qi "Required lock is already taken"
     then
+
         warn "Repository lock detected : ${REPO}"
 
         resume_paused_tasks
 
         sleep 10
 
+        info "Retrying synchronization : ${REPO}"
+
         if api_request \
             "POST" \
             "${KATELLO_API}/repositories/${REPO_ID}/sync" \
             "{}"
         then
-            ok "Synchronization started after recovery."
+
+            TASK_ID="$(
+                echo "${API_RESPONSE}" |
+                jq -r '
+                    .id //
+                    .task_id //
+                    .task.uuid //
+                    .uuid //
+                    empty
+                ' |
+                head -n 1
+            )"
+
+            if [ -z "${TASK_ID}" ] ||
+               [ "${TASK_ID}" = "null" ]
+            then
+                error "Retry succeeded but Task ID was not returned."
+
+                record_failure "${PRODUCT} -> ${REPO}"
+                return 1
+            fi
+
+            ok "Synchronization restarted. Task=${TASK_ID}"
+
+            ###################################################################
+            # WAIT FOR RETRY TASK TO COMPLETE
+            ###################################################################
+
+            wait_for_foreman_task \
+                "${TASK_ID}" \
+                "${REPO}"
+
+            if [ $? -ne 0 ]
+            then
+                record_failure "${PRODUCT} -> ${REPO}"
+                return 1
+            fi
+
             return 0
         fi
     fi
+
+    ###########################################################################
+    # Final API error
+    ###########################################################################
 
     show_api_error \
         "POST" \
@@ -856,6 +1200,7 @@ sync_repository()
 
     error "Synchronization failed : ${REPO}"
     record_failure "${PRODUCT} -> ${REPO}"
+
     return 1
 }
 
