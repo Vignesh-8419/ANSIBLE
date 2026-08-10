@@ -219,6 +219,8 @@
         password: "{{ foreman_password }}"
         force_basic_auth: yes
         validate_certs: no
+        use_proxy: false
+        timeout: 120
         status_code:
           - 200
           - 404
@@ -237,6 +239,8 @@
         password: "{{ foreman_password }}"
         force_basic_auth: yes
         validate_certs: no
+        use_proxy: false
+        timeout: 120
         status_code: 200
       register: foreman_subnets
 
@@ -274,6 +278,8 @@
         password: "{{ foreman_password }}"
         force_basic_auth: yes
         validate_certs: no
+        use_proxy: false
+        timeout: 120
         status_code:
           - 200
           - 201
@@ -320,6 +326,8 @@
         password: "{{ foreman_password }}"
         force_basic_auth: yes
         validate_certs: no
+        use_proxy: false
+        timeout: 120
         status_code: 200
       loop: "{{ host_info }}"
       register: foreman_hosts_updated
