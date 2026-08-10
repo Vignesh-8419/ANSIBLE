@@ -41,50 +41,48 @@
     ###########################################################################
     # Host Group Selection
     #
-    # OS Type:
+    # Host Group:
     #
-    # 1 = CentOS Linux 7
-    # 2 = Rocky Linux 8.10
-    # 3 = Rocky Linux 9.2
-    # 4 = Rocky Linux 9.8
-    #
-    #
-    # Disk Layout:
-    #
-    # raid   = RAID1 Installation
-    # single = Single Disk Installation
+    # 1 = RockyLinux8.10-SingleDisk
+    # 2 = RockyLinux8.10-RAID
+    # 3 = RockyLinux9.2-SingleDisk
+    # 4 = RockyLinux9.2-RAID
+    # 5 = RockyLinux9.8-SingleDisk
+    # 6 = RockyLinux9.8-RAID
+    # 7 = CentOSLinux7-SingleDisk
+    # 8 = CentOSLinux7-RAID
     #
     ###########################################################################
     
     hostgroup: "{{ hostgroup | default('1', true) }}"
     
-    disk_layout: "{{ disk_layout | default('raid', true) }}"
-    
     
     hostgroup_id: >-
       {{
         {
-          '1-raid': 5,
-          '2-raid': 6,
-          '3-raid': 8,
-          '4-raid': 7,
-    
-          '1-single': 9,
-          '2-single': 10,
-          '3-single': 11,
-          '4-single': 12
-    
-        }[hostgroup ~ '-' ~ disk_layout]
+          '1': 14,  # RockyLinux8.10-SingleDisk
+          '2': 10,  # RockyLinux8.10-RAID
+          '3': 16,  # RockyLinux9.2-SingleDisk
+          '4': 11,  # RockyLinux9.2-RAID
+          '5': 18,  # RockyLinux9.8-SingleDisk
+          '6': 12,  # RockyLinux9.8-RAID
+          '7': 13,  # CentOSLinux7-SingleDisk
+          '8': 9     # CentOSLinux7-RAID
+        }[hostgroup | string]
       }}
     
     
     operatingsystem_id: >-
       {{
         {
-          '1': 7,
-          '2': 8,
-          '3': 10,
-          '4': 9
+          '1': 14,  # RockyLinux8.10-SingleDisk
+          '2': 13,  # RockyLinux8.10-RAID
+          '3': 16,  # RockyLinux9.2-SingleDisk
+          '4': 15,  # RockyLinux9.2-RAID
+          '5': 18,  # RockyLinux9.8-SingleDisk
+          '6': 17,  # RockyLinux9.8-RAID
+          '7': 12,  # CentOSLinux7-SingleDisk
+          '8': 11   # CentOSLinux7-RAID
         }[hostgroup | string]
       }}
     
@@ -92,10 +90,14 @@
     medium_id: >-
       {{
         {
-          '1': 15,
-          '2': 16,
-          '3': 18,
-          '4': 17
+          '1': 16,  # RockyLinux8.10-SingleDisk
+          '2': 16,  # RockyLinux8.10-RAID
+          '3': 17,  # RockyLinux9.2-SingleDisk
+          '4': 17,  # RockyLinux9.2-RAID
+          '5': 18,  # RockyLinux9.8-SingleDisk
+          '6': 18,  # RockyLinux9.8-RAID
+          '7': 15,  # CentOSLinux7-SingleDisk
+          '8': 15   # CentOSLinux7-RAID
         }[hostgroup | string]
       }}
     
