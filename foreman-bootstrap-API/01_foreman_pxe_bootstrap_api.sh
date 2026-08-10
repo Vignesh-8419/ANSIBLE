@@ -949,7 +949,7 @@ set timeout=5
 menuentry 'Install CentOS 7 Single Disk' {
     linuxefi /centos/vmlinuz \
         inst.stage2=http://192.168.253.136/repo/centos/ \
-        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/centos7-kickstarts/centos7.cfg \
+        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/centos7-kickstarts/CentOS7_Golden_SingleDisk_Minimal.cfg \
         inst.text \
         inst.ks.device=bootif \
         BOOTIF=01-${net_default_mac} \
@@ -1013,7 +1013,7 @@ set timeout=5
 menuentry 'Install Rocky Linux 8.10 Single Disk' {
     linuxefi /rocky8/vmlinuz \
         inst.stage2=http://192.168.253.136/repo/rocky8/ \
-        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky8-kickstarts/rockyos.cfg \
+        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky8-kickstarts/Rocky8_Golden_SingleDisk_Minimal.cfg \
         inst.text \
         inst.ks.device=bootif \
         BOOTIF=01-${net_default_mac} \
@@ -1080,7 +1080,7 @@ menuentry 'Install Rocky Linux 9.2 Single Disk' {
         ip=dhcp \
         BOOTIF=01-${net_default_mac} \
         inst.repo=http://192.168.253.136/repo/rocky9.2/ \
-        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky9-kickstart/rocky9.cfg \
+        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky9-kickstart/Rocky9_2_Golden_SingleDisk_Minimal.cfg \
         inst.text \
         inst.ks.device=bootif \
         hostname=<%= @host.name %>
@@ -1146,7 +1146,7 @@ menuentry 'Install Rocky Linux 9.8 Single Disk' {
         ip=dhcp \
         BOOTIF=01-${net_default_mac} \
         inst.repo=http://192.168.253.136/repo/rocky9/ \
-        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky9_8-kickstart/rocky9.cfg \
+        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky9_8-kickstart/Rocky9_Golden_SingleDisk_Minimal.cfg \
         inst.text \
         inst.ks.device=bootif \
         hostname=<%= @host.name %>
