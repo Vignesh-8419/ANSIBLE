@@ -3338,7 +3338,6 @@ echo -e "${YELLOW}--------------------------------------------------------------
 echo -e "${WHITE} Creating Provision_Hosts_el7${NC}"
 echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
 
-
 awx-manage shell <<'EOF'
 
 from awx.main.models import (
@@ -3348,22 +3347,25 @@ from awx.main.models import (
     Credential
 )
 
+# ==============================================================================
+# Existing AWX Resources
+# ==============================================================================
 
 project = Project.objects.get(
     name="Inventory-Git-Repo"
 )
 
-
 inventory = Inventory.objects.get(
     name="centos-07-servers"
 )
-
 
 credential = Credential.objects.get(
     name="Linux Admin Credential"
 )
 
-
+# ==============================================================================
+# Create / Update Job Template
+# ==============================================================================
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Provision_Hosts_el7",
@@ -3377,36 +3379,43 @@ jt, created = JobTemplate.objects.get_or_create(
     }
 )
 
-
-
 jt.project = project
-
 jt.inventory = inventory
-
 jt.playbook = "provision_hosts_el7/Foreman_provision_hosts_el7.yml"
 
-
 jt.ask_inventory_on_launch = False
-
 jt.ask_limit_on_launch = False
 
 jt.limit = "localhost"
 
-
+# ==============================================================================
+# Credential
+# ==============================================================================
 
 jt.credentials.clear()
-
 jt.credentials.add(credential)
 
-
+# ==============================================================================
+# AWX Survey
+#
+# Host Group / Operating System
+#
+# 1 = CentOSLinux7-SingleDisk
+# 2 = CentOSLinux7-RAID
+#
+# ==============================================================================
 
 survey_spec = {
-
     "name": "Provision_Hosts_el7",
 
-    "description": "Provision CentOS Linux 7 RAID or SingleDisk Hosts",
+    "description":
+        "Provision CentOS Linux 7 using Single Disk or RAID1 installation.",
 
     "spec": [
+
+        # ----------------------------------------------------------------------
+        # Target Hosts
+        # ----------------------------------------------------------------------
 
         {
             "type": "text",
@@ -3414,7 +3423,8 @@ survey_spec = {
             "question_name": "Target Hosts",
 
             "question_description":
-            "Hostname(s) or wildcard (example: cent-07-01,cent-07-05 or cent-07-*)",
+                "Hostname(s) or wildcard "
+                "(example: cent-07-01,cent-07-05 or cent-07-*)",
 
             "variable": "target_hosts",
 
@@ -3428,84 +3438,76 @@ survey_spec = {
         },
 
 
-        {
-            "type": "integer",
+        # ----------------------------------------------------------------------
+        # Host Group / Operating System
+        # ----------------------------------------------------------------------
 
-            "question_name": "Operating System",
+        {
+            "type": "multiplechoice",
+
+            "question_name": "Host Group / Operating System",
 
             "question_description":
-            """
-1 = CentOS Linux 7
+                """
+1 = CentOSLinux7-SingleDisk
+2 = CentOSLinux7-RAID
 """,
 
             "variable": "hostgroup",
 
             "required": True,
 
-            "default": 1,
-
-            "min": 1,
-
-            "max": 1
-        },
-
-
-        {
-            "type": "multiplechoice",
-
-            "question_name": "Disk Layout",
-
-            "question_description":
-            """
-raid   = CentOS Linux 7 RAID
-single = CentOS Linux 7 SingleDisk
-""",
-
-            "variable": "disk_layout",
-
-            "required": True,
-
-            "default": "raid",
+            "default": "1",
 
             "choices": [
-                "raid",
-                "single"
+                "1",
+                "2"
             ]
         },
 
 
+        # ----------------------------------------------------------------------
+        # Foreman Server
+        # ----------------------------------------------------------------------
+
         {
-            "type": "integer",
+            "type": "multiplechoice",
 
             "question_name": "Foreman Server",
 
             "question_description":
-            "1 = Frontend (rocky-08-01), 2 = Backend (cent-07-01)",
+                """
+1 = Frontend (rocky-08-01)
+2 = Backend (cent-07-01)
+""",
 
             "variable": "foreman_server",
 
             "required": False,
 
-            "default": 1,
+            "default": "1",
 
-            "min": 1,
-
-            "max": 2
+            "choices": [
+                "1",
+                "2"
+            ]
         }
 
     ]
 }
 
-
+# ==============================================================================
+# Save Job Template
+# ==============================================================================
 
 jt.survey_enabled = True
-
 jt.survey_spec = survey_spec
-
 
 jt.save()
 
-
+# ==============================================================================
+# Result
+# ==============================================================================
 
 print(
     f"Provision_Hosts_el7 "
@@ -3527,61 +3529,82 @@ print(
 EOF
 
 
-
 # ==============================================================================
 # Verify Provision_Hosts_el7
 # ==============================================================================
-
 
 awx-manage shell <<'EOF'
 
 from awx.main.models import JobTemplate
 
-
 jt = JobTemplate.objects.get(
     name="Provision_Hosts_el7"
 )
 
-
-
 print()
-
 print("Template :", jt.name)
-
 print("Playbook :", jt.playbook)
-
 print("Inventory:", jt.inventory.name)
-
 print("Limit    :", jt.limit)
-
 print("Survey   :", jt.survey_enabled)
 
-
+# ==============================================================================
+# Credentials
+# ==============================================================================
 
 print()
-
 print("Credentials")
 
 for c in jt.credentials.all():
-
     print(" -", c.name)
 
-
+# ==============================================================================
+# Survey Variables
+# ==============================================================================
 
 print()
-
 print("Survey Variables")
 
 for q in jt.survey_spec["spec"]:
-
     print(
         f" - {q['variable']} "
         f"(default={q.get('default')})"
     )
 
+# ==============================================================================
+# CentOS 7 Host Group / Operating System Mapping
+# ==============================================================================
+
+print()
+print("CentOS 7 Host Group / Operating System Mapping")
+
+hostgroup_mapping = {
+    "1": {
+        "name": "CentOSLinux7-SingleDisk",
+        "os_id": 12,
+        "hostgroup_id": 13,
+        "medium_id": 15,
+        "ptable_id": 126
+    },
+
+    "2": {
+        "name": "CentOSLinux7-RAID",
+        "os_id": 11,
+        "hostgroup_id": 9,
+        "medium_id": 15,
+        "ptable_id": 126
+    }
+}
+
+for number, data in hostgroup_mapping.items():
+    print()
+    print(f" {number} = {data['name']}")
+    print(f"      OS ID          : {data['os_id']}")
+    print(f"      Host Group ID  : {data['hostgroup_id']}")
+    print(f"      Medium ID      : {data['medium_id']}")
+    print(f"      Ptable ID      : {data['ptable_id']}")
+
 EOF
-
-
 
 echo
 
@@ -3596,7 +3619,6 @@ echo -e "${YELLOW}--------------------------------------------------------------
 echo -e "${WHITE} Creating Provision_Hosts_el8${NC}"
 echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
 
-
 awx-manage shell <<'EOF'
 
 from awx.main.models import (
@@ -3606,23 +3628,25 @@ from awx.main.models import (
     Credential
 )
 
-
+# ==============================================================================
+# Existing AWX Resources
+# ==============================================================================
 
 project = Project.objects.get(
     name="Inventory-Git-Repo"
 )
 
-
 inventory = Inventory.objects.get(
     name="rocky-8-servers"
 )
-
 
 credential = Credential.objects.get(
     name="Linux Admin Credential"
 )
 
-
+# ==============================================================================
+# Create / Update Job Template
+# ==============================================================================
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Provision_Hosts_el8",
@@ -3636,38 +3660,43 @@ jt, created = JobTemplate.objects.get_or_create(
     }
 )
 
-
-
 jt.project = project
-
 jt.inventory = inventory
-
 jt.playbook = "provision_hosts_el8/Foreman_provision_hosts_el8.yml"
 
-
 jt.ask_inventory_on_launch = False
-
 jt.ask_limit_on_launch = False
 
 jt.limit = "localhost"
 
-
+# ==============================================================================
+# Credential
+# ==============================================================================
 
 jt.credentials.clear()
-
 jt.credentials.add(credential)
 
-
+# ==============================================================================
+# AWX Survey
+#
+# Host Group / Operating System
+#
+# 1 = RockyLinux8.10-SingleDisk
+# 2 = RockyLinux8.10-RAID
+#
+# ==============================================================================
 
 survey_spec = {
-
     "name": "Provision_Hosts_el8",
 
     "description":
-    "Provision Rocky Linux 8.10 RAID or SingleDisk Hosts",
-
+        "Provision Rocky Linux 8.10 using Single Disk or RAID1 installation.",
 
     "spec": [
+
+        # ----------------------------------------------------------------------
+        # Target Hosts
+        # ----------------------------------------------------------------------
 
         {
             "type": "text",
@@ -3675,7 +3704,8 @@ survey_spec = {
             "question_name": "Target Hosts",
 
             "question_description":
-            "Hostname(s) or wildcard (example: rocky-08-01,rocky-08-* )",
+                "Hostname(s) or wildcard "
+                "(example: rocky-08-01,rocky-08-05 or rocky-08-*)",
 
             "variable": "target_hosts",
 
@@ -3689,84 +3719,76 @@ survey_spec = {
         },
 
 
-        {
-            "type": "integer",
+        # ----------------------------------------------------------------------
+        # Host Group / Operating System
+        # ----------------------------------------------------------------------
 
-            "question_name": "Operating System",
+        {
+            "type": "multiplechoice",
+
+            "question_name": "Host Group / Operating System",
 
             "question_description":
-            """
-2 = Rocky Linux 8.10
+                """
+1 = RockyLinux8.10-SingleDisk
+2 = RockyLinux8.10-RAID
 """,
 
             "variable": "hostgroup",
 
             "required": True,
 
-            "default": 2,
-
-            "min": 2,
-
-            "max": 2
-        },
-
-
-        {
-            "type": "multiplechoice",
-
-            "question_name": "Disk Layout",
-
-            "question_description":
-            """
-raid   = Rocky Linux 8.10 RAID
-single = Rocky Linux 8.10 SingleDisk
-""",
-
-            "variable": "disk_layout",
-
-            "required": True,
-
-            "default": "raid",
+            "default": "1",
 
             "choices": [
-                "raid",
-                "single"
+                "1",
+                "2"
             ]
         },
 
 
+        # ----------------------------------------------------------------------
+        # Foreman Server
+        # ----------------------------------------------------------------------
+
         {
-            "type": "integer",
+            "type": "multiplechoice",
 
             "question_name": "Foreman Server",
 
             "question_description":
-            "1 = Frontend (rocky-08-01), 2 = Backend (cent-07-01)",
+                """
+1 = Frontend (rocky-08-01)
+2 = Backend (cent-07-01)
+""",
 
             "variable": "foreman_server",
 
             "required": False,
 
-            "default": 1,
+            "default": "1",
 
-            "min": 1,
-
-            "max": 2
+            "choices": [
+                "1",
+                "2"
+            ]
         }
 
     ]
 }
 
-
+# ==============================================================================
+# Save Job Template
+# ==============================================================================
 
 jt.survey_enabled = True
-
 jt.survey_spec = survey_spec
-
 
 jt.save()
 
-
+# ==============================================================================
+# Result
+# ==============================================================================
 
 print(
     f"Provision_Hosts_el8 "
@@ -3788,61 +3810,82 @@ print(
 EOF
 
 
-
 # ==============================================================================
 # Verify Provision_Hosts_el8
 # ==============================================================================
-
 
 awx-manage shell <<'EOF'
 
 from awx.main.models import JobTemplate
 
-
 jt = JobTemplate.objects.get(
     name="Provision_Hosts_el8"
 )
 
-
-
 print()
-
 print("Template :", jt.name)
-
 print("Playbook :", jt.playbook)
-
 print("Inventory:", jt.inventory.name)
-
 print("Limit    :", jt.limit)
-
 print("Survey   :", jt.survey_enabled)
 
-
+# ==============================================================================
+# Credentials
+# ==============================================================================
 
 print()
-
 print("Credentials")
 
 for c in jt.credentials.all():
-
     print(" -", c.name)
 
-
+# ==============================================================================
+# Survey Variables
+# ==============================================================================
 
 print()
-
 print("Survey Variables")
 
 for q in jt.survey_spec["spec"]:
-
     print(
         f" - {q['variable']} "
         f"(default={q.get('default')})"
     )
 
+# ==============================================================================
+# Rocky Linux 8.10 Host Group / Operating System Mapping
+# ==============================================================================
+
+print()
+print("Rocky Linux 8.10 Host Group / Operating System Mapping")
+
+hostgroup_mapping = {
+    "1": {
+        "name": "RockyLinux8.10-SingleDisk",
+        "os_id": 14,
+        "hostgroup_id": 14,
+        "medium_id": 16,
+        "ptable_id": 126
+    },
+
+    "2": {
+        "name": "RockyLinux8.10-RAID",
+        "os_id": 13,
+        "hostgroup_id": 10,
+        "medium_id": 16,
+        "ptable_id": 126
+    }
+}
+
+for number, data in hostgroup_mapping.items():
+    print()
+    print(f" {number} = {data['name']}")
+    print(f"      OS ID          : {data['os_id']}")
+    print(f"      Host Group ID  : {data['hostgroup_id']}")
+    print(f"      Medium ID      : {data['medium_id']}")
+    print(f"      Ptable ID      : {data['ptable_id']}")
+
 EOF
-
-
 
 echo
 
@@ -3857,7 +3900,6 @@ echo -e "${YELLOW}--------------------------------------------------------------
 echo -e "${WHITE} Creating Provision_Hosts_el9${NC}"
 echo -e "${YELLOW}------------------------------------------------------------------------------${NC}"
 
-
 awx-manage shell <<'EOF'
 
 from awx.main.models import (
@@ -3867,23 +3909,25 @@ from awx.main.models import (
     Credential
 )
 
-
+# ==============================================================================
+# Existing AWX Resources
+# ==============================================================================
 
 project = Project.objects.get(
     name="Inventory-Git-Repo"
 )
 
-
 inventory = Inventory.objects.get(
     name="rocky-9-servers"
 )
-
 
 credential = Credential.objects.get(
     name="Linux Admin Credential"
 )
 
-
+# ==============================================================================
+# Create / Update Job Template
+# ==============================================================================
 
 jt, created = JobTemplate.objects.get_or_create(
     name="Provision_Hosts_el9",
@@ -3897,38 +3941,46 @@ jt, created = JobTemplate.objects.get_or_create(
     }
 )
 
-
-
 jt.project = project
-
 jt.inventory = inventory
-
 jt.playbook = "provision_hosts_el9/Foreman_provision_hosts_el9.yml"
 
-
 jt.ask_inventory_on_launch = False
-
 jt.ask_limit_on_launch = False
 
 jt.limit = "localhost"
 
-
+# ==============================================================================
+# Credential
+# ==============================================================================
 
 jt.credentials.clear()
-
 jt.credentials.add(credential)
 
-
+# ==============================================================================
+# AWX Survey
+#
+# Host Group / Operating System
+#
+# 1 = RockyLinux9.2-SingleDisk
+# 2 = RockyLinux9.2-RAID
+# 3 = RockyLinux9.8-SingleDisk
+# 4 = RockyLinux9.8-RAID
+#
+# ==============================================================================
 
 survey_spec = {
-
     "name": "Provision_Hosts_el9",
 
     "description":
-    "Provision Rocky Linux 9.2 and Rocky Linux 9.8 RAID or SingleDisk Hosts",
-
+        "Provision Rocky Linux 9.2 or Rocky Linux 9.8 using "
+        "Single Disk or RAID1 installation.",
 
     "spec": [
+
+        # ----------------------------------------------------------------------
+        # Target Hosts
+        # ----------------------------------------------------------------------
 
         {
             "type": "text",
@@ -3936,7 +3988,8 @@ survey_spec = {
             "question_name": "Target Hosts",
 
             "question_description":
-            "Hostname(s) or wildcard (example: rocky-09-01,rocky-09-* )",
+                "Hostname(s) or wildcard "
+                "(example: rocky-09-01,rocky-09-05 or rocky-09-*)",
 
             "variable": "target_hosts",
 
@@ -3950,85 +4003,80 @@ survey_spec = {
         },
 
 
-        {
-            "type": "integer",
+        # ----------------------------------------------------------------------
+        # Host Group / Operating System
+        # ----------------------------------------------------------------------
 
-            "question_name": "Operating System",
+        {
+            "type": "multiplechoice",
+
+            "question_name": "Host Group / Operating System",
 
             "question_description":
-            """
-3 = Rocky Linux 9.2
-4 = Rocky Linux 9.8
+                """
+1 = RockyLinux9.2-SingleDisk
+2 = RockyLinux9.2-RAID
+3 = RockyLinux9.8-SingleDisk
+4 = RockyLinux9.8-RAID
 """,
 
             "variable": "hostgroup",
 
             "required": True,
 
-            "default": 4,
-
-            "min": 3,
-
-            "max": 4
-        },
-
-
-        {
-            "type": "multiplechoice",
-
-            "question_name": "Disk Layout",
-
-            "question_description":
-            """
-raid   = RAID1 EFI + RAID /boot + LVM
-single = Single Disk EFI + LVM
-""",
-
-            "variable": "disk_layout",
-
-            "required": True,
-
-            "default": "raid",
+            "default": "1",
 
             "choices": [
-                "raid",
-                "single"
+                "1",
+                "2",
+                "3",
+                "4"
             ]
         },
 
 
+        # ----------------------------------------------------------------------
+        # Foreman Server
+        # ----------------------------------------------------------------------
+
         {
-            "type": "integer",
+            "type": "multiplechoice",
 
             "question_name": "Foreman Server",
 
             "question_description":
-            "1 = Frontend (rocky-08-01), 2 = Backend (cent-07-01)",
+                """
+1 = Frontend (rocky-08-01)
+2 = Backend (cent-07-01)
+""",
 
             "variable": "foreman_server",
 
             "required": False,
 
-            "default": 1,
+            "default": "1",
 
-            "min": 1,
-
-            "max": 2
+            "choices": [
+                "1",
+                "2"
+            ]
         }
 
     ]
 }
 
-
+# ==============================================================================
+# Save Job Template
+# ==============================================================================
 
 jt.survey_enabled = True
-
 jt.survey_spec = survey_spec
-
 
 jt.save()
 
-
+# ==============================================================================
+# Result
+# ==============================================================================
 
 print(
     f"Provision_Hosts_el9 "
@@ -4050,61 +4098,98 @@ print(
 EOF
 
 
-
 # ==============================================================================
 # Verify Provision_Hosts_el9
 # ==============================================================================
-
 
 awx-manage shell <<'EOF'
 
 from awx.main.models import JobTemplate
 
-
 jt = JobTemplate.objects.get(
     name="Provision_Hosts_el9"
 )
 
-
-
 print()
-
 print("Template :", jt.name)
-
 print("Playbook :", jt.playbook)
-
 print("Inventory:", jt.inventory.name)
-
 print("Limit    :", jt.limit)
-
 print("Survey   :", jt.survey_enabled)
 
-
+# ==============================================================================
+# Credentials
+# ==============================================================================
 
 print()
-
 print("Credentials")
 
 for c in jt.credentials.all():
-
     print(" -", c.name)
 
-
+# ==============================================================================
+# Survey Variables
+# ==============================================================================
 
 print()
-
 print("Survey Variables")
 
 for q in jt.survey_spec["spec"]:
-
     print(
         f" - {q['variable']} "
         f"(default={q.get('default')})"
     )
 
+# ==============================================================================
+# Rocky Linux 9 Host Group / Operating System Mapping
+# ==============================================================================
+
+print()
+print("Rocky Linux 9 Host Group / Operating System Mapping")
+
+hostgroup_mapping = {
+    "1": {
+        "name": "RockyLinux9.2-SingleDisk",
+        "os_id": 16,
+        "hostgroup_id": 15,
+        "medium_id": 17,
+        "ptable_id": 126
+    },
+
+    "2": {
+        "name": "RockyLinux9.2-RAID",
+        "os_id": 15,
+        "hostgroup_id": 11,
+        "medium_id": 17,
+        "ptable_id": 126
+    },
+
+    "3": {
+        "name": "RockyLinux9.8-SingleDisk",
+        "os_id": 18,
+        "hostgroup_id": 16,
+        "medium_id": 18,
+        "ptable_id": 126
+    },
+
+    "4": {
+        "name": "RockyLinux9.8-RAID",
+        "os_id": 17,
+        "hostgroup_id": 12,
+        "medium_id": 18,
+        "ptable_id": 126
+    }
+}
+
+for number, data in hostgroup_mapping.items():
+    print()
+    print(f" {number} = {data['name']}")
+    print(f"      OS ID          : {data['os_id']}")
+    print(f"      Host Group ID  : {data['hostgroup_id']}")
+    print(f"      Medium ID      : {data['medium_id']}")
+    print(f"      Ptable ID      : {data['ptable_id']}")
+
 EOF
-
-
 
 echo
 
