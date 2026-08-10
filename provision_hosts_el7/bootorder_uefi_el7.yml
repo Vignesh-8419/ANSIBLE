@@ -228,20 +228,25 @@
       loop: "{{ filtered_devices }}"
 
 # ============================================================
-# PLAY 4: Kernel Verification
+# PLAY 4: Final System Verification
 # ============================================================
 
-- name: Verify Kernel
+- name: Final System Verification
   hosts: localhost
   gather_facts: no
 
   vars:
     ansible_ssh_common_args: "-o UserKnownHostsFile=/tmp/known_hosts -o StrictHostKeyChecking=no"
+
     netbox_url: "https://192.168.253.143"
     netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
 
   tasks:
-  
+
+    # ============================================================
+    # Get all IP addresses from NetBox
+    # ============================================================
+
     - name: Get all IP addresses
       uri:
         url: "{{ netbox_url }}/api/ipam/ip-addresses/"
@@ -252,9 +257,13 @@
         validate_certs: no
       register: netbox_ips
 
-    - name: Check kernel
-      raw: uname -r
-      register: kernel_version
+    # ============================================================
+    # Check Hostname
+    # ============================================================
+
+    - name: Check hostname
+      raw: hostname
+      register: hostname_result
       delegate_to: >-
         {{
           netbox_ips.json.results
@@ -264,12 +273,72 @@
           | first
         }}
       loop: "{{ filtered_devices }}"
-      loop_control:
-        index_var: idx
 
-    - name: Display kernel
+    # ============================================================
+    # Check Uptime
+    # ============================================================
+
+    - name: Check uptime
+      raw: uptime -p
+      register: uptime_result
+      delegate_to: >-
+        {{
+          netbox_ips.json.results
+          | selectattr('assigned_object.device.name','equalto',item.name)
+          | map(attribute='address')
+          | map('regex_replace','/.*$','')
+          | first
+        }}
+      loop: "{{ filtered_devices }}"
+
+    # ============================================================
+    # Check Kernel
+    # ============================================================
+
+    - name: Check kernel
+      raw: uname -r
+      register: kernel_result
+      delegate_to: >-
+        {{
+          netbox_ips.json.results
+          | selectattr('assigned_object.device.name','equalto',item.name)
+          | map(attribute='address')
+          | map('regex_replace','/.*$','')
+          | first
+        }}
+      loop: "{{ filtered_devices }}"
+
+    # ============================================================
+    # Check Operating System
+    # ============================================================
+
+    - name: Check operating system
+      raw: cat /etc/os-release
+      register: os_result
+      delegate_to: >-
+        {{
+          netbox_ips.json.results
+          | selectattr('assigned_object.device.name','equalto',item.name)
+          | map(attribute='address')
+          | map('regex_replace','/.*$','')
+          | first
+        }}
+      loop: "{{ filtered_devices }}"
+
+    # ============================================================
+    # Display Final Verification
+    # ============================================================
+
+    - name: Display final system information
       debug:
-        msg: "{{ item.name }} : {{ kernel_version.results[idx].stdout }}"
+        msg:
+          - "============================================================"
+          - "Host      : {{ filtered_devices[idx].name }}"
+          - "Hostname  : {{ hostname_result.results[idx].stdout | trim }}"
+          - "Uptime    : {{ uptime_result.results[idx].stdout | trim }}"
+          - "Kernel    : {{ kernel_result.results[idx].stdout | trim }}"
+          - "OS        : {{ os_result.results[idx].stdout_lines | select('match','^PRETTY_NAME=') | first | default('OS information unavailable') | regex_replace('^PRETTY_NAME=', '') | trim }}"
+          - "============================================================"
       loop: "{{ filtered_devices }}"
       loop_control:
         index_var: idx
