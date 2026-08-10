@@ -70,6 +70,8 @@
     
     ptable_id: 126
 
+    subnet_name: "vgs-subnet-centos"
+
   tasks:
 
     ###########################################################################
@@ -184,6 +186,43 @@
           - 404
       loop: "{{ host_info }}"
       register: foreman_hosts
+
+    ###########################################################################
+    # Resolve Foreman Subnet
+    ###########################################################################
+
+    - name: Get Foreman subnet
+      uri:
+        url: "{{ foreman_url }}/api/subnets?search=name={{ subnet_name | urlencode }}"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_password }}"
+        force_basic_auth: yes
+        validate_certs: no
+        status_code: 200
+      register: foreman_subnets
+
+    - name: Resolve Foreman subnet ID
+      set_fact:
+        subnet_id: >-
+          {{
+            foreman_subnets.json.results
+            | selectattr('name', 'equalto', subnet_name)
+            | map(attribute='id')
+            | first
+            | default('')
+          }}
+
+    - name: Verify Foreman subnet
+      fail:
+        msg: "Foreman subnet not found: {{ subnet_name }}"
+      when: subnet_id | string | length == 0
+
+    - name: Show Foreman subnet
+      debug:
+        msg:
+          - "Subnet Name : {{ subnet_name }}"
+          - "Subnet ID   : {{ subnet_id }}"
 
     ###########################################################################
     # Create hosts in Foreman
