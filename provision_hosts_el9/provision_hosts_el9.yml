@@ -55,55 +55,49 @@
     
     
     # ==============================================================================
-    # Host Group Mapping
+    # Rocky Linux 9 Host Group Selection
     # ==============================================================================
+    #
+    # 1 = RockyLinux9.2-SingleDisk
+    # 2 = RockyLinux9.2-RAID
+    # 3 = RockyLinux9.8-SingleDisk
+    # 4 = RockyLinux9.8-RAID
+    #
+    # ==============================================================================
+    
+    hostgroup: "{{ hostgroup | default('1', true) }}"
     
     hostgroup_id: >-
       {{
         {
-          '1': 15,   # RockyLinux9.2-SingleDisk
-          '2': 11,   # RockyLinux9.2-RAID
-          '3': 16,   # RockyLinux9.8-SingleDisk
-          '4': 12    # RockyLinux9.8-RAID
+          '1': 15,
+          '2': 11,
+          '3': 16,
+          '4': 12
         }[hostgroup | string]
       }}
-    
-    
-    # ==============================================================================
-    # Operating System Mapping
-    # ==============================================================================
     
     operatingsystem_id: >-
       {{
         {
-          '1': 16,   # RockyLinux9.2-SingleDisk
-          '2': 15,   # RockyLinux9.2-RAID
-          '3': 18,   # RockyLinux9.8-SingleDisk
-          '4': 17    # RockyLinux9.8-RAID
+          '1': 16,
+          '2': 15,
+          '3': 18,
+          '4': 17
         }[hostgroup | string]
       }}
-    
-    
-    # ==============================================================================
-    # Installation Media Mapping
-    # ==============================================================================
     
     medium_id: >-
       {{
         {
-          '1': 17,   # Rocky 9.2 Remote
-          '2': 17,   # Rocky 9.2 Remote
-          '3': 18,   # Rocky 9 Remote
-          '4': 18    # Rocky 9 Remote
+          '1': 17,
+          '2': 17,
+          '3': 18,
+          '4': 18
         }[hostgroup | string]
       }}
     
-    
-    # ==============================================================================
-    # Partition Table
-    # ==============================================================================
-    
-    ptable_id: 126   # Kickstart default
+    ptable_id: 126
 
   tasks:
 
