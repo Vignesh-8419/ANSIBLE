@@ -205,7 +205,7 @@
         user: "{{ foreman_user }}"
         password: "{{ foreman_password }}"
         force_basic_auth: yes
-        validate_certs: 
+        validate_certs: no
         use_proxy: false
         timeout: 120
         status_code: 200
