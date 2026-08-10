@@ -336,6 +336,7 @@
         headers:
           Content-Type: application/json
         body_format: json
+
         body:
           host:
             name: "{{ item.json.name }}"
@@ -346,9 +347,14 @@
             architecture_id: 1
             subnet_id: "{{ subnet_id }}"
             domain_id: 1
+
             build: true
             pxe_loader: "Grub2 UEFI"
             root_pass: "{{ host_root_pass }}"
+
+            content_facet_attributes:
+              content_view_id: "{{ content_view_id }}"
+              lifecycle_environment_id: "{{ lifecycle_environment_id }}"
 
             interfaces_attributes:
               - id: "{{ item.json.interfaces[0].id }}"
