@@ -417,17 +417,20 @@
         status_code: 200
       loop: "{{ verify_hosts.results }}"
       register: final_hosts
-    
+
     - name: Show final host configuration
       debug:
         msg:
-          - "Host      : {{ item.json.name }}"
-          - "Host Group: {{ item.json.hostgroup_name }}"
-          - "OS        : {{ item.json.operatingsystem_name }}"
-          - "Medium    : {{ item.json.medium_name }}"
-          - "Subnet    : {{ item.json.subnet_name }}"
-          - "PXE Loader: {{ item.json.pxe_loader }}"
-          - "Build     : {{ item.json.build }}"
+          - "Host            : {{ item.json.name }}"
+          - "Host Group      : {{ item.json.hostgroup_name }}"
+          - "OS              : {{ item.json.operatingsystem_name }}"
+          - "Medium          : {{ item.json.medium_name }}"
+          - "Partition Table : {{ item.json.ptable_name }}"
+          - "Subnet          : {{ item.json.subnet_name }}"
+          - "PXE Loader      : {{ item.json.pxe_loader }}"
+          - "Content View    : {{ item.json.content_facet_attributes.content_view_name }}"
+          - "Lifecycle       : {{ item.json.content_facet_attributes.lifecycle_environment_name }}"
+          - "Build           : {{ item.json.build }}"
       loop: "{{ final_hosts.results }}"
 
     - debug:
