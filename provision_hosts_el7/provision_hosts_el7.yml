@@ -41,15 +41,13 @@
     
     # ==============================================================================
     # CentOS Linux 7 Host Group Selection
-    # ==============================================================================
     #
     # 1 = CentOSLinux7-SingleDisk
     # 2 = CentOSLinux7-RAID
-    #
     # ==============================================================================
-    
+
     hostgroup: "{{ hostgroup | default('1', true) }}"
-    
+
     hostgroup_id: >-
       {{
         {
@@ -57,7 +55,7 @@
           '2': 9
         }[hostgroup | string]
       }}
-    
+
     operatingsystem_id: >-
       {{
         {
@@ -65,12 +63,25 @@
           '2': 11
         }[hostgroup | string]
       }}
-    
+
+    # CentOS 7 Remote
     medium_id: 15
-    
+
+    # Kickstart default
     ptable_id: 126
 
+    # CentOS PXE subnet
     subnet_name: "vgs-subnet-centos"
+
+    # ==============================================================================
+    # Katello Content
+    # ==============================================================================
+
+    # CentOS7-CV
+    content_view_id: 2
+
+    # Library
+    lifecycle_environment_id: 1
 
   tasks:
 
@@ -224,9 +235,9 @@
           - "Subnet Name : {{ subnet_name }}"
           - "Subnet ID   : {{ subnet_id }}"
 
-    ###########################################################################
-    # Create hosts in Foreman
-    ###########################################################################
+    # ==========================================================================
+    # Create host in Foreman
+    # ==========================================================================
 
     - name: Create host in Foreman (only if missing)
       uri:
@@ -239,24 +250,35 @@
         status_code:
           - 200
           - 201
+
         headers:
           Content-Type: application/json
+
         body_format: json
+
         body:
           host:
             name: "{{ item.item.name }}"
+
             hostgroup_id: "{{ hostgroup_id }}"
             operatingsystem_id: "{{ operatingsystem_id }}"
             medium_id: "{{ medium_id }}"
             ptable_id: "{{ ptable_id }}"
             architecture_id: 1
-        
+
             subnet_id: "{{ subnet_id }}"
             domain_id: 1
-        
+
             build: true
             pxe_loader: "Grub2 UEFI"
             root_pass: "{{ host_root_pass }}"
+
+            # IMPORTANT:
+            # Required by Katello for content-managed hosts.
+            content_facet_attributes:
+              content_view_id: "{{ content_view_id }}"
+              lifecycle_environment_id: "{{ lifecycle_environment_id }}"
+
             interfaces_attributes:
               - type: interface
                 mac: "{{ item.item.mac }}"
@@ -265,6 +287,7 @@
                 domain_id: 1
                 primary: true
                 provision: true
+
       when: item.status == 404
       loop: "{{ foreman_hosts.results }}"
       register: foreman_create
@@ -288,6 +311,10 @@
           - "ID: {{ item.json.id }}"
       loop: "{{ foreman_hosts_updated.results }}"
         
+    # ==========================================================================
+    # Update existing Foreman host
+    # ==========================================================================
+
     - name: Update existing Foreman host
       uri:
         url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}"
@@ -296,26 +323,35 @@
         password: "{{ foreman_password }}"
         force_basic_auth: yes
         validate_certs: no
+
         headers:
           Content-Type: application/json
+
         body_format: json
+
         body:
           host:
             name: "{{ item.json.name }}"
-        
+
             hostgroup_id: "{{ hostgroup_id }}"
             operatingsystem_id: "{{ operatingsystem_id }}"
             medium_id: "{{ medium_id }}"
             ptable_id: "{{ ptable_id }}"
             architecture_id: 1
-        
+
             subnet_id: "{{ subnet_id }}"
             domain_id: 1
-        
+
             build: true
             pxe_loader: "Grub2 UEFI"
             root_pass: "{{ host_root_pass }}"
-        
+
+            # IMPORTANT:
+            # Katello requires Content View and Lifecycle Environment.
+            content_facet_attributes:
+              content_view_id: "{{ content_view_id }}"
+              lifecycle_environment_id: "{{ lifecycle_environment_id }}"
+
             interfaces_attributes:
               - id: "{{ item.json.interfaces[0].id }}"
                 subnet_id: "{{ subnet_id }}"
@@ -324,8 +360,10 @@
                 ip: "{{ item.json.interfaces[0].ip }}"
                 primary: true
                 provision: true
+
         status_code:
           - 200
+
       loop: "{{ foreman_hosts_updated.results }}"
 
     - name: Verify updated Foreman host
@@ -391,13 +429,16 @@
     - name: Show final host configuration
       debug:
         msg:
-          - "Host      : {{ item.json.name }}"
-          - "Host Group: {{ item.json.hostgroup_name }}"
-          - "OS        : {{ item.json.operatingsystem_name }}"
-          - "Medium    : {{ item.json.medium_name }}"
-          - "Subnet    : {{ item.json.subnet_name }}"
-          - "PXE Loader: {{ item.json.pxe_loader }}"
-          - "Build     : {{ item.json.build }}"
+          - "Host            : {{ item.json.name }}"
+          - "Host Group      : {{ item.json.hostgroup_name }}"
+          - "OS              : {{ item.json.operatingsystem_name }}"
+          - "Medium          : {{ item.json.medium_name }}"
+          - "Partition Table : {{ item.json.ptable_name }}"
+          - "Subnet          : {{ item.json.subnet_name }}"
+          - "PXE Loader      : {{ item.json.pxe_loader }}"
+          - "Content View    : {{ item.json.content_facet_attributes.content_view_name }}"
+          - "Lifecycle       : {{ item.json.content_facet_attributes.lifecycle_environment_name }}"
+          - "Build           : {{ item.json.build }}"
       loop: "{{ final_hosts.results }}"
 
     - debug:
