@@ -24,7 +24,7 @@
       }}
   
     foreman_user: "admin"
-    foreman_password: "zqs977dXzqfEvTML"
+    foreman_api_token: "oUzg-aMfjcT3q_wZ8NRLfQ"
 
     host_root_pass: "Root@123"
     cluster_name: "rocky-8-servers"
@@ -185,7 +185,7 @@
         url: "{{ foreman_url }}/api/hosts/{{ item.name }}"
         method: GET
         user: "{{ foreman_user }}"
-        password: "{{ foreman_password }}"
+        password: "{{ foreman_api_token }}"
         force_basic_auth: yes
         validate_certs: no
         status_code:
@@ -203,7 +203,7 @@
         url: "{{ foreman_url }}/api/subnets?search=name={{ subnet_name | urlencode }}"
         method: GET
         user: "{{ foreman_user }}"
-        password: "{{ foreman_password }}"
+        password: "{{ foreman_api_token }}"
         force_basic_auth: yes
         validate_certs: no
         use_proxy: false
@@ -242,7 +242,7 @@
         url: "{{ foreman_url }}/api/hosts"
         method: POST
         user: "{{ foreman_user }}"
-        password: "{{ foreman_password }}"
+        password: "{{ foreman_api_token }}"
         force_basic_auth: yes
         validate_certs: no
         use_proxy: false
@@ -293,7 +293,7 @@
         url: "{{ foreman_url }}/api/hosts/{{ item.name }}"
         method: GET
         user: "{{ foreman_user }}"
-        password: "{{ foreman_password }}"
+        password: "{{ foreman_api_token }}"
         force_basic_auth: yes
         validate_certs: no
         use_proxy: false
@@ -318,7 +318,7 @@
         url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}"
         method: PUT
         user: "{{ foreman_user }}"
-        password: "{{ foreman_password }}"
+        password: "{{ foreman_api_token }}"
         force_basic_auth: yes
         validate_certs: no
         use_proxy: false
@@ -371,7 +371,7 @@
         url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}"
         method: GET
         user: "{{ foreman_user }}"
-        password: "{{ foreman_password }}"
+        password: "{{ foreman_api_token }}"
         force_basic_auth: yes
         validate_certs: no
         use_proxy: false
