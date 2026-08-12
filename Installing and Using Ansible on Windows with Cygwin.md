@@ -197,6 +197,16 @@ tar
 gzip
 ```
 
+Then verify the dependencies:
+
+```bash
+python3 -c "import cryptography; print(cryptography.__version__)"
+python3 -c "import jinja2; print(jinja2.__version__)"
+python3 -c "import yaml; print(yaml.__version__)"
+```
+
+If all three commands show versions without errors, continue.
+
 After installation, open Cygwin Terminal.
 
 Check the Python version:
