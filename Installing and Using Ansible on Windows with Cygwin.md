@@ -2028,7 +2028,15 @@ Continue troubleshooting the actual error below the warning.
 git clone https://github.com/vignesh-8419/ANSIBLE.git
 ```
 
+If you already have an ANSIBLE repository folder:
+
+This downloads only the changes that are missing locally—for example, new files or modified files—not a completely separate copy of the repository.
+
+```bash
 cd ~/ANSIBLE
+git status
+git pull origin main
+```
 
 Install the required collection on Cygwin:
 
