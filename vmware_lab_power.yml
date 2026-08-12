@@ -5,10 +5,10 @@
   gather_facts: false
 
   vars:
-    vmrun_path: 'D:/VM workstation/vmrun.exe'
+    vmrun_path: 'D:\VM workstation\vmrun.exe'
 
-    esxi_vmx: 'D:/ESXI/VMware ESXi 7 and later.vmx'
-    vcenter_vmx: 'D:/vCenter/vCenter.vmx'
+    esxi_vmx: 'D:\ESXI\VMware ESXi 7 and later.vmx'
+    vcenter_vmx: 'D:\vCenter\vCenter.vmx'
 
     target: "{{ target_vm | default('all') }}"
     power_action: "{{ power | default('on') }}"
@@ -41,6 +41,20 @@
       ansible.builtin.debug:
         var: vmrun_list.stdout_lines
 
+    - name: Set ESXi running state
+      ansible.builtin.set_fact:
+        esxi_running: "{{ esxi_vmx in vmrun_list.stdout }}"
+
+    - name: Set vCenter running state
+      ansible.builtin.set_fact:
+        vcenter_running: "{{ vcenter_vmx in vmrun_list.stdout }}"
+
+    - name: Display VM states
+      ansible.builtin.debug:
+        msg:
+          - "ESXi running: {{ esxi_running }}"
+          - "vCenter running: {{ vcenter_running }}"
+
     # ============================================================
     # POWER ON
     # ============================================================
@@ -57,7 +71,7 @@
       when:
         - power_action == 'on'
         - target in ['esxi', 'all']
-        - esxi_vmx not in vmrun_list.stdout
+        - not esxi_running
 
     - name: Power ON vCenter
       ansible.builtin.command:
@@ -71,7 +85,7 @@
       when:
         - power_action == 'on'
         - target in ['vcenter', 'all']
-        - vcenter_vmx not in vmrun_list.stdout
+        - not vcenter_running
 
     # ============================================================
     # POWER OFF
@@ -89,9 +103,9 @@
       when:
         - power_action == 'off'
         - target in ['vcenter', 'all']
-        - vcenter_vmx in vmrun_list.stdout
+        - vcenter_running
 
-    - name: Power OFF ESXi gracefully
+    - name: Power OFF ESXi
       ansible.builtin.command:
         argv:
           - "{{ vmrun_path }}"
@@ -99,15 +113,11 @@
           - "ws"
           - "stop"
           - "{{ esxi_vmx }}"
-          - "soft"
+          - "hard"
       when:
         - power_action == 'off'
         - target in ['esxi', 'all']
-        - esxi_vmx in vmrun_list.stdout
-
-    # ============================================================
-    # FINAL STATUS
-    # ============================================================
+        - esxi_running
 
     - name: Show completion message
       ansible.builtin.debug:
