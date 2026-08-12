@@ -205,6 +205,18 @@ python3 -c "import jinja2; print(jinja2.__version__)"
 python3 -c "import yaml; print(yaml.__version__)"
 ```
 
+Since PyYAML is a pure Python dependency, install it with pip:
+
+```bash
+python3 -m pip install --user PyYAML
+```
+
+Then verify:
+
+```bash
+python3 -c "import yaml; print(yaml.__version__)"
+```
+
 If all three commands show versions without errors, continue.
 
 After installation, open Cygwin Terminal.
