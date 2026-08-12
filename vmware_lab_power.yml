@@ -5,10 +5,16 @@
   gather_facts: false
 
   vars:
+    # Path used to execute vmrun from Git Bash / Ansible
     vmrun_path: 'D:/VM workstation/vmrun.exe'
 
+    # Paths used when starting/stopping VMs
     esxi_vmx: 'D:/ESXI/VMware ESXi 7 and later.vmx'
     vcenter_vmx: 'D:/vCenter/vCenter.vmx'
+
+    # Paths exactly as returned by: vmrun -T ws list
+    esxi_vmx_running: 'D:\ESXI\VMware ESXi 7 and later.vmx'
+    vcenter_vmx_running: 'D:\vCenter\vCenter.vmx'
 
     target: "{{ target_vm | default('all') }}"
     power_action: "{{ power | default('on') }}"
@@ -41,21 +47,13 @@
       ansible.builtin.debug:
         var: vmrun_list.stdout_lines
 
-    - name: Normalize running VM paths
-      ansible.builtin.set_fact:
-        running_vms: "{{ vmrun_list.stdout_lines[1:] | map('replace', '\\', '/') | list }}"
-
-    - name: Display normalized running VM paths
-      ansible.builtin.debug:
-        var: running_vms
-
     - name: Set ESXi running state
       ansible.builtin.set_fact:
-        esxi_running: "{{ esxi_vmx in running_vms }}"
+        esxi_running: "{{ esxi_vmx_running in vmrun_list.stdout }}"
 
     - name: Set vCenter running state
       ansible.builtin.set_fact:
-        vcenter_running: "{{ vcenter_vmx in running_vms }}"
+        vcenter_running: "{{ vcenter_vmx_running in vmrun_list.stdout }}"
 
     - name: Display VM states
       ansible.builtin.debug:
