@@ -1,0 +1,99 @@
+---
+- name: Power ON or OFF selected VMs on ESXi
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  collections:
+    - community.vmware
+
+  vars:
+    esxi_hostname: "192.168.253.128"
+    esxi_username: "admin"
+    esxi_password: "{{ lookup('env', 'ESXI_PASSWORD') }}"
+    validate_certs: false
+
+    # Comma-separated VM names passed from the command line
+    requested_vm_names: "{{ vm_names | default('') }}"
+
+    # Power action: on or off
+    power_action: "{{ power | default('on') }}"
+
+  tasks:
+
+    - name: Validate power action
+      ansible.builtin.assert:
+        that:
+          - power_action in ['on', 'off']
+        fail_msg: "Invalid power '{{ power_action }}'. Use: on or off."
+
+    - name: Validate VM names
+      ansible.builtin.assert:
+        that:
+          - requested_vm_names | length > 0
+        fail_msg: >
+          No VM names specified.
+          Example:
+          ansible-playbook esxi_vm_power.yml
+          -e "vm_names=NetBox,AWX power=on"
+
+    - name: Get all VM information from ESXi
+      community.vmware.vmware_vm_info:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: "{{ validate_certs }}"
+      register: vm_info
+
+    - name: Build requested VM list
+      ansible.builtin.set_fact:
+        selected_vms: "{{ requested_vm_names.split(',') | map('trim') | list }}"
+      when: requested_vm_names | lower != 'all'
+
+    - name: Select all VMs when requested
+      ansible.builtin.set_fact:
+        selected_vms: "{{ vm_info.virtual_machines | map(attribute='guest_name') | list }}"
+      when: requested_vm_names | lower == 'all'
+
+    - name: Display selected VMs
+      ansible.builtin.debug:
+        var: selected_vms
+
+    - name: Validate requested VMs exist on ESXi
+      ansible.builtin.assert:
+        that:
+          - item in (vm_info.virtual_machines | map(attribute='guest_name') | list)
+        fail_msg: "VM '{{ item }}' was not found on ESXi {{ esxi_hostname }}."
+      loop: "{{ selected_vms }}"
+
+    - name: Power ON selected VMs
+      community.vmware.vmware_guest_powerstate:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ item }}"
+        state: powered-on
+      loop: "{{ selected_vms }}"
+      when: power_action == 'on'
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Power OFF selected VMs
+      community.vmware.vmware_guest_powerstate:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ item }}"
+        state: powered-off
+      loop: "{{ selected_vms }}"
+      when: power_action == 'off'
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Show completion message
+      ansible.builtin.debug:
+        msg: >
+          Requested {{ power_action | upper }} operation completed
+          for: {{ selected_vms | join(', ') }}.
