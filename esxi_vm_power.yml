@@ -9,8 +9,8 @@
 
   vars:
     esxi_hostname: "192.168.253.128"
-    esxi_username: "admin"
-    esxi_password: "{{ lookup('env', 'ESXI_PASSWORD') }}"
+    esxi_username: "root"
+    esxi_password: "Root@123"
     validate_certs: false
 
     # Comma-separated VM names passed from the command line
