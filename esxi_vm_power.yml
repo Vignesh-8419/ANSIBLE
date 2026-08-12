@@ -8,13 +8,17 @@
     - community.vmware
 
   vars:
+    # ESXi API connection
     esxi_hostname: "192.168.253.128"
-    esxi_username: "root"
-    esxi_password: "Root@123"
+    esxi_username: "admin"
+    esxi_password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
     validate_certs: false
 
-    # Comma-separated VM names passed from the command line
-    requested_vm_names: "{{ vm_names | default('') }}"
+    # Use target_vm from command line
+    # Examples: netbox, awx, foreman
+    # Multiple: netbox,awx,foreman
+    # All: all
+    requested_vm_names: "{{ target_vm | default('') }}"
 
     # Power action: on or off
     power_action: "{{ power | default('on') }}"
@@ -27,15 +31,16 @@
           - power_action in ['on', 'off']
         fail_msg: "Invalid power '{{ power_action }}'. Use: on or off."
 
-    - name: Validate VM names
+    - name: Validate target VM
       ansible.builtin.assert:
         that:
           - requested_vm_names | length > 0
         fail_msg: >
-          No VM names specified.
-          Example:
-          ansible-playbook esxi_vm_power.yml
-          -e "vm_names=NetBox,AWX power=on"
+          No target VM specified.
+          Examples:
+          ansible-playbook esxi_vm_power.yml -e "target_vm=netbox power=on"
+          ansible-playbook esxi_vm_power.yml -e "target_vm=netbox,awx power=on"
+          ansible-playbook esxi_vm_power.yml -e "target_vm=all power=on"
 
     - name: Get all VM information from ESXi
       community.vmware.vmware_vm_info:
@@ -45,12 +50,16 @@
         validate_certs: "{{ validate_certs }}"
       register: vm_info
 
-    - name: Build requested VM list
+    - name: Display available VMs
+      ansible.builtin.debug:
+        msg: "{{ vm_info.virtual_machines | map(attribute='guest_name') | list }}"
+
+    - name: Build selected VM list
       ansible.builtin.set_fact:
         selected_vms: "{{ requested_vm_names.split(',') | map('trim') | list }}"
       when: requested_vm_names | lower != 'all'
 
-    - name: Select all VMs when requested
+    - name: Select all VMs
       ansible.builtin.set_fact:
         selected_vms: "{{ vm_info.virtual_machines | map(attribute='guest_name') | list }}"
       when: requested_vm_names | lower == 'all'
@@ -59,12 +68,19 @@
       ansible.builtin.debug:
         var: selected_vms
 
-    - name: Validate requested VMs exist on ESXi
+    - name: Validate selected VMs exist on ESXi
       ansible.builtin.assert:
         that:
           - item in (vm_info.virtual_machines | map(attribute='guest_name') | list)
-        fail_msg: "VM '{{ item }}' was not found on ESXi {{ esxi_hostname }}."
+        fail_msg: >
+          VM '{{ item }}' was not found on ESXi {{ esxi_hostname }}.
+          Available VMs:
+          {{ vm_info.virtual_machines | map(attribute='guest_name') | list }}
       loop: "{{ selected_vms }}"
+
+    # ============================================================
+    # POWER ON
+    # ============================================================
 
     - name: Power ON selected VMs
       community.vmware.vmware_guest_powerstate:
@@ -78,6 +94,10 @@
       when: power_action == 'on'
       loop_control:
         label: "{{ item }}"
+
+    # ============================================================
+    # POWER OFF
+    # ============================================================
 
     - name: Power OFF selected VMs
       community.vmware.vmware_guest_powerstate:
@@ -95,5 +115,5 @@
     - name: Show completion message
       ansible.builtin.debug:
         msg: >
-          Requested {{ power_action | upper }} operation completed
-          for: {{ selected_vms | join(', ') }}.
+          Requested {{ power_action | upper }} operation completed for:
+          {{ selected_vms | join(', ') }}.
