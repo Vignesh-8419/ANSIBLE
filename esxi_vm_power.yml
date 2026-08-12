@@ -10,7 +10,7 @@
   vars:
     # ESXi API connection
     esxi_hostname: "192.168.253.128"
-    esxi_username: "admin"
+    esxi_username: "root"
     esxi_password: "Root@123"
     validate_certs: false
 
