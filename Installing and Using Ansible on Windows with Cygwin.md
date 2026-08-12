@@ -2037,6 +2037,20 @@ ansible-galaxy collection install community.general
 ansible-galaxy collection list | grep community.general
 ansible-galaxy collection install ansible.posix
 ansible-galaxy collection list | grep ansible.posix
+ansible-galaxy collection install theforeman.foreman
+ansible-galaxy collection install community.vmware
+ansible-galaxy collection install netbox.netbox
+```
+
+All at once
+
+```bash
+ansible-galaxy collection install \
+  ansible.posix \
+  community.general \
+  community.vmware \
+  theforeman.foreman \
+  netbox.netbox
 ```
 
 Run against the linux group
