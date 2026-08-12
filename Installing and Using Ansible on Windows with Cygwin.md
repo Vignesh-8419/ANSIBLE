@@ -2024,9 +2024,19 @@ This is informational and was not the cause of the Ansible failures encountered 
 
 Continue troubleshooting the actual error below the warning.
 
+```bash
 git clone https://github.com/vignesh-8419/ANSIBLE.git
+```
 
 cd ~/ANSIBLE
+
+```bash
+Run against the linux group
+ansible-playbook -i ~/inventory.ini ssh-admin/create_admin.yml \
+  -e "target_hosts=linux" \
+  --ask-pass
+```
+
 ---
 
 # 40. Final SOP Summary
