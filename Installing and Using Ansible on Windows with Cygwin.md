@@ -2030,6 +2030,15 @@ git clone https://github.com/vignesh-8419/ANSIBLE.git
 
 cd ~/ANSIBLE
 
+Install the required collection on Cygwin:
+
+```bash
+ansible-galaxy collection install community.general
+ansible-galaxy collection list | grep community.general
+ansible-galaxy collection install ansible.posix
+ansible-galaxy collection list | grep ansible.posix
+```
+
 Run against the linux group
 
 ```bash
