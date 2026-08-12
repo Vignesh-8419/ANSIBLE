@@ -2030,11 +2030,10 @@ git clone https://github.com/vignesh-8419/ANSIBLE.git
 
 cd ~/ANSIBLE
 
-```bash
 Run against the linux group
-ansible-playbook -i ~/inventory.ini ssh-admin/create_admin.yml \
-  -e "target_hosts=linux" \
-  --ask-pass
+
+```bash
+ansible-playbook -i ~/inventory.ini ssh-admin/create_admin.yml -e "target_hosts=linux" --ask-pass
 ```
 
 ---
