@@ -217,7 +217,13 @@ Then verify:
 python3 -c "import yaml; print(yaml.__version__)"
 ```
 
-If all three commands show versions without errors, continue.
+If successful, install the remaining dependency:
+
+```bash
+python3 -m pip install --user "resolvelib>=0.5.3,<1.1.0"
+```
+
+Then install Ansible Core 2.16 without reinstalling/building cryptography:
 
 After installation, open Cygwin Terminal.
 
