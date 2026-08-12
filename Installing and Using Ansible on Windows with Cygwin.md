@@ -2024,6 +2024,9 @@ This is informational and was not the cause of the Ansible failures encountered 
 
 Continue troubleshooting the actual error below the warning.
 
+git clone https://github.com/vignesh-8419/ANSIBLE.git
+
+cd ~/ANSIBLE
 ---
 
 # 40. Final SOP Summary
