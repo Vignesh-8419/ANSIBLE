@@ -1,0 +1,90 @@
+---
+- name: Power ON or OFF VMware Lab VMs
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    vmrun_path: 'D:/VM workstation/vmrun.exe'
+
+    vms:
+      esxi:
+        name: "ESXi Host"
+        vmx: 'D:/ESXI/VMware ESXi 7 and later.vmx'
+
+      vcenter:
+        name: "vCenter"
+        vmx: 'D:/vCenter/vCenter.vmx'
+
+    # Default values
+    target: "{{ target_vm | default('all') }}"
+    power_action: "{{ action | default('on') }}"
+
+  tasks:
+
+    - name: Validate target
+      ansible.builtin.assert:
+        that:
+          - target in ['esxi', 'vcenter', 'all']
+        fail_msg: "Invalid target '{{ target }}'. Use: esxi, vcenter, or all."
+
+    - name: Validate action
+      ansible.builtin.assert:
+        that:
+          - power_action in ['on', 'off']
+        fail_msg: "Invalid action '{{ power_action }}'. Use: on or off."
+
+    - name: Check currently running VMware Workstation VMs
+      ansible.builtin.command:
+        argv:
+          - "{{ vmrun_path }}"
+          - "-T"
+          - "ws"
+          - "list"
+      register: vmrun_list
+      changed_when: false
+
+    - name: Build selected VM list
+      ansible.builtin.set_fact:
+        selected_vms: >-
+          {{
+            vms | dict2items
+            if target == 'all'
+            else [vms[target] | combine({'key': target})]
+          }}
+
+    - name: Power ON selected VMs
+      ansible.builtin.command:
+        argv:
+          - "{{ vmrun_path }}"
+          - "-T"
+          - "ws"
+          - "start"
+          - "{{ item.value.vmx if item.value is defined else item.vmx }}"
+          - "nogui"
+      loop: "{{ selected_vms }}"
+      when:
+        - power_action == 'on'
+        - (item.value.vmx if item.value is defined else item.vmx) not in vmrun_list.stdout
+      loop_control:
+        label: "{{ item.value.name if item.value is defined else item.name }}"
+
+    - name: Power OFF selected VMs gracefully
+      ansible.builtin.command:
+        argv:
+          - "{{ vmrun_path }}"
+          - "-T"
+          - "ws"
+          - "stop"
+          - "{{ item.value.vmx if item.value is defined else item.vmx }}"
+          - "soft"
+      loop: "{{ selected_vms }}"
+      when:
+        - power_action == 'off'
+        - (item.value.vmx if item.value is defined else item.vmx) in vmrun_list.stdout
+      loop_control:
+        label: "{{ item.value.name if item.value is defined else item.name }}"
+
+    - name: Show completion message
+      ansible.builtin.debug:
+        msg: "Requested {{ power_action | upper }} operation completed for {{ target }}."
