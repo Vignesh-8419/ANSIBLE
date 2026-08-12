@@ -180,6 +180,10 @@ openssh
 openssh-clients
 sshpass
 vim
+python312-cryptography
+python312-jinja2
+python312-PyYAML
+python3-wheel
 ```
 
 Recommended additional packages:
