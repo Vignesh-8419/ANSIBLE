@@ -11,7 +11,7 @@
     # ESXi API connection
     esxi_hostname: "192.168.253.128"
     esxi_username: "admin"
-    esxi_password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+    esxi_password: "Root@123"
     validate_certs: false
 
     # Use target_vm from command line
