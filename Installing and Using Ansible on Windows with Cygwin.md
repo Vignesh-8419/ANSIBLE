@@ -2073,6 +2073,1011 @@ Run against the linux group
 ansible-playbook -i ~/inventory.ini ssh-admin/create_admin.yml -e "target_hosts=linux" --ask-pass
 ```
 
+
+# CentOS VM Template – Local Ansible Execution Using NetBox Inventory
+
+## Purpose
+
+This document explains how to run the existing CentOS VM Template job locally using Ansible and the existing NetBox dynamic inventory.
+
+No changes are required to the following existing files:
+
+- `CENTOS-VM-TEMPLATE.yml`
+- `Local_DNS.yml`
+- `Netbox-AWX-GOLDENTEMPLATE_CENTOS_07.yml`
+- `centos-07-servers_inventory.yml`
+
+The same NetBox inventory that was used in AWX will be used locally.
+
+---
+
+# 1. Directory Structure
+
+Your Ansible directory is:
+
+```text
+/home/vigne/ANSIBLE
+```
+
+Directory structure:
+
+```text
+/home/vigne/ANSIBLE/
+├── centos-07-servers_inventory.yml
+├── rocky-8-servers_inventory.yml
+├── rocky-9-servers_inventory.yml
+│
+└── CENTOS-VM-TEMPLATE/
+    ├── CENTOS-VM-TEMPLATE.yml
+    ├── Local_DNS.yml
+    └── Netbox-AWX-GOLDENTEMPLATE_CENTOS_07.yml
+```
+
+---
+
+# 2. Verify Ansible Installation
+
+Go to the Ansible directory:
+
+```bash
+cd ~/ANSIBLE
+```
+
+Check Ansible:
+
+```bash
+ansible --version
+```
+
+Your output is similar to:
+
+```text
+ansible [core 2.16.19]
+config file = None
+configured module search path = ['/home/vigne/.ansible/plugins/modules', '/usr/share/ansible/plugins/modules']
+ansible collection location = /home/vigne/.ansible/collections:/usr/share/ansible/collections
+executable location = /usr/local/bin/ansible
+python version = 3.12.12
+```
+
+The following is acceptable:
+
+```text
+config file = None
+```
+
+A local `ansible.cfg` is not required because the NetBox inventory will be explicitly provided with the `-i` option.
+
+---
+
+# 3. Existing NetBox Dynamic Inventory
+
+The CentOS inventory file is:
+
+```text
+~/ANSIBLE/centos-07-servers_inventory.yml
+```
+
+Your existing inventory configuration is:
+
+```yaml
+---
+plugin: netbox.netbox.nb_inventory
+api_endpoint: https://192.168.253.143
+token: YOUR_EXISTING_NETBOX_TOKEN
+validate_certs: false
+
+# Stop the schema fetch
+validate_query_filters: false
+fetch_all: true
+
+# Pull required data from NetBox
+config_context: true
+interfaces: true
+primary_ip: true
+services: false
+
+group_by:
+  - status
+  - tags
+
+# CentOS cluster
+query_filters:
+  - cluster_id: 1
+  - status: active
+  - status: staged
+
+compose:
+  ansible_host: primary_ip4.address.split('/')[0]
+  primary_ip4: primary_ip4.address.split('/')[0]
+```
+
+Do not change this file if it is already working in AWX.
+
+The important settings are:
+
+```yaml
+config_context: true
+interfaces: true
+primary_ip: true
+```
+
+These allow Ansible to retrieve information including:
+
+```text
+config_context
+primary_ip4
+ansible_host
+```
+
+---
+
+# 4. Install Required Python Dependency
+
+Initially, the NetBox inventory plugin returned:
+
+```text
+pytz must be installed to use this plugin
+```
+
+Install `pytz`:
+
+```bash
+cd ~/ANSIBLE
+
+python3 -m pip install pytz
+```
+
+Verify the installation:
+
+```bash
+python3 -c "import pytz; print(pytz.__version__)"
+```
+
+---
+
+# 5. Verify the NetBox Dynamic Inventory
+
+Go to the Ansible directory:
+
+```bash
+cd ~/ANSIBLE
+```
+
+Run:
+
+```bash
+ansible-inventory -i centos-07-servers_inventory.yml --graph
+```
+
+Your successful output includes:
+
+```text
+@all:
+  |--@ungrouped:
+  |--@status_staged:
+  |  |--cent-07-01.vgs.com
+  |  |--cent-07-02.vgs.com
+  |--@tags_centos-patch-context:
+  |  |--cent-07-01.vgs.com
+  |  |--cent-07-02.vgs.com
+  |--@tags_centostorocky-context:
+  |  |--cent-07-01.vgs.com
+  |  |--cent-07-02.vgs.com
+  |--@tags_patch-context:
+  |  |--cent-07-01.vgs.com
+  |  |--cent-07-02.vgs.com
+  |--@tags_pxe-centos-context:
+  |  |--cent-07-01.vgs.com
+  |  |--cent-07-02.vgs.com
+  |--@tags_repo-config-context:
+  |  |--cent-07-01.vgs.com
+  |  |--cent-07-02.vgs.com
+  |--@tags_vmware-awx-context:
+  |  |--cent-07-01.vgs.com
+  |  |--cent-07-02.vgs.com
+```
+
+This confirms that local Ansible is successfully fetching the inventory from NetBox.
+
+The CentOS hosts are:
+
+```text
+cent-07-01.vgs.com
+cent-07-02.vgs.com
+```
+
+Therefore use:
+
+```text
+cent-07-01
+```
+
+and not:
+
+```text
+centos-07-01
+```
+
+---
+
+# 6. View All NetBox Variables for a Host
+
+To view all variables fetched from NetBox for `cent-07-01.vgs.com`, run:
+
+```bash
+cd ~/ANSIBLE
+
+ansible-inventory \
+  -i centos-07-servers_inventory.yml \
+  --host cent-07-01.vgs.com
+```
+
+Important variables include:
+
+```text
+ansible_host
+primary_ip4
+config_context
+```
+
+---
+
+# 7. View the NetBox config_context
+
+Your inventory contains:
+
+```yaml
+config_context: true
+```
+
+Therefore the NetBox Config Context is available as:
+
+```text
+config_context
+```
+
+To view it for `cent-07-01`, run:
+
+```bash
+cd ~/ANSIBLE
+
+ansible \
+  -i centos-07-servers_inventory.yml \
+  'cent-07-01*' \
+  -m debug \
+  -a 'var=config_context'
+```
+
+This command does not modify anything.
+
+It only displays the Config Context received from NetBox.
+
+The output should contain values similar to:
+
+```yaml
+config_context:
+  - vcenter_hostname: ...
+    vcenter_username: ...
+    vcenter_password: ...
+    datacenter_name: ...
+    folder: ...
+    centos_template_name: ...
+    vm_network: ...
+    netmask: ...
+    gateway: ...
+    dns_servers:
+      - ...
+    vm_admin_user: ...
+    vm_admin_password: ...
+```
+
+The actual values are fetched from your NetBox Config Context.
+
+---
+
+# 8. How config_context Becomes nb_ctx
+
+Your existing playbook contains:
+
+```yaml
+- name: Load and normalize NetBox config context
+  set_fact:
+    nb_ctx: "{{ config_context[0] }}"
+  when: config_context is defined and config_context | length > 0
+```
+
+This means:
+
+```text
+config_context
+```
+
+is a list.
+
+The first object:
+
+```text
+config_context[0]
+```
+
+is assigned to:
+
+```text
+nb_ctx
+```
+
+The flow is:
+
+```text
+NetBox Config Context
+        ↓
+config_context
+        ↓
+config_context[0]
+        ↓
+nb_ctx
+```
+
+---
+
+# 9. View Exactly What Becomes nb_ctx
+
+Run:
+
+```bash
+cd ~/ANSIBLE
+
+ansible \
+  -i centos-07-servers_inventory.yml \
+  'cent-07-01*' \
+  -m debug \
+  -a 'msg={{ config_context[0] }}'
+```
+
+This displays exactly the data used by:
+
+```yaml
+nb_ctx: "{{ config_context[0] }}"
+```
+
+The existing playbook can then use values such as:
+
+```text
+nb_ctx.vcenter_hostname
+nb_ctx.vcenter_username
+nb_ctx.vcenter_password
+nb_ctx.datacenter_name
+nb_ctx.folder
+nb_ctx.centos_template_name
+nb_ctx.vm_network
+nb_ctx.netmask
+nb_ctx.gateway
+nb_ctx.dns_servers
+nb_ctx.vm_admin_user
+nb_ctx.vm_admin_password
+```
+
+No changes to the playbook are required.
+
+---
+
+# 10. Existing Master Playbook
+
+The master playbook is:
+
+```text
+~/ANSIBLE/CENTOS-VM-TEMPLATE/CENTOS-VM-TEMPLATE.yml
+```
+
+Its existing content is:
+
+```yaml
+---
+- import_playbook: Local_DNS.yml
+
+- import_playbook: Netbox-AWX-GOLDENTEMPLATE_CENTOS_07.yml
+```
+
+Do not change this file.
+
+The execution order is:
+
+```text
+CENTOS-VM-TEMPLATE.yml
+        │
+        ├── Local_DNS.yml
+        │
+        └── Netbox-AWX-GOLDENTEMPLATE_CENTOS_07.yml
+```
+
+Ansible runs:
+
+```text
+1. Local_DNS.yml
+2. Netbox-AWX-GOLDENTEMPLATE_CENTOS_07.yml
+```
+
+---
+
+# 11. How target_hosts Selects the Host
+
+Both existing playbooks use:
+
+```yaml
+hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
+```
+
+When you provide:
+
+```bash
+-e "target_hosts=cent-07-01"
+```
+
+the host pattern becomes:
+
+```text
+cent-07-01*
+```
+
+This matches:
+
+```text
+cent-07-01.vgs.com
+```
+
+Therefore no script changes are required.
+
+---
+
+# 12. Local_DNS.yml Execution
+
+The first imported playbook is:
+
+```text
+Local_DNS.yml
+```
+
+It receives the selected host from the NetBox inventory.
+
+It uses:
+
+```text
+inventory_hostname
+primary_ip4
+```
+
+It calculates:
+
+```text
+short_hostname
+dns_zone
+reverse_zone
+last_octet
+```
+
+It then performs:
+
+```text
+1. Determine target IP
+2. Validate required variables
+3. Calculate DNS information
+4. Display DNS information
+5. Create A Record in Technitium DNS
+6. Create PTR Record
+7. Verify Forward DNS
+8. Verify Reverse DNS
+9. Display summary
+```
+
+The DNS flow is:
+
+```text
+NetBox
+   ↓
+primary_ip4
+   ↓
+Local_DNS.yml
+   ↓
+Technitium DNS API
+   ↓
+Create A Record
+   ↓
+Create PTR Record
+   ↓
+Verify Forward DNS
+   ↓
+Verify Reverse DNS
+```
+
+---
+
+# 13. VM Provisioning Playbook
+
+The second imported playbook is:
+
+```text
+Netbox-AWX-GOLDENTEMPLATE_CENTOS_07.yml
+```
+
+It loads the NetBox Config Context:
+
+```yaml
+- name: Load and normalize NetBox config context
+  set_fact:
+    nb_ctx: "{{ config_context[0] }}"
+```
+
+It maps the target IP:
+
+```yaml
+- name: Map Target IP
+  set_fact:
+    target_ip: "{{ ansible_host }}"
+```
+
+The `ansible_host` value comes from the NetBox inventory:
+
+```yaml
+compose:
+  ansible_host: primary_ip4.address.split('/')[0]
+```
+
+The flow is:
+
+```text
+NetBox Primary IP
+        ↓
+primary_ip4.address
+        ↓
+Remove /CIDR
+        ↓
+ansible_host
+        ↓
+target_ip
+```
+
+---
+
+# 14. vCenter VM Creation
+
+The existing playbook uses:
+
+```text
+community.vmware.vmware_guest
+```
+
+It retrieves values from `nb_ctx`, including:
+
+```text
+nb_ctx.vcenter_hostname
+nb_ctx.vcenter_username
+nb_ctx.vcenter_password
+nb_ctx.datacenter_name
+nb_ctx.folder
+nb_ctx.centos_template_name
+nb_ctx.vm_network
+nb_ctx.netmask
+nb_ctx.gateway
+nb_ctx.dns_servers
+```
+
+The VM name is created using:
+
+```yaml
+inventory_hostname.split('.')[0]
+```
+
+For:
+
+```text
+cent-07-01.vgs.com
+```
+
+the VM name becomes:
+
+```text
+cent-07-01
+```
+
+The playbook creates the VM from:
+
+```text
+nb_ctx.centos_template_name
+```
+
+The network configuration uses:
+
+```text
+target_ip
+nb_ctx.netmask
+nb_ctx.gateway
+nb_ctx.dns_servers
+```
+
+The VM state is:
+
+```text
+poweredon
+```
+
+---
+
+# 15. Guest Configuration
+
+After the VM is created, the existing playbook performs guest configuration.
+
+It resets:
+
+```text
+/etc/machine-id
+/var/lib/dbus/machine-id
+```
+
+It removes existing SSH host keys:
+
+```text
+/etc/ssh/ssh_host_*
+```
+
+It then runs:
+
+```bash
+systemd-machine-id-setup
+ssh-keygen -A
+```
+
+It restarts SSH.
+
+The hostname is configured using:
+
+```bash
+hostnamectl set-hostname {{ inventory_hostname }}
+```
+
+For example:
+
+```text
+cent-07-01.vgs.com
+```
+
+The playbook detects the active NetworkManager connection and configures DNS using:
+
+```text
+nb_ctx.dns_servers
+```
+
+---
+
+# 16. Complete Data Flow
+
+```text
+                           ┌─────────────────────┐
+                           │       NetBox        │
+                           │                     │
+                           │ Host                │
+                           │ Primary IP          │
+                           │ Config Context      │
+                           └──────────┬──────────┘
+                                      │
+                                      ▼
+                    centos-07-servers_inventory.yml
+                                      │
+                                      ▼
+                         NetBox Dynamic Inventory
+                                      │
+                    ┌─────────────────┴─────────────────┐
+                    │                                   │
+                    ▼                                   ▼
+               primary_ip4                       config_context
+                    │                                   │
+                    ▼                                   ▼
+               ansible_host                      config_context[0]
+                    │                                   │
+                    ▼                                   ▼
+                target_ip                              nb_ctx
+                    │                                   │
+                    └─────────────────┬─────────────────┘
+                                      │
+                                      ▼
+                         CENTOS-VM-TEMPLATE.yml
+                                      │
+                    ┌─────────────────┴─────────────────┐
+                    │                                   │
+                    ▼                                   ▼
+                              Local_DNS.yml
+                    │                                   │
+                    │                          Technitium DNS
+                    │                                   │
+                    │                          A Record + PTR
+                    │                                   │
+                    └─────────────────┬─────────────────┘
+                                      │
+                                      ▼
+                   Netbox-AWX-GOLDENTEMPLATE_CENTOS_07.yml
+                                      │
+                                      ▼
+                              vCenter Connection
+                                      │
+                                      ▼
+                             Create VM from Template
+                                      │
+                                      ▼
+                              Configure VM Network
+                                      │
+                                      ▼
+                                 Power On VM
+                                      │
+                                      ▼
+                             Guest Configuration
+                                      │
+                                      ▼
+                                  Completed
+```
+
+---
+
+# 17. Complete Verification Commands
+
+Run the following commands before running the actual provisioning job.
+
+## Verify Current Directory
+
+```bash
+cd ~/ANSIBLE
+
+pwd
+```
+
+Expected:
+
+```text
+/home/vigne/ANSIBLE
+```
+
+## Verify Ansible
+
+```bash
+ansible --version
+```
+
+## Verify NetBox Inventory
+
+```bash
+ansible-inventory \
+  -i centos-07-servers_inventory.yml \
+  --graph
+```
+
+## View All Host Variables
+
+```bash
+ansible-inventory \
+  -i centos-07-servers_inventory.yml \
+  --host cent-07-01.vgs.com
+```
+
+## View config_context
+
+```bash
+ansible \
+  -i centos-07-servers_inventory.yml \
+  'cent-07-01*' \
+  -m debug \
+  -a 'var=config_context'
+```
+
+## View Exactly What Becomes nb_ctx
+
+```bash
+ansible \
+  -i centos-07-servers_inventory.yml \
+  'cent-07-01*' \
+  -m debug \
+  -a 'msg={{ config_context[0] }}'
+```
+
+If all these commands work successfully, local Ansible is correctly retrieving the required host, IP address, and Config Context information from NetBox.
+
+---
+
+# 18. Run the Complete Existing Job
+
+Go to the playbook directory:
+
+```bash
+cd ~/ANSIBLE/CENTOS-VM-TEMPLATE
+```
+
+Verify the files:
+
+```bash
+ls
+```
+
+Expected:
+
+```text
+CENTOS-VM-TEMPLATE.yml
+Local_DNS.yml
+Netbox-AWX-GOLDENTEMPLATE_CENTOS_07.yml
+```
+
+Run the complete existing job:
+
+```bash
+ansible-playbook \
+  -i ../centos-07-servers_inventory.yml \
+  CENTOS-VM-TEMPLATE.yml \
+  -e "target_hosts=cent-07-01"
+```
+
+---
+
+# 19. Final Command Explanation
+
+The inventory used is:
+
+```text
+../centos-07-servers_inventory.yml
+```
+
+This connects to NetBox and fetches:
+
+```text
+Host
+Primary IP
+Config Context
+```
+
+The selected target is:
+
+```text
+target_hosts=cent-07-01
+```
+
+This matches:
+
+```text
+cent-07-01.vgs.com
+```
+
+The master playbook is:
+
+```text
+CENTOS-VM-TEMPLATE.yml
+```
+
+It runs:
+
+```text
+1. Local_DNS.yml
+2. Netbox-AWX-GOLDENTEMPLATE_CENTOS_07.yml
+```
+
+The complete execution flow is:
+
+```text
+NetBox
+  ↓
+centos-07-servers_inventory.yml
+  ↓
+NetBox Dynamic Inventory Plugin
+  ↓
+cent-07-01.vgs.com
+  ↓
+primary_ip4 + ansible_host + config_context
+  ↓
+nb_ctx = config_context[0]
+  ↓
+CENTOS-VM-TEMPLATE.yml
+  ↓
+Local_DNS.yml
+  ↓
+Create A Record
+Create PTR Record
+Verify Forward DNS
+Verify Reverse DNS
+  ↓
+Netbox-AWX-GOLDENTEMPLATE_CENTOS_07.yml
+  ↓
+Connect to vCenter
+  ↓
+Create VM from CentOS Template
+  ↓
+Configure Network
+  ↓
+Power On VM
+  ↓
+Guest Configuration
+  ↓
+Completed
+```
+
+---
+
+# 20. Complete Command Sequence
+
+Use this complete command sequence:
+
+```bash
+cd ~/ANSIBLE
+
+ansible-inventory \
+  -i centos-07-servers_inventory.yml \
+  --graph
+
+ansible-inventory \
+  -i centos-07-servers_inventory.yml \
+  --host cent-07-01.vgs.com
+
+ansible \
+  -i centos-07-servers_inventory.yml \
+  'cent-07-01*' \
+  -m debug \
+  -a 'var=config_context'
+
+ansible \
+  -i centos-07-servers_inventory.yml \
+  'cent-07-01*' \
+  -m debug \
+  -a 'msg={{ config_context[0] }}'
+
+cd ~/ANSIBLE/CENTOS-VM-TEMPLATE
+
+ansible-playbook \
+  -i ../centos-07-servers_inventory.yml \
+  CENTOS-VM-TEMPLATE.yml \
+  -e "target_hosts=cent-07-01"
+```
+
+---
+
+# 21. Final Command
+
+```bash
+cd ~/ANSIBLE/CENTOS-VM-TEMPLATE
+
+ansible-playbook \
+  -i ../centos-07-servers_inventory.yml \
+  CENTOS-VM-TEMPLATE.yml \
+  -e "target_hosts=cent-07-01"
+```
+
+# No Existing Script Changes Required
+
+The existing files remain unchanged:
+
+```text
+CENTOS-VM-TEMPLATE.yml
+Local_DNS.yml
+Netbox-AWX-GOLDENTEMPLATE_CENTOS_07.yml
+centos-07-servers_inventory.yml
+```
+
+Local Ansible uses the same NetBox dynamic inventory by explicitly providing:
+
+```bash
+-i ../centos-07-servers_inventory.yml
+```
+
+The target host is selected with:
+
+```bash
+-e "target_hosts=cent-07-01"
+```
+
+The existing playbook then automatically uses:
+
+```text
+config_context
+        ↓
+config_context[0]
+        ↓
+nb_ctx
+```
+
+to retrieve the required vCenter, template, network, DNS, and guest configuration values from NetBox.
 ---
 
 # 40. Final SOP Summary
