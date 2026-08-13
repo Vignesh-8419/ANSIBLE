@@ -5,33 +5,42 @@
   gather_facts: false
 
   vars:
-    # Path used to execute vmrun from Git Bash / Ansible
+    # VMware Workstation vmrun executable
     vmrun_path: 'D:/VM workstation/vmrun.exe'
 
-    # VMX paths
+    # VMX file paths
     esxi_vmx: 'D:/ESXI/VMware ESXi 7 and later.vmx'
     vcenter_vmx: 'D:/vCenter/vCenter.vmx'
 
-    # Paths exactly as returned by: vmrun -T ws list
-    esxi_vmx_running: 'D:\ESXI\VMware ESXi 7 and later.vmx'
-    vcenter_vmx_running: 'D:\vCenter\vCenter.vmx'
-
+    # Variables passed from command line
     target: "{{ target_vm | default('all') }}"
     power_action: "{{ power | default('on') }}"
 
   tasks:
 
+    # ============================================================
+    # VALIDATION
+    # ============================================================
+
     - name: Validate target
       ansible.builtin.assert:
         that:
           - target in ['esxi', 'vcenter', 'all']
-        fail_msg: "Invalid target '{{ target }}'. Use: esxi, vcenter, or all."
+        fail_msg: >-
+          Invalid target '{{ target }}'.
+          Use: esxi, vcenter, or all.
 
     - name: Validate power action
       ansible.builtin.assert:
         that:
           - power_action in ['on', 'off']
-        fail_msg: "Invalid power action '{{ power_action }}'. Use: on or off."
+        fail_msg: >-
+          Invalid power action '{{ power_action }}'.
+          Use: on or off.
+
+    # ============================================================
+    # CHECK CURRENTLY RUNNING VMS
+    # ============================================================
 
     - name: Check currently running VMware Workstation VMs
       ansible.builtin.command:
@@ -49,11 +58,19 @@
 
     - name: Set ESXi running state
       ansible.builtin.set_fact:
-        esxi_running: "{{ esxi_vmx_running in vmrun_list.stdout }}"
+        esxi_running: >-
+          {{
+            'D:\\ESXI\\VMware ESXi 7 and later.vmx'
+            in vmrun_list.stdout
+          }}
 
     - name: Set vCenter running state
       ansible.builtin.set_fact:
-        vcenter_running: "{{ vcenter_vmx_running in vmrun_list.stdout }}"
+        vcenter_running: >-
+          {{
+            'D:\\vCenter\\vCenter.vmx'
+            in vmrun_list.stdout
+          }}
 
     - name: Display VM states
       ansible.builtin.debug:
@@ -63,25 +80,13 @@
 
     # ============================================================
     # POWER ON / RESUME
+    #
+    # vmrun start handles both:
+    #   - Powered OFF VM -> starts it
+    #   - Suspended VM    -> resumes it
     # ============================================================
 
-    - name: Resume ESXi if paused
-      ansible.builtin.command:
-        argv:
-          - "{{ vmrun_path }}"
-          - "-T"
-          - "ws"
-          - "unpause"
-          - "{{ esxi_vmx }}"
-      register: esxi_unpause
-      failed_when: false
-      changed_when: esxi_unpause.rc == 0
-      when:
-        - power_action == 'on'
-        - target in ['esxi', 'all']
-        - esxi_running
-
-    - name: Power ON ESXi if not running
+    - name: Start or resume ESXi
       ansible.builtin.command:
         argv:
           - "{{ vmrun_path }}"
@@ -90,28 +95,14 @@
           - "start"
           - "{{ esxi_vmx }}"
           - "nogui"
+      register: esxi_start
+      changed_when: esxi_start.rc == 0
       when:
         - power_action == 'on'
         - target in ['esxi', 'all']
         - not esxi_running
 
-    - name: Resume vCenter if paused
-      ansible.builtin.command:
-        argv:
-          - "{{ vmrun_path }}"
-          - "-T"
-          - "ws"
-          - "unpause"
-          - "{{ vcenter_vmx }}"
-      register: vcenter_unpause
-      failed_when: false
-      changed_when: vcenter_unpause.rc == 0
-      when:
-        - power_action == 'on'
-        - target in ['vcenter', 'all']
-        - vcenter_running
-
-    - name: Power ON vCenter if not running
+    - name: Start or resume vCenter
       ansible.builtin.command:
         argv:
           - "{{ vmrun_path }}"
@@ -120,6 +111,8 @@
           - "start"
           - "{{ vcenter_vmx }}"
           - "nogui"
+      register: vcenter_start
+      changed_when: vcenter_start.rc == 0
       when:
         - power_action == 'on'
         - target in ['vcenter', 'all']
@@ -127,6 +120,10 @@
 
     # ============================================================
     # POWER OFF
+    #
+    # When target=all:
+    #   1. Power OFF vCenter
+    #   2. Power OFF ESXi
     # ============================================================
 
     - name: Power OFF vCenter gracefully
@@ -138,6 +135,8 @@
           - "stop"
           - "{{ vcenter_vmx }}"
           - "soft"
+      register: vcenter_stop
+      changed_when: vcenter_stop.rc == 0
       when:
         - power_action == 'off'
         - target in ['vcenter', 'all']
@@ -152,11 +151,19 @@
           - "stop"
           - "{{ esxi_vmx }}"
           - "hard"
+      register: esxi_stop
+      changed_when: esxi_stop.rc == 0
       when:
         - power_action == 'off'
         - target in ['esxi', 'all']
         - esxi_running
 
+    # ============================================================
+    # COMPLETION
+    # ============================================================
+
     - name: Show completion message
       ansible.builtin.debug:
-        msg: "Requested {{ power_action | upper }} operation completed for {{ target }}."
+        msg: >-
+          Requested {{ power_action | upper }} operation completed
+          for {{ target }}.
