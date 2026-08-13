@@ -2978,6 +2978,8 @@ Use this complete command sequence:
 ```bash
 cd ~/ANSIBLE
 
+ansible cent-07-01.vgs.com,cent-07-02.vgs.com -i centos-07-servers_inventory.yml -u root --ask-pass -m raw -a "yum install -y python3"
+
 ansible-inventory -i centos-07-servers_inventory.yml --graph
 
 ansible-inventory -i centos-07-servers_inventory.yml --host cent-07-01.vgs.com
