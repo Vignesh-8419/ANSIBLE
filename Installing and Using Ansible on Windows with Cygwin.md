@@ -2308,9 +2308,7 @@ To view all variables fetched from NetBox for `cent-07-01.vgs.com`, run:
 ```bash
 cd ~/ANSIBLE
 
-ansible-inventory \
-  -i centos-07-servers_inventory.yml \
-  --host cent-07-01.vgs.com
+ansible-inventory -i centos-07-servers_inventory.yml --host cent-07-01.vgs.com
 ```
 
 Important variables include:
@@ -2342,11 +2340,7 @@ To view it for `cent-07-01`, run:
 ```bash
 cd ~/ANSIBLE
 
-ansible \
-  -i centos-07-servers_inventory.yml \
-  'cent-07-01*' \
-  -m debug \
-  -a 'var=config_context'
+ansible -i centos-07-servers_inventory.yml 'cent-07-01*' -m debug -a 'var=config_context'
 ```
 
 This command does not modify anything.
@@ -2428,11 +2422,7 @@ Run:
 ```bash
 cd ~/ANSIBLE
 
-ansible \
-  -i centos-07-servers_inventory.yml \
-  'cent-07-01*' \
-  -m debug \
-  -a 'msg={{ config_context[0] }}'
+ansible -i centos-07-servers_inventory.yml 'cent-07-01*' -m debug -a 'msg={{ config_context[0] }}'
 ```
 
 This displays exactly the data used by:
@@ -2844,37 +2834,25 @@ ansible --version
 ## Verify NetBox Inventory
 
 ```bash
-ansible-inventory \
-  -i centos-07-servers_inventory.yml \
-  --graph
+ansible-inventory -i centos-07-servers_inventory.yml --graph
 ```
 
 ## View All Host Variables
 
 ```bash
-ansible-inventory \
-  -i centos-07-servers_inventory.yml \
-  --host cent-07-01.vgs.com
+ansible-inventory -i centos-07-servers_inventory.yml --host cent-07-01.vgs.com
 ```
 
 ## View config_context
 
 ```bash
-ansible \
-  -i centos-07-servers_inventory.yml \
-  'cent-07-01*' \
-  -m debug \
-  -a 'var=config_context'
+ansible -i centos-07-servers_inventory.yml 'cent-07-01*' -m debug -a 'var=config_context'
 ```
 
 ## View Exactly What Becomes nb_ctx
 
 ```bash
-ansible \
-  -i centos-07-servers_inventory.yml \
-  'cent-07-01*' \
-  -m debug \
-  -a 'msg={{ config_context[0] }}'
+ansible -i centos-07-servers_inventory.yml 'cent-07-01*' -m debug -a 'msg={{ config_context[0] }}'
 ```
 
 If all these commands work successfully, local Ansible is correctly retrieving the required host, IP address, and Config Context information from NetBox.
@@ -2906,10 +2884,7 @@ Netbox-AWX-GOLDENTEMPLATE_CENTOS_07.yml
 Run the complete existing job:
 
 ```bash
-ansible-playbook \
-  -i ../centos-07-servers_inventory.yml \
-  CENTOS-VM-TEMPLATE.yml \
-  -e "target_hosts=cent-07-01"
+ansible-playbook -i ../centos-07-servers_inventory.yml CENTOS-VM-TEMPLATE.yml -e "target_hosts=cent-07-01"
 ```
 
 ---
@@ -3003,32 +2978,17 @@ Use this complete command sequence:
 ```bash
 cd ~/ANSIBLE
 
-ansible-inventory \
-  -i centos-07-servers_inventory.yml \
-  --graph
+ansible-inventory -i centos-07-servers_inventory.yml --graph
 
-ansible-inventory \
-  -i centos-07-servers_inventory.yml \
-  --host cent-07-01.vgs.com
+ansible-inventory -i centos-07-servers_inventory.yml --host cent-07-01.vgs.com
 
-ansible \
-  -i centos-07-servers_inventory.yml \
-  'cent-07-01*' \
-  -m debug \
-  -a 'var=config_context'
+ansible -i centos-07-servers_inventory.yml 'cent-07-01*' -m debug -a 'var=config_context'
 
-ansible \
-  -i centos-07-servers_inventory.yml \
-  'cent-07-01*' \
-  -m debug \
-  -a 'msg={{ config_context[0] }}'
+ansible -i centos-07-servers_inventory.yml 'cent-07-01*' -m debug -a 'msg={{ config_context[0] }}'
 
 cd ~/ANSIBLE/CENTOS-VM-TEMPLATE
 
-ansible-playbook \
-  -i ../centos-07-servers_inventory.yml \
-  CENTOS-VM-TEMPLATE.yml \
-  -e "target_hosts=cent-07-01"
+ansible-playbook -i ../centos-07-servers_inventory.yml CENTOS-VM-TEMPLATE.yml -e "target_hosts=cent-07-01"
 ```
 
 ---
@@ -3038,10 +2998,7 @@ ansible-playbook \
 ```bash
 cd ~/ANSIBLE/CENTOS-VM-TEMPLATE
 
-ansible-playbook \
-  -i ../centos-07-servers_inventory.yml \
-  CENTOS-VM-TEMPLATE.yml \
-  -e "target_hosts=cent-07-01"
+ansible-playbook -i ../centos-07-servers_inventory.yml CENTOS-VM-TEMPLATE.yml -e "target_hosts=cent-07-01"
 ```
 
 # No Existing Script Changes Required
