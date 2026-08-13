@@ -3001,6 +3001,14 @@ cd ~/ANSIBLE/CENTOS-VM-TEMPLATE
 ansible-playbook -i ../centos-07-servers_inventory.yml CENTOS-VM-TEMPLATE.yml -e "target_hosts=cent-07-01"
 ```
 
+Run your foreman_setup.yml from ~/ANSIBLE like this:
+
+```bash
+cd ~/ANSIBLE
+
+ansible-playbook -i centos-07-servers_inventory.yml foreman_setup.yml --limit cent-07-01.vgs.com --ask-pass --ask-become-pass
+```
+
 # No Existing Script Changes Required
 
 The existing files remain unchanged:
