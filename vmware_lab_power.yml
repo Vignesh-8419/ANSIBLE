@@ -8,7 +8,7 @@
     # Path used to execute vmrun from Git Bash / Ansible
     vmrun_path: 'D:/VM workstation/vmrun.exe'
 
-    # Paths used when starting/stopping VMs
+    # VMX paths
     esxi_vmx: 'D:/ESXI/VMware ESXi 7 and later.vmx'
     vcenter_vmx: 'D:/vCenter/vCenter.vmx'
 
@@ -62,10 +62,26 @@
           - "vCenter running: {{ vcenter_running }}"
 
     # ============================================================
-    # POWER ON
+    # POWER ON / RESUME
     # ============================================================
 
-    - name: Power ON ESXi
+    - name: Resume ESXi if paused
+      ansible.builtin.command:
+        argv:
+          - "{{ vmrun_path }}"
+          - "-T"
+          - "ws"
+          - "unpause"
+          - "{{ esxi_vmx }}"
+      register: esxi_unpause
+      failed_when: false
+      changed_when: esxi_unpause.rc == 0
+      when:
+        - power_action == 'on'
+        - target in ['esxi', 'all']
+        - esxi_running
+
+    - name: Power ON ESXi if not running
       ansible.builtin.command:
         argv:
           - "{{ vmrun_path }}"
@@ -79,7 +95,23 @@
         - target in ['esxi', 'all']
         - not esxi_running
 
-    - name: Power ON vCenter
+    - name: Resume vCenter if paused
+      ansible.builtin.command:
+        argv:
+          - "{{ vmrun_path }}"
+          - "-T"
+          - "ws"
+          - "unpause"
+          - "{{ vcenter_vmx }}"
+      register: vcenter_unpause
+      failed_when: false
+      changed_when: vcenter_unpause.rc == 0
+      when:
+        - power_action == 'on'
+        - target in ['vcenter', 'all']
+        - vcenter_running
+
+    - name: Power ON vCenter if not running
       ansible.builtin.command:
         argv:
           - "{{ vmrun_path }}"
