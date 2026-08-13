@@ -2041,6 +2041,7 @@ git pull origin main
 ```
 python3 -m pip install pyvmomi
 python3 -m pip install requests
+python3 -m pip install pytz
 ```
 
 Install the required collection on Cygwin:
