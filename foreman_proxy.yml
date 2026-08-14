@@ -1,19 +1,17 @@
 ---
 # ==============================================================================
-# FILE: foreman_proxy.yml
+# FOREMAN SMART PROXY CONTENT INSTALLATION
 #
-# RUN:
+# Run:
+#
 # ansible-playbook -i centos-07-servers_inventory.yml foreman_proxy.yml \
 #   -e ansible_python_interpreter=/usr/bin/python3 \
 #   -u admin
-#
-# FOREMAN SERVER : cent-07-01.vgs.com
-# SMART PROXY    : cent-07-02.vgs.com
 # ==============================================================================
 
 
 # ==============================================================================
-# PLAY 1 - Generate Smart Proxy certificate on Foreman Server
+# PLAY 1 - GENERATE SMART PROXY CERTIFICATE ON FOREMAN SERVER
 # ==============================================================================
 
 - name: Generate Smart Proxy certificate on Foreman Server
@@ -22,24 +20,22 @@
   gather_facts: false
 
   vars:
-    foreman_server: cent-07-01.vgs.com
-    foreman_proxy: cent-07-02.vgs.com
+    foreman_server: "cent-07-01.vgs.com"
+    foreman_proxy: "cent-07-02.vgs.com"
 
-    remote_cert_file: "/root/{{ foreman_proxy }}-certs.tar"
-    cert_output_file: "/tmp/{{ foreman_proxy }}-certs-output.txt"
-
-    local_cert_file: "/tmp/{{ foreman_proxy }}-certs.tar"
+    cert_file: "/root/cent-07-02.vgs.com-certs.tar"
+    cert_output: "/tmp/cent-07-02.vgs.com-certs-output.txt"
 
   tasks:
 
     - name: Remove old Smart Proxy certificate archive
       ansible.builtin.file:
-        path: "{{ remote_cert_file }}"
+        path: "{{ cert_file }}"
         state: absent
 
     - name: Remove old certificate generation output
       ansible.builtin.file:
-        path: "{{ cert_output_file }}"
+        path: "{{ cert_output }}"
         state: absent
 
     - name: Generate fresh Smart Proxy certificates
@@ -48,219 +44,178 @@
 
         foreman-proxy-certs-generate \
           --foreman-proxy-fqdn "{{ foreman_proxy }}" \
-          --certs-tar "{{ remote_cert_file }}" \
-          2>&1 | tee "{{ cert_output_file }}"
+          --certs-tar "{{ cert_file }}" \
+          2>&1 | tee "{{ cert_output }}"
       args:
         executable: /bin/bash
-      register: certificate_generation
 
     - name: Verify Smart Proxy certificate archive exists
       ansible.builtin.stat:
-        path: "{{ remote_cert_file }}"
-      register: certificate_archive
+        path: "{{ cert_file }}"
+      register: proxy_cert_stat
 
     - name: Fail if Smart Proxy certificate archive was not created
-      ansible.builtin.fail:
-        msg: |
-          Smart Proxy certificate archive was not created.
+      ansible.builtin.assert:
+        that:
+          - proxy_cert_stat.stat.exists
+          - proxy_cert_stat.stat.size | int > 0
+        fail_msg: |
+          Smart Proxy certificate archive was not created:
+          {{ cert_file }}
 
-          Expected:
-          {{ remote_cert_file }}
-      when: not certificate_archive.stat.exists
+    # --------------------------------------------------------------------------
+    # DISPLAY THE OUTPUT FOR TROUBLESHOOTING
+    # --------------------------------------------------------------------------
+
+    - name: Read certificate generation output
+      ansible.builtin.slurp:
+        src: "{{ cert_output }}"
+      register: cert_generation_output
+
+    - name: Store certificate generation output as text
+      ansible.builtin.set_fact:
+        cert_generation_text: "{{ cert_generation_output.content | b64decode }}"
+
+    - name: Display certificate generation output
+      ansible.builtin.debug:
+        var: cert_generation_text
+
+    # --------------------------------------------------------------------------
+    # EXTRACT OAUTH KEY
+    #
+    # Handles:
+    #
+    # --foreman-proxy-oauth-consumer-key "VALUE"
+    # --foreman-proxy-oauth-consumer-key 'VALUE'
+    # --foreman-proxy-oauth-consumer-key VALUE
+    # --------------------------------------------------------------------------
 
     - name: Extract OAuth consumer key
-      ansible.builtin.shell: |
-        grep -- '--foreman-proxy-oauth-consumer-key' "{{ cert_output_file }}" \
-        | tail -1 \
-        | sed -n 's/.*--foreman-proxy-oauth-consumer-key "\([^"]*\)".*/\1/p'
-      args:
-        executable: /bin/bash
-      register: oauth_key_result
-      changed_when: false
-
-    - name: Extract OAuth consumer secret
-      ansible.builtin.shell: |
-        grep -- '--foreman-proxy-oauth-consumer-secret' "{{ cert_output_file }}" \
-        | tail -1 \
-        | sed -n 's/.*--foreman-proxy-oauth-consumer-secret "\([^"]*\)".*/\1/p'
-      args:
-        executable: /bin/bash
-      register: oauth_secret_result
-      changed_when: false
+      ansible.builtin.set_fact:
+        proxy_oauth_key: >-
+          {{
+            cert_generation_text
+            | regex_search(
+                '--foreman-proxy-oauth-consumer-key[=[:space:]]+["'']?([^"''[:space:]\\\\]+)',
+                '\1'
+              )
+            | default([], true)
+            | first
+            | default('')
+          }}
       no_log: true
 
-    - name: Store OAuth credentials
+    - name: Extract OAuth consumer secret
       ansible.builtin.set_fact:
-        proxy_oauth_key: "{{ oauth_key_result.stdout | trim }}"
-        proxy_oauth_secret: "{{ oauth_secret_result.stdout | trim }}"
+        proxy_oauth_secret: >-
+          {{
+            cert_generation_text
+            | regex_search(
+                '--foreman-proxy-oauth-consumer-secret[=[:space:]]+["'']?([^"''[:space:]\\\\]+)',
+                '\1'
+              )
+            | default([], true)
+            | first
+            | default('')
+          }}
       no_log: true
 
     - name: Verify OAuth consumer key was extracted
       ansible.builtin.assert:
         that:
-          - proxy_oauth_key is defined
           - proxy_oauth_key | length > 0
         fail_msg: |
           OAuth consumer key could not be extracted from:
 
-          {{ cert_output_file }}
+          {{ cert_output }}
+
+          Check the "Display certificate generation output" task above.
 
     - name: Verify OAuth consumer secret was extracted
       ansible.builtin.assert:
         that:
-          - proxy_oauth_secret is defined
           - proxy_oauth_secret | length > 0
         fail_msg: |
           OAuth consumer secret could not be extracted from:
 
-          {{ cert_output_file }}
-      no_log: true
+          {{ cert_output }}
 
-    - name: Display certificate generation status
+          Check the "Display certificate generation output" task above.
+
+    - name: Display OAuth extraction status
       ansible.builtin.debug:
         msg:
           - "Smart Proxy certificate generated successfully"
-          - "Certificate: {{ remote_cert_file }}"
           - "OAuth consumer key extracted successfully"
           - "OAuth consumer secret extracted successfully"
-
-    - name: Fetch Smart Proxy certificate to Ansible controller
-      ansible.builtin.fetch:
-        src: "{{ remote_cert_file }}"
-        dest: "{{ local_cert_file }}"
-        flat: true
+          - "Certificate file: {{ cert_file }}"
 
 
 # ==============================================================================
-# PLAY 2 - Install and Configure Foreman Smart Proxy Content
+# PLAY 2 - COPY CERTIFICATE TO SMART PROXY
 # ==============================================================================
 
-- name: Install and configure Foreman Smart Proxy Content
+- name: Copy Smart Proxy certificate to Smart Proxy server
   hosts: cent-07-02.vgs.com
   become: true
   gather_facts: false
 
   vars:
-    foreman_server: cent-07-01.vgs.com
-    foreman_proxy: cent-07-02.vgs.com
+    foreman_server: "cent-07-01.vgs.com"
+    foreman_proxy: "cent-07-02.vgs.com"
 
-    proxy_ip: "192.168.253.132"
-
-    local_cert_file: "/tmp/{{ foreman_proxy }}-certs.tar"
-    proxy_cert_file: "/root/{{ foreman_proxy }}-certs.tar"
-
-    foreman_oauth_key: "{{ hostvars['cent-07-01.vgs.com']['proxy_oauth_key'] }}"
-    foreman_oauth_secret: "{{ hostvars['cent-07-01.vgs.com']['proxy_oauth_secret'] }}"
+    cert_file: "/root/cent-07-02.vgs.com-certs.tar"
+    cert_output: "/tmp/cent-07-02.vgs.com-certs-output.txt"
 
   tasks:
 
-    # ==========================================================================
-    # COPY CERTIFICATE
-    # ==========================================================================
+    - name: Copy Smart Proxy certificate archive from Foreman
+      ansible.builtin.fetch:
+        src: "{{ cert_file }}"
+        dest: "/tmp/"
+        flat: true
+      delegate_to: "{{ foreman_server }}"
+      become: true
 
-    - name: Copy Smart Proxy certificate archive to Proxy server
+    - name: Copy certificate archive to Smart Proxy
       ansible.builtin.copy:
-        src: "{{ local_cert_file }}"
-        dest: "{{ proxy_cert_file }}"
+        src: "/tmp/cent-07-02.vgs.com-certs.tar"
+        dest: "/root/cent-07-02.vgs.com-certs.tar"
         owner: root
         group: root
         mode: "0600"
 
-    - name: Verify OAuth key is available
+    - name: Verify certificate archive exists on Smart Proxy
+      ansible.builtin.stat:
+        path: "/root/cent-07-02.vgs.com-certs.tar"
+      register: proxy_cert_remote
+
+    - name: Fail if certificate archive is missing on Smart Proxy
       ansible.builtin.assert:
         that:
-          - foreman_oauth_key is defined
-          - foreman_oauth_key | length > 0
+          - proxy_cert_remote.stat.exists
+          - proxy_cert_remote.stat.size | int > 0
         fail_msg: |
-          OAuth consumer key is empty.
-
-          Certificate generation did not return a valid OAuth key.
-
-    - name: Verify OAuth secret is available
-      ansible.builtin.assert:
-        that:
-          - foreman_oauth_secret is defined
-          - foreman_oauth_secret | length > 0
-        fail_msg: |
-          OAuth consumer secret is empty.
-
-          Certificate generation did not return a valid OAuth secret.
-      no_log: true
+          Certificate archive was not copied successfully to Smart Proxy.
 
 
-    # ==========================================================================
-    # NETWORK INTERFACE
-    # ==========================================================================
+# ==============================================================================
+# PLAY 3 - CONFIGURE REPOSITORIES AND INSTALL REQUIRED PACKAGES
+# ==============================================================================
 
-    - name: Detect default route network interface
-      ansible.builtin.shell: |
-        ip -o route show default | awk '{print $5; exit}'
-      args:
-        executable: /bin/bash
-      register: default_interface
-      changed_when: false
+- name: Prepare Smart Proxy repositories and packages
+  hosts: cent-07-02.vgs.com
+  become: true
+  gather_facts: false
 
-    - name: Detect fallback network interface
-      ansible.builtin.shell: |
-        ip -o -4 addr show | awk '$2 != "lo" {print $2; exit}'
-      args:
-        executable: /bin/bash
-      register: fallback_interface
-      changed_when: false
-      when: default_interface.stdout | trim == ""
+  vars:
+    foreman_proxy: "cent-07-02.vgs.com"
 
-    - name: Set Smart Proxy network interface
-      ansible.builtin.set_fact:
-        proxy_interface: >-
-          {{
-            default_interface.stdout | trim
-            if default_interface.stdout | trim != ''
-            else fallback_interface.stdout | trim
-          }}
+  tasks:
 
-    - name: Fail if network interface cannot be detected
-      ansible.builtin.fail:
-        msg: |
-          Unable to detect an active network interface.
-
-          Default route:
-          {{ default_interface.stdout }}
-      when: proxy_interface | length == 0
-
-    - name: Display detected network interface
-      ansible.builtin.debug:
-        msg: "Detected Smart Proxy interface: {{ proxy_interface }}"
-
-
-    # ==========================================================================
-    # CLEAN OLD DUPLICATE REPOSITORIES
-    # ==========================================================================
-
-    - name: Remove old GTK repository file
-      ansible.builtin.file:
-        path: /etc/yum.repos.d/gtk.repo
-        state: absent
-
-    - name: Remove old Mesa repository file
-      ansible.builtin.file:
-        path: /etc/yum.repos.d/mesa.repo
-        state: absent
-
-    - name: Remove old Foreman Proxy repository file
-      ansible.builtin.file:
-        path: /etc/yum.repos.d/foreman-proxy.repo
-        state: absent
-
-
-    # ==========================================================================
-    # CONFIGURE REPOSITORIES
-    # ==========================================================================
-
-    - name: Configure local patch repository
+    - name: Create local patch repository
       ansible.builtin.copy:
         dest: /etc/yum.repos.d/patch.repo
-        owner: root
-        group: root
         mode: "0644"
         content: |
           [local-patch]
@@ -269,11 +224,9 @@
           enabled=1
           gpgcheck=0
 
-    - name: Configure Mesa repository
+    - name: Create local Mesa repository
       ansible.builtin.copy:
         dest: /etc/yum.repos.d/mesa.repo
-        owner: root
-        group: root
         mode: "0644"
         content: |
           [mesa]
@@ -283,11 +236,9 @@
           gpgcheck=0
           priority=1
 
-    - name: Configure GTK repository
+    - name: Create local GTK repository
       ansible.builtin.copy:
         dest: /etc/yum.repos.d/gtk.repo
-        owner: root
-        group: root
         mode: "0644"
         content: |
           [gtk]
@@ -297,11 +248,9 @@
           gpgcheck=0
           priority=1
 
-    - name: Configure Puppet 7 repository
+    - name: Create Puppet repository
       ansible.builtin.copy:
-        dest: /etc/yum.repos.d/puppet7.repo
-        owner: root
-        group: root
+        dest: /etc/yum.repos.d/puppet.repo
         mode: "0644"
         content: |
           [puppet7]
@@ -310,232 +259,135 @@
           enabled=1
           gpgcheck=0
 
-    - name: Configure Foreman repository
+    - name: Create Foreman repository
       ansible.builtin.copy:
-        dest: /etc/yum.repos.d/foreman.repo
-        owner: root
-        group: root
+        dest: /etc/yum.repos.d/foreman-online.repo
         mode: "0644"
         content: |
           [foreman]
-          name=Foreman 3.2 EL7 Repository
+          name=Foreman 3.2 EL7
           baseurl=https://yum-backend.repo-rpm01.osuosl.theforeman.org/releases/3.2/el7/x86_64/
           enabled=1
           gpgcheck=0
 
-    - name: Configure Foreman plugins repository
-      ansible.builtin.copy:
-        dest: /etc/yum.repos.d/foreman-plugins.repo
-        owner: root
-        group: root
-        mode: "0644"
-        content: |
           [foreman-plugins]
-          name=Foreman Plugins 3.2 EL7 Repository
+          name=Foreman Plugins 3.2 EL7
           baseurl=https://yum.theforeman.org/plugins/3.2/el7/x86_64/
           enabled=1
           gpgcheck=0
 
-    - name: Configure CentOS 7 Vault repository
-      ansible.builtin.copy:
-        dest: /etc/yum.repos.d/vault.repo
-        owner: root
-        group: root
-        mode: "0644"
-        content: |
-          [vaultbase]
-          name=CentOS Vault Base
-          baseurl=http://vault.centos.org/7.9.2009/os/x86_64/
-          enabled=1
-          gpgcheck=0
-
-          [updates]
-          name=CentOS Vault Updates
-          baseurl=http://vault.centos.org/7.9.2009/updates/x86_64/
-          enabled=1
-          gpgcheck=0
-
-          [extras]
-          name=CentOS Vault Extras
-          baseurl=http://vault.centos.org/7.9.2009/extras/x86_64/
-          enabled=1
-          gpgcheck=0
-
-
-    # ==========================================================================
-    # YUM CACHE
-    # ==========================================================================
-
-    - name: Clean YUM metadata
+    - name: Clean YUM cache
       ansible.builtin.command: yum clean all
       changed_when: false
 
-    - name: Remove old YUM cache
-      ansible.builtin.file:
-        path: /var/cache/yum
-        state: absent
-
-    - name: Recreate YUM cache directory
-      ansible.builtin.file:
-        path: /var/cache/yum
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-
-    - name: Build YUM cache
+    - name: Rebuild YUM cache
       ansible.builtin.command: yum makecache
       changed_when: false
 
-
-    # ==========================================================================
-    # INSTALL REQUIRED PACKAGES
-    # ==========================================================================
-
-    - name: Install base dependencies
+    - name: Install base required packages
       ansible.builtin.yum:
         name:
           - sshpass
-          - mesa-libEGL
-          - gtk3
-        state: present
-
-    - name: Install Foreman packages
-      ansible.builtin.yum:
-        name:
           - foreman
           - foreman-proxy
-          - puppetserver
           - foreman-installer
+          - puppetserver
         state: present
 
-
-    # ==========================================================================
-    # CONTAINER GATEWAY PACKAGE
-    # ==========================================================================
-
-    - name: Check Container Gateway package
-      ansible.builtin.command:
-        argv:
-          - rpm
-          - -q
-          - tfm-rubygem-smart_proxy_container_gateway
-      register: container_gateway_installed
-      changed_when: false
-      failed_when: false
-
-    - name: Download Container Gateway package
-      ansible.builtin.get_url:
-        url: >-
-          https://yum.theforeman.org/plugins/3.2/el7/x86_64/
-          tfm-rubygem-smart_proxy_container_gateway-1.0.6-1.fm3_1.el7.noarch.rpm
-        dest: /tmp/tfm-rubygem-smart_proxy_container_gateway-1.0.6-1.fm3_1.el7.noarch.rpm
-        mode: "0644"
-      when: container_gateway_installed.rc != 0
-
-    - name: Install Container Gateway package
-      ansible.builtin.yum:
-        name: /tmp/tfm-rubygem-smart_proxy_container_gateway-1.0.6-1.fm3_1.el7.noarch.rpm
-        state: present
-      when: container_gateway_installed.rc != 0
-
-
-    # ==========================================================================
-    # FIREWALL
-    # ==========================================================================
-
-    - name: Enable DHCP firewall service
-      ansible.builtin.command:
-        argv:
-          - firewall-cmd
-          - --add-service=dhcp
-          - --permanent
+    - name: Install Mesa packages
+      ansible.builtin.shell: |
+        yum install -y 'mesa-libEGL*'
       changed_when: false
 
-    - name: Enable TFTP firewall service
-      ansible.builtin.command:
-        argv:
-          - firewall-cmd
-          - --add-service=tftp
-          - --permanent
+    - name: Install GTK packages
+      ansible.builtin.shell: |
+        yum install -y 'gtk*'
       changed_when: false
 
-    - name: Enable HTTP firewall service
-      ansible.builtin.command:
-        argv:
-          - firewall-cmd
-          - --add-service=http
-          - --permanent
-      changed_when: false
-
-    - name: Enable HTTPS firewall service
-      ansible.builtin.command:
-        argv:
-          - firewall-cmd
-          - --add-service=https
-          - --permanent
-      changed_when: false
-
-    - name: Enable Smart Proxy port 9090
-      ansible.builtin.command:
-        argv:
-          - firewall-cmd
-          - --add-port=9090/tcp
-          - --permanent
-      changed_when: false
-
-    - name: Reload firewall
-      ansible.builtin.command: firewall-cmd --reload
+    - name: Verify foreman-proxy package
+      ansible.builtin.command: rpm -q foreman-proxy
       changed_when: false
 
 
-    # ==========================================================================
-    # HOSTNAME
-    # ==========================================================================
+# ==============================================================================
+# PLAY 4 - INSTALL AND REGISTER FOREMAN SMART PROXY CONTENT
+# ==============================================================================
 
-    - name: Set Smart Proxy hostname
-      ansible.builtin.command:
-        argv:
-          - hostnamectl
-          - set-hostname
-          - "{{ foreman_proxy }}"
+- name: Install Foreman Smart Proxy Content
+  hosts: cent-07-02.vgs.com
+  become: true
+  gather_facts: true
 
-    - name: Configure Smart Proxy hostname in hosts file
-      ansible.builtin.lineinfile:
-        path: /etc/hosts
-        regexp: '^192\.168\.253\.132\s+'
-        line: "{{ proxy_ip }} {{ foreman_proxy }} cent-07-02"
-        state: present
+  vars:
+    foreman_server: "cent-07-01.vgs.com"
+    foreman_proxy: "cent-07-02.vgs.com"
 
+  tasks:
 
-    # ==========================================================================
-    # INSTALL FOREMAN SMART PROXY
-    #
-    # OAuth key and secret are explicitly passed here.
-    # This fixes the 401 Unauthorized error from the previous installation.
-    # ==========================================================================
+    - name: Get OAuth credentials from Foreman host
+      ansible.builtin.set_fact:
+        proxy_oauth_key: "{{ hostvars[foreman_server]['proxy_oauth_key'] }}"
+        proxy_oauth_secret: "{{ hostvars[foreman_server]['proxy_oauth_secret'] }}"
+      no_log: true
+
+    - name: Verify OAuth credentials are available
+      ansible.builtin.assert:
+        that:
+          - proxy_oauth_key | length > 0
+          - proxy_oauth_secret | length > 0
+        fail_msg: "OAuth credentials are missing."
+
+    - name: Detect active network interface
+      ansible.builtin.shell: |
+        ip -o route show default | awk '{print $5; exit}'
+      register: detected_interface
+      changed_when: false
+
+    - name: Use detected network interface
+      ansible.builtin.set_fact:
+        proxy_interface: "{{ detected_interface.stdout | trim }}"
+
+    - name: Fail if network interface cannot be detected
+      ansible.builtin.assert:
+        that:
+          - proxy_interface | length > 0
+        fail_msg: "Unable to detect the active network interface."
+
+    - name: Display network interface
+      ansible.builtin.debug:
+        msg: "Using Smart Proxy interface: {{ proxy_interface }}"
+
+    - name: Ensure certificate archive exists
+      ansible.builtin.stat:
+        path: "/root/cent-07-02.vgs.com-certs.tar"
+      register: cert_check
+
+    - name: Fail if certificate archive is missing
+      ansible.builtin.assert:
+        that:
+          - cert_check.stat.exists
+        fail_msg: "Certificate archive does not exist on Smart Proxy."
 
     - name: Install Foreman Smart Proxy Content
       ansible.builtin.command:
         argv:
           - foreman-installer
-          - --force
           - --scenario
           - foreman-proxy-content
           - --certs-tar-file
-          - "{{ proxy_cert_file }}"
+          - /root/cent-07-02.vgs.com-certs.tar
           - --foreman-proxy-register-in-foreman
           - "true"
           - --foreman-proxy-foreman-base-url
-          - "https://{{ foreman_server }}"
+          - "https://cent-07-01.vgs.com"
           - --foreman-proxy-trusted-hosts
-          - "{{ foreman_server }}"
+          - "cent-07-01.vgs.com"
           - --foreman-proxy-trusted-hosts
-          - "{{ foreman_proxy }}"
+          - "cent-07-02.vgs.com"
           - --foreman-proxy-oauth-consumer-key
-          - "{{ foreman_oauth_key }}"
+          - "{{ proxy_oauth_key }}"
           - --foreman-proxy-oauth-consumer-secret
-          - "{{ foreman_oauth_secret }}"
+          - "{{ proxy_oauth_secret }}"
           - --foreman-proxy-dhcp
           - "true"
           - --foreman-proxy-dhcp-interface
@@ -547,77 +399,37 @@
           - --foreman-proxy-tftp
           - "true"
           - --foreman-proxy-tftp-servername
-          - "{{ foreman_proxy }}"
-      register: installer_result
+          - "cent-07-02.vgs.com"
+      register: foreman_proxy_install
       no_log: true
 
-
-    # ==========================================================================
-    # VERIFY SMART PROXY
-    # ==========================================================================
-
-    - name: Ensure Foreman Proxy service is enabled
-      ansible.builtin.systemd:
-        name: foreman-proxy
-        enabled: true
-        state: started
-
-    - name: Check Foreman Proxy service
-      ansible.builtin.command:
-        argv:
-          - systemctl
-          - is-active
-          - foreman-proxy
-      register: proxy_service_status
-      changed_when: false
-
-    - name: Verify Smart Proxy API
-      ansible.builtin.uri:
-        url: "https://{{ foreman_proxy }}:9090/features"
-        validate_certs: false
-        status_code: 200
-      register: proxy_api
-      retries: 10
-      delay: 5
-      until: proxy_api.status == 200
-
-    - name: Display successful installation
+    - name: Display installation completion
       ansible.builtin.debug:
         msg:
-          - "========================================================"
-          - "FOREMAN SMART PROXY INSTALLATION COMPLETED"
-          - "========================================================"
-          - "Foreman Server : {{ foreman_server }}"
-          - "Smart Proxy    : {{ foreman_proxy }}"
-          - "Proxy IP       : {{ proxy_ip }}"
-          - "Interface      : {{ proxy_interface }}"
-          - "Service Status : {{ proxy_service_status.stdout }}"
-          - "Proxy API      : https://{{ foreman_proxy }}:9090/features"
-          - "========================================================"
+          - "Foreman Smart Proxy Content installation completed."
+          - "Smart Proxy: cent-07-02.vgs.com"
+          - "Foreman: cent-07-01.vgs.com"
+          - "Interface: {{ proxy_interface }}"
 
 
 # ==============================================================================
-# PLAY 3 - CLEANUP TEMPORARY CERTIFICATE FROM ANSIBLE CONTROLLER
+# PLAY 5 - CLEAN TEMPORARY CERTIFICATE FROM ANSIBLE CONTROLLER
 # ==============================================================================
 
 - name: Clean temporary certificate from Ansible controller
   hosts: cent-07-01.vgs.com
   gather_facts: false
 
-  vars:
-    foreman_proxy: cent-07-02.vgs.com
-
   tasks:
 
     - name: Remove temporary Smart Proxy certificate from Ansible controller
       ansible.builtin.file:
-        path: "/tmp/{{ foreman_proxy }}-certs.tar"
+        path: "/tmp/cent-07-02.vgs.com-certs.tar"
         state: absent
       delegate_to: localhost
-      become: false
 
     - name: Display cleanup completion
       ansible.builtin.debug:
         msg: |
           Temporary Smart Proxy certificate removed from Ansible controller:
-          /tmp/{{ foreman_proxy }}-certs.tar
+          /tmp/cent-07-02.vgs.com-certs.tar
