@@ -837,7 +837,6 @@
     - name: STEP 7 - Install DHCP and TFTP services
       ansible.builtin.yum:
         name:
-          - dhcp-server
           - dhcp
           - tftp-server
         state: present
