@@ -1,33 +1,660 @@
-- name: Run Foreman proxy setup script from GitHub
-  hosts: all
+---
+- name: Install and Configure Foreman Smart Proxy
+  hosts: cent-07-02
   become: true
-  gather_facts: false
+  gather_facts: true
+
   vars:
-      ansible_python_interpreter: /usr/bin/python3
+    foreman_proxy: "cent-07-02.vgs.com"
+    foreman_server: "cent-07-01.vgs.com"
+
+    foreman_proxy_ip: "192.168.253.132"
+
+    foreman_base_url: "https://cent-07-01.vgs.com"
+
+    certs_tar_file: "/root/cent-07-02.vgs.com-certs.tar"
+
+    oauth_key: ""
+    oauth_secret: ""
+
+    repo_server: "http://http-server-01.vgs.com/repo"
+
+    dhcp_gateway: "192.168.253.2"
+
+    # Required for copying Rocky EFI files from NetBox
+    netbox_host: "netbox.vgs.com"
+    netbox_user: "admin"
+    netbox_password: "Vigneshv12$"
+
   tasks:
 
-    - name: Download foreman_proxy.sh from GitHub to remote host
-      get_url:
-        url: "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman_proxy.sh"
-        dest: "/tmp/foreman_proxy.sh"
-        mode: '0755'
-  
-    - name: Create a file in tmp
-      become: true
-      file:
-       path: /tmp/proxy_log.txt
-       state: touch
-       mode: '0644'
+    # ============================================================
+    # STEP 1 - VALIDATE REQUIRED FILES AND VARIABLES
+    # ============================================================
 
-    - name: Execute foreman_proxy.sh on remote host and store output
-      become: true
-      shell: "/tmp/foreman_proxy.sh > /tmp/proxy_log.txt 2>&1"
-
-    - name: Show Foreman proxy setup log
-      command: cat /tmp/proxy_log.txt
-      register: proxy_log
-
-    - name: Print log contents
+    - name: Display Smart Proxy installation information
       debug:
-        var: proxy_log.stdout_lines
+        msg:
+          - "Foreman Server: {{ foreman_server }}"
+          - "Smart Proxy: {{ foreman_proxy }}"
+          - "Certificate TAR: {{ certs_tar_file }}"
 
+    - name: Check certificate archive exists
+      stat:
+        path: "{{ certs_tar_file }}"
+      register: cert_tar
+
+    - name: Fail if certificate archive is missing
+      fail:
+        msg: |
+          Certificate archive not found:
+
+          {{ certs_tar_file }}
+
+          Copy the certificate archive generated on cent-07-01
+          to this Smart Proxy before running the playbook.
+      when: not cert_tar.stat.exists
+
+    - name: Check OAuth key is provided
+      fail:
+        msg: "oauth_key is empty. Pass it using -e or configure it in vars."
+      when: oauth_key | length == 0
+
+    - name: Check OAuth secret is provided
+      fail:
+        msg: "oauth_secret is empty. Pass it using -e or configure it in vars."
+      when: oauth_secret | length == 0
+
+
+    # ============================================================
+    # STEP 2 - REMOVE OLD REPOSITORIES
+    # ============================================================
+
+    - name: Find existing repository files
+      find:
+        paths: /etc/yum.repos.d
+        patterns: "*.repo"
+        file_type: file
+      register: repo_files
+
+    - name: Remove existing repository files
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ repo_files.files }}"
+
+
+    # ============================================================
+    # STEP 3 - CREATE LOCAL PATCH REPOSITORY
+    # ============================================================
+
+    - name: Create patch repository
+      copy:
+        dest: /etc/yum.repos.d/patch.repo
+        mode: "0644"
+        content: |
+          [local-patch]
+          name=Local CentOS Patch Repo
+          baseurl={{ repo_server }}/installed_rhel7
+          enabled=1
+          gpgcheck=0
+
+          [mesa]
+          name=Local Mesa Repo
+          baseurl={{ repo_server }}/mesa
+          enabled=1
+          gpgcheck=0
+          priority=1
+
+          [gtk]
+          name=Local GTK Repo
+          baseurl={{ repo_server }}/gtk
+          enabled=1
+          gpgcheck=0
+          priority=1
+
+
+    # ============================================================
+    # STEP 4 - PUPPET REPOSITORY
+    # ============================================================
+
+    - name: Create Puppet repository
+      copy:
+        dest: /etc/yum.repos.d/puppet.repo
+        mode: "0644"
+        content: |
+          [puppet7]
+          name=Puppet 7 Repository EL7
+          baseurl=https://yum.puppet.com/puppet7/el/7/x86_64/
+          enabled=1
+          gpgcheck=0
+
+
+    # ============================================================
+    # STEP 5 - FOREMAN REPOSITORIES
+    # ============================================================
+
+    - name: Create Foreman repository
+      copy:
+        dest: /etc/yum.repos.d/foreman-online.repo
+        mode: "0644"
+        content: |
+          [foreman-new-repo]
+          name=Foreman New Repo
+          baseurl=https://yum-backend.repo-rpm01.osuosl.theforeman.org/releases/3.0/el7/x86_64/
+          enabled=1
+          gpgcheck=0
+
+          [foreman-add-repo]
+          name=Foreman Add Repo
+          baseurl=https://yum.theforeman.org/plugins/3.2/el7/x86_64/
+          enabled=1
+          gpgcheck=0
+
+
+    # ============================================================
+    # STEP 6 - CENTOS VAULT REPOSITORIES
+    # ============================================================
+
+    - name: Create CentOS Vault repository
+      copy:
+        dest: /etc/yum.repos.d/vault.repo
+        mode: "0644"
+        content: |
+          [vaultbase]
+          name=CentOS Vault Base
+          baseurl=http://vault.centos.org/7.9.2009/os/x86_64/
+          enabled=1
+          gpgcheck=0
+
+          [updates]
+          name=CentOS Vault Updates
+          baseurl=http://vault.centos.org/7.9.2009/updates/x86_64/
+          enabled=1
+          gpgcheck=0
+
+          [extras]
+          name=CentOS Vault Extras
+          baseurl=http://vault.centos.org/7.9.2009/extras/x86_64/
+          enabled=1
+          gpgcheck=0
+
+
+    # ============================================================
+    # STEP 7 - INSTALL REQUIRED PACKAGES
+    # ============================================================
+
+    - name: Clean YUM metadata
+      command: yum clean all
+      changed_when: false
+
+    - name: Install SSH and required packages
+      yum:
+        name:
+          - sshpass
+          - mesa-libEGL*
+          - gtk*
+        state: present
+
+    - name: Install Foreman packages
+      yum:
+        name:
+          - foreman
+          - foreman-proxy
+          - puppetserver
+        state: present
+        skip_broken: true
+
+    - name: Install Foreman installer packages
+      yum:
+        name: "foreman-installer*"
+        state: present
+        skip_broken: true
+
+
+    # ============================================================
+    # STEP 8 - EXTRACT FOREMAN CERTIFICATES
+    # ============================================================
+
+    - name: Create Foreman Proxy certificate directory
+      file:
+        path: /etc/foreman-proxy
+        state: directory
+        mode: "0755"
+
+    - name: Extract Smart Proxy certificates
+      unarchive:
+        src: "{{ certs_tar_file }}"
+        dest: /etc/foreman-proxy
+        remote_src: true
+
+
+    # ============================================================
+    # STEP 9 - DETECT ACTIVE NETWORK INTERFACE
+    # ============================================================
+
+    - name: Detect default network interface
+      set_fact:
+        proxy_interface: "{{ ansible_default_ipv4.interface }}"
+
+    - name: Fail when interface cannot be detected
+      fail:
+        msg: "Unable to detect the active network interface."
+      when: proxy_interface is not defined or proxy_interface | length == 0
+
+    - name: Display network information
+      debug:
+        msg:
+          - "Detected Interface: {{ proxy_interface }}"
+          - "IP Address: {{ ansible_default_ipv4.address }}"
+          - "Gateway: {{ ansible_default_ipv4.gateway }}"
+
+
+    # ============================================================
+    # STEP 10 - FIREWALL CONFIGURATION
+    # ============================================================
+
+    - name: Enable DHCP firewall service
+      firewalld:
+        service: dhcp
+        permanent: true
+        immediate: true
+        state: enabled
+
+    - name: Enable TFTP firewall service
+      firewalld:
+        service: tftp
+        permanent: true
+        immediate: true
+        state: enabled
+
+    - name: Enable HTTP firewall service
+      firewalld:
+        service: http
+        permanent: true
+        immediate: true
+        state: enabled
+
+    - name: Enable HTTPS firewall service
+      firewalld:
+        service: https
+        permanent: true
+        immediate: true
+        state: enabled
+
+    - name: Open Foreman Proxy port 9090
+      firewalld:
+        port: 9090/tcp
+        permanent: true
+        immediate: true
+        state: enabled
+
+    - name: Open HTTPS port 443
+      firewalld:
+        port: 443/tcp
+        permanent: true
+        immediate: true
+        state: enabled
+
+
+    # ============================================================
+    # STEP 11 - CONFIGURE HOSTNAME
+    # ============================================================
+
+    - name: Set Smart Proxy hostname
+      hostname:
+        name: "{{ foreman_proxy }}"
+
+    - name: Configure hosts file
+      copy:
+        dest: /etc/hosts
+        mode: "0644"
+        content: |
+          127.0.0.1 localhost localhost.localdomain localhost4 localhost4.localdomain4
+          ::1 localhost localhost.localdomain localhost6 localhost6.localdomain6
+
+          {{ foreman_proxy_ip }} {{ foreman_proxy }} cent-07-02
+
+    - name: Verify hostname
+      command: hostname -f
+      register: hostname_check
+      changed_when: false
+
+    - name: Display hostname
+      debug:
+        var: hostname_check.stdout
+
+
+    # ============================================================
+    # STEP 12 - TEMPORARILY MOUNT EFI PARTITIONS
+    # ============================================================
+
+    - name: Create EFI mount points
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /boot/efi
+        - /boot/efi2
+
+    - name: Check first EFI mount
+      command: mountpoint -q /boot/efi
+      register: efi1_mounted
+      failed_when: false
+      changed_when: false
+
+    - name: Mount first EFI partition
+      mount:
+        path: /boot/efi
+        src: /dev/sda1
+        fstype: auto
+        state: mounted
+      when: efi1_mounted.rc != 0
+
+    - name: Check second EFI mount
+      command: mountpoint -q /boot/efi2
+      register: efi2_mounted
+      failed_when: false
+      changed_when: false
+
+    - name: Mount second EFI partition
+      mount:
+        path: /boot/efi2
+        src: /dev/sdb1
+        fstype: auto
+        state: mounted
+      when: efi2_mounted.rc != 0
+
+    - name: Check first CentOS shim file
+      stat:
+        path: /boot/efi/EFI/centos/shimx64.efi
+      register: shim1
+
+    - name: Fail if first CentOS shim is missing
+      fail:
+        msg: "/boot/efi/EFI/centos/shimx64.efi not found"
+      when: not shim1.stat.exists
+
+    - name: Check second CentOS shim file
+      stat:
+        path: /boot/efi2/EFI/centos/shimx64.efi
+      register: shim2
+
+    - name: Fail if second CentOS shim is missing
+      fail:
+        msg: "/boot/efi2/EFI/centos/shimx64.efi not found"
+      when: not shim2.stat.exists
+
+
+    # ============================================================
+    # STEP 13 - RUN FOREMAN SMART PROXY INSTALLER
+    # ============================================================
+
+    - name: Run Foreman Proxy installer
+      command: >
+        foreman-installer
+        --force
+        --scenario foreman-proxy-content
+        --certs-tar-file {{ certs_tar_file }}
+        --foreman-proxy-register-in-foreman true
+        --foreman-proxy-foreman-base-url {{ foreman_base_url }}
+        --foreman-proxy-trusted-hosts {{ foreman_server }}
+        --foreman-proxy-trusted-hosts {{ foreman_proxy }}
+        --foreman-proxy-oauth-consumer-key {{ oauth_key }}
+        --foreman-proxy-oauth-consumer-secret {{ oauth_secret }}
+        --foreman-proxy-dhcp true
+        --foreman-proxy-dhcp-interface {{ proxy_interface }}
+        --foreman-proxy-dns true
+        --foreman-proxy-dns-interface {{ proxy_interface }}
+        --foreman-proxy-tftp true
+        --foreman-proxy-tftp-servername {{ foreman_proxy }}
+      register: installer_result
+
+    - name: Display installer result
+      debug:
+        var: installer_result.stdout_lines
+
+
+    # ============================================================
+    # STEP 14 - UNMOUNT LOCAL EFI PARTITIONS
+    # ============================================================
+
+    - name: Unmount second EFI partition
+      mount:
+        path: /boot/efi2
+        state: unmounted
+      when: efi2_mounted.rc != 0
+
+    - name: Unmount first EFI partition
+      mount:
+        path: /boot/efi
+        state: unmounted
+      when: efi1_mounted.rc != 0
+
+
+    # ============================================================
+    # STEP 15 - CONFIGURE DHCP
+    # ============================================================
+
+    - name: Check DHCP configuration file
+      stat:
+        path: /etc/dhcp/dhcpd.conf
+      register: dhcp_conf
+
+    - name: Add DHCP router option
+      lineinfile:
+        path: /etc/dhcp/dhcpd.conf
+        insertafter: 'option subnet-mask'
+        line: "  option routers {{ dhcp_gateway }};"
+        state: present
+      when: dhcp_conf.stat.exists
+
+    - name: Configure DHCP as authoritative
+      replace:
+        path: /etc/dhcp/dhcpd.conf
+        regexp: '^not authoritative;'
+        replace: 'authoritative;'
+      when: dhcp_conf.stat.exists
+
+    - name: Start and enable DHCP service
+      service:
+        name: dhcpd
+        state: restarted
+        enabled: true
+
+
+    # ============================================================
+    # STEP 16 - CREATE GRUB2 TFTP DIRECTORY
+    # ============================================================
+
+    - name: Ensure grub2 TFTP directory exists
+      file:
+        path: /var/lib/tftpboot/grub2
+        state: directory
+        owner: foreman-proxy
+        group: root
+        mode: "0755"
+
+
+    # ============================================================
+    # STEP 17 - COPY EFI FILES FROM NETBOX
+    # ============================================================
+
+    - name: Mount NetBox first EFI partition
+      shell: |
+        sshpass -p '{{ netbox_password }}' ssh \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          {{ netbox_user }}@{{ netbox_host }} \
+          "echo '{{ netbox_password }}' | sudo -S mkdir -p /boot/efi && \
+           echo '{{ netbox_password }}' | sudo -S mountpoint -q /boot/efi || \
+           echo '{{ netbox_password }}' | sudo -S mount /dev/sda1 /boot/efi"
+      changed_when: false
+
+    - name: Copy shimx64.efi from NetBox
+      shell: |
+        sshpass -p '{{ netbox_password }}' scp \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          {{ netbox_user }}@{{ netbox_host }}:/boot/efi/EFI/rocky/shimx64.efi \
+          /var/lib/tftpboot/grub2/shimx64.efi
+
+    - name: Copy grub.cfg from NetBox
+      shell: |
+        sshpass -p '{{ netbox_password }}' scp \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          {{ netbox_user }}@{{ netbox_host }}:/boot/efi/EFI/rocky/grub.cfg \
+          /var/lib/tftpboot/grub2/grub.cfg
+
+    - name: Unmount NetBox EFI partitions
+      shell: |
+        sshpass -p '{{ netbox_password }}' ssh \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          {{ netbox_user }}@{{ netbox_host }} \
+          "echo '{{ netbox_password }}' | sudo -S sync; \
+           echo '{{ netbox_password }}' | sudo -S umount /boot/efi 2>/dev/null || true; \
+           echo '{{ netbox_password }}' | sudo -S umount /boot/efi2 2>/dev/null || true"
+      changed_when: false
+
+
+    # ============================================================
+    # STEP 18 - SET EFI TFTP FILE PERMISSIONS
+    # ============================================================
+
+    - name: Set EFI boot file permissions
+      file:
+        path: "{{ item }}"
+        owner: foreman-proxy
+        group: root
+        mode: "0644"
+      loop:
+        - /var/lib/tftpboot/grub2/shimx64.efi
+        - /var/lib/tftpboot/grub2/grub.cfg
+
+
+    # ============================================================
+    # STEP 19 - DOWNLOAD ROCKY LINUX 8 PXE FILES
+    # ============================================================
+
+    - name: Create Rocky Linux 8 TFTP directory
+      file:
+        path: /var/lib/tftpboot/rocky8
+        state: directory
+        owner: foreman-proxy
+        group: root
+        mode: "0755"
+
+    - name: Download Rocky Linux 8 vmlinuz
+      get_url:
+        url: "{{ repo_server }}/rocky8/isolinux/vmlinuz"
+        dest: /var/lib/tftpboot/rocky8/vmlinuz
+        owner: foreman-proxy
+        group: root
+        mode: "0644"
+
+    - name: Download Rocky Linux 8 initrd
+      get_url:
+        url: "{{ repo_server }}/rocky8/isolinux/initrd.img"
+        dest: /var/lib/tftpboot/rocky8/initrd.img
+        owner: foreman-proxy
+        group: root
+        mode: "0644"
+
+
+    # ============================================================
+    # STEP 20 - DOWNLOAD ROCKY LINUX 9 PXE FILES
+    # ============================================================
+
+    - name: Create Rocky Linux 9 TFTP directory
+      file:
+        path: /var/lib/tftpboot/rocky9
+        state: directory
+        owner: foreman-proxy
+        group: root
+        mode: "0755"
+
+    - name: Download Rocky Linux 9 vmlinuz
+      get_url:
+        url: "{{ repo_server }}/rocky9/images/pxeboot/vmlinuz"
+        dest: /var/lib/tftpboot/rocky9/vmlinuz
+        owner: foreman-proxy
+        group: root
+        mode: "0644"
+
+    - name: Download Rocky Linux 9 initrd
+      get_url:
+        url: "{{ repo_server }}/rocky9/images/pxeboot/initrd.img"
+        dest: /var/lib/tftpboot/rocky9/initrd.img
+        owner: foreman-proxy
+        group: root
+        mode: "0644"
+
+
+    # ============================================================
+    # STEP 21 - DOWNLOAD ROCKY LINUX 9.2 PXE FILES
+    # ============================================================
+
+    - name: Create Rocky Linux 9.2 TFTP directory
+      file:
+        path: /var/lib/tftpboot/rocky92
+        state: directory
+        owner: foreman-proxy
+        group: root
+        mode: "0755"
+
+    - name: Download Rocky Linux 9.2 vmlinuz
+      get_url:
+        url: "{{ repo_server }}/rocky9.2/images/pxeboot/vmlinuz"
+        dest: /var/lib/tftpboot/rocky92/vmlinuz
+        owner: foreman-proxy
+        group: root
+        mode: "0644"
+
+    - name: Download Rocky Linux 9.2 initrd
+      get_url:
+        url: "{{ repo_server }}/rocky9.2/images/pxeboot/initrd.img"
+        dest: /var/lib/tftpboot/rocky92/initrd.img
+        owner: foreman-proxy
+        group: root
+        mode: "0644"
+
+
+    # ============================================================
+    # STEP 22 - VERIFY SERVICES
+    # ============================================================
+
+    - name: Ensure Foreman Proxy is enabled
+      service:
+        name: foreman-proxy
+        state: started
+        enabled: true
+
+    - name: Verify Foreman Proxy status
+      command: systemctl is-active foreman-proxy
+      register: proxy_status
+      changed_when: false
+
+    - name: Verify DHCP status
+      command: systemctl is-active dhcpd
+      register: dhcp_status
+      changed_when: false
+      failed_when: false
+
+    - name: Installation summary
+      debug:
+        msg:
+          - "=============================================="
+          - "Foreman Smart Proxy installation completed"
+          - "=============================================="
+          - "Smart Proxy: {{ foreman_proxy }}"
+          - "Foreman Server: {{ foreman_server }}"
+          - "Interface: {{ proxy_interface }}"
+          - "Foreman Proxy Status: {{ proxy_status.stdout }}"
+          - "DHCP Status: {{ dhcp_status.stdout }}"
+          - "Rocky 8 PXE: /var/lib/tftpboot/rocky8"
+          - "Rocky 9 PXE: /var/lib/tftpboot/rocky9"
+          - "Rocky 9.2 PXE: /var/lib/tftpboot/rocky92"
+          - "=============================================="
