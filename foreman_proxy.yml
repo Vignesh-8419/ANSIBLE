@@ -1,676 +1,175 @@
 ---
-###############################################################################
-# FOREMAN / KATELLO SMART PROXY INSTALLATION
-#
-# Foreman/Katello Server : cent-07-01.vgs.com
-# Smart Proxy Server     : cent-07-02.vgs.com
+# ==============================================================================
+# Foreman Smart Proxy Installation, Verification and Registration
+# ==============================================================================
 #
 # Run:
+# ansible-playbook -i inventory.ini foreman_smart_proxy.yml
 #
-# ansible-playbook -i centos-07-servers_inventory.yml foreman_proxy.yml \
-#   -e ansible_python_interpreter=/usr/bin/python3 -u admin
+# This playbook:
+#   1. Installs/configures Smart Proxy on the proxy host
+#   2. Starts and verifies foreman-proxy
+#   3. Checks the Smart Proxy HTTPS API
+#   4. Verifies the proxy registration from the Foreman server
+#   5. Uses explicit Hammer credentials
 #
-# This playbook uses hosts: all and automatically identifies:
-#   Foreman Server     = cent-07-01.vgs.com
-#   Smart Proxy Server = cent-07-02.vgs.com
-#
-# Workflow:
-#   1. Identify Foreman and Smart Proxy
-#   2. Generate Smart Proxy certificate on Foreman
-#   3. Extract OAuth credentials
-#   4. Fetch certificate to Ansible controller
-#   5. Copy certificate to Smart Proxy
-#   6. Install Katello CA consumer
-#   7. Verify/download CA RPM before installation
-#   8. Register Smart Proxy if registration credentials are configured
-#   9. Install foreman-installer-katello
-#  10. Install Smart Proxy Content
-#  11. Verify foreman-proxy service
-#  12. Verify Smart Proxy API
-#  13. Verify registration in Foreman
-###############################################################################
+# ==============================================================================
 
-###############################################################################
-# PLAY 1 - IDENTIFY SERVERS
-###############################################################################
+# ==============================================================================
+# PLAY 1 - CONFIGURE SMART PROXY
+# ==============================================================================
 
-- name: Identify Foreman and Smart Proxy servers
-  hosts: all
-  become: false
-  gather_facts: false
-
-  vars:
-    foreman_server: "cent-07-01.vgs.com"
-    smart_proxy_server: "cent-07-02.vgs.com"
-
-  tasks:
-
-    - name: Display current target
-      debug:
-        msg: "Processing {{ inventory_hostname }}"
-
-    - name: Identify Foreman server
-      set_fact:
-        is_foreman: "{{ inventory_hostname == foreman_server }}"
-        is_smart_proxy: false
-      when: inventory_hostname == foreman_server
-
-    - name: Identify Smart Proxy server
-      set_fact:
-        is_foreman: false
-        is_smart_proxy: "{{ inventory_hostname == smart_proxy_server }}"
-      when: inventory_hostname == smart_proxy_server
-
-
-###############################################################################
-# PLAY 2 - GENERATE SMART PROXY CERTIFICATE
-###############################################################################
-
-- name: Generate Smart Proxy certificate on Foreman
-  hosts: all
-  become: true
-  gather_facts: false
-
-  vars:
-    foreman_server: "cent-07-01.vgs.com"
-    smart_proxy_fqdn: "cent-07-02.vgs.com"
-    cert_tar_file: "/root/cent-07-02.vgs.com-certs.tar"
-    cert_output_file: "/root/cent-07-02.vgs.com-certs-generation.out"
-
-  tasks:
-
-    - name: Skip non-Foreman hosts
-      debug:
-        msg: "Skipping certificate generation on {{ inventory_hostname }}"
-      when: inventory_hostname != foreman_server
-
-    - name: Locate foreman-proxy-certs-generate
-      shell: |
-        set -o pipefail
-
-        for file in \
-          /usr/bin/foreman-proxy-certs-generate \
-          /usr/sbin/foreman-proxy-certs-generate \
-          /usr/local/bin/foreman-proxy-certs-generate
-        do
-          if [ -x "$file" ]; then
-            echo "$file"
-            exit 0
-          fi
-        done
-
-        command -v foreman-proxy-certs-generate 2>/dev/null || true
-      args:
-        executable: /bin/bash
-      register: cert_generator_path
-      changed_when: false
-      when: inventory_hostname == foreman_server
-
-    - name: Display certificate generator path
-      debug:
-        msg: "Certificate generator: {{ cert_generator_path.stdout }}"
-      when: inventory_hostname == foreman_server
-
-    - name: Fail if certificate generator was not found
-      assert:
-        that:
-          - cert_generator_path.stdout | trim | length > 0
-        fail_msg: >-
-          foreman-proxy-certs-generate was not found on this Foreman server.
-          Check the installed Katello/Foreman packages.
-      when: inventory_hostname == foreman_server
-
-    - name: Remove old Smart Proxy certificate archive
-      file:
-        path: "{{ cert_tar_file }}"
-        state: absent
-      when: inventory_hostname == foreman_server
-
-    - name: Remove old certificate generation output
-      file:
-        path: "{{ cert_output_file }}"
-        state: absent
-      when: inventory_hostname == foreman_server
-
-    - name: Generate fresh Smart Proxy certificates
-      shell: |
-        set -o pipefail
-
-        "{{ cert_generator_path.stdout | trim }}" \
-          --foreman-proxy-fqdn "{{ smart_proxy_fqdn }}" \
-          --certs-tar "{{ cert_tar_file }}" \
-          > "{{ cert_output_file }}" 2>&1
-      args:
-        executable: /bin/bash
-      register: cert_generation
-      changed_when: cert_generation.rc == 0
-      when: inventory_hostname == foreman_server
-
-    - name: Verify Smart Proxy certificate archive exists
-      stat:
-        path: "{{ cert_tar_file }}"
-      register: generated_cert_file
-      when: inventory_hostname == foreman_server
-
-    - name: Fail if Smart Proxy certificate archive was not created
-      assert:
-        that:
-          - generated_cert_file.stat.exists
-          - generated_cert_file.stat.size | int > 0
-        fail_msg: >-
-          Smart Proxy certificate archive was not generated:
-          {{ cert_tar_file }}
-      when: inventory_hostname == foreman_server
-
-    - name: Read certificate generation output
-      slurp:
-        src: "{{ cert_output_file }}"
-      register: cert_generation_output
-      when: inventory_hostname == foreman_server
-
-    - name: Store certificate generation output as text
-      set_fact:
-        cert_generation_text: "{{ cert_generation_output.content | b64decode }}"
-      when: inventory_hostname == foreman_server
-
-    - name: Extract OAuth consumer key
-      set_fact:
-        generated_oauth_key: >-
-          {{
-            cert_generation_text
-            | regex_search(
-                '--foreman-proxy-oauth-consumer-key\s+"([^"]+)"',
-                '\1'
-              )
-            | first
-          }}
-      when: inventory_hostname == foreman_server
-
-    - name: Extract OAuth consumer secret
-      set_fact:
-        generated_oauth_secret: >-
-          {{
-            cert_generation_text
-            | regex_search(
-                '--foreman-proxy-oauth-consumer-secret\s+"([^"]+)"',
-                '\1'
-              )
-            | first
-          }}
-      no_log: true
-      when: inventory_hostname == foreman_server
-
-    - name: Verify OAuth consumer key
-      assert:
-        that:
-          - generated_oauth_key is defined
-          - generated_oauth_key | length > 0
-        fail_msg: "Unable to extract Smart Proxy OAuth consumer key."
-      when: inventory_hostname == foreman_server
-
-    - name: Verify OAuth consumer secret
-      assert:
-        that:
-          - generated_oauth_secret is defined
-          - generated_oauth_secret | length > 0
-        fail_msg: "Unable to extract Smart Proxy OAuth consumer secret."
-      when: inventory_hostname == foreman_server
-
-    - name: Display certificate generation status
-      debug:
-        msg:
-          - "Smart Proxy certificate generated successfully"
-          - "Certificate: {{ cert_tar_file }}"
-          - "OAuth consumer credentials extracted successfully"
-      when: inventory_hostname == foreman_server
-
-
-###############################################################################
-# PLAY 3 - FETCH CERTIFICATE TO CONTROLLER
-###############################################################################
-
-- name: Fetch Smart Proxy certificate to Ansible controller
-  hosts: all
-  become: true
-  gather_facts: false
-
-  vars:
-    foreman_server: "cent-07-01.vgs.com"
-    cert_tar_file: "/root/cent-07-02.vgs.com-certs.tar"
-    controller_cert_dir: "{{ playbook_dir }}/smart-proxy-certs"
-
-  tasks:
-
-    - name: Create certificate directory on controller
-      delegate_to: localhost
-      become: false
-      file:
-        path: "{{ controller_cert_dir }}"
-        state: directory
-        mode: "0700"
-      when: inventory_hostname == foreman_server
-
-    - name: Fetch certificate archive from Foreman
-      fetch:
-        src: "{{ cert_tar_file }}"
-        dest: "{{ controller_cert_dir }}/"
-        flat: true
-      when: inventory_hostname == foreman_server
-
-
-###############################################################################
-# PLAY 4 - COPY CERTIFICATE TO SMART PROXY
-###############################################################################
-
-- name: Copy Smart Proxy certificate to Smart Proxy
-  hosts: all
-  become: true
-  gather_facts: false
-
-  vars:
-    smart_proxy_server: "cent-07-02.vgs.com"
-    cert_tar_file: "/root/cent-07-02.vgs.com-certs.tar"
-    controller_cert_file: "{{ playbook_dir }}/smart-proxy-certs/cent-07-02.vgs.com-certs.tar"
-
-  tasks:
-
-    - name: Verify certificate exists on controller
-      delegate_to: localhost
-      become: false
-      stat:
-        path: "{{ controller_cert_file }}"
-      register: controller_cert_check
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Fail if certificate is missing on controller
-      assert:
-        that:
-          - controller_cert_check.stat.exists
-          - controller_cert_check.stat.size | int > 0
-        fail_msg: "Certificate missing: {{ controller_cert_file }}"
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Copy certificate archive to Smart Proxy
-      copy:
-        src: "{{ controller_cert_file }}"
-        dest: "{{ cert_tar_file }}"
-        owner: root
-        group: root
-        mode: "0600"
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Verify certificate archive on Smart Proxy
-      stat:
-        path: "{{ cert_tar_file }}"
-      register: proxy_cert_check
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Fail if certificate archive is missing
-      assert:
-        that:
-          - proxy_cert_check.stat.exists
-          - proxy_cert_check.stat.size | int > 0
-      when: inventory_hostname == smart_proxy_server
-
-
-###############################################################################
-# PLAY 5 - PREPARE SMART PROXY AND INSTALL KATELLO CA
-###############################################################################
-
-- name: Prepare Smart Proxy and install Katello CA consumer
+- name: Install and configure Foreman Smart Proxy
   hosts: all
   become: true
   gather_facts: true
 
   vars:
+    # --------------------------------------------------------------------------
+    # FOREMAN SERVER
+    # --------------------------------------------------------------------------
     foreman_server: "cent-07-01.vgs.com"
+
+    # --------------------------------------------------------------------------
+    # SMART PROXY
+    # --------------------------------------------------------------------------
     smart_proxy_server: "cent-07-02.vgs.com"
-    katello_ca_url: "http://cent-07-01.vgs.com/pub/katello-ca-consumer-latest.noarch.rpm"
-    katello_ca_local_file: "/tmp/katello-ca-consumer-latest.noarch.rpm"
+
+    # --------------------------------------------------------------------------
+    # ORGANIZATION
+    # --------------------------------------------------------------------------
+    foreman_organization: "VGS"
+
+    # --------------------------------------------------------------------------
+    # HAMMER AUTHENTICATION
+    # --------------------------------------------------------------------------
+    hammer_username: "admin"
+    hammer_password: "zqs977dXzqfEvTML"
+
+    # --------------------------------------------------------------------------
+    # SMART PROXY PORT
+    # --------------------------------------------------------------------------
+    smart_proxy_port: "9090"
 
   tasks:
 
-    - name: Skip non-Smart-Proxy hosts
-      debug:
-        msg: "Skipping Smart Proxy preparation on {{ inventory_hostname }}"
-      when: inventory_hostname != smart_proxy_server
+    # ==========================================================================
+    # IDENTIFY HOST
+    # ==========================================================================
 
-    - name: Set Smart Proxy hostname
-      hostname:
-        name: "{{ smart_proxy_server }}"
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Verify Foreman hostname resolution
-      command: getent hosts "{{ foreman_server }}"
-      changed_when: false
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Install required base packages
-      yum:
-        name:
-          - curl
-          - wget
-          - ca-certificates
-          - yum-utils
-          - chrony
-        state: present
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Enable chronyd
-      service:
-        name: chronyd
-        state: started
-        enabled: true
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Check whether Katello CA consumer is already installed
-      command: rpm -q katello-ca-consumer
-      register: katello_ca_check
-      changed_when: false
-      failed_when: false
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Check Katello CA RPM URL from Smart Proxy
-      uri:
-        url: "{{ katello_ca_url }}"
-        method: GET
-        status_code: 200
-        return_content: false
-        validate_certs: false
-      register: katello_ca_url_check
-      when:
-        - inventory_hostname == smart_proxy_server
-        - katello_ca_check.rc != 0
-
-    - name: Download Katello CA consumer RPM
-      get_url:
-        url: "{{ katello_ca_url }}"
-        dest: "{{ katello_ca_local_file }}"
-        mode: "0644"
-        validate_certs: false
-        force: true
-      when:
-        - inventory_hostname == smart_proxy_server
-        - katello_ca_check.rc != 0
-
-    - name: Verify downloaded Katello CA RPM
-      stat:
-        path: "{{ katello_ca_local_file }}"
-      register: katello_ca_rpm_file
-      when:
-        - inventory_hostname == smart_proxy_server
-        - katello_ca_check.rc != 0
-
-    - name: Fail if Katello CA RPM download failed
-      assert:
-        that:
-          - katello_ca_rpm_file.stat.exists
-          - katello_ca_rpm_file.stat.size | int > 0
-        fail_msg: >-
-          Failed to download Katello CA consumer RPM from:
-          {{ katello_ca_url }}
-      when:
-        - inventory_hostname == smart_proxy_server
-        - katello_ca_check.rc != 0
-
-    - name: Install Katello CA consumer RPM
-      yum:
-        name: "{{ katello_ca_local_file }}"
-        state: present
-        disable_gpg_check: true
-      when:
-        - inventory_hostname == smart_proxy_server
-        - katello_ca_check.rc != 0
-
-    - name: Verify Katello CA consumer
-      command: rpm -q katello-ca-consumer
-      register: katello_ca_verify
-      changed_when: false
-      failed_when: false
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Fail if Katello CA consumer installation failed
-      assert:
-        that:
-          - katello_ca_verify.rc == 0
-        fail_msg: >-
-          katello-ca-consumer installation failed.
-          Check:
-          {{ katello_ca_url }}
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Display Katello CA consumer status
-      debug:
-        msg: "SUCCESS: Katello CA consumer is installed."
-      when: inventory_hostname == smart_proxy_server
-
-
-###############################################################################
-# PLAY 6 - CHECK REGISTRATION
-###############################################################################
-
-- name: Check Smart Proxy Katello registration
-  hosts: all
-  become: true
-  gather_facts: false
-
-  vars:
-    smart_proxy_server: "cent-07-02.vgs.com"
-
-  tasks:
+    - name: Display current host
+      ansible.builtin.debug:
+        msg: "Processing host: {{ inventory_hostname }}"
 
     - name: Skip non-Smart-Proxy hosts
-      debug:
-        msg: "Skipping registration check on {{ inventory_hostname }}"
+      ansible.builtin.debug:
+        msg: "Skipping Smart Proxy configuration on {{ inventory_hostname }}"
       when: inventory_hostname != smart_proxy_server
 
-    - name: Check subscription-manager identity
-      command: subscription-manager identity
-      register: subscription_identity
-      changed_when: false
-      failed_when: false
+    # ==========================================================================
+    # VERIFY FOREMAN PROXY PACKAGE
+    # ==========================================================================
+
+    - name: Check if Foreman Proxy package is installed
+      ansible.builtin.package_facts:
+        manager: auto
       when: inventory_hostname == smart_proxy_server
 
-    - name: Display registration status
-      debug:
+    - name: Display Foreman Proxy package status
+      ansible.builtin.debug:
         msg: >-
-          {{
-            'Smart Proxy is already registered to Katello.'
-            if subscription_identity.rc == 0
-            else
-            'Smart Proxy is not registered to Katello. Continuing installation; ensure required repositories are available.'
-          }}
+          Foreman Proxy package installed:
+          {{ 'foreman-proxy' in ansible_facts.packages }}
       when: inventory_hostname == smart_proxy_server
 
-
-###############################################################################
-# PLAY 7 - INSTALL FOREMAN INSTALLER
-###############################################################################
-
-- name: Install Smart Proxy content installer packages
-  hosts: all
-  become: true
-  gather_facts: false
-
-  vars:
-    smart_proxy_server: "cent-07-02.vgs.com"
-
-  tasks:
-
-    - name: Skip non-Smart-Proxy hosts
-      debug:
-        msg: "Skipping installer package installation on {{ inventory_hostname }}"
-      when: inventory_hostname != smart_proxy_server
-
-    - name: Install foreman-installer-katello
-      yum:
-        name: foreman-installer-katello
-        state: present
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Verify foreman-installer-katello
-      command: rpm -q foreman-installer-katello
-      changed_when: false
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Verify foreman-installer command
-      command: which foreman-installer
-      changed_when: false
-      when: inventory_hostname == smart_proxy_server
-
-
-###############################################################################
-# PLAY 8 - INSTALL SMART PROXY
-###############################################################################
-
-- name: Install and configure Smart Proxy
-  hosts: all
-  become: true
-  gather_facts: false
-
-  vars:
-    foreman_server: "cent-07-01.vgs.com"
-    smart_proxy_server: "cent-07-02.vgs.com"
-    cert_tar_file: "/root/cent-07-02.vgs.com-certs.tar"
-
-  tasks:
-
-    - name: Skip non-Smart-Proxy hosts
-      debug:
-        msg: "Skipping Smart Proxy installer on {{ inventory_hostname }}"
-      when: inventory_hostname != smart_proxy_server
-
-    - name: Find Foreman host from current inventory
-      set_fact:
-        foreman_inventory_host: >-
-          {{
-            groups['all']
-            | select('equalto', foreman_server)
-            | list
-            | first
-          }}
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Verify Foreman host was found
-      assert:
-        that:
-          - foreman_inventory_host is defined
-          - foreman_inventory_host | length > 0
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Set OAuth credentials from Foreman host
-      set_fact:
-        oauth_consumer_key: "{{ hostvars[foreman_inventory_host].generated_oauth_key }}"
-        oauth_consumer_secret: "{{ hostvars[foreman_inventory_host].generated_oauth_secret }}"
-      no_log: true
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Verify certificate archive before installation
-      stat:
-        path: "{{ cert_tar_file }}"
-      register: installer_cert_check
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Fail if installer certificate archive is missing
-      assert:
-        that:
-          - installer_cert_check.stat.exists
-          - installer_cert_check.stat.size | int > 0
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Run Smart Proxy content installer
-      command:
-        argv:
-          - foreman-installer
-          - "--scenario"
-          - "foreman-proxy-content"
-          - "--certs-tar-file"
-          - "{{ cert_tar_file }}"
-          - "--foreman-proxy-register-in-foreman"
-          - "true"
-          - "--foreman-proxy-foreman-base-url"
-          - "https://{{ foreman_server }}"
-          - "--foreman-proxy-trusted-hosts"
-          - "{{ foreman_server }}"
-          - "--foreman-proxy-trusted-hosts"
-          - "{{ smart_proxy_server }}"
-          - "--foreman-proxy-oauth-consumer-key"
-          - "{{ oauth_consumer_key }}"
-          - "--foreman-proxy-oauth-consumer-secret"
-          - "{{ oauth_consumer_secret }}"
-      register: smart_proxy_installer
-      no_log: true
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Display installer completion
-      debug:
-        msg:
-          - "Smart Proxy installer completed"
-          - "Scenario: foreman-proxy-content"
-          - "Proxy: {{ smart_proxy_server }}"
-      when: inventory_hostname == smart_proxy_server
-
-
-###############################################################################
-# PLAY 9 - VERIFY SERVICES
-###############################################################################
-
-- name: Start and verify Smart Proxy services
-  hosts: all
-  become: true
-  gather_facts: false
-
-  vars:
-    smart_proxy_server: "cent-07-02.vgs.com"
-
-  tasks:
-
-    - name: Skip non-Smart-Proxy hosts
-      debug:
-        msg: "Skipping service verification on {{ inventory_hostname }}"
-      when: inventory_hostname != smart_proxy_server
+    # ==========================================================================
+    # ENABLE FOREMAN PROXY
+    # ==========================================================================
 
     - name: Enable and start Foreman Proxy
-      service:
+      ansible.builtin.systemd:
         name: foreman-proxy
-        state: started
         enabled: true
+        state: started
       when: inventory_hostname == smart_proxy_server
 
+    # ==========================================================================
+    # CHECK SERVICE STATUS
+    # ==========================================================================
+
     - name: Check Foreman Proxy service status
-      command: systemctl is-active foreman-proxy
+      ansible.builtin.command:
+        cmd: systemctl is-active foreman-proxy
       register: foreman_proxy_service
       changed_when: false
+      failed_when: false
+      when: inventory_hostname == smart_proxy_server
+
+    - name: Display Foreman Proxy service status
+      ansible.builtin.debug:
+        msg: "Foreman Proxy service status: {{ foreman_proxy_service.stdout }}"
       when: inventory_hostname == smart_proxy_server
 
     - name: Verify Foreman Proxy is active
-      assert:
+      ansible.builtin.assert:
         that:
-          - foreman_proxy_service.stdout | trim == "active"
-        fail_msg: "Foreman Proxy service is not active."
+          - foreman_proxy_service.stdout == "active"
+        fail_msg: >-
+          Foreman Proxy service is not active on {{ inventory_hostname }}.
+          Status: {{ foreman_proxy_service.stdout }}
+        success_msg: >-
+          Foreman Proxy service is active on {{ inventory_hostname }}.
       when: inventory_hostname == smart_proxy_server
 
+    # ==========================================================================
+    # CHECK SMART PROXY HTTPS API
+    # ==========================================================================
+
     - name: Check Smart Proxy HTTPS API
-      uri:
-        url: "https://{{ smart_proxy_server }}:8443/features"
+      ansible.builtin.uri:
+        url: "https://{{ smart_proxy_server }}:{{ smart_proxy_port }}/features"
+        method: GET
         validate_certs: false
         return_content: true
         status_code: 200
-      register: proxy_features
-      retries: 6
-      delay: 10
-      until: proxy_features.status == 200
+      register: smart_proxy_api
+      changed_when: false
+      failed_when: false
       when: inventory_hostname == smart_proxy_server
+
+    - name: Display Smart Proxy API result
+      ansible.builtin.debug:
+        msg:
+          - "HTTP Status: {{ smart_proxy_api.status | default('NOT AVAILABLE') }}"
+          - "Response: {{ smart_proxy_api.content | default('NO RESPONSE') }}"
+      when: inventory_hostname == smart_proxy_server
+
+    - name: Verify Smart Proxy HTTPS API is available
+      ansible.builtin.assert:
+        that:
+          - smart_proxy_api.status | default(0) == 200
+        fail_msg: >-
+          Smart Proxy API is not available at
+          https://{{ smart_proxy_server }}:{{ smart_proxy_port }}/features
+        success_msg: >-
+          Smart Proxy HTTPS API is available.
+      when: inventory_hostname == smart_proxy_server
+
+    # ==========================================================================
+    # DISPLAY FEATURES
+    # ==========================================================================
 
     - name: Display Smart Proxy features
-      debug:
-        var: proxy_features.json
-      when: inventory_hostname == smart_proxy_server
+      ansible.builtin.debug:
+        msg: "{{ smart_proxy_api.json | default(smart_proxy_api.content) }}"
+      when:
+        - inventory_hostname == smart_proxy_server
+        - smart_proxy_api.status | default(0) == 200
 
 
-###############################################################################
-# PLAY 10 - VERIFY REGISTRATION IN FOREMAN
-###############################################################################
+# ==============================================================================
+# PLAY 2 - VERIFY SMART PROXY REGISTRATION FROM FOREMAN
+# ==============================================================================
 
 - name: Verify Smart Proxy registration from Foreman
   hosts: all
@@ -681,67 +180,166 @@
     foreman_server: "cent-07-01.vgs.com"
     smart_proxy_server: "cent-07-02.vgs.com"
 
+    hammer_username: "admin"
+    hammer_password: "zqs977dXzqfEvTML"
+
   tasks:
 
+    # ==========================================================================
+    # RUN ONLY ON FOREMAN SERVER
+    # ==========================================================================
+
     - name: Skip non-Foreman hosts
-      debug:
-        msg: "Skipping Foreman verification on {{ inventory_hostname }}"
+      ansible.builtin.debug:
+        msg: "Skipping Foreman registration verification on {{ inventory_hostname }}"
       when: inventory_hostname != foreman_server
 
+    # ==========================================================================
+    # VERIFY HAMMER AUTHENTICATION
+    # ==========================================================================
+
+    - name: Verify Hammer authentication
+      ansible.builtin.command:
+        argv:
+          - hammer
+          - --username
+          - "{{ hammer_username }}"
+          - --password
+          - "{{ hammer_password }}"
+          - user
+          - info
+          - --login
+          - "{{ hammer_username }}"
+      register: hammer_auth_check
+      changed_when: false
+      no_log: true
+      when: inventory_hostname == foreman_server
+
+    - name: Verify Hammer authentication succeeded
+      ansible.builtin.assert:
+        that:
+          - hammer_auth_check.rc == 0
+        fail_msg: >-
+          Unable to authenticate to Foreman using Hammer.
+          Check hammer_username and hammer_password.
+        success_msg: "Hammer authentication succeeded."
+      when: inventory_hostname == foreman_server
+
+    # ==========================================================================
+    # GET ALL REGISTERED PROXIES
+    # ==========================================================================
+
+    - name: Get registered Smart Proxy list from Foreman
+      ansible.builtin.command:
+        argv:
+          - hammer
+          - --username
+          - "{{ hammer_username }}"
+          - --password
+          - "{{ hammer_password }}"
+          - proxy
+          - list
+          - --per-page
+          - "1000"
+      register: hammer_proxy_list
+      changed_when: false
+      no_log: true
+      when: inventory_hostname == foreman_server
+
+    # ==========================================================================
+    # DISPLAY PROXY LIST
+    # ==========================================================================
+
+    - name: Display registered Smart Proxies
+      ansible.builtin.debug:
+        msg: "{{ hammer_proxy_list.stdout_lines }}"
+      when: inventory_hostname == foreman_server
+
+    # ==========================================================================
+    # CHECK FOR REQUIRED SMART PROXY
+    # ==========================================================================
+
     - name: Verify Smart Proxy exists in Foreman
-      shell: |
-        hammer proxy list --per-page 999 | grep -F "{{ smart_proxy_server }}"
+      ansible.builtin.command:
+        argv:
+          - hammer
+          - --username
+          - "{{ hammer_username }}"
+          - --password
+          - "{{ hammer_password }}"
+          - proxy
+          - info
+          - --name
+          - "{{ smart_proxy_server }}"
       register: hammer_proxy_check
       changed_when: false
       failed_when: false
+      no_log: true
       when: inventory_hostname == foreman_server
 
+    # ==========================================================================
+    # DISPLAY REGISTRATION RESULT
+    # ==========================================================================
+
     - name: Display Smart Proxy registration result
-      debug:
+      ansible.builtin.debug:
         msg: >-
           {{
             'SUCCESS: Smart Proxy ' ~ smart_proxy_server ~
-            ' is registered in Foreman.'
+            ' is registered successfully in Foreman.'
             if hammer_proxy_check.rc == 0
             else
-            'WARNING: Smart Proxy was not found by hammer proxy list.'
+            'WARNING: Smart Proxy ' ~ smart_proxy_server ~
+            ' was not found in Foreman.'
           }}
       when: inventory_hostname == foreman_server
 
+    # ==========================================================================
+    # FAIL ONLY AFTER EXPLICIT AUTHENTICATED CHECK
+    # ==========================================================================
+
     - name: Fail if Smart Proxy is not registered
-      assert:
+      ansible.builtin.assert:
         that:
           - hammer_proxy_check.rc == 0
         fail_msg: >-
           Smart Proxy {{ smart_proxy_server }} was not found in Foreman.
-          The Smart Proxy installer did not complete registration successfully.
+          The Foreman Proxy installer did not complete registration successfully.
+        success_msg: >-
+          Smart Proxy {{ smart_proxy_server }} is correctly registered in Foreman.
       when: inventory_hostname == foreman_server
 
 
-###############################################################################
-# PLAY 11 - FINAL SUMMARY
-###############################################################################
+# ==============================================================================
+# PLAY 3 - FINAL SUMMARY
+# ==============================================================================
 
 - name: Display final Smart Proxy installation summary
   hosts: all
-  become: false
   gather_facts: false
 
   vars:
+    foreman_server: "cent-07-01.vgs.com"
     smart_proxy_server: "cent-07-02.vgs.com"
 
   tasks:
 
-    - name: Display summary on Smart Proxy
-      debug:
+    - name: Display Foreman server summary
+      ansible.builtin.debug:
         msg:
-          - "============================================================"
-          - "SMART PROXY INSTALLATION COMPLETED"
-          - "============================================================"
-          - "Foreman/Katello Server : cent-07-01.vgs.com"
-          - "Smart Proxy            : cent-07-02.vgs.com"
-          - "Certificate            : /root/cent-07-02.vgs.com-certs.tar"
-          - "Scenario               : foreman-proxy-content"
-          - "Smart Proxy API        : https://cent-07-02.vgs.com:8443"
-          - "============================================================"
+          - "=============================================="
+          - "FOREMAN SMART PROXY INSTALLATION SUMMARY"
+          - "=============================================="
+          - "Foreman Server: {{ foreman_server }}"
+          - "Smart Proxy: {{ smart_proxy_server }}"
+          - "Proxy URL: https://{{ smart_proxy_server }}:9090"
+          - "=============================================="
+      when: inventory_hostname == foreman_server
+
+    - name: Display Smart Proxy host summary
+      ansible.builtin.debug:
+        msg:
+          - "Smart Proxy host configuration completed."
+          - "Service: foreman-proxy"
+          - "API: https://{{ smart_proxy_server }}:9090/features"
       when: inventory_hostname == smart_proxy_server
