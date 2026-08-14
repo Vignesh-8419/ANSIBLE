@@ -100,7 +100,7 @@
     # OMAPI KEY CONFIGURATION
     ###########################################################################
 
-    - name: Check existing OMAPI key
+    - name: Check existing OMAPI key file
       ansible.builtin.stat:
         path: "{{ omapi_key_file }}"
       register: omapi_key_stat
@@ -109,86 +109,91 @@
     - name: Find existing generated OMAPI private files
       ansible.builtin.find:
         paths: /tmp
-        patterns:
-          - "Komapi_key.+*.private"
+        patterns: "Komapi_key.+*.private"
         file_type: file
-      register: existing_omapi_keys
+      register: existing_omapi_private_files
       when:
         - inventory_hostname == foreman_proxy
         - not omapi_key_stat.stat.exists
 
-    - name: Generate OMAPI key when no generated key exists
+    - name: Generate OMAPI key when no generated private file exists
       ansible.builtin.command:
-        cmd: dnssec-keygen -a HMAC-MD5 -b 128 -n HOST omapi_key
+        cmd: dnssec-keygen -a HMAC-MD5 -b 128 -n HOST "{{ omapi_key_name }}"
         chdir: /tmp
       register: omapi_generate
       changed_when: true
       when:
         - inventory_hostname == foreman_proxy
         - not omapi_key_stat.stat.exists
-        - existing_omapi_keys.matched | int == 0
+        - existing_omapi_private_files.matched | int == 0
 
-    - name: Find generated OMAPI private file
+    - name: Find generated OMAPI private files
       ansible.builtin.find:
         paths: /tmp
-        patterns:
-          - "Komapi_key.+*.private"
+        patterns: "Komapi_key.+*.private"
         file_type: file
-      register: generated_omapi_keys
+      register: generated_omapi_private_files
       when:
         - inventory_hostname == foreman_proxy
         - not omapi_key_stat.stat.exists
 
-    - name: Fail when OMAPI private file was not generated
-      ansible.builtin.fail:
-        msg: |
-          OMAPI private file was not found in /tmp.
-
-          Files found:
-          {{ generated_omapi_keys.files | map(attribute='path') | list }}
-      when:
-        - inventory_hostname == foreman_proxy
-        - not omapi_key_stat.stat.exists
-        - generated_omapi_keys.matched | int == 0
-
-    - name: Select generated OMAPI private file
+    - name: Select OMAPI private key file
       ansible.builtin.set_fact:
-        omapi_generated_key_file: >-
+        omapi_generated_private_file: >-
           {{
             (
-              existing_omapi_keys.files
-              if existing_omapi_keys.matched | int > 0
-              else generated_omapi_keys.files
+              existing_omapi_private_files.files
+              if (existing_omapi_private_files.matched | int > 0)
+              else generated_omapi_private_files.files
             )
+            | sort(attribute='mtime', reverse=true)
             | map(attribute='path')
-            | sort
-            | last
+            | first
           }}
       when:
         - inventory_hostname == foreman_proxy
         - not omapi_key_stat.stat.exists
 
-    - name: Read generated OMAPI private file
+    - name: Fail when OMAPI private file was not found
+      ansible.builtin.fail:
+        msg: |
+          No OMAPI private key file was found.
+
+          Existing files:
+          {{ existing_omapi_private_files.files | default([]) | map(attribute='path') | list }}
+
+          Generated files:
+          {{ generated_omapi_private_files.files | default([]) | map(attribute='path') | list }}
+      when:
+        - inventory_hostname == foreman_proxy
+        - not omapi_key_stat.stat.exists
+        - omapi_generated_private_file | default('') | length == 0
+
+    - name: Read generated OMAPI private key
       ansible.builtin.slurp:
-        src: "{{ omapi_generated_key_file }}"
+        src: "{{ omapi_generated_private_file }}"
       register: omapi_key_content
       when:
         - inventory_hostname == foreman_proxy
         - not omapi_key_stat.stat.exists
 
     - name: Extract OMAPI secret from generated private key
+      ansible.builtin.shell: |
+        printf '%s\n' '{{ omapi_key_content.content | b64decode }}' | \
+        awk '/^Key:[[:space:]]*/ {sub(/^Key:[[:space:]]*/, ""); print; exit}'
+      args:
+        executable: /bin/bash
+      register: omapi_secret_result
+      changed_when: false
+      no_log: true
+      when:
+        - inventory_hostname == foreman_proxy
+        - not omapi_key_stat.stat.exists
+
+    - name: Set OMAPI secret fact
       ansible.builtin.set_fact:
-        omapi_secret: >-
-          {{
-            (
-              omapi_key_content.content
-              | b64decode
-              | regex_search('(?m)^Key:[[:space:]]*([^[:space:]]+)', '\1')
-              | default([])
-              | first
-              | default('')
-            )
-          }}
+        omapi_secret: "{{ omapi_secret_result.stdout | trim }}"
+      no_log: true
       when:
         - inventory_hostname == foreman_proxy
         - not omapi_key_stat.stat.exists
@@ -198,23 +203,23 @@
         msg: |
           OMAPI secret extraction failed.
 
-          Generated private key file:
-          {{ omapi_generated_key_file }}
+          Private key file:
+          {{ omapi_generated_private_file }}
 
-          Private key file content:
-          {{ omapi_key_content.content | b64decode }}
+          Expected a line similar to:
+          Key: <OMAPI_SECRET>
       when:
         - inventory_hostname == foreman_proxy
         - not omapi_key_stat.stat.exists
-        - omapi_secret | default('') | trim | length == 0
+        - omapi_secret | default('') | length == 0
 
     - name: Display OMAPI secret extraction status
       ansible.builtin.debug:
-        msg: "OMAPI secret successfully extracted"
+        msg: "OMAPI secret successfully extracted from {{ omapi_generated_private_file }}"
       when:
         - inventory_hostname == foreman_proxy
         - not omapi_key_stat.stat.exists
-        - omapi_secret | default('') | trim | length > 0
+        - omapi_secret | default('') | length > 0
 
     - name: Create OMAPI key file
       ansible.builtin.copy:
@@ -227,13 +232,14 @@
             algorithm hmac-md5;
             secret "{{ omapi_secret }}";
           };
+      no_log: true
       notify:
         - Restart DHCP
         - Restart Foreman Proxy
       when:
         - inventory_hostname == foreman_proxy
         - not omapi_key_stat.stat.exists
-        - omapi_secret | default('') | trim | length > 0
+        - omapi_secret | default('') | length > 0
 
     - name: Ensure OMAPI key file has correct permissions
       ansible.builtin.file:
