@@ -151,10 +151,10 @@
         state: present
       when: inventory_hostname == smart_proxy
 
-    ###########################################################################
-    # DHCP CONFIGURATION
-    ###########################################################################
-
+    ###############################################################################
+    # OMAPI KEY CONFIGURATION - FIXED
+    ###############################################################################
+    
     - name: Generate OMAPI key
       ansible.builtin.command:
         cmd: dnssec-keygen -a HMAC-MD5 -b 256 -n HOST omapi_key
@@ -162,65 +162,104 @@
       register: omapi_key_generate
       changed_when: false
       when: inventory_hostname == smart_proxy
-
-    - name: Read generated OMAPI private key filename
-      ansible.builtin.shell: |
-        set -o pipefail
-        ls -1t /tmp/Komapi_key.+*.private 2>/dev/null | head -1
-      args:
-        executable: /bin/bash
-      register: omapi_private_key_file
-      changed_when: false
+    
+    - name: Find generated OMAPI key files
+      ansible.builtin.find:
+        paths: /tmp
+        patterns:
+          - "Komapi_key.+*.key"
+          - "Komapi_key.+*.private"
+        file_type: file
+        recurse: false
+      register: omapi_generated_files
       when: inventory_hostname == smart_proxy
-
-    - name: Read generated OMAPI private key
-      ansible.builtin.slurp:
-        src: "{{ omapi_private_key_file.stdout }}"
-      register: omapi_private_key_content
+    
+    - name: Display generated OMAPI files
+      ansible.builtin.debug:
+        msg: "{{ omapi_generated_files.files | map(attribute='path') | list }}"
+      when: inventory_hostname == smart_proxy
+    
+    - name: Find generated OMAPI key file
+      ansible.builtin.set_fact:
+        omapi_key_source_file: >-
+          {{
+            (
+              omapi_generated_files.files
+              | selectattr('path', 'search', '\\.key$')
+              | map(attribute='path')
+              | list
+              | first
+            )
+            | default('')
+          }}
+      when: inventory_hostname == smart_proxy
+    
+    - name: Fail when OMAPI key file was not generated
+      ansible.builtin.fail:
+        msg: |
+          OMAPI key file was not found in /tmp.
+    
+          Files found:
+          {{ omapi_generated_files.files | map(attribute='path') | list }}
       when:
         - inventory_hostname == smart_proxy
-        - omapi_private_key_file.stdout | length > 0
-
-    - name: Extract OMAPI secret safely
+        - omapi_key_source_file | length == 0
+    
+    - name: Read generated OMAPI key file
+      ansible.builtin.slurp:
+        src: "{{ omapi_key_source_file }}"
+      register: omapi_key_content
+      when:
+        - inventory_hostname == smart_proxy
+        - omapi_key_source_file | length > 0
+    
+    - name: Extract OMAPI secret from key file
       ansible.builtin.set_fact:
         omapi_secret: >-
           {{
             (
-              omapi_private_key_content.content
+              omapi_key_content.content
               | b64decode
-              | regex_findall('Key:\\s*(.+)')
+              | regex_findall('secret\\s+"([^"]+)"')
               | first
-              | default('')
             )
+            | default('')
           }}
       when:
         - inventory_hostname == smart_proxy
-        - omapi_private_key_file.stdout | length > 0
-
-    - name: Fail when OMAPI secret could not be extracted
-      ansible.builtin.fail:
-        msg: |
-          OMAPI key generation completed but no secret could be extracted.
-
-          Private key file:
-          {{ omapi_private_key_file.stdout }}
-
-          Generated command output:
-          {{ omapi_key_generate.stdout | default('No stdout') }}
+        - omapi_key_source_file | length > 0
+    
+    - name: Display OMAPI key content for troubleshooting
+      ansible.builtin.debug:
+        msg: "{{ omapi_key_content.content | b64decode }}"
       when:
         - inventory_hostname == smart_proxy
         - omapi_secret | default('') | length == 0
-
+    
+    - name: Fail when OMAPI secret could not be extracted
+      ansible.builtin.fail:
+        msg: |
+          OMAPI secret could not be extracted.
+    
+          OMAPI key file:
+          {{ omapi_key_source_file }}
+    
+          Key file content:
+          {{ omapi_key_content.content | b64decode }}
+      when:
+        - inventory_hostname == smart_proxy
+        - omapi_secret | default('') | length == 0
+    
     - name: Display OMAPI secret extraction status
       ansible.builtin.debug:
-        msg: "OMAPI secret successfully extracted."
+        msg: "OMAPI secret successfully extracted from {{ omapi_key_source_file }}"
       when:
         - inventory_hostname == smart_proxy
         - omapi_secret | length > 0
-
-    - name: Create OMAPI key file
+    
+    - name: Create OMAPI key file for ISC DHCP
       ansible.builtin.copy:
-        dest: "{{ omapi_key_file }}"
+        dest: /etc/dhcp/omapi.key
         owner: root
         group: root
         mode: "0600"
