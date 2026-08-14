@@ -5,42 +5,33 @@
   gather_facts: false
 
   vars:
-    # ============================================================
-    # ESXi VM CONFIGURATION
-    # ============================================================
-
     vm_name: "ESXI-01"
 
     esxi_iso: "/cygdrive/e/vmware/VMware-VMvisor-Installer-8.0U1-21495797.x86_64.iso"
 
-    vm_directory: "/cygdrive/d/ESXI"
+    vm_base_dir: "/cygdrive/d/ESXI"
+    vm_dir: "/cygdrive/d/ESXI/ESXI-01"
 
-    # VMware Workstation installation
+    vmx_file_cygwin: "/cygdrive/d/ESXI/ESXI-01/ESXI-01.vmx"
+    vmx_file_windows: 'D:\ESXI\ESXI-01\ESXI-01.vmx'
+
+    vmdk_file_cygwin: "/cygdrive/d/ESXI/ESXI-01/ESXI-01.vmdk"
+    vmdk_file_windows: 'D:\ESXI\ESXI-01\ESXI-01.vmdk'
+
     vmrun_path: "/cygdrive/d/VM workstation/vmrun.exe"
     vdiskmanager_path: "/cygdrive/d/VM workstation/vmware-vdiskmanager.exe"
 
-    # VM files
-    vm_path: "{{ vm_directory }}/{{ vm_name }}"
-    vmx_file: "{{ vm_path }}/{{ vm_name }}.vmx"
-    vm_disk: "{{ vm_path }}/{{ vm_name }}.vmdk"
+    vm_ram_mb: 24568
+    vm_cpu_count: 12
+    vm_disk_size: "2000GB"
 
-    # Hardware
-    memory_mb: 24568
-    num_cpus: 12
-    disk_size_gb: 2000
-
-    # Network
-    network_type: "bridged"
-    network_name: "VMnet0"
-
-    # Firmware
-    firmware: "efi"
+    vm_network: "VMnet0"
 
   tasks:
 
-    # ============================================================
+    ##########################################################################
     # DISPLAY CONFIGURATION
-    # ============================================================
+    ##########################################################################
 
     - name: Display ESXi configuration
       ansible.builtin.debug:
@@ -50,415 +41,372 @@
           - "============================================================"
           - "VM Name      : {{ vm_name }}"
           - "ESXi ISO     : {{ esxi_iso }}"
-          - "VM Directory : {{ vm_directory }}"
+          - "VM Directory : {{ vm_dir }}"
           - "VMRUN Path   : {{ vmrun_path }}"
-          - "VDisk Path   : {{ vdiskmanager_path }}"
-          - "RAM          : {{ memory_mb }} MB"
-          - "CPU          : {{ num_cpus }} vCPU"
-          - "Disk         : {{ disk_size_gb }} GB"
-          - "Network      : {{ network_name }}"
-          - "Firmware     : {{ firmware }}"
+          - "RAM          : {{ vm_ram_mb }} MB"
+          - "CPU          : {{ vm_cpu_count }} vCPU"
+          - "Disk         : {{ vm_disk_size }}"
+          - "Network      : {{ vm_network }}"
+          - "Firmware     : EFI"
           - "Nested VT    : ENABLED"
           - "============================================================"
 
-    # ============================================================
-    # VALIDATE ESXi ISO
-    # ============================================================
+    ##########################################################################
+    # CHECK REQUIRED FILES
+    ##########################################################################
 
     - name: Check ESXi ISO exists
       ansible.builtin.stat:
         path: "{{ esxi_iso }}"
-      register: esxi_iso_check
+      register: esxi_iso_stat
 
     - name: Fail when ESXi ISO does not exist
       ansible.builtin.fail:
         msg: |
-          ============================================================
-          ESXi ISO NOT FOUND
-          ============================================================
+          ESXi ISO was not found:
 
-          Expected:
           {{ esxi_iso }}
-
-          ============================================================
-      when: not esxi_iso_check.stat.exists
-
-    # ============================================================
-    # VALIDATE VMWARE EXECUTABLES
-    # ============================================================
+      when: not esxi_iso_stat.stat.exists
 
     - name: Check VMware vmrun.exe exists
       ansible.builtin.stat:
         path: "{{ vmrun_path }}"
-      register: vmrun_check
+      register: vmrun_stat
 
     - name: Fail when vmrun.exe is not found
       ansible.builtin.fail:
         msg: |
-          ============================================================
-          VMWARE WORKSTATION vmrun.exe NOT FOUND
-          ============================================================
+          VMware Workstation vmrun.exe was not found:
 
-          Expected:
           {{ vmrun_path }}
+      when: not vmrun_stat.stat.exists
 
-          ============================================================
-      when: not vmrun_check.stat.exists
-
-    - name: Display detected VMware vmrun path
-      ansible.builtin.debug:
-        msg:
-          - "============================================================"
-          - "VMWARE WORKSTATION DETECTED"
-          - "============================================================"
-          - "vmrun.exe: {{ vmrun_path }}"
-          - "============================================================"
-
-    - name: Check VMware vmware-vdiskmanager.exe exists
+    - name: Check VMware vdiskmanager exists
       ansible.builtin.stat:
         path: "{{ vdiskmanager_path }}"
-      register: vdiskmanager_check
+      register: vdiskmanager_stat
 
     - name: Fail when vmware-vdiskmanager.exe is not found
       ansible.builtin.fail:
         msg: |
-          ============================================================
-          VMWARE VIRTUAL DISK MANAGER NOT FOUND
-          ============================================================
+          VMware Virtual Disk Manager was not found:
 
-          Expected:
           {{ vdiskmanager_path }}
+      when: not vdiskmanager_stat.stat.exists
 
-          ============================================================
-      when: not vdiskmanager_check.stat.exists
-
-    - name: Display vmware-vdiskmanager path
-      ansible.builtin.debug:
-        msg: "vmware-vdiskmanager.exe: {{ vdiskmanager_path }}"
-
-    # ============================================================
+    ##########################################################################
     # CREATE VM DIRECTORY
-    # ============================================================
+    ##########################################################################
 
     - name: Create ESXi VM directory
       ansible.builtin.file:
-        path: "{{ vm_path }}"
+        path: "{{ vm_dir }}"
         state: directory
-        mode: "0755"
 
-    # ============================================================
-    # CHECK EXISTING VM FILES
-    # ============================================================
+    ##########################################################################
+    # CHECK VM FILES
+    ##########################################################################
 
     - name: Check whether VMX file already exists
       ansible.builtin.stat:
-        path: "{{ vmx_file }}"
-      register: vmx_check
+        path: "{{ vmx_file_cygwin }}"
+      register: vmx_stat
 
     - name: Check whether virtual disk already exists
       ansible.builtin.stat:
-        path: "{{ vm_disk }}"
-      register: virtual_disk_check
+        path: "{{ vmdk_file_cygwin }}"
+      register: vmdk_stat
 
-    # ============================================================
-    # CONVERT PATHS FOR WINDOWS VMWARE EXECUTABLES
-    # ============================================================
-
-    - name: Convert VM directory path to Windows format
-      ansible.builtin.command:
-        argv:
-          - cygpath
-          - -w
-          - "{{ vm_path }}"
-      register: vm_path_windows
-      changed_when: false
-
-    - name: Convert VMX path to Windows format
-      ansible.builtin.command:
-        argv:
-          - cygpath
-          - -w
-          - "{{ vmx_file }}"
-      register: vmx_file_windows
-      changed_when: false
-
-    - name: Convert VMDK path to Windows format
-      ansible.builtin.command:
-        argv:
-          - cygpath
-          - -w
-          - "{{ vm_disk }}"
-      register: vm_disk_windows
-      changed_when: false
-
-    - name: Convert ESXi ISO path to Windows format
-      ansible.builtin.command:
-        argv:
-          - cygpath
-          - -w
-          - "{{ esxi_iso }}"
-      register: esxi_iso_windows
-      changed_when: false
-
-    - name: Display converted Windows paths
-      ansible.builtin.debug:
-        msg:
-          - "VM Directory: {{ vm_path_windows.stdout }}"
-          - "VMX File: {{ vmx_file_windows.stdout }}"
-          - "VMDK File: {{ vm_disk_windows.stdout }}"
-          - "ESXi ISO: {{ esxi_iso_windows.stdout }}"
-
-    # ============================================================
-    # CREATE VIRTUAL DISK
-    # ============================================================
+    ##########################################################################
+    # CREATE VMDK
+    ##########################################################################
 
     - name: Create ESXi virtual disk
       ansible.builtin.command:
         argv:
           - "{{ vdiskmanager_path }}"
-          - -c
-          - -s
-          - "{{ disk_size_gb }}GB"
-          - -a
-          - lsilogic
-          - -t
+          - "-c"
+          - "-s"
+          - "{{ vm_disk_size }}"
+          - "-a"
+          - "lsilogic"
+          - "-t"
           - "0"
-          - "{{ vm_disk_windows.stdout }}"
-      register: disk_create_result
-      when: not virtual_disk_check.stat.exists
+          - "{{ vmdk_file_windows }}"
+      when: not vmdk_stat.stat.exists
 
-    - name: Display virtual disk creation result
-      ansible.builtin.debug:
-        msg:
-          - "Virtual disk creation completed"
-          - "{{ disk_create_result.stdout_lines | default([]) }}"
-      when:
-        - not virtual_disk_check.stat.exists
-        - disk_create_result is defined
+    - name: Recheck ESXi virtual disk
+      ansible.builtin.stat:
+        path: "{{ vmdk_file_cygwin }}"
+      register: vmdk_created_stat
 
-    - name: Display existing virtual disk status
-      ansible.builtin.debug:
-        msg: "Virtual disk already exists: {{ vm_disk }}"
-      when: virtual_disk_check.stat.exists
+    - name: Fail when ESXi virtual disk was not created
+      ansible.builtin.fail:
+        msg: |
+          Failed to create ESXi virtual disk.
 
-    # ============================================================
-    # CREATE VMX CONFIGURATION
-    # ============================================================
+          Expected:
+          {{ vmdk_file_cygwin }}
+      when: not vmdk_created_stat.stat.exists
+
+    ##########################################################################
+    # CREATE VMX FILE
+    ##########################################################################
 
     - name: Create ESXi VMX configuration
       ansible.builtin.copy:
-        dest: "{{ vmx_file }}"
-        mode: "0644"
+        dest: "{{ vmx_file_cygwin }}"
         content: |
           .encoding = "windows-1252"
+
           config.version = "8"
           virtualHW.version = "20"
 
           displayName = "{{ vm_name }}"
 
-          guestOS = "otherlinux-64"
+          guestOS = "vmkernel7"
 
-          memsize = "{{ memory_mb }}"
-          numvcpus = "{{ num_cpus }}"
-          cpuid.coresPerSocket = "{{ num_cpus }}"
+          firmware = "efi"
 
-          firmware = "{{ firmware }}"
+          memsize = "{{ vm_ram_mb }}"
+          numvcpus = "{{ vm_cpu_count }}"
+          cpuid.coresPerSocket = "1"
 
-          vhv.enable = "TRUE"
+          smc.present = "FALSE"
 
           monitor.virtual_exec = "hardware"
           monitor.virtual_mmu = "hardware"
 
+          vhv.enable = "TRUE"
+
           hypervisor.cpuid.v0 = "FALSE"
 
-          mks.enable3d = "FALSE"
+          mainMem.useNamedFile = "FALSE"
 
-          nvram = "{{ vm_name }}.nvram"
-
-          usb.present = "TRUE"
-          usb.generic.autoconnect = "FALSE"
-
-          tools.syncTime = "TRUE"
+          sched.mem.pshare.enable = "FALSE"
 
           scsi0.present = "TRUE"
           scsi0.virtualDev = "lsilogic"
 
           scsi0:0.present = "TRUE"
-          scsi0:0.fileName = "{{ vm_name }}.vmdk"
+          scsi0:0.fileName = "{{ vmdk_file_windows }}"
           scsi0:0.deviceType = "scsi-hardDisk"
 
           sata0.present = "TRUE"
 
           sata0:0.present = "TRUE"
-          sata0:0.fileName = "{{ esxi_iso_windows.stdout | replace('\\', '/') }}"
           sata0:0.deviceType = "cdrom-image"
+          sata0:0.fileName = "{{ esxi_iso | regex_replace('^/cygdrive/([a-zA-Z])/(.*)$', '\\1:\\\\\2') }}"
+
           sata0:0.startConnected = "TRUE"
 
           ethernet0.present = "TRUE"
-          ethernet0.connectionType = "{{ network_type }}"
-          ethernet0.vnet = "{{ network_name }}"
+          ethernet0.connectionType = "custom"
+          ethernet0.vnet = "{{ vm_network }}"
           ethernet0.virtualDev = "vmxnet3"
           ethernet0.startConnected = "TRUE"
 
-          pciBridge0.present = "TRUE"
-          pciBridge4.present = "TRUE"
-          pciBridge4.virtualDev = "pcieRootPort"
-          pciBridge4.functions = "8"
+          usb.present = "TRUE"
 
-          pciBridge5.present = "TRUE"
-          pciBridge5.virtualDev = "pcieRootPort"
-          pciBridge5.functions = "8"
+          sound.present = "FALSE"
 
-          pciBridge6.present = "TRUE"
-          pciBridge6.virtualDev = "pcieRootPort"
-          pciBridge6.functions = "8"
+          floppy0.present = "FALSE"
 
-          pciBridge7.present = "TRUE"
-          pciBridge7.virtualDev = "pcieRootPort"
-          pciBridge7.functions = "8"
+          tools.syncTime = "FALSE"
+
+          powerType.powerOff = "soft"
+          powerType.powerOn = "soft"
+          powerType.reset = "soft"
+          powerType.suspend = "soft"
+
+          msg.autoAnswer = "TRUE"
+
+          isolation.tools.copy.disable = "FALSE"
+          isolation.tools.paste.disable = "FALSE"
 
           uuid.action = "create"
-      register: vmx_create_result
 
-    # ============================================================
-    # VERIFY VMX FILE
-    # ============================================================
+          nvram = "{{ vm_name }}.nvram"
+      when: not vmx_stat.stat.exists
+
+    ##########################################################################
+    # VERIFY VMX
+    ##########################################################################
 
     - name: Check VMX file after creation
       ansible.builtin.stat:
-        path: "{{ vmx_file }}"
-      register: vmx_final_check
+        path: "{{ vmx_file_cygwin }}"
+      register: final_vmx_stat
 
-    - name: Fail when VMX file was not created
+    - name: Fail when VMX file does not exist
       ansible.builtin.fail:
         msg: |
-          VMX file was not created successfully:
+          VMX file does not exist:
 
-          {{ vmx_file }}
-      when: not vmx_final_check.stat.exists
+          {{ vmx_file_cygwin }}
+      when: not final_vmx_stat.stat.exists
 
-    # ============================================================
-    # CHECK VM STATE
-    # ============================================================
+    - name: Display VMX file
+      ansible.builtin.command:
+        cmd: cat "{{ vmx_file_cygwin }}"
+      register: vmx_content
+      changed_when: false
 
-    - name: List running VMware Workstation VMs
+    - name: Show VMX configuration
+      ansible.builtin.debug:
+        var: vmx_content.stdout_lines
+
+    ##########################################################################
+    # CHECK CURRENT VM STATE
+    ##########################################################################
+
+    - name: Get running VMware virtual machines
       ansible.builtin.command:
         argv:
           - "{{ vmrun_path }}"
-          - list
-      register: running_vms
+          - "list"
+      register: vmrun_list
       changed_when: false
       failed_when: false
 
-    - name: Display currently running VMs
+    - name: Display running VMs
       ansible.builtin.debug:
-        var: running_vms.stdout_lines
+        var: vmrun_list.stdout_lines
 
     - name: Set ESXi VM running status
       ansible.builtin.set_fact:
         esxi_vm_running: >-
           {{
-            vmx_file_windows.stdout
-            in running_vms.stdout
+            vmx_file_windows | lower
+            in
+            vmrun_list.stdout | lower
           }}
 
-    # ============================================================
+    - name: Display ESXi VM status
+      ansible.builtin.debug:
+        msg: >-
+          ESXi VM is
+          {{ 'already running' if esxi_vm_running else 'currently stopped' }}
+
+    ##########################################################################
     # START VM
-    # ============================================================
+    ##########################################################################
 
     - name: Start Nested ESXi VM
       ansible.builtin.command:
         argv:
           - "{{ vmrun_path }}"
-          - start
-          - "{{ vmx_file_windows.stdout }}"
-          - nogui
-      register: vm_start_result
+          - "start"
+          - "{{ vmx_file_windows }}"
+          - "nogui"
+      register: vm_start
+      when: not esxi_vm_running
+      changed_when: vm_start.rc == 0
+      failed_when: false
+
+    - name: Display VMware start result
+      ansible.builtin.debug:
+        msg:
+          - "Return Code: {{ vm_start.rc | default('VM already running') }}"
+          - "STDOUT: {{ vm_start.stdout | default('') }}"
+          - "STDERR: {{ vm_start.stderr | default('') }}"
       when: not esxi_vm_running
 
-    - name: Display VM start result
-      ansible.builtin.debug:
-        msg:
-          - "============================================================"
-          - "NESTED ESXi VM STARTED"
-          - "============================================================"
-          - "VM Name: {{ vm_name }}"
-          - "VMX: {{ vmx_file }}"
-          - "{{ vm_start_result.stdout | default('') }}"
-          - "============================================================"
+    - name: Fail with VMware troubleshooting information
+      ansible.builtin.fail:
+        msg: |
+          ============================================================
+          FAILED TO START NESTED ESXi VM
+          ============================================================
+
+          VMX:
+          {{ vmx_file_windows }}
+
+          vmrun return code:
+          {{ vm_start.rc }}
+
+          VMware output:
+          {{ vm_start.stdout }}
+
+          {{ vm_start.stderr }}
+
+          IMPORTANT:
+          "The operation was canceled" usually means VMware Workstation
+          itself rejected or canceled the power-on operation.
+
+          Try opening this VM manually in VMware Workstation:
+
+          {{ vmx_file_windows }}
+
+          Then check for any popup/error message.
+
+          Also verify:
+
+          1. VMware Workstation is running normally.
+          2. Nested virtualization is enabled:
+             vhv.enable = "TRUE"
+          3. Intel VT-x / AMD-V is enabled in BIOS.
+          4. Hyper-V is disabled if it conflicts with VMware.
+          5. Windows Memory Integrity / VBS is not blocking nested VT.
+          6. The VM is not already locked by another VMware process.
+          7. VMnet0 exists in VMware Virtual Network Editor.
+
+          ============================================================
       when:
         - not esxi_vm_running
-        - vm_start_result is defined
+        - vm_start.rc != 0
 
-    - name: Display already running status
-      ansible.builtin.debug:
-        msg:
-          - "============================================================"
-          - "NESTED ESXi VM ALREADY RUNNING"
-          - "============================================================"
-          - "VM Name: {{ vm_name }}"
-          - "VMX: {{ vmx_file }}"
-          - "============================================================"
-      when: esxi_vm_running
+    ##########################################################################
+    # VERIFY VM STARTED
+    ##########################################################################
 
-    # ============================================================
-    # FINAL VERIFY
-    # ============================================================
+    - name: Wait for VMware startup
+      ansible.builtin.pause:
+        seconds: 5
+      when:
+        - not esxi_vm_running
+        - vm_start.rc == 0
 
-    - name: Get final running VMware VM list
+    - name: Check running VMware virtual machines again
       ansible.builtin.command:
         argv:
           - "{{ vmrun_path }}"
-          - list
-      register: final_running_vms
+          - "list"
+      register: final_vmrun_list
       changed_when: false
-      failed_when: false
 
-    - name: Verify ESXi VM is running
-      ansible.builtin.assert:
-        that:
-          - vmx_file_windows.stdout in final_running_vms.stdout
-        fail_msg: |
-          ============================================================
-          ESXi VM FAILED TO START
-          ============================================================
+    - name: Display final running VMs
+      ansible.builtin.debug:
+        var: final_vmrun_list.stdout_lines
+
+    - name: Verify ESXi VM started
+      ansible.builtin.fail:
+        msg: |
+          VMware reported successful startup, but ESXi VM is not listed.
 
           Expected VM:
-          {{ vmx_file_windows.stdout }}
+          {{ vmx_file_windows }}
 
           Running VMs:
-          {{ final_running_vms.stdout }}
+          {{ final_vmrun_list.stdout }}
+      when: vmx_file_windows | lower not in final_vmrun_list.stdout | lower
 
-          ============================================================
-        success_msg: |
-          ============================================================
-          ESXi VM SUCCESSFULLY STARTED
-          ============================================================
-
-          VM Name: {{ vm_name }}
-          VMX: {{ vmx_file_windows.stdout }}
-
-          ============================================================
-
-    # ============================================================
+    ##########################################################################
     # FINAL SUMMARY
-    # ============================================================
+    ##########################################################################
 
-    - name: Display final ESXi VM summary
+    - name: Display final summary
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "NESTED ESXi VM DEPLOYMENT COMPLETE"
+          - "NESTED ESXi VM STARTED SUCCESSFULLY"
           - "============================================================"
-          - "VM Name         : {{ vm_name }}"
-          - "VM Directory    : {{ vm_path }}"
-          - "VMX File        : {{ vmx_file }}"
-          - "Virtual Disk    : {{ vm_disk }}"
-          - "ESXi ISO        : {{ esxi_iso }}"
-          - "RAM             : {{ memory_mb }} MB"
-          - "CPU             : {{ num_cpus }} vCPU"
-          - "Disk            : {{ disk_size_gb }} GB"
-          - "Firmware        : {{ firmware }}"
-          - "Nested VT       : ENABLED"
-          - "VM State        : RUNNING"
+          - "VM Name : {{ vm_name }}"
+          - "VMX     : {{ vmx_file_windows }}"
+          - "RAM     : {{ vm_ram_mb }} MB"
+          - "CPU     : {{ vm_cpu_count }}"
+          - "Disk    : {{ vm_disk_size }}"
+          - "Network : {{ vm_network }}"
+          - "Firmware: EFI"
+          - "Nested VT: ENABLED"
           - "============================================================"
