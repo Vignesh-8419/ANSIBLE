@@ -15,6 +15,8 @@
     omapi_key_name: "omapi_key"
     omapi_key_file: "/etc/foreman-proxy/omapi.key"
     dns_server: "192.168.253.1"
+    foreman_api_user: "admin"
+    foreman_api_password: "1WXlOStnuoKR81ICzEyDzw"
 
   handlers:
 
