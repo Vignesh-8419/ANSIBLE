@@ -1,6 +1,6 @@
 ---
 - name: Create and Start Nested ESXi VM in VMware Workstation
-  hosts: all
+  hosts: localhost
   connection: local
   gather_facts: false
 
