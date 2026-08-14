@@ -7,27 +7,68 @@ from tempfile import NamedTemporaryFile
 import pycdlib
 
 
-ORIGINAL_ISO = Path(
-    "/cygdrive/d/ESXI/esxi-auto/ESXi-8.0.1-original.iso"
+# ============================================================================
+# CURRENT CUSTOMIZED ISO
+#
+# The original VMware ISO was deleted.
+#
+# We now use the existing customized ISO as the source.
+# ============================================================================
+
+SOURCE_ISO = Path(
+    "/cygdrive/e/vmware/ESXi-8.0.1-auto.iso"
 )
 
+OUTPUT_ISO = Path(
+    "/cygdrive/e/vmware/ESXi-8.0.1-auto.iso"
+)
+
+# Temporary source backup used while rebuilding the same ISO.
+SOURCE_BACKUP_ISO = Path(
+    "/cygdrive/e/vmware/ESXi-8.0.1-auto-source-backup.iso"
+)
+
+
+# ============================================================================
+# EXTRACTED WORKING CONTENT
+# ============================================================================
+
 WORK_ISO_DIR = Path(
-    "/cygdrive/d/ESXI/esxi-auto/work/iso"
+    "/cygdrive/d/ESXI/esxi-auto/work/current-iso"
 )
 
 BOOT_CFG = WORK_ISO_DIR / "BOOT.CFG"
 KS_CFG = WORK_ISO_DIR / "KS.CFG"
 
-OUTPUT_DIR = Path(
-    "/cygdrive/d/ESXI/esxi-auto/output"
+
+# ============================================================================
+# EXPECTED CONFIGURATION
+# ============================================================================
+
+EXPECTED_KERNELOPT = (
+    "kernelopt=runweasel "
+    "cdromBoot ks=cdrom:/KS.CFG"
 )
 
-OUTPUT_ISO = OUTPUT_DIR / "ESXi-8.0.1-auto.iso"
+REQUIRED_KS_STRINGS = [
+    "vmaccepteula",
+    "rootpw ",
+    "network --bootproto=static",
+    "--ip=192.168.253.128",
+    "--netmask=255.255.255.0",
+    "--gateway=192.168.253.2",
+    "--nameserver=192.168.253.1",
+    "--hostname=esxi-host-01.vgs.com",
+    "--device=vmnic0",
+    "install --firstdisk --overwritevmfs",
+    "reboot",
+    "%firstboot",
+]
 
-ORIGINAL_BACKUP = (
-    OUTPUT_DIR / "ESXi-8.0.1-original-backup.iso"
-)
 
+# ============================================================================
+# OUTPUT HELPERS
+# ============================================================================
 
 def header(text):
     print()
@@ -58,16 +99,34 @@ def fail(text):
     raise SystemExit(1)
 
 
+# ============================================================================
+# FILE VALIDATION
+# ============================================================================
+
 def require_file(path, description):
     if not path.exists():
-        fail(f"{description} does not exist:\n\n{path}")
+        fail(
+            f"{description} does not exist:\n\n"
+            f"{path}"
+        )
 
     if not path.is_file():
-        fail(f"{description} is not a regular file:\n\n{path}")
+        fail(
+            f"{description} is not a regular file:\n\n"
+            f"{path}"
+        )
 
+
+# ============================================================================
+# VERIFY BOOT.CFG FROM WORK DIRECTORY
+# ============================================================================
 
 def verify_boot_cfg_source():
-    require_file(BOOT_CFG, "Source BOOT.CFG")
+
+    require_file(
+        BOOT_CFG,
+        "Source BOOT.CFG"
+    )
 
     text = BOOT_CFG.read_text(
         encoding="utf-8",
@@ -77,162 +136,231 @@ def verify_boot_cfg_source():
     kernelopt = None
 
     for line in text.splitlines():
+
         if line.startswith("kernelopt="):
             kernelopt = line.strip()
             break
 
-    expected = (
-        "kernelopt=runweasel "
-        "cdromBoot ks=cdrom:/KS.CFG"
-    )
+    if kernelopt != EXPECTED_KERNELOPT:
 
-    if kernelopt != expected:
         fail(
             "BOOT.CFG is not configured correctly.\n\n"
-            f"Expected:\n{expected}\n\n"
+            f"Expected:\n{EXPECTED_KERNELOPT}\n\n"
             f"Found:\n{kernelopt}"
         )
 
-    ok(f"BOOT.CFG kernelopt: {kernelopt}")
+    ok(
+        f"BOOT.CFG kernelopt: {kernelopt}"
+    )
 
+
+# ============================================================================
+# VERIFY KS.CFG FROM WORK DIRECTORY
+# ============================================================================
 
 def verify_ks_cfg_source():
-    require_file(KS_CFG, "Source KS.CFG")
+
+    require_file(
+        KS_CFG,
+        "Source KS.CFG"
+    )
 
     text = KS_CFG.read_text(
         encoding="utf-8",
         errors="replace"
     )
 
-    required_strings = [
-        "vmaccepteula",
-        "rootpw ",
-        "install --firstdisk --overwritevmfs",
-        "reboot",
-        "%firstboot",
-    ]
+    missing = []
 
-    for required in required_strings:
+    for required in REQUIRED_KS_STRINGS:
+
         if required not in text:
-            fail(
-                "KS.CFG is missing required content:\n\n"
-                f"{required}"
+            missing.append(required)
+
+    if missing:
+
+        fail(
+            "KS.CFG is missing required content:\n\n"
+            + "\n".join(
+                f"- {item}"
+                for item in missing
             )
-
-    ok("KS.CFG contains all required directives")
-
-
-def preserve_original_iso():
-    require_file(
-        ORIGINAL_ISO,
-        "Original ESXi ISO"
-    )
-
-    OUTPUT_DIR.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    if ORIGINAL_BACKUP.exists():
-        ok(
-            "Original ISO backup already exists:\n"
-            f"     {ORIGINAL_BACKUP}"
         )
-        return
+
+    ok("KS.CFG contains required directives")
+
+    print()
+    print("KS.CFG network configuration:")
+    print("  IP       : 192.168.253.128")
+    print("  Netmask  : 255.255.255.0")
+    print("  Gateway  : 192.168.253.2")
+    print("  DNS      : 192.168.253.1")
+    print("  Hostname : esxi-host-01.vgs.com")
+    print("  Device   : vmnic0")
+
+
+# ============================================================================
+# CREATE SAFE SOURCE BACKUP
+# ============================================================================
+
+def create_source_backup():
+
+    require_file(
+        SOURCE_ISO,
+        "Current customized ESXi ISO"
+    )
+
+    if SOURCE_BACKUP_ISO.exists():
+
+        info(
+            "Removing previous temporary source backup:\n"
+            f"     {SOURCE_BACKUP_ISO}"
+        )
+
+        SOURCE_BACKUP_ISO.unlink()
 
     shutil.copy2(
-        ORIGINAL_ISO,
-        ORIGINAL_BACKUP
+        SOURCE_ISO,
+        SOURCE_BACKUP_ISO
     )
 
     ok(
-        "Original ISO backup created:\n"
-        f"     {ORIGINAL_BACKUP}"
+        "Current customized ISO backed up:\n"
+        f"     {SOURCE_BACKUP_ISO}"
     )
 
 
+# ============================================================================
+# BUILD CUSTOMIZED ISO
+#
+# Important:
+#
+# SOURCE_BACKUP_ISO is opened.
+# OUTPUT_ISO is written.
+#
+# This avoids trying to read and overwrite the same ISO simultaneously.
+# ============================================================================
+
 def build_custom_iso():
-    header("OPENING ORIGINAL ESXi ISO")
+
+    header("OPENING CURRENT CUSTOMIZED ESXi ISO")
 
     iso = pycdlib.PyCdlib()
 
     try:
-        iso.open(str(ORIGINAL_ISO))
 
-        ok("Original ISO opened")
+        iso.open(
+            str(SOURCE_BACKUP_ISO)
+        )
+
+        ok(
+            "Current customized ISO opened"
+        )
 
         if iso.eltorito_boot_catalog is None:
+
             fail(
-                "Original ISO does not contain "
+                "Current ISO does not contain "
                 "an El Torito boot catalog."
             )
 
-        ok("Existing El Torito boot catalog detected")
+        ok(
+            "Existing El Torito boot catalog detected"
+        )
 
         # ------------------------------------------------------------
-        # Remove any previous customized output.
-        # This NEVER touches the original ISO.
+        # Remove old output before writing.
         # ------------------------------------------------------------
 
         if OUTPUT_ISO.exists():
+
             info(
-                "Removing previous customized ISO only:\n"
+                "Removing previous customized ISO:\n"
                 f"     {OUTPUT_ISO}"
             )
+
             OUTPUT_ISO.unlink()
 
         # ------------------------------------------------------------
-        # Replace existing BOOT.CFG
-        #
-        # PyCdlib requires:
-        #   1. rm_file()
-        #   2. add_file()
-        #
-        # This is important because add_file() alone would create
-        # another BOOT.CFG instead of replacing the existing one.
+        # Replace BOOT.CFG
         # ------------------------------------------------------------
 
         try:
+
             iso.rm_file(
                 iso_path="/BOOT.CFG;1"
             )
-            ok("Original BOOT.CFG removed")
+
+            ok(
+                "Existing BOOT.CFG removed"
+            )
+
         except Exception as exc:
+
             fail(
-                "Could not remove original BOOT.CFG:\n\n"
+                "Could not remove existing BOOT.CFG:\n\n"
                 f"{exc}"
             )
 
         try:
+
             iso.add_file(
                 str(BOOT_CFG),
                 iso_path="/BOOT.CFG;1"
             )
-            ok("Modified BOOT.CFG added")
+
+            ok(
+                "Modified BOOT.CFG added"
+            )
+
         except Exception as exc:
+
             fail(
                 "Could not add modified BOOT.CFG:\n\n"
                 f"{exc}"
             )
 
         # ------------------------------------------------------------
-        # Add KS.CFG
+        # Replace KS.CFG
         # ------------------------------------------------------------
 
         try:
+
+            iso.rm_file(
+                iso_path="/KS.CFG;1"
+            )
+
+            ok(
+                "Existing KS.CFG removed"
+            )
+
+        except Exception:
+
+            warn(
+                "Existing KS.CFG was not found; "
+                "adding it as a new file."
+            )
+
+        try:
+
             iso.add_file(
                 str(KS_CFG),
                 iso_path="/KS.CFG;1"
             )
-            ok("KS.CFG added")
+
+            ok(
+                "Modified KS.CFG added"
+            )
+
         except Exception as exc:
+
             fail(
-                "Could not add KS.CFG:\n\n"
+                "Could not add modified KS.CFG:\n\n"
                 f"{exc}"
             )
 
         # ------------------------------------------------------------
-        # Write customized ISO
+        # Write output ISO
         # ------------------------------------------------------------
 
         header("WRITING CUSTOMIZED ISO")
@@ -247,17 +375,26 @@ def build_custom_iso():
         )
 
     finally:
+
         iso.close()
 
 
+# ============================================================================
+# EXTRACT FILE FROM ISO FOR VERIFICATION
+# ============================================================================
+
 def extract_iso_file(iso, iso_path, suffix):
+
     temp_file = NamedTemporaryFile(
         prefix="esxi_iso_",
         suffix=suffix,
         delete=False
     )
 
-    temp_path = Path(temp_file.name)
+    temp_path = Path(
+        temp_file.name
+    )
+
     temp_file.close()
 
     iso.get_file_from_iso(
@@ -268,7 +405,12 @@ def extract_iso_file(iso, iso_path, suffix):
     return temp_path
 
 
+# ============================================================================
+# VERIFY OUTPUT ISO
+# ============================================================================
+
 def verify_custom_iso():
+
     header("VERIFYING CUSTOMIZED ISO")
 
     require_file(
@@ -276,9 +418,12 @@ def verify_custom_iso():
         "Customized ISO"
     )
 
-    output_size = OUTPUT_ISO.stat().st_size
+    output_size = (
+        OUTPUT_ISO.stat().st_size
+    )
 
     if output_size < 100 * 1024 * 1024:
+
         fail(
             "Customized ISO is unexpectedly small.\n\n"
             f"Size: {output_size:,} bytes"
@@ -297,28 +442,41 @@ def verify_custom_iso():
     temp_files = []
 
     try:
-        iso.open(str(OUTPUT_ISO))
 
-        ok("Customized ISO opens successfully")
+        iso.open(
+            str(OUTPUT_ISO)
+        )
+
+        ok(
+            "Customized ISO opens successfully"
+        )
 
         if iso.eltorito_boot_catalog is None:
+
             fail(
                 "Customized ISO does not contain "
                 "an El Torito boot catalog."
             )
 
-        ok("El Torito boot catalog preserved")
+        ok(
+            "El Torito boot catalog preserved"
+        )
 
-        boot_cfg_temp = None
+        # ------------------------------------------------------------
+        # Verify BOOT.CFG
+        # ------------------------------------------------------------
 
         try:
+
             boot_cfg_temp = extract_iso_file(
                 iso,
                 "/BOOT.CFG;1",
                 ".cfg"
             )
 
-            temp_files.append(boot_cfg_temp)
+            temp_files.append(
+                boot_cfg_temp
+            )
 
             boot_cfg_text = boot_cfg_temp.read_text(
                 encoding="utf-8",
@@ -326,27 +484,26 @@ def verify_custom_iso():
             )
 
         except Exception as exc:
+
             fail(
                 "Could not read BOOT.CFG from customized ISO:\n\n"
                 f"{exc}"
             )
 
-        expected_kernelopt = (
-            "kernelopt=runweasel "
-            "cdromBoot ks=cdrom:/KS.CFG"
-        )
-
         found_kernelopt = None
 
         for line in boot_cfg_text.splitlines():
+
             if line.startswith("kernelopt="):
+
                 found_kernelopt = line.strip()
                 break
 
-        if found_kernelopt != expected_kernelopt:
+        if found_kernelopt != EXPECTED_KERNELOPT:
+
             fail(
                 "Customized ISO contains incorrect BOOT.CFG.\n\n"
-                f"Expected:\n{expected_kernelopt}\n\n"
+                f"Expected:\n{EXPECTED_KERNELOPT}\n\n"
                 f"Found:\n{found_kernelopt}"
             )
 
@@ -355,16 +512,21 @@ def verify_custom_iso():
             f"     {found_kernelopt}"
         )
 
-        ks_cfg_temp = None
+        # ------------------------------------------------------------
+        # Verify KS.CFG
+        # ------------------------------------------------------------
 
         try:
+
             ks_cfg_temp = extract_iso_file(
                 iso,
                 "/KS.CFG;1",
                 ".cfg"
             )
 
-            temp_files.append(ks_cfg_temp)
+            temp_files.append(
+                ks_cfg_temp
+            )
 
             ks_cfg_text = ks_cfg_temp.read_text(
                 encoding="utf-8",
@@ -372,105 +534,240 @@ def verify_custom_iso():
             )
 
         except Exception as exc:
+
             fail(
                 "Could not read KS.CFG from customized ISO:\n\n"
                 f"{exc}"
             )
 
-        required_strings = [
-            "vmaccepteula",
-            "rootpw ",
-            "install --firstdisk --overwritevmfs",
-            "reboot",
-            "%firstboot",
-        ]
+        missing = []
 
-        for required in required_strings:
+        for required in REQUIRED_KS_STRINGS:
+
             if required not in ks_cfg_text:
-                fail(
-                    "KS.CFG inside customized ISO is missing:\n\n"
-                    f"{required}"
+                missing.append(required)
+
+        if missing:
+
+            fail(
+                "KS.CFG inside customized ISO is missing:\n\n"
+                + "\n".join(
+                    f"- {item}"
+                    for item in missing
                 )
+            )
 
         ok(
             "KS.CFG exists and contains required directives"
         )
 
+        print()
+        print(
+            "Verified ESXi network configuration:"
+        )
+
+        print(
+            "  IP       : 192.168.253.128"
+        )
+
+        print(
+            "  Netmask  : 255.255.255.0"
+        )
+
+        print(
+            "  Gateway  : 192.168.253.2"
+        )
+
+        print(
+            "  DNS      : 192.168.253.1"
+        )
+
+        print(
+            "  Hostname : esxi-host-01.vgs.com"
+        )
+
+        print(
+            "  Device   : vmnic0"
+        )
+
     finally:
+
         iso.close()
 
         for temp_file in temp_files:
+
             try:
                 temp_file.unlink()
+
             except OSError:
                 pass
 
 
-def display_iso_sizes():
-    original_size = ORIGINAL_ISO.stat().st_size
-    output_size = OUTPUT_ISO.stat().st_size
+# ============================================================================
+# DISPLAY ISO SIZE
+# ============================================================================
 
-    header("ISO SIZE SUMMARY")
+def display_iso_size():
+
+    output_size = (
+        OUTPUT_ISO.stat().st_size
+    )
+
+    header("ISO SUMMARY")
 
     print(
-        f"Original ISO   : {original_size:,} bytes"
+        f"Customized ISO : {OUTPUT_ISO}"
     )
 
     print(
-        f"Customized ISO : {output_size:,} bytes"
+        f"Size           : {output_size:,} bytes"
     )
 
-    print(
-        f"Difference     : "
-        f"{output_size - original_size:+,} bytes"
-    )
 
+# ============================================================================
+# CLEAN TEMP SOURCE BACKUP
+# ============================================================================
+
+def cleanup_source_backup():
+
+    if not SOURCE_BACKUP_ISO.exists():
+        return
+
+    try:
+
+        SOURCE_BACKUP_ISO.unlink()
+
+        ok(
+            "Temporary source backup removed"
+        )
+
+    except OSError as exc:
+
+        warn(
+            "Could not remove temporary source backup:\n"
+            f"{SOURCE_BACKUP_ISO}\n\n"
+            f"{exc}"
+        )
+
+
+# ============================================================================
+# MAIN
+# ============================================================================
 
 def main():
-    header("ESXi 8.0U1 UNATTENDED ISO BUILDER")
 
-    print(f"Original ISO : {ORIGINAL_ISO}")
-    print(f"BOOT.CFG     : {BOOT_CFG}")
-    print(f"KS.CFG       : {KS_CFG}")
-    print(f"Output ISO   : {OUTPUT_ISO}")
-    print(f"Backup ISO   : {ORIGINAL_BACKUP}")
-
-    require_file(
-        ORIGINAL_ISO,
-        "Original ESXi ISO"
+    header(
+        "ESXi 8.0U1 UNATTENDED ISO BUILDER"
     )
+
+    print(
+        f"Current ISO    : {SOURCE_ISO}"
+    )
+
+    print(
+        f"BOOT.CFG       : {BOOT_CFG}"
+    )
+
+    print(
+        f"KS.CFG         : {KS_CFG}"
+    )
+
+    print(
+        f"Output ISO     : {OUTPUT_ISO}"
+    )
+
+    print(
+        f"Source Backup  : {SOURCE_BACKUP_ISO}"
+    )
+
+    # ------------------------------------------------------------
+    # Validate working files first.
+    # ------------------------------------------------------------
 
     verify_boot_cfg_source()
     verify_ks_cfg_source()
 
-    preserve_original_iso()
+    # ------------------------------------------------------------
+    # Backup existing customized ISO.
+    # ------------------------------------------------------------
 
-    build_custom_iso()
+    create_source_backup()
 
-    verify_custom_iso()
+    try:
 
-    display_iso_sizes()
+        # --------------------------------------------------------
+        # Build
+        # --------------------------------------------------------
 
-    header("SUCCESS")
+        build_custom_iso()
 
-    print("Original ISO was NOT modified:")
-    print(f"  {ORIGINAL_ISO}")
-    print()
-    print("Original backup:")
-    print(f"  {ORIGINAL_BACKUP}")
-    print()
-    print("Customized ISO:")
-    print(f"  {OUTPUT_ISO}")
-    print()
-    print(
-        "Kernel option:"
-    )
-    print(
-        "  kernelopt=runweasel cdromBoot ks=cdrom:/KS.CFG"
-    )
-    print()
-    print("Kickstart:")
-    print("  KS.CFG")
+        # --------------------------------------------------------
+        # Verify
+        # --------------------------------------------------------
+
+        verify_custom_iso()
+
+        # --------------------------------------------------------
+        # Display result
+        # --------------------------------------------------------
+
+        display_iso_size()
+
+        header("SUCCESS")
+
+        print(
+            "Customized ISO:"
+        )
+
+        print(
+            f"  {OUTPUT_ISO}"
+        )
+
+        print()
+
+        print(
+            "Kernel option:"
+        )
+
+        print(
+            f"  {EXPECTED_KERNELOPT}"
+        )
+
+        print()
+
+        print(
+            "Static network:"
+        )
+
+        print(
+            "  IP       : 192.168.253.128"
+        )
+
+        print(
+            "  Netmask  : 255.255.255.0"
+        )
+
+        print(
+            "  Gateway  : 192.168.253.2"
+        )
+
+        print(
+            "  DNS      : 192.168.253.1"
+        )
+
+        print(
+            "  Hostname : esxi-host-01.vgs.com"
+        )
+
+        print()
+
+        print(
+            "ISO rebuild completed successfully."
+        )
+
+    finally:
+
+        cleanup_source_backup()
 
 
 if __name__ == "__main__":
