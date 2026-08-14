@@ -67,20 +67,20 @@
         mode: "0644"
         content: |
           [baseos]
-          name=CentOS Base Repo
+          name=Local CentOS BaseOS Repository
           baseurl={{ repo_root }}/centos
           enabled=1
           gpgcheck=0
 
           [mesa]
-          name=Local Mesa Repo
+          name=Local Mesa Repository
           baseurl={{ repo_root }}/mesa
           enabled=1
           gpgcheck=0
           priority=1
 
           [gtk]
-          name=Local GTK Repo
+          name=Local GTK Repository
           baseurl={{ repo_root }}/gtk
           enabled=1
           gpgcheck=0
@@ -94,7 +94,7 @@
         mode: "0644"
         content: |
           [patch]
-          name=CentOS Patch Repo
+          name=Local CentOS Patch Repository
           baseurl={{ repo_root }}/installed_rhel7
           enabled=1
           gpgcheck=0
@@ -107,7 +107,7 @@
         mode: "0644"
         content: |
           [foreman]
-          name=CentOS Foreman Repo
+          name=Local Foreman Katello Repository
           baseurl={{ repo_root }}/installed_rhel7
           enabled=1
           gpgcheck=0
@@ -120,33 +120,8 @@
         mode: "0644"
         content: |
           [puppet7]
-          name=Puppet 7 Repository EL7
-          baseurl=https://yum.puppet.com/puppet7/el/7/x86_64/
-          enabled=1
-          gpgcheck=0
-
-    - name: STEP 2 - Create vault.repo
-      ansible.builtin.copy:
-        dest: /etc/yum.repos.d/vault.repo
-        owner: root
-        group: root
-        mode: "0644"
-        content: |
-          [base]
-          name=CentOS 7.9.2009 - Base
-          baseurl=https://vault.centos.org/centos/7.9.2009/os/x86_64/
-          enabled=1
-          gpgcheck=0
-
-          [updates]
-          name=CentOS 7.9.2009 - Updates
-          baseurl=https://vault.centos.org/centos/7.9.2009/updates/x86_64/
-          enabled=1
-          gpgcheck=0
-
-          [extras]
-          name=CentOS 7.9.2009 - Extras
-          baseurl=https://vault.centos.org/centos/7.9.2009/extras/x86_64/
+          name=Local Puppet 7 Repository
+          baseurl={{ repo_root }}/installed_rhel7
           enabled=1
           gpgcheck=0
 
@@ -156,11 +131,25 @@
       changed_when: false
       failed_when: false
 
+    - name: STEP 2 - Remove old yum cache
+      ansible.builtin.file:
+        path: /var/cache/yum
+        state: absent
+
     - name: STEP 2 - Create yum cache
       ansible.builtin.command:
         cmd: yum makecache
       changed_when: false
-      failed_when: false
+
+    - name: STEP 2 - Display enabled repositories
+      ansible.builtin.command:
+        cmd: yum repolist enabled
+      register: yum_repolist
+      changed_when: false
+
+    - name: STEP 2 - Show enabled repositories
+      ansible.builtin.debug:
+        var: yum_repolist.stdout_lines
 
     - name: STEP 2 - Install yum utilities
       ansible.builtin.yum:
@@ -279,6 +268,7 @@
         name: rh-redis5-redis
         enabled: true
         state: started
+      failed_when: false
 
     - name: STEP 4 - Set Java environment path
       ansible.builtin.set_fact:
@@ -407,7 +397,6 @@
       ansible.builtin.command:
         cmd: yum makecache
       changed_when: false
-      failed_when: false
 
     # ===============================================================
     # STEP 6: RUN FOREMAN INSTALLER
@@ -441,14 +430,9 @@
         immediate: true
         state: enabled
 
-    # ==========================================================================
-    # STEP 6.1 - MOVE PULP DATA TO SEPARATE STORAGE
-    # ==========================================================================
-
-    - name: STEP 6.1 - Check whether Pulp mountpoint exists
-      ansible.builtin.stat:
-        path: /var/lib/pulp
-      register: pulp_dir
+    # ===============================================================
+    # STEP 6.1: MOVE PULP DATA TO SEPARATE STORAGE
+    # ===============================================================
 
     - name: STEP 6.1 - Get current Pulp mount source
       ansible.builtin.command:
@@ -457,24 +441,17 @@
       changed_when: false
       failed_when: false
 
-    - name: STEP 6.1 - Get current Pulp mount filesystem type
-      ansible.builtin.command:
-        cmd: findmnt -n -o FSTYPE --target /var/lib/pulp
-      register: pulp_mount_fstype
-      changed_when: false
-      failed_when: false
-
     - name: STEP 6.1 - Set Pulp mount status
       ansible.builtin.set_fact:
-        pulp_is_mounted: "{{ pulp_mount_source.rc == 0 and pulp_mount_source.stdout | length > 0 }}"
+        pulp_is_mounted: >-
+          {{ pulp_mount_source.rc == 0 and
+             (pulp_mount_source.stdout | length > 0) }}
 
     - name: STEP 6.1 - Display Pulp storage status
       ansible.builtin.debug:
         msg:
-          - "Pulp directory exists: {{ pulp_dir.stat.exists }}"
           - "Pulp mounted separately: {{ pulp_is_mounted }}"
           - "Current source: {{ pulp_mount_source.stdout | default('Not mounted') }}"
-          - "Filesystem type: {{ pulp_mount_fstype.stdout | default('Unknown') }}"
 
     - name: STEP 6.1 - Stop Foreman and Katello services
       ansible.builtin.shell: |
@@ -482,79 +459,39 @@
         systemctl stop httpd 2>/dev/null || true
         systemctl stop dynflow-sidekiq@orchestrator 2>/dev/null || true
         systemctl stop dynflow-sidekiq@worker 2>/dev/null || true
+        systemctl stop pulpcore-api 2>/dev/null || true
         systemctl stop pulpcore-worker@1 2>/dev/null || true
         systemctl stop pulpcore-worker@2 2>/dev/null || true
-        systemctl stop pulpcore-api 2>/dev/null || true
-        systemctl stop redis 2>/dev/null || true
       args:
         executable: /bin/bash
       changed_when: false
       when: not pulp_is_mounted | bool
 
-    - name: STEP 6.1 - Check old Pulp backup directory
-      ansible.builtin.stat:
-        path: /var/lib/pulp.old
-      register: pulp_old_dir
-      when: not pulp_is_mounted | bool
-
-    - name: STEP 6.1 - Check old Pulp backup contents
-      ansible.builtin.find:
-        paths: /var/lib/pulp.old
-        hidden: true
-        recurse: false
-      register: pulp_old_contents
-      when:
-        - not pulp_is_mounted | bool
-        - pulp_old_dir.stat.exists | default(false)
-
-    - name: STEP 6.1 - Display existing old Pulp backup status
-      ansible.builtin.debug:
-        msg:
-          - "/var/lib/pulp.old already exists"
-          - "Items found: {{ pulp_old_contents.matched | default(0) }}"
-          - "The playbook will preserve it as /var/lib/pulp.old.previous"
-      when:
-        - not pulp_is_mounted | bool
-        - pulp_old_dir.stat.exists | default(false)
-
-    - name: STEP 6.1 - Check secondary old Pulp backup directory
-      ansible.builtin.stat:
-        path: /var/lib/pulp.old.previous
-      register: pulp_old_previous_dir
-      when:
-        - not pulp_is_mounted | bool
-        - pulp_old_dir.stat.exists | default(false)
-
-    - name: STEP 6.1 - Remove older secondary Pulp backup
-      ansible.builtin.file:
-        path: /var/lib/pulp.old.previous
-        state: absent
-      when:
-        - not pulp_is_mounted | bool
-        - pulp_old_dir.stat.exists | default(false)
-        - pulp_old_previous_dir.stat.exists | default(false)
-
-    - name: STEP 6.1 - Preserve previous Pulp backup
-      ansible.builtin.command:
-        cmd: mv /var/lib/pulp.old /var/lib/pulp.old.previous
-      when:
-        - not pulp_is_mounted | bool
-        - pulp_old_dir.stat.exists | default(false)
-      changed_when: true
-
-    - name: STEP 6.1 - Recheck Pulp directory
+    - name: STEP 6.1 - Check Pulp directory
       ansible.builtin.stat:
         path: /var/lib/pulp
       register: current_pulp_dir
       when: not pulp_is_mounted | bool
 
-    - name: STEP 6.1 - Move existing Pulp data to temporary backup
+    - name: STEP 6.1 - Check old Pulp backup directory
+      ansible.builtin.stat:
+        path: "{{ pulp_old }}"
+      register: pulp_old_dir
+      when: not pulp_is_mounted | bool
+
+    - name: STEP 6.1 - Preserve previous Pulp backup
       ansible.builtin.command:
-        cmd: mv /var/lib/pulp /var/lib/pulp.old
+        cmd: mv {{ pulp_old }} {{ pulp_old }}.previous
+      when:
+        - not pulp_is_mounted | bool
+        - pulp_old_dir.stat.exists | default(false)
+
+    - name: STEP 6.1 - Move existing Pulp data to backup
+      ansible.builtin.command:
+        cmd: mv /var/lib/pulp {{ pulp_old }}
       when:
         - not pulp_is_mounted | bool
         - current_pulp_dir.stat.exists | default(false)
-      changed_when: true
 
     - name: STEP 6.1 - Create Pulp mountpoint
       ansible.builtin.file:
@@ -564,6 +501,16 @@
         group: pulp
         mode: "0755"
       when: not pulp_is_mounted | bool
+
+    - name: STEP 6.1 - Fail when Pulp storage device is undefined
+      ansible.builtin.fail:
+        msg: >
+          Pulp storage is not mounted on /var/lib/pulp.
+          Run with:
+          -e "pulp_storage_device=/dev/mapper/vg_pulp-lv_pulp"
+      when:
+        - not pulp_is_mounted | bool
+        - pulp_storage_device is not defined
 
     - name: STEP 6.1 - Mount separate storage for Pulp
       ansible.builtin.mount:
@@ -575,36 +522,16 @@
       when:
         - not pulp_is_mounted | bool
         - pulp_storage_device is defined
-        - pulp_storage_device | length > 0
 
-    - name: STEP 6.1 - Verify Pulp mount
-      ansible.builtin.command:
-        cmd: findmnt /var/lib/pulp
-      register: verify_pulp_mount
-      changed_when: false
-      when: not pulp_is_mounted | bool
-
-    - name: STEP 6.1 - Fail when Pulp storage device was not mounted
-      ansible.builtin.fail:
-        msg: >
-          Pulp storage is not mounted on /var/lib/pulp.
-          Define pulp_storage_device, for example:
-          -e "pulp_storage_device=/dev/mapper/vg_pulp-lv_pulp"
-      when:
-        - not pulp_is_mounted | bool
-        - pulp_storage_device is not defined or pulp_storage_device | length == 0
-
-    - name: STEP 6.1 - Restore Pulp data onto mounted storage
+    - name: STEP 6.1 - Restore Pulp data
       ansible.builtin.shell: |
-        if [ -d /var/lib/pulp.old ]; then
+        if [ -d "{{ pulp_old }}" ]; then
           shopt -s dotglob nullglob
-          cp -a /var/lib/pulp.old/* /var/lib/pulp/ || true
+          cp -a {{ pulp_old }}/* /var/lib/pulp/
         fi
       args:
         executable: /bin/bash
-      when:
-        - not pulp_is_mounted | bool
-        - current_pulp_dir.stat.exists | default(false)
+      when: not pulp_is_mounted | bool
 
     - name: STEP 6.1 - Set Pulp ownership
       ansible.builtin.file:
@@ -613,12 +540,6 @@
         group: pulp
         recurse: true
       when: not pulp_is_mounted | bool
-
-    - name: STEP 6.1 - Start Redis
-      ansible.builtin.service:
-        name: redis
-        state: started
-        enabled: true
 
     - name: STEP 6.1 - Start Foreman and Katello services
       ansible.builtin.shell: |
@@ -633,22 +554,8 @@
         executable: /bin/bash
       changed_when: false
 
-    - name: STEP 6.1 - Display Pulp migration result
-      ansible.builtin.debug:
-        msg: |
-          ============================================================
-          PULP STORAGE CONFIGURATION COMPLETE
-          ============================================================
-          Pulp path: /var/lib/pulp
-          Mounted separately: {{ pulp_is_mounted }}
-          Current mount source: {{ pulp_mount_source.stdout | default('New mount configured') }}
-          Previous data backup: /var/lib/pulp.old
-          Older backup if present: /var/lib/pulp.old.previous
-          ============================================================
-
     # ===============================================================
     # STEP 7: CONFIGURE FOREMAN PROXY
-    # EFI STEPS COMPLETELY SKIPPED
     # ===============================================================
 
     - name: STEP 7 - Install DHCP TFTP and BIND utilities
@@ -670,9 +577,7 @@
 
     - name: STEP 7 - Fail when dnssec-keygen is unavailable
       ansible.builtin.fail:
-        msg: >
-          dnssec-keygen is not available.
-          Ensure bind-utils and bind are installed correctly.
+        msg: "dnssec-keygen is not available. Ensure bind and bind-utils are installed."
       when: dnssec_keygen_check.rc != 0
 
     # ===============================================================
@@ -721,8 +626,6 @@
           - /etc/foreman-proxy
           - foreman-proxy
       when: not foreman_dns_key.stat.exists
-      register: dnssec_keygen_result
-      changed_when: true
       no_log: true
 
     - name: STEP 7 - Find generated private DNSSEC key
@@ -734,14 +637,7 @@
       register: generated_private_key
       when: not foreman_dns_key.stat.exists
 
-    - name: STEP 7 - Fail if generated private key was not found
-      ansible.builtin.fail:
-        msg: "DNSSEC private key was generated but not found."
-      when:
-        - not foreman_dns_key.stat.exists
-        - generated_private_key.matched | int == 0
-
-    - name: STEP 7 - Read DNS secret from generated private key
+    - name: STEP 7 - Read DNS secret
       ansible.builtin.shell: |
         awk '/^Key:/ {print $2}' "{{ generated_private_key.files[0].path }}"
       register: generated_dns_secret
@@ -750,13 +646,6 @@
       when:
         - not foreman_dns_key.stat.exists
         - generated_private_key.matched | int > 0
-
-    - name: STEP 7 - Fail if DNS secret could not be extracted
-      ansible.builtin.fail:
-        msg: "Unable to extract the Key value from the generated DNSSEC private key."
-      when:
-        - not foreman_dns_key.stat.exists
-        - generated_dns_secret.stdout | default('') | length == 0
 
     - name: STEP 7 - Create Foreman proxy DNS key file
       ansible.builtin.copy:
@@ -770,12 +659,12 @@
         group: foreman-proxy
         mode: "0600"
       no_log: true
-      notify: Restart Foreman Proxy
       when:
         - not foreman_dns_key.stat.exists
         - generated_dns_secret.stdout | default('') | length > 0
+      notify: Restart Foreman Proxy
 
-    - name: STEP 7 - Ensure DNS key ownership is correct
+    - name: STEP 7 - Ensure DNS key ownership
       ansible.builtin.file:
         path: /etc/foreman-proxy/dns.key
         owner: foreman-proxy
@@ -807,7 +696,7 @@
         PATH: "{{ java_environment_path }}"
       notify: Restart Foreman Proxy
 
-    - name: STEP 7 - Restart Foreman Proxy after DNS configuration
+    - name: STEP 7 - Apply Foreman Proxy restart
       ansible.builtin.meta: flush_handlers
 
     # ===============================================================
@@ -935,18 +824,13 @@
           ============================================================
           Foreman Server : {{ foreman_server_name }}
           Repository     : {{ repo_root }}
-          Pulp Storage   : {{ pulp_destination }}
-          Pulp Mount     : {{ pulp_source }}
+          Pulp Path      : /var/lib/pulp
           Pulp Backup    : {{ pulp_old }}
           TFTP Root      : {{ tftp_root }}
           DNS Server     : {{ dns_server }}
           DHCP Gateway   : {{ dhcp_gateway }}
           EFI Steps      : COMPLETELY SKIPPED
           ============================================================
-
-  # ===============================================================
-  # HANDLERS
-  # ===============================================================
 
   handlers:
 
