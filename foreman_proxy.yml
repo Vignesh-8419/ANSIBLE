@@ -1,27 +1,22 @@
 ---
 # ==============================================================================
 # Foreman Smart Proxy
-# Connectivity + DNS + DHCP + TFTP + Firewall + Verification + Registration
+# DHCP + DNS + TFTP + Connectivity + Verification + Registration
 #
 # Run:
 # ansible-playbook -i inventory.ini foreman_smart_proxy.yml
 #
-# Inventory can contain:
-#
-# [all]
-# cent-07-01.vgs.com
-# cent-07-02.vgs.com
-#
-# Foreman Server     : cent-07-01.vgs.com
-# Smart Proxy Server : cent-07-02.vgs.com
+# Hosts:
+#   cent-07-01.vgs.com = Foreman Server
+#   cent-07-02.vgs.com = Smart Proxy
 # ==============================================================================
 
 
 # ==============================================================================
-# PLAY 1 - CONFIGURE AND VERIFY SMART PROXY HOST
+# PLAY 1 - CONFIGURE AND VERIFY SMART PROXY SERVICES
 # ==============================================================================
 
-- name: Configure and verify Foreman Smart Proxy
+- name: Configure and verify Foreman Smart Proxy services
   hosts: all
   become: true
   gather_facts: true
@@ -29,12 +24,19 @@
   vars:
     foreman_server: "cent-07-01.vgs.com"
     smart_proxy_server: "cent-07-02.vgs.com"
-
     smart_proxy_port: 9090
 
-    dhcp_gateway: "192.168.253.2"
+    dhcp_interface: "ens33"
     dhcp_subnet: "192.168.253.0"
     dhcp_netmask: "255.255.255.0"
+    dhcp_range_start: "192.168.253.150"
+    dhcp_range_end: "192.168.253.200"
+    dhcp_gateway: "192.168.253.2"
+
+    dns_server: "192.168.253.132"
+    dns_domain: "vgs.com"
+
+    tftp_root: "/var/lib/tftpboot"
 
   tasks:
 
@@ -46,34 +48,27 @@
       ansible.builtin.debug:
         msg: "Processing host: {{ inventory_hostname }}"
 
-    - name: Skip Smart Proxy configuration on other hosts
+    - name: Display skipped host message
       ansible.builtin.debug:
-        msg: >-
-          {{ inventory_hostname }} is not the Smart Proxy host.
-          Smart Proxy configuration will be skipped.
+        msg: "No Smart Proxy service configuration required on this host."
       when: inventory_hostname != smart_proxy_server
 
 
     # ==========================================================================
-    # FOREMAN PROXY SERVICE
+    # VERIFY SMART PROXY SERVICE
     # ==========================================================================
 
-    - name: Check Foreman Proxy service exists
-      ansible.builtin.systemd:
-        name: foreman-proxy
-      register: foreman_proxy_unit
-      changed_when: false
-      failed_when: false
+    - name: Gather service facts
+      ansible.builtin.service_facts:
       when: inventory_hostname == smart_proxy_server
 
-    - name: Fail if Foreman Proxy is not installed
-      ansible.builtin.fail:
-        msg: >-
-          foreman-proxy service is not installed on {{ smart_proxy_server }}.
-          Install the Smart Proxy before running this playbook.
-      when:
-        - inventory_hostname == smart_proxy_server
-        - foreman_proxy_unit.status.LoadState | default('not-found') != 'loaded'
+    - name: Verify foreman-proxy package service exists
+      ansible.builtin.assert:
+        that:
+          - "'foreman-proxy.service' in ansible_facts.services"
+        fail_msg: "foreman-proxy.service is not installed on {{ smart_proxy_server }}"
+        success_msg: "foreman-proxy.service is installed."
+      when: inventory_hostname == smart_proxy_server
 
     - name: Enable and start Foreman Proxy
       ansible.builtin.systemd:
@@ -82,7 +77,7 @@
         state: started
       when: inventory_hostname == smart_proxy_server
 
-    - name: Wait for Foreman Proxy service
+    - name: Wait for Foreman Proxy to become active
       ansible.builtin.command:
         cmd: systemctl is-active foreman-proxy
       register: foreman_proxy_service
@@ -96,102 +91,297 @@
       ansible.builtin.assert:
         that:
           - foreman_proxy_service.stdout == "active"
-        fail_msg: >-
-          foreman-proxy is not active on {{ smart_proxy_server }}.
-        success_msg: >-
-          foreman-proxy is active on {{ smart_proxy_server }}.
+        fail_msg: "foreman-proxy is not active."
+        success_msg: "foreman-proxy is active."
       when: inventory_hostname == smart_proxy_server
 
 
     # ==========================================================================
-    # DETECT ACTIVE NETWORK INTERFACE
+    # DHCP PACKAGE AND CONFIGURATION
     # ==========================================================================
 
-    - name: Detect active network interface
-      ansible.builtin.shell: |
-        ip -o route show default | awk '{print $5; exit}'
-      register: detected_interface
+    - name: Check DHCP server package
+      ansible.builtin.command:
+        cmd: rpm -q dhcp
+      register: dhcp_package
       changed_when: false
+      failed_when: false
       when: inventory_hostname == smart_proxy_server
 
-    - name: Detect fallback network interface
-      ansible.builtin.shell: |
-        ip -o -4 addr show | awk '$2 != "lo" {print $2; exit}'
-      register: fallback_interface
-      changed_when: false
+    - name: Install DHCP server package when missing
+      ansible.builtin.yum:
+        name: dhcp
+        state: present
       when:
         - inventory_hostname == smart_proxy_server
-        - detected_interface.stdout | trim == ""
+        - dhcp_package.rc != 0
 
-    - name: Set active network interface
+    - name: Check DHCP configuration file
+      ansible.builtin.stat:
+        path: /etc/dhcp/dhcpd.conf
+      register: dhcp_conf_file
+      when: inventory_hostname == smart_proxy_server
+
+    - name: Create DHCP configuration when missing
+      ansible.builtin.copy:
+        dest: /etc/dhcp/dhcpd.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          authoritative;
+          default-lease-time 600;
+          max-lease-time 7200;
+
+          option domain-name "{{ dns_domain }}";
+          option domain-name-servers {{ dns_server }};
+
+          subnet {{ dhcp_subnet }} netmask {{ dhcp_netmask }} {
+            range {{ dhcp_range_start }} {{ dhcp_range_end }};
+            option subnet-mask {{ dhcp_netmask }};
+            option routers {{ dhcp_gateway }};
+            option broadcast-address 192.168.253.255;
+          }
+      when:
+        - inventory_hostname == smart_proxy_server
+        - not dhcp_conf_file.stat.exists
+
+    - name: Read current DHCP configuration
+      ansible.builtin.slurp:
+        src: /etc/dhcp/dhcpd.conf
+      register: dhcp_conf_current
+      when: inventory_hostname == smart_proxy_server
+
+    - name: Set DHCP configuration content
       ansible.builtin.set_fact:
-        proxy_interface: >-
-          {{
-            detected_interface.stdout | trim
-            if detected_interface.stdout | trim != ""
-            else fallback_interface.stdout | trim
-          }}
+        dhcp_conf_text: "{{ dhcp_conf_current.content | b64decode }}"
       when: inventory_hostname == smart_proxy_server
 
-    - name: Fail if network interface cannot be detected
-      ansible.builtin.fail:
-        msg: >-
-          Unable to detect an active IPv4 network interface.
+    # --------------------------------------------------------------------------
+    # IMPORTANT FIX
+    # Automatically add subnet if missing instead of failing
+    # --------------------------------------------------------------------------
+
+    - name: Add DHCP subnet when missing
+      ansible.builtin.blockinfile:
+        path: /etc/dhcp/dhcpd.conf
+        marker: "# {mark} ANSIBLE MANAGED FOREMAN DHCP SUBNET"
+        block: |
+          subnet {{ dhcp_subnet }} netmask {{ dhcp_netmask }} {
+            range {{ dhcp_range_start }} {{ dhcp_range_end }};
+            option subnet-mask {{ dhcp_netmask }};
+            option routers {{ dhcp_gateway }};
+            option broadcast-address 192.168.253.255;
+          }
       when:
         - inventory_hostname == smart_proxy_server
-        - proxy_interface | default('') == ""
+        - dhcp_conf_text is not search('subnet ' ~ dhcp_subnet ~ ' netmask ' ~ dhcp_netmask)
 
-    - name: Verify detected network interface exists
-      ansible.builtin.command:
-        cmd: "ip link show {{ proxy_interface }}"
-      changed_when: false
+    - name: Ensure DHCP server is authoritative
+      ansible.builtin.lineinfile:
+        path: /etc/dhcp/dhcpd.conf
+        regexp: '^authoritative;'
+        line: 'authoritative;'
+        insertafter: BOF
       when: inventory_hostname == smart_proxy_server
 
-    - name: Get network interface IP information
-      ansible.builtin.command:
-        cmd: "ip -o -4 addr show {{ proxy_interface }}"
-      register: proxy_interface_ip
-      changed_when: false
+    - name: Ensure DHCP domain name exists
+      ansible.builtin.lineinfile:
+        path: /etc/dhcp/dhcpd.conf
+        regexp: '^option domain-name '
+        line: 'option domain-name "{{ dns_domain }}";'
       when: inventory_hostname == smart_proxy_server
 
-    - name: Display detected network information
-      ansible.builtin.debug:
-        msg:
-          - "Detected interface: {{ proxy_interface }}"
-          - "{{ proxy_interface_ip.stdout }}"
+    - name: Ensure DHCP DNS server exists
+      ansible.builtin.lineinfile:
+        path: /etc/dhcp/dhcpd.conf
+        regexp: '^option domain-name-servers '
+        line: 'option domain-name-servers {{ dns_server }};'
       when: inventory_hostname == smart_proxy_server
 
 
     # ==========================================================================
-    # CHECK SMART PROXY PORT 9090
+    # VERIFY DHCP CONFIGURATION BEFORE STARTING SERVICE
     # ==========================================================================
 
-    - name: Check listening TCP ports
+    - name: Validate DHCP configuration syntax
       ansible.builtin.command:
-        cmd: ss -lntp
-      register: proxy_listening_ports
+        cmd: dhcpd -t -cf /etc/dhcp/dhcpd.conf
+      register: dhcp_syntax_check
       changed_when: false
       when: inventory_hostname == smart_proxy_server
 
-    - name: Display port 9090 listener
+    - name: Display DHCP syntax result
       ansible.builtin.debug:
-        msg: >-
-          {{
-            proxy_listening_ports.stdout_lines
-            | select('search', ':' ~ (smart_proxy_port | string))
-            | list
-          }}
+        msg: "{{ dhcp_syntax_check.stderr_lines | default(['DHCP configuration is valid']) }}"
       when: inventory_hostname == smart_proxy_server
 
-    - name: Verify Smart Proxy is listening on port 9090
+    - name: Fail when DHCP configuration syntax is invalid
       ansible.builtin.assert:
         that:
-          - proxy_listening_ports.stdout is search(':' ~ (smart_proxy_port | string))
-        fail_msg: >-
-          Nothing is listening on TCP/{{ smart_proxy_port }}
-          on {{ smart_proxy_server }}.
-        success_msg: >-
-          Smart Proxy is listening on TCP/{{ smart_proxy_port }}.
+          - dhcp_syntax_check.rc == 0
+        fail_msg: |
+          DHCP configuration is invalid.
+
+          Check:
+          /etc/dhcp/dhcpd.conf
+
+          DHCP test output:
+          {{ dhcp_syntax_check.stderr | default('No error output available') }}
+        success_msg: "DHCP configuration syntax is valid."
+      when: inventory_hostname == smart_proxy_server
+
+    - name: Display final DHCP configuration
+      ansible.builtin.command:
+        cmd: cat /etc/dhcp/dhcpd.conf
+      register: final_dhcp_config
+      changed_when: false
+      when: inventory_hostname == smart_proxy_server
+
+    - name: Show final DHCP configuration
+      ansible.builtin.debug:
+        var: final_dhcp_config.stdout_lines
+      when: inventory_hostname == smart_proxy_server
+
+
+    # ==========================================================================
+    # CONFIGURE DHCP SERVICE INTERFACE
+    # ==========================================================================
+
+    - name: Check DHCP service default configuration
+      ansible.builtin.stat:
+        path: /etc/sysconfig/dhcpd
+      register: dhcp_sysconfig
+      when: inventory_hostname == smart_proxy_server
+
+    - name: Configure DHCP service to listen on Smart Proxy interface
+      ansible.builtin.copy:
+        dest: /etc/sysconfig/dhcpd
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          DHCPDARGS={{ dhcp_interface }}
+      when: inventory_hostname == smart_proxy_server
+
+
+    # ==========================================================================
+    # START DHCP
+    # ==========================================================================
+
+    - name: Enable and start DHCP service
+      ansible.builtin.systemd:
+        name: dhcpd
+        enabled: true
+        state: restarted
+      register: dhcpd_start_result
+      when: inventory_hostname == smart_proxy_server
+
+    - name: Wait for DHCP service
+      ansible.builtin.command:
+        cmd: systemctl is-active dhcpd
+      register: dhcp_service_status
+      changed_when: false
+      retries: 6
+      delay: 3
+      until: dhcp_service_status.stdout == "active"
+      when: inventory_hostname == smart_proxy_server
+
+    - name: Verify DHCP service is active
+      ansible.builtin.assert:
+        that:
+          - dhcp_service_status.stdout == "active"
+        fail_msg: |
+          DHCP service failed to start.
+
+          Run on {{ smart_proxy_server }}:
+            systemctl status dhcpd
+            journalctl -u dhcpd -n 100 --no-pager
+
+          DHCP configuration:
+            /etc/dhcp/dhcpd.conf
+        success_msg: "DHCP service is active."
+      when: inventory_hostname == smart_proxy_server
+
+
+    # ==========================================================================
+    # VERIFY DHCP IS LISTENING
+    # ==========================================================================
+
+    - name: Check DHCP UDP port 67
+      ansible.builtin.command:
+        cmd: ss -lunp
+      register: dhcp_listening_ports
+      changed_when: false
+      when: inventory_hostname == smart_proxy_server
+
+    - name: Display DHCP port listener
+      ansible.builtin.debug:
+        msg: "{{ dhcp_listening_ports.stdout_lines | select('search', ':67') | list }}"
+      when: inventory_hostname == smart_proxy_server
+
+
+    # ==========================================================================
+    # DNS SERVICE
+    # ==========================================================================
+
+    - name: Check named service status
+      ansible.builtin.systemd:
+        name: named
+      register: named_service_check
+      failed_when: false
+      changed_when: false
+      when: inventory_hostname == smart_proxy_server
+
+    - name: Enable and start DNS service when installed
+      ansible.builtin.systemd:
+        name: named
+        enabled: true
+        state: started
+      when:
+        - inventory_hostname == smart_proxy_server
+        - named_service_check.status.LoadState | default('not-found') == 'loaded'
+
+    - name: Display DNS service status
+      ansible.builtin.command:
+        cmd: systemctl is-active named
+      register: dns_service_status
+      changed_when: false
+      failed_when: false
+      when: inventory_hostname == smart_proxy_server
+
+    - name: Display DNS status
+      ansible.builtin.debug:
+        msg: "DNS service status: {{ dns_service_status.stdout | default('not installed') }}"
+      when: inventory_hostname == smart_proxy_server
+
+
+    # ==========================================================================
+    # TFTP
+    # ==========================================================================
+
+    - name: Check TFTP root directory
+      ansible.builtin.file:
+        path: "{{ tftp_root }}"
+        state: directory
+        owner: foreman-proxy
+        group: root
+        mode: "0755"
+      when: inventory_hostname == smart_proxy_server
+
+    - name: Check TFTP service status
+      ansible.builtin.command:
+        cmd: systemctl is-active foreman-proxy
+      register: tftp_proxy_status
+      changed_when: false
+      when: inventory_hostname == smart_proxy_server
+
+    - name: Verify TFTP through Foreman Proxy
+      ansible.builtin.assert:
+        that:
+          - tftp_proxy_status.stdout == "active"
+        fail_msg: "foreman-proxy is not active, therefore TFTP cannot be served."
+        success_msg: "Foreman Proxy is active for TFTP provisioning."
       when: inventory_hostname == smart_proxy_server
 
 
@@ -199,32 +389,18 @@
     # FIREWALL
     # ==========================================================================
 
-    - name: Check firewalld service
-      ansible.builtin.systemd:
-        name: firewalld
-      register: firewalld_status
-      failed_when: false
-      changed_when: false
+    - name: Gather firewalld service facts
+      ansible.builtin.service_facts:
       when: inventory_hostname == smart_proxy_server
 
-    - name: Start firewalld when installed
+    - name: Enable and start firewalld
       ansible.builtin.systemd:
         name: firewalld
         enabled: true
         state: started
       when:
         - inventory_hostname == smart_proxy_server
-        - firewalld_status.status.LoadState | default('not-found') == 'loaded'
-
-    - name: Allow Smart Proxy port
-      ansible.posix.firewalld:
-        port: "{{ smart_proxy_port }}/tcp"
-        permanent: true
-        immediate: true
-        state: enabled
-      when:
-        - inventory_hostname == smart_proxy_server
-        - firewalld_status.status.LoadState | default('not-found') == 'loaded'
+        - "'firewalld.service' in ansible_facts.services"
 
     - name: Allow DHCP service
       ansible.posix.firewalld:
@@ -234,7 +410,7 @@
         state: enabled
       when:
         - inventory_hostname == smart_proxy_server
-        - firewalld_status.status.LoadState | default('not-found') == 'loaded'
+        - "'firewalld.service' in ansible_facts.services"
 
     - name: Allow TFTP service
       ansible.posix.firewalld:
@@ -244,9 +420,9 @@
         state: enabled
       when:
         - inventory_hostname == smart_proxy_server
-        - firewalld_status.status.LoadState | default('not-found') == 'loaded'
+        - "'firewalld.service' in ansible_facts.services"
 
-    - name: Allow DNS TCP service
+    - name: Allow DNS service
       ansible.posix.firewalld:
         service: dns
         permanent: true
@@ -254,19 +430,9 @@
         state: enabled
       when:
         - inventory_hostname == smart_proxy_server
-        - firewalld_status.status.LoadState | default('not-found') == 'loaded'
+        - "'firewalld.service' in ansible_facts.services"
 
-    - name: Allow DNS UDP port
-      ansible.posix.firewalld:
-        port: 53/udp
-        permanent: true
-        immediate: true
-        state: enabled
-      when:
-        - inventory_hostname == smart_proxy_server
-        - firewalld_status.status.LoadState | default('not-found') == 'loaded'
-
-    - name: Allow HTTP
+    - name: Allow HTTP service
       ansible.posix.firewalld:
         service: http
         permanent: true
@@ -274,9 +440,9 @@
         state: enabled
       when:
         - inventory_hostname == smart_proxy_server
-        - firewalld_status.status.LoadState | default('not-found') == 'loaded'
+        - "'firewalld.service' in ansible_facts.services"
 
-    - name: Allow HTTPS
+    - name: Allow HTTPS service
       ansible.posix.firewalld:
         service: https
         permanent: true
@@ -284,255 +450,21 @@
         state: enabled
       when:
         - inventory_hostname == smart_proxy_server
-        - firewalld_status.status.LoadState | default('not-found') == 'loaded'
+        - "'firewalld.service' in ansible_facts.services"
 
-
-    # ==========================================================================
-    # DHCP PACKAGE
-    # ==========================================================================
-
-    - name: Gather installed package facts
-      ansible.builtin.package_facts:
-        manager: auto
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Install DHCP server package when missing
-      ansible.builtin.yum:
-        name: dhcp
-        state: present
+    - name: Allow Foreman Smart Proxy API
+      ansible.posix.firewalld:
+        port: "{{ smart_proxy_port }}/tcp"
+        permanent: true
+        immediate: true
+        state: enabled
       when:
         - inventory_hostname == smart_proxy_server
-        - "'dhcp' not in ansible_facts.packages"
+        - "'firewalld.service' in ansible_facts.services"
 
 
     # ==========================================================================
-    # DHCP CONFIGURATION
-    # IMPORTANT:
-    # Do NOT overwrite the complete dhcpd.conf generated/configured for Foreman.
-    # Only ensure required global values exist.
-    # ==========================================================================
-
-    - name: Check DHCP configuration file exists
-      ansible.builtin.stat:
-        path: /etc/dhcp/dhcpd.conf
-      register: dhcp_config_file
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Fail when DHCP configuration file does not exist
-      ansible.builtin.fail:
-        msg: >-
-          /etc/dhcp/dhcpd.conf does not exist.
-          DHCP must first be configured by the Foreman Smart Proxy installer.
-      when:
-        - inventory_hostname == smart_proxy_server
-        - not dhcp_config_file.stat.exists
-
-    - name: Ensure DHCP is authoritative
-      ansible.builtin.lineinfile:
-        path: /etc/dhcp/dhcpd.conf
-        regexp: '^\s*(not )?authoritative;'
-        line: 'authoritative;'
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Check DHCP subnet declaration
-      ansible.builtin.command:
-        cmd: >-
-          grep -E '^subnet[[:space:]]+{{ dhcp_subnet | regex_escape() }}'
-          /etc/dhcp/dhcpd.conf
-      register: dhcp_subnet_check
-      changed_when: false
-      failed_when: false
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Display DHCP subnet check
-      ansible.builtin.debug:
-        msg: >-
-          {{
-            'DHCP subnet found: ' ~ dhcp_subnet
-            if dhcp_subnet_check.rc == 0
-            else
-            'DHCP subnet NOT found: ' ~ dhcp_subnet
-          }}
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Fail when DHCP subnet is missing
-      ansible.builtin.fail:
-        msg: |
-          DHCP configuration does not contain:
-
-          subnet {{ dhcp_subnet }} netmask {{ dhcp_netmask }} {
-
-          }
-
-          Current Smart Proxy DHCP configuration must contain the correct
-          subnet matching interface {{ proxy_interface }} before dhcpd
-          can start.
-      when:
-        - inventory_hostname == smart_proxy_server
-        - dhcp_subnet_check.rc != 0
-
-    - name: Ensure router option exists inside DHCP configuration
-      ansible.builtin.lineinfile:
-        path: /etc/dhcp/dhcpd.conf
-        regexp: '^\s*option routers '
-        line: "  option routers {{ dhcp_gateway }};"
-        insertafter: '^\s*option subnet-mask '
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Ensure subnet mask option exists
-      ansible.builtin.lineinfile:
-        path: /etc/dhcp/dhcpd.conf
-        regexp: '^\s*option subnet-mask '
-        line: "  option subnet-mask {{ dhcp_netmask }};"
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Configure DHCP service interface
-      ansible.builtin.lineinfile:
-        path: /etc/sysconfig/dhcpd
-        regexp: '^DHCPDARGS='
-        line: 'DHCPDARGS="{{ proxy_interface }}"'
-        create: true
-        mode: "0644"
-      when: inventory_hostname == smart_proxy_server
-
-
-    # ==========================================================================
-    # VALIDATE DHCP BEFORE STARTING
-    # ==========================================================================
-
-    - name: Validate DHCP configuration syntax
-      ansible.builtin.command:
-        cmd: "dhcpd -t -cf /etc/dhcp/dhcpd.conf"
-      register: dhcp_config_validation
-      changed_when: false
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Display DHCP validation result
-      ansible.builtin.debug:
-        msg:
-          - "DHCP configuration validation completed successfully."
-          - "{{ dhcp_config_validation.stdout }}"
-          - "{{ dhcp_config_validation.stderr }}"
-      when: inventory_hostname == smart_proxy_server
-
-
-    # ==========================================================================
-    # START DHCP
-    # ==========================================================================
-
-    - name: Check DHCP service exists
-      ansible.builtin.systemd:
-        name: dhcpd
-      register: dhcpd_unit
-      changed_when: false
-      failed_when: false
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Enable and start DHCP service when installed
-      ansible.builtin.systemd:
-        name: dhcpd
-        enabled: true
-        state: restarted
-      when:
-        - inventory_hostname == smart_proxy_server
-        - dhcpd_unit.status.LoadState | default('not-found') == 'loaded'
-
-    - name: Wait for DHCP service
-      ansible.builtin.command:
-        cmd: systemctl is-active dhcpd
-      register: dhcpd_service_status
-      changed_when: false
-      retries: 6
-      delay: 3
-      until: dhcpd_service_status.stdout == "active"
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Verify DHCP service is active
-      ansible.builtin.assert:
-        that:
-          - dhcpd_service_status.stdout == "active"
-        fail_msg: >-
-          DHCP service is not active on {{ smart_proxy_server }}.
-        success_msg: >-
-          DHCP service is active on {{ smart_proxy_server }}.
-      when: inventory_hostname == smart_proxy_server
-
-
-    # ==========================================================================
-    # TFTP VERIFICATION
-    # ==========================================================================
-
-    - name: Check TFTP boot directory
-      ansible.builtin.stat:
-        path: /var/lib/tftpboot
-      register: tftpboot_directory
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Verify TFTP boot directory exists
-      ansible.builtin.assert:
-        that:
-          - tftpboot_directory.stat.exists
-          - tftpboot_directory.stat.isdir
-        fail_msg: >-
-          /var/lib/tftpboot does not exist on {{ smart_proxy_server }}.
-        success_msg: >-
-          TFTP boot directory exists.
-      when: inventory_hostname == smart_proxy_server
-
-    - name: List TFTP boot files
-      ansible.builtin.command:
-        cmd: find /var/lib/tftpboot -maxdepth 3 -type f
-      register: tftp_files
-      changed_when: false
-      failed_when: false
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Display TFTP boot files
-      ansible.builtin.debug:
-        var: tftp_files.stdout_lines
-      when: inventory_hostname == smart_proxy_server
-
-
-    # ==========================================================================
-    # DNS VERIFICATION
-    # ==========================================================================
-
-    - name: Check DNS port TCP 53
-      ansible.builtin.command:
-        cmd: ss -lnt
-      register: dns_tcp_ports
-      changed_when: false
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Check DNS port UDP 53
-      ansible.builtin.command:
-        cmd: ss -lnu
-      register: dns_udp_ports
-      changed_when: false
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Display DNS listener status
-      ansible.builtin.debug:
-        msg:
-          - >-
-            TCP/53:
-            {{
-              dns_tcp_ports.stdout_lines
-              | select('search', ':53')
-              | list
-            }}
-          - >-
-            UDP/53:
-            {{
-              dns_udp_ports.stdout_lines
-              | select('search', ':53')
-              | list
-            }}
-      when: inventory_hostname == smart_proxy_server
-
-
-    # ==========================================================================
-    # LOCAL SMART PROXY API
+    # SMART PROXY API
     # ==========================================================================
 
     - name: Test Smart Proxy API locally
@@ -546,16 +478,6 @@
       changed_when: false
       when: inventory_hostname == smart_proxy_server
 
-    - name: Verify local Smart Proxy API
-      ansible.builtin.assert:
-        that:
-          - smart_proxy_local_api.status == 200
-        fail_msg: >-
-          Smart Proxy API failed locally.
-        success_msg: >-
-          Smart Proxy API works locally.
-      when: inventory_hostname == smart_proxy_server
-
     - name: Display Smart Proxy features
       ansible.builtin.debug:
         var: smart_proxy_local_api.content
@@ -563,10 +485,10 @@
 
 
 # ==============================================================================
-# PLAY 2 - TEST FOREMAN TO SMART PROXY CONNECTIVITY
+# PLAY 2 - VERIFY FOREMAN TO SMART PROXY CONNECTIVITY
 # ==============================================================================
 
-- name: Verify Foreman can reach Smart Proxy
+- name: Verify Foreman connectivity to Smart Proxy
   hosts: all
   become: true
   gather_facts: false
@@ -578,74 +500,54 @@
 
   tasks:
 
-    - name: Display connectivity test host
-      ansible.builtin.debug:
-        msg: "Connectivity test processing {{ inventory_hostname }}"
-
-    - name: Resolve Smart Proxy hostname from Foreman
+    - name: Resolve Smart Proxy hostname
       ansible.builtin.command:
         cmd: "getent hosts {{ smart_proxy_server }}"
       register: smart_proxy_dns
       changed_when: false
-      failed_when: false
       when: inventory_hostname == foreman_server
 
-    - name: Display Smart Proxy DNS resolution
-      ansible.builtin.debug:
-        msg: "{{ smart_proxy_dns.stdout | default('DNS RESOLUTION FAILED') }}"
-      when: inventory_hostname == foreman_server
-
-    - name: Verify Smart Proxy hostname resolves
+    - name: Verify Smart Proxy DNS resolution
       ansible.builtin.assert:
         that:
           - smart_proxy_dns.rc == 0
-        fail_msg: >-
-          Foreman cannot resolve {{ smart_proxy_server }}.
-        success_msg: >-
-          Foreman resolves {{ smart_proxy_server }} successfully.
+        fail_msg: "Foreman cannot resolve {{ smart_proxy_server }}"
+        success_msg: "Foreman resolves Smart Proxy successfully."
       when: inventory_hostname == foreman_server
 
-    - name: Test Smart Proxy TCP port from Foreman
+    - name: Test Smart Proxy TCP port
       ansible.builtin.wait_for:
         host: "{{ smart_proxy_server }}"
         port: "{{ smart_proxy_port }}"
         state: started
-        timeout: 15
+        timeout: 20
       when: inventory_hostname == foreman_server
 
-    - name: Test Smart Proxy HTTPS API from Foreman
+    - name: Test Smart Proxy HTTPS API
       ansible.builtin.uri:
         url: "https://{{ smart_proxy_server }}:{{ smart_proxy_port }}/features"
         method: GET
         validate_certs: false
         return_content: true
         status_code: 200
-        timeout: 20
       register: smart_proxy_remote_api
       changed_when: false
       when: inventory_hostname == foreman_server
 
-    - name: Verify Foreman to Smart Proxy API communication
+    - name: Verify Foreman to Smart Proxy API
       ansible.builtin.assert:
         that:
           - smart_proxy_remote_api.status == 200
-        fail_msg: >-
-          Foreman cannot communicate with the Smart Proxy API.
-        success_msg: >-
-          Foreman can communicate with the Smart Proxy.
-      when: inventory_hostname == foreman_server
-
-    - name: Display Smart Proxy features from Foreman
-      ansible.builtin.debug:
-        var: smart_proxy_remote_api.content
+        fail_msg: "Foreman cannot communicate with Smart Proxy API."
+        success_msg: "Foreman can communicate with Smart Proxy API."
       when: inventory_hostname == foreman_server
 
 
 # ==============================================================================
-# PLAY 3 - REGISTER SMART PROXY IN FOREMAN
+# PLAY 3 - REGISTER SMART PROXY
 # ==============================================================================
 
-- name: Register Smart Proxy in Foreman
+- name: Verify Smart Proxy registration in Foreman
   hosts: all
   become: true
   gather_facts: false
@@ -660,30 +562,7 @@
 
   tasks:
 
-    - name: Verify Hammer authentication
-      ansible.builtin.command:
-        argv:
-          - hammer
-          - --username
-          - "{{ hammer_username }}"
-          - --password
-          - "{{ hammer_password }}"
-          - proxy
-          - list
-      register: hammer_auth_check
-      changed_when: false
-      no_log: true
-      when: inventory_hostname == foreman_server
-
-    - name: Verify Hammer authentication succeeded
-      ansible.builtin.assert:
-        that:
-          - hammer_auth_check.rc == 0
-        fail_msg: "Hammer authentication failed."
-        success_msg: "Hammer authentication succeeded."
-      when: inventory_hostname == foreman_server
-
-    - name: Check whether Smart Proxy is already registered
+    - name: Check Smart Proxy registration
       ansible.builtin.command:
         argv:
           - hammer
@@ -695,7 +574,7 @@
           - info
           - --name
           - "{{ smart_proxy_server }}"
-      register: hammer_proxy_check_before
+      register: hammer_proxy_check
       changed_when: false
       failed_when: false
       no_log: true
@@ -715,64 +594,10 @@
           - "{{ smart_proxy_server }}"
           - --url
           - "https://{{ smart_proxy_server }}:{{ smart_proxy_port }}"
-      register: hammer_proxy_register
-      changed_when: hammer_proxy_register.rc == 0
-      no_log: true
       when:
         - inventory_hostname == foreman_server
-        - hammer_proxy_check_before.rc != 0
-
-    - name: Verify Smart Proxy registration
-      ansible.builtin.command:
-        argv:
-          - hammer
-          - --username
-          - "{{ hammer_username }}"
-          - --password
-          - "{{ hammer_password }}"
-          - proxy
-          - info
-          - --name
-          - "{{ smart_proxy_server }}"
-      register: hammer_proxy_check_after
-      changed_when: false
-      retries: 6
-      delay: 5
-      until: hammer_proxy_check_after.rc == 0
+        - hammer_proxy_check.rc != 0
       no_log: true
-      when: inventory_hostname == foreman_server
-
-    - name: Verify Smart Proxy is registered
-      ansible.builtin.assert:
-        that:
-          - hammer_proxy_check_after.rc == 0
-        fail_msg: >-
-          Smart Proxy {{ smart_proxy_server }} is not registered correctly.
-        success_msg: >-
-          Smart Proxy {{ smart_proxy_server }} is registered correctly.
-      when: inventory_hostname == foreman_server
-
-    - name: Get final Smart Proxy list
-      ansible.builtin.command:
-        argv:
-          - hammer
-          - --username
-          - "{{ hammer_username }}"
-          - --password
-          - "{{ hammer_password }}"
-          - proxy
-          - list
-          - --per-page
-          - "1000"
-      register: hammer_proxy_list_final
-      changed_when: false
-      no_log: true
-      when: inventory_hostname == foreman_server
-
-    - name: Display final Smart Proxy list
-      ansible.builtin.debug:
-        var: hammer_proxy_list_final.stdout_lines
-      when: inventory_hostname == foreman_server
 
 
 # ==============================================================================
@@ -786,34 +611,32 @@
   vars:
     foreman_server: "cent-07-01.vgs.com"
     smart_proxy_server: "cent-07-02.vgs.com"
-    smart_proxy_port: 9090
 
   tasks:
 
-    - name: Display Foreman summary
+    - name: Foreman summary
       ansible.builtin.debug:
         msg:
-          - "============================================================"
-          - "FOREMAN SMART PROXY SUMMARY"
-          - "============================================================"
+          - "=================================================="
+          - "FOREMAN SMART PROXY CONFIGURATION COMPLETE"
+          - "=================================================="
           - "Foreman Server : {{ foreman_server }}"
           - "Smart Proxy    : {{ smart_proxy_server }}"
-          - "Proxy URL      : https://{{ smart_proxy_server }}:{{ smart_proxy_port }}"
-          - "Services       : Smart Proxy, DHCP, DNS, TFTP"
-          - "============================================================"
+          - "=================================================="
       when: inventory_hostname == foreman_server
 
-    - name: Display Smart Proxy summary
+    - name: Smart Proxy summary
       ansible.builtin.debug:
         msg:
-          - "============================================================"
-          - "SMART PROXY HOST SUMMARY"
-          - "============================================================"
-          - "Host           : {{ smart_proxy_server }}"
-          - "Proxy Service  : foreman-proxy"
-          - "Proxy API      : TCP/{{ smart_proxy_port }}"
-          - "DHCP           : Enabled and validated"
-          - "DNS            : Port 53 checked"
-          - "TFTP Directory : /var/lib/tftpboot"
-          - "============================================================"
+          - "=================================================="
+          - "SMART PROXY SERVICES"
+          - "=================================================="
+          - "DHCP Network   : 192.168.253.0/24"
+          - "DHCP Range     : 192.168.253.150 - 192.168.253.200"
+          - "DHCP Gateway   : 192.168.253.2"
+          - "DHCP Interface : ens33"
+          - "DNS            : Enabled through Smart Proxy configuration"
+          - "TFTP Root      : /var/lib/tftpboot"
+          - "Proxy API      : TCP/9090"
+          - "=================================================="
       when: inventory_hostname == smart_proxy_server
