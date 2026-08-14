@@ -308,6 +308,48 @@
     # DNS CONFIGURATION
     ###########################################################################
 
+    - name: Check DNS key file
+      ansible.builtin.stat:
+        path: /etc/foreman-proxy/dns.key
+      register: dns_key_stat
+      when: inventory_hostname == foreman_proxy
+
+    - name: Fail when DNS key file is missing
+      ansible.builtin.fail:
+        msg: |
+          DNS feature cannot be enabled because the DNS TSIG key is missing.
+
+          Expected file:
+          /etc/foreman-proxy/dns.key
+
+          The dns_nsupdate provider requires a DNS key when the DNS server
+          requires authenticated dynamic DNS updates.
+
+          Copy the correct TSIG/RNDC key from your DNS server to:
+          /etc/foreman-proxy/dns.key
+      when:
+        - inventory_hostname == foreman_proxy
+        - not dns_key_stat.stat.exists
+
+    - name: Set DNS key permissions
+      ansible.builtin.file:
+        path: /etc/foreman-proxy/dns.key
+        owner: root
+        group: foreman-proxy
+        mode: "0640"
+      when:
+        - inventory_hostname == foreman_proxy
+        - dns_key_stat.stat.exists
+
+    - name: Restore SELinux context for DNS key
+      ansible.builtin.command:
+        cmd: restorecon -v /etc/foreman-proxy/dns.key
+      changed_when: false
+      failed_when: false
+      when:
+        - inventory_hostname == foreman_proxy
+        - dns_key_stat.stat.exists
+
     - name: Enable DNS feature in Foreman Smart Proxy
       ansible.builtin.copy:
         dest: /etc/foreman-proxy/settings.d/dns.yml
@@ -320,6 +362,33 @@
           :use_provider: dns_nsupdate
           :dns_ttl: 86400
       notify: Restart Foreman Proxy
+      when: inventory_hostname == foreman_proxy
+
+    - name: Configure DNS nsupdate provider
+      ansible.builtin.copy:
+        dest: /etc/foreman-proxy/settings.d/dns_nsupdate.yml
+        owner: root
+        group: foreman-proxy
+        mode: "0640"
+        content: |
+          ---
+          :dns_key: /etc/foreman-proxy/dns.key
+          :dns_server: "{{ dns_server }}"
+      notify: Restart Foreman Proxy
+      when:
+        - inventory_hostname == foreman_proxy
+        - dns_key_stat.stat.exists
+
+    - name: Verify DNS provider configuration
+      ansible.builtin.command:
+        cmd: cat /etc/foreman-proxy/settings.d/dns_nsupdate.yml
+      register: dns_provider_config
+      changed_when: false
+      when: inventory_hostname == foreman_proxy
+
+    - name: Display DNS provider configuration
+      ansible.builtin.debug:
+        var: dns_provider_config.stdout_lines
       when: inventory_hostname == foreman_proxy
 
     ###########################################################################
