@@ -13,9 +13,10 @@
     proxy_ssl_key: "/etc/foreman-proxy/foreman_ssl_key.pem"
 
     omapi_key_name: "omapi_key"
-    omapi_key_file: "/etc/foreman-proxy/dhcp-omapi.key"
+    omapi_key_file: "/etc/foreman-proxy/omapi.key"
 
   handlers:
+
     - name: Restart Foreman Proxy
       ansible.builtin.service:
         name: foreman-proxy
@@ -31,17 +32,23 @@
   tasks:
 
     ###########################################################################
-    # FOREMAN SERVER
+    # HOST INFORMATION
     ###########################################################################
 
-    - name: Display Foreman server information
+    - name: Display Foreman infrastructure information
       ansible.builtin.debug:
         msg:
+          - "=================================================="
           - "Host: {{ inventory_hostname }}"
           - "Foreman Server: {{ foreman_server }}"
           - "Smart Proxy: {{ foreman_proxy }}"
+          - "=================================================="
 
-    - name: Check Foreman client certificate
+    ###########################################################################
+    # FOREMAN SERVER CERTIFICATES
+    ###########################################################################
+
+    - name: Check Foreman client certificates
       ansible.builtin.stat:
         path: "{{ item }}"
       loop:
@@ -73,27 +80,29 @@
       register: proxy_cert_files
       when: inventory_hostname == foreman_proxy
 
-    - name: Fail when Smart Proxy SSL certificates are missing
+    - name: Fail when Smart Proxy SSL certificate is missing
       ansible.builtin.fail:
         msg: "Required Smart Proxy SSL certificate is missing: {{ item.item }}"
+      loop: "{{ proxy_cert_files.results }}"
       when:
         - inventory_hostname == foreman_proxy
         - not item.stat.exists
-      loop: "{{ proxy_cert_files.results }}"
 
     - name: Display Smart Proxy certificate status
       ansible.builtin.debug:
         msg: "{{ item.item }} exists = {{ item.stat.exists }}"
       loop: "{{ proxy_cert_files.results }}"
-      when: inventory_hostname == foreman_proxy
+      when:
+        - inventory_hostname == foreman_proxy
+        - proxy_cert_files is defined
 
-    # ============================================================
+    ###########################################################################
     # OMAPI KEY CONFIGURATION
-    # ============================================================
+    ###########################################################################
 
     - name: Check existing OMAPI key
       ansible.builtin.stat:
-        path: /etc/foreman-proxy/omapi.key
+        path: "{{ omapi_key_file }}"
       register: omapi_key_stat
       when: inventory_hostname == foreman_proxy
 
@@ -101,7 +110,7 @@
       ansible.builtin.find:
         paths: /tmp
         patterns:
-          - 'Komapi_key.+*.private'
+          - "Komapi_key.+*.private"
         file_type: file
       register: existing_omapi_keys
       when:
@@ -123,7 +132,7 @@
       ansible.builtin.find:
         paths: /tmp
         patterns:
-          - 'Komapi_key.+*.private'
+          - "Komapi_key.+*.private"
         file_type: file
       register: generated_omapi_keys
       when:
@@ -172,7 +181,8 @@
         omapi_secret: >-
           {{
             (
-              omapi_key_content.content | b64decode
+              omapi_key_content.content
+              | b64decode
               | regex_search('(?m)^Key:[[:space:]]*([^[:space:]]+)', '\1')
               | default([])
               | first
@@ -263,7 +273,7 @@
           :config: /etc/dhcp/dhcpd.conf
           :leases: /var/lib/dhcpd/dhcpd.leases
           :key_name: {{ omapi_key_name }}
-          :key_secret: "{{ lookup('file', omapi_key_file) | regex_search('secret\\s+\"([^\"]+)\"', '\\1') | first }}"
+          :key_secret: "{{ lookup('file', omapi_key_file) | regex_search('secret\s+"([^"]+)"', '\1') | first }}"
           :omapi_port: 7911
       notify: Restart Foreman Proxy
       when: inventory_hostname == foreman_proxy
@@ -331,7 +341,7 @@
       when: inventory_hostname == foreman_proxy
 
     ###########################################################################
-    # PERMISSIONS
+    # DHCP AND PROXY PERMISSIONS
     ###########################################################################
 
     - name: Ensure foreman-proxy can read DHCP configuration
@@ -372,17 +382,29 @@
       when: inventory_hostname == foreman_proxy
 
     ###########################################################################
-    # VERIFY FEATURES
+    # VERIFY SMART PROXY FEATURES
     ###########################################################################
+
+    - name: Wait for Smart Proxy HTTPS port
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 9090
+        timeout: 30
+      when: inventory_hostname == foreman_proxy
 
     - name: Get Smart Proxy enabled features locally
       ansible.builtin.command:
-        cmd: >
-          curl --silent --show-error
-          --cacert {{ proxy_ssl_ca }}
-          --cert {{ proxy_ssl_cert }}
-          --key {{ proxy_ssl_key }}
-          https://localhost:9090/v2/features
+        argv:
+          - curl
+          - --silent
+          - --show-error
+          - --cacert
+          - "{{ proxy_ssl_ca }}"
+          - --cert
+          - "{{ proxy_ssl_cert }}"
+          - --key
+          - "{{ proxy_ssl_key }}"
+          - https://localhost:9090/v2/features
       register: proxy_features
       changed_when: false
       when: inventory_hostname == foreman_proxy
@@ -407,13 +429,13 @@
       when: inventory_hostname == foreman_proxy
 
     - name: Display DHCP port listener
-      ansible.builtin.shell: ss -lunp | grep ':67 ' || true
+      ansible.builtin.shell: "ss -lunp | grep ':67 ' || true"
       register: dhcp_port_status
       changed_when: false
       when: inventory_hostname == foreman_proxy
 
     - name: Display Smart Proxy HTTPS listener
-      ansible.builtin.shell: ss -ltnp | grep ':9090 ' || true
+      ansible.builtin.shell: "ss -ltnp | grep ':9090 ' || true"
       register: proxy_port_status
       changed_when: false
       when: inventory_hostname == foreman_proxy
@@ -425,9 +447,9 @@
     - name: Display final Smart Proxy summary
       ansible.builtin.debug:
         msg:
-          - "=============================================="
+          - "=================================================="
           - "Smart Proxy Configuration Summary"
-          - "=============================================="
+          - "=================================================="
           - "Host: {{ inventory_hostname }}"
           - "Foreman Proxy: {{ proxy_service_status.stdout }}"
           - "DHCP Service: {{ dhcp_service_status.stdout }}"
@@ -435,5 +457,5 @@
           - "Proxy HTTPS Listener: {{ proxy_port_status.stdout }}"
           - "Enabled Features:"
           - "{{ proxy_features.stdout }}"
-          - "=============================================="
+          - "=================================================="
       when: inventory_hostname == foreman_proxy
