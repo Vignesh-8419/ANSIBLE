@@ -1,5 +1,5 @@
 ---
-- name: Create Open and Start Nested ESXi VM in VMware Workstation
+- name: Automated Nested ESXi 8.0U1 Installation in VMware Workstation
   hosts: localhost
   connection: local
   gather_facts: false
@@ -7,34 +7,47 @@
   vars:
 
     # ========================================================================
-    # VM CONFIGURATION
+    # ESXi VM
     # ========================================================================
 
     vm_name: "ESXI-01"
 
-    # Cygwin paths
     vm_dir_cygwin: "/cygdrive/d/ESXI/ESXI-01"
     vmx_file_cygwin: "/cygdrive/d/ESXI/ESXI-01/ESXI-01.vmx"
     vmdk_file_cygwin: "/cygdrive/d/ESXI/ESXI-01/ESXI-01.vmdk"
     vmware_log_cygwin: "/cygdrive/d/ESXI/ESXI-01/vmware.log"
 
-    esxi_iso_cygwin: "/cygdrive/e/vmware/VMware-VMvisor-Installer-8.0U1-21495797.x86_64.iso"
+    vmx_file_windows: 'D:\ESXI\ESXI-01\ESXI-01.vmx'
+    vmdk_file_windows: 'D:\ESXI\ESXI-01\ESXI-01.vmdk'
+
+    # ========================================================================
+    # ESXi ISO
+    #
+    # CUSTOMIZED UNATTENDED ISO
+    # Moved to:
+    # E:\vmware\ESXi-8.0.1-auto.iso
+    # ========================================================================
+
+    esxi_iso_cygwin: "/cygdrive/e/vmware/ESXi-8.0.1-auto.iso"
+    esxi_iso_windows: 'E:\vmware\ESXi-8.0.1-auto.iso'
+
+    # Original ISO
+    original_iso_cygwin: "/cygdrive/e/vmware/VMware-VMvisor-Installer-8.0U1-21495797.x86_64.iso"
+
+    # ========================================================================
+    # VMware Workstation
+    # ========================================================================
 
     vmrun_cygwin: "/cygdrive/d/VM workstation/vmrun.exe"
     vdiskmanager_cygwin: "/cygdrive/d/VM workstation/vmware-vdiskmanager.exe"
     vmware_cygwin: "/cygdrive/d/VM workstation/vmware.exe"
-
-    # Windows paths used by VMware
-    vmx_file_windows: 'D:\ESXI\ESXI-01\ESXI-01.vmx'
-    vmdk_file_windows: 'D:\ESXI\ESXI-01\ESXI-01.vmdk'
-    esxi_iso_windows: 'E:\vmware\VMware-VMvisor-Installer-8.0U1-21495797.x86_64.iso'
 
     vmrun_windows: 'D:\VM workstation\vmrun.exe'
     vdiskmanager_windows: 'D:\VM workstation\vmware-vdiskmanager.exe'
     vmware_windows: 'D:\VM workstation\vmware.exe'
 
     # ========================================================================
-    # HARDWARE
+    # VM HARDWARE
     # ========================================================================
 
     vm_memory_mb: 24568
@@ -46,80 +59,137 @@
 
     # ========================================================================
     # NETWORK
+    #
+    # IMPORTANT:
+    # VMware Workstation UI should show:
+    #
+    # Custom:
+    # Specific virtual network
+    # VMnet0
     # ========================================================================
 
-    network_type: "bridged"
+    network_type: "custom"
     network_name: "VMnet0"
 
     # ========================================================================
-    # STARTUP
+    # INSTALLATION TIMING
     # ========================================================================
 
-    startup_wait: 20
+    esxi_install_wait_seconds: 420
+    vm_start_wait_seconds: 20
+    vm_shutdown_wait_seconds: 10
 
+    # ========================================================================
+    # LOCAL TEMP
+    # ========================================================================
+
+    ansible_remote_tmp: "/tmp/.ansible-vmware"
 
   tasks:
 
     # ========================================================================
-    # DISPLAY
+    # DISPLAY CONFIGURATION
     # ========================================================================
 
-    - name: Display ESXi configuration
+    - name: Display ESXi automation configuration
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "NESTED ESXi VM CONFIGURATION"
+          - "AUTOMATED NESTED ESXi INSTALLATION"
           - "============================================================"
-          - "VM Name       : {{ vm_name }}"
-          - "VMX           : {{ vmx_file_windows }}"
-          - "VMDK          : {{ vmdk_file_windows }}"
-          - "ESXi ISO      : {{ esxi_iso_windows }}"
-          - "VMware        : {{ vmware_windows }}"
-          - "VMRUN         : {{ vmrun_windows }}"
-          - "VDISKMANAGER  : {{ vdiskmanager_windows }}"
-          - "RAM           : {{ vm_memory_mb }} MB"
-          - "CPU           : {{ vm_vcpu }} vCPU"
-          - "Disk          : {{ vm_disk_gb }} GB"
-          - "Hardware Ver  : {{ virtual_hw_version }}"
-          - "Guest OS      : {{ guest_os }}"
-          - "Network       : {{ network_name }}"
-          - "Firmware      : EFI"
-          - "Nested VT     : ENABLED"
-          - "PCIe Bridges  : ENABLED"
-          - "USB           : DISABLED"
-          - "xHCI          : DISABLED"
-          - "Sound         : DISABLED"
-          - "Serial        : DISABLED"
-          - "Parallel      : DISABLED"
-          - "Floppy        : DISABLED"
+          - "VM Name          : {{ vm_name }}"
+          - "VMX              : {{ vmx_file_windows }}"
+          - "VMDK             : {{ vmdk_file_windows }}"
+          - "CUSTOM ISO       : {{ esxi_iso_windows }}"
+          - "ORIGINAL ISO     : {{ original_iso_cygwin }}"
+          - "RAM              : {{ vm_memory_mb }} MB"
+          - "CPU              : {{ vm_vcpu }} vCPU"
+          - "Disk             : {{ vm_disk_gb }} GB"
+          - "Hardware Version : {{ virtual_hw_version }}"
+          - "Firmware         : EFI"
+          - "Nested VT        : ENABLED"
+          - "Network Type     : {{ network_type }}"
+          - "Network          : {{ network_name }}"
+          - "USB              : DISABLED"
+          - "xHCI             : DISABLED"
+          - "Sound            : DISABLED"
+          - "Serial           : DISABLED"
+          - "Parallel         : DISABLED"
+          - "Floppy           : DISABLED"
+          - "Install Wait     : {{ esxi_install_wait_seconds }} seconds"
           - "============================================================"
 
+    # ========================================================================
+    # CREATE TEMP
+    # ========================================================================
+
+    - name: Create Ansible local temporary directory
+      ansible.builtin.shell: |
+        mkdir -p "{{ ansible_remote_tmp }}"
+        chmod 700 "{{ ansible_remote_tmp }}"
+      args:
+        executable: /bin/bash
+      changed_when: false
 
     # ========================================================================
-    # VALIDATE FILES
+    # VALIDATE ORIGINAL ISO
     # ========================================================================
 
-    - name: Check ESXi ISO
+    - name: Check original ESXi ISO exists
       ansible.builtin.stat:
-        path: "{{ esxi_iso_cygwin }}"
-      register: esxi_iso_stat
+        path: "{{ original_iso_cygwin }}"
+      register: original_iso_stat
 
-    - name: Fail if ESXi ISO is missing
+    - name: Fail if original ESXi ISO is missing
       ansible.builtin.fail:
         msg: |
           ============================================================
-          ESXi ISO NOT FOUND
+          ORIGINAL ESXi ISO NOT FOUND
           ============================================================
 
-          Cygwin:
+          Expected:
+          {{ original_iso_cygwin }}
+
+          ============================================================
+      when: not original_iso_stat.stat.exists
+
+    # ========================================================================
+    # VALIDATE CUSTOM ISO
+    # ========================================================================
+
+    - name: Check customized ESXi ISO exists
+      ansible.builtin.stat:
+        path: "{{ esxi_iso_cygwin }}"
+      register: custom_iso_stat
+
+    - name: Fail if customized ESXi ISO is missing
+      ansible.builtin.fail:
+        msg: |
+          ============================================================
+          CUSTOMIZED ESXi ISO NOT FOUND
+          ============================================================
+
+          Expected:
           {{ esxi_iso_cygwin }}
 
           Windows:
           {{ esxi_iso_windows }}
 
-          ============================================================
-      when: not esxi_iso_stat.stat.exists
+          Make sure this file exists on E:\vmware.
 
+          ============================================================
+      when: not custom_iso_stat.stat.exists
+
+    - name: Display ISO validation
+      ansible.builtin.debug:
+        msg:
+          - "Original ISO : {{ original_iso_cygwin }}"
+          - "Custom ISO   : {{ esxi_iso_cygwin }}"
+          - "Custom ISO   : FOUND"
+
+    # ========================================================================
+    # VALIDATE VMware BINARIES
+    # ========================================================================
 
     - name: Check vmrun.exe
       ansible.builtin.stat:
@@ -129,15 +199,10 @@
     - name: Fail if vmrun.exe is missing
       ansible.builtin.fail:
         msg: |
-          ============================================================
-          vmrun.exe NOT FOUND
-          ============================================================
+          VMware vmrun.exe not found:
 
           {{ vmrun_windows }}
-
-          ============================================================
       when: not vmrun_stat.stat.exists
-
 
     - name: Check vmware-vdiskmanager.exe
       ansible.builtin.stat:
@@ -147,39 +212,23 @@
     - name: Fail if vmware-vdiskmanager.exe is missing
       ansible.builtin.fail:
         msg: |
-          ============================================================
-          vmware-vdiskmanager.exe NOT FOUND
-          ============================================================
+          VMware vmware-vdiskmanager.exe not found:
 
           {{ vdiskmanager_windows }}
-
-          ============================================================
       when: not vdiskmanager_stat.stat.exists
 
-
-    - name: Check VMware Workstation executable
+    - name: Check vmware.exe
       ansible.builtin.stat:
         path: "{{ vmware_cygwin }}"
       register: vmware_stat
 
-    - name: Fail if VMware Workstation executable is missing
+    - name: Fail if vmware.exe is missing
       ansible.builtin.fail:
         msg: |
-          ============================================================
-          vmware.exe NOT FOUND
-          ============================================================
-
-          Expected:
+          VMware Workstation executable not found:
 
           {{ vmware_windows }}
-
-          Check with:
-
-          find "/cygdrive/d/VM workstation" -maxdepth 1 -iname "vmware.exe"
-
-          ============================================================
       when: not vmware_stat.stat.exists
-
 
     # ========================================================================
     # CREATE VM DIRECTORY
@@ -191,44 +240,41 @@
         state: directory
         mode: "0755"
 
-
     # ========================================================================
-    # CURRENT VM STATE
+    # GET CURRENT VM STATE
     # ========================================================================
 
-    - name: Get VMware running VM list
+    - name: Get running VMware virtual machines
       ansible.builtin.command:
         argv:
           - "{{ vmrun_cygwin }}"
           - "-T"
           - "ws"
           - "list"
-      register: vm_list_before
+      register: vmrun_list_before
       changed_when: false
       failed_when: false
 
-    - name: Determine current VM state
+    - name: Determine whether ESXi VM is running
       ansible.builtin.set_fact:
         vm_running_before: >-
           {{
             vmx_file_windows | lower
             in
-            (vm_list_before.stdout | lower)
+            (vmrun_list_before.stdout | lower)
           }}
 
-    - name: Display current VM state
+    - name: Display current VM status
       ansible.builtin.debug:
         msg:
           - "VM Name : {{ vm_name }}"
           - "Running : {{ vm_running_before }}"
-          - "Action  : {{ power | default('on') }}"
-
 
     # ========================================================================
-    # POWER OFF MODE
+    # STOP EXISTING VM
     # ========================================================================
 
-    - name: Power off ESXi VM
+    - name: Stop existing ESXi VM
       ansible.builtin.command:
         argv:
           - "{{ vmrun_cygwin }}"
@@ -237,78 +283,15 @@
           - "stop"
           - "{{ vmx_file_windows }}"
           - "hard"
-      register: poweroff_result
+      register: stop_existing
       failed_when: false
-      changed_when: poweroff_result.rc == 0
-      when:
-        - power | default("on") | lower == "off"
-        - vm_running_before | bool
-
-    - name: Wait after power off
-      ansible.builtin.pause:
-        seconds: 5
-      when:
-        - power | default("on") | lower == "off"
-        - vm_running_before | bool
-
-    - name: Display power off result
-      ansible.builtin.debug:
-        msg:
-          - "============================================================"
-          - "VM POWER OFF RESULT"
-          - "============================================================"
-          - "Return code: {{ poweroff_result.rc | default(0) }}"
-          - "STDOUT: {{ poweroff_result.stdout | default('VM already powered off') }}"
-          - "STDERR: {{ poweroff_result.stderr | default('') }}"
-          - "============================================================"
-      when: power | default("on") | lower == "off"
-
-    - name: End play after power off
-      ansible.builtin.meta: end_play
-      when: power | default("on") | lower == "off"
-
-
-    # ========================================================================
-    # STOP BEFORE REBUILD
-    # ========================================================================
-
-    - name: Stop VM before VMX rebuild
-      ansible.builtin.command:
-        argv:
-          - "{{ vmrun_cygwin }}"
-          - "-T"
-          - "ws"
-          - "stop"
-          - "{{ vmx_file_windows }}"
-          - "hard"
-      register: stop_before_rebuild
-      failed_when: false
-      changed_when: stop_before_rebuild.rc == 0
+      changed_when: stop_existing.rc == 0
       when: vm_running_before | bool
 
-    - name: Wait for VM shutdown
+    - name: Wait for existing ESXi VM shutdown
       ansible.builtin.pause:
-        seconds: 5
+        seconds: "{{ vm_shutdown_wait_seconds }}"
       when: vm_running_before | bool
-
-
-    # ========================================================================
-    # BACKUP EXISTING VMX
-    # ========================================================================
-
-    - name: Check existing VMX
-      ansible.builtin.stat:
-        path: "{{ vmx_file_cygwin }}"
-      register: vmx_existing_stat
-
-    - name: Backup existing VMX
-      ansible.builtin.copy:
-        src: "{{ vmx_file_cygwin }}"
-        dest: "{{ vmx_file_cygwin }}.ansible-backup"
-        remote_src: true
-        mode: "0644"
-      when: vmx_existing_stat.stat.exists
-
 
     # ========================================================================
     # REMOVE STALE LOCKS
@@ -325,7 +308,6 @@
         executable: /bin/bash
       changed_when: false
 
-
     # ========================================================================
     # REMOVE STALE STATE
     # ========================================================================
@@ -334,22 +316,42 @@
       ansible.builtin.shell: |
         rm -f "{{ vm_dir_cygwin }}"/*.vmem 2>/dev/null || true
         rm -f "{{ vm_dir_cygwin }}"/*.vmss 2>/dev/null || true
-        rm -f "{{ vm_dir_cygwin }}"/*.vmpl 2>/dev/null || true
         rm -f "{{ vm_dir_cygwin }}"/*.vmsn 2>/dev/null || true
+        rm -f "{{ vm_dir_cygwin }}"/*.vmpl 2>/dev/null || true
         rm -f "{{ vm_dir_cygwin }}"/*.scoreboard 2>/dev/null || true
       args:
         executable: /bin/bash
       changed_when: false
 
+    # ========================================================================
+    # CHECK EXISTING VMX
+    # ========================================================================
+
+    - name: Check existing VMX
+      ansible.builtin.stat:
+        path: "{{ vmx_file_cygwin }}"
+      register: vmx_existing_stat
+
+    - name: Backup existing VMX
+      ansible.builtin.copy:
+        src: "{{ vmx_file_cygwin }}"
+        dest: "{{ vmx_file_cygwin }}.pre-install-backup"
+        remote_src: true
+        mode: "0644"
+      when: vmx_existing_stat.stat.exists
 
     # ========================================================================
-    # VMDK
+    # CHECK EXISTING VMDK
     # ========================================================================
 
     - name: Check existing VMDK
       ansible.builtin.stat:
         path: "{{ vmdk_file_cygwin }}"
       register: vmdk_stat
+
+    # ========================================================================
+    # CREATE VMDK
+    # ========================================================================
 
     - name: Create ESXi virtual disk
       ansible.builtin.command:
@@ -364,42 +366,49 @@
           - "0"
           - "{{ vmdk_file_windows }}"
       register: vmdk_create
-      when: not vmdk_stat.stat.exists
       changed_when: vmdk_create.rc == 0
       failed_when: vmdk_create.rc != 0
+      when: not vmdk_stat.stat.exists
 
-    - name: Display VMDK result
+    - name: Display virtual disk result
       ansible.builtin.debug:
         msg:
-          - "VMDK return code: {{ vmdk_create.rc | default(0) }}"
+          - "============================================================"
+          - "VIRTUAL DISK"
+          - "============================================================"
+          - "Disk : {{ vmdk_file_windows }}"
+          - "Size : {{ vm_disk_gb }} GB"
+          - "Status:"
           - "{{ vmdk_create.stdout | default('Existing VMDK preserved.') }}"
-          - "{{ vmdk_create.stderr | default('') }}"
+          - "============================================================"
 
+    # ========================================================================
+    # VERIFY VMDK
+    # ========================================================================
 
     - name: Verify VMDK exists
       ansible.builtin.stat:
         path: "{{ vmdk_file_cygwin }}"
       register: vmdk_after
 
-    - name: Fail if VMDK is missing
+    - name: Fail if VMDK does not exist
       ansible.builtin.fail:
         msg: |
-          ESXi virtual disk does not exist:
+          VMDK was not created:
 
           {{ vmdk_file_windows }}
       when: not vmdk_after.stat.exists
 
-
     # ========================================================================
-    # REBUILD VMX
+    # CREATE INSTALLATION VMX
     # ========================================================================
 
-    - name: Remove old VMX
+    - name: Remove old VMX before installation configuration
       ansible.builtin.file:
         path: "{{ vmx_file_cygwin }}"
         state: absent
 
-    - name: Create clean ESXi VMX
+    - name: Create installation VMX
       ansible.builtin.copy:
         dest: "{{ vmx_file_cygwin }}"
         mode: "0644"
@@ -431,7 +440,7 @@
           monitor.virtual_mmu = "hardware"
 
           # ==========================================================
-          # PCI BRIDGES / PCIe ROOT PORTS
+          # PCIe BRIDGES
           # ==========================================================
 
           pciBridge0.present = "TRUE"
@@ -467,7 +476,7 @@
           pciBridge7.pciSlotNumber = "24"
 
           # ==========================================================
-          # SCSI CONTROLLER / ESXi DISK
+          # SCSI CONTROLLER
           # ==========================================================
 
           scsi0.present = "TRUE"
@@ -479,7 +488,10 @@
           scsi0:0.deviceType = "scsi-hardDisk"
 
           # ==========================================================
-          # ESXi INSTALLATION ISO
+          # CUSTOMIZED ESXi ISO
+          #
+          # EXACT LOCATION:
+          # E:\vmware\ESXi-8.0.1-auto.iso
           # ==========================================================
 
           ide1:0.present = "TRUE"
@@ -489,18 +501,21 @@
 
           # ==========================================================
           # NETWORK
+          #
+          # IMPORTANT:
+          # Custom / VMnet0
           # ==========================================================
 
           ethernet0.present = "TRUE"
-          ethernet0.connectionType = "{{ network_type }}"
-          ethernet0.vnet = "{{ network_name }}"
+          ethernet0.connectionType = "custom"
+          ethernet0.vnet = "VMnet0"
           ethernet0.virtualDev = "e1000e"
           ethernet0.addressType = "generated"
           ethernet0.startConnected = "TRUE"
           ethernet0.pciSlotNumber = "1184"
 
           # ==========================================================
-          # UNNECESSARY DEVICES DISABLED
+          # DISABLE UNNECESSARY DEVICES
           # ==========================================================
 
           usb.present = "FALSE"
@@ -511,7 +526,6 @@
 
           serial0.present = "FALSE"
           parallel0.present = "FALSE"
-
           floppy0.present = "FALSE"
           printer0.present = "FALSE"
 
@@ -522,6 +536,12 @@
           svga.present = "TRUE"
           svga.autodetect = "TRUE"
           svga.vramSize = "134217728"
+
+          # ==========================================================
+          # BOOT FROM CUSTOMIZED ISO
+          # ==========================================================
+
+          bios.bootDeviceClasses = "cd"
 
           # ==========================================================
           # POWER
@@ -539,82 +559,52 @@
           tools.upgrade.policy = "manual"
           tools.syncTime = "FALSE"
 
-
     # ========================================================================
-    # VALIDATE VMX
+    # VERIFY INSTALLATION VMX
     # ========================================================================
 
-    - name: Read generated VMX
+    - name: Read installation VMX
       ansible.builtin.slurp:
         src: "{{ vmx_file_cygwin }}"
-      register: vmx_slurp
+      register: installation_vmx_slurp
 
-    - name: Decode VMX
+    - name: Set installation VMX content
       ansible.builtin.set_fact:
-        vmx_text: "{{ vmx_slurp.content | b64decode }}"
+        installation_vmx_text: >-
+          {{
+            installation_vmx_slurp.content
+            | b64decode
+          }}
 
-
-    - name: Validate hardware version
+    - name: Verify installation VMX
       ansible.builtin.assert:
         that:
-          - ('virtualHW.version = "' ~ virtual_hw_version ~ '"') in vmx_text
-        fail_msg: "Incorrect VMware hardware version."
-        success_msg: "Hardware version {{ virtual_hw_version }} verified."
+          - ('virtualHW.version = "' ~ virtual_hw_version ~ '"') in installation_vmx_text
+          - 'firmware = "efi"' in installation_vmx_text
+          - 'vhv.enable = "TRUE"' in installation_vmx_text
+          - 'ethernet0.connectionType = "custom"' in installation_vmx_text
+          - 'ethernet0.vnet = "VMnet0"' in installation_vmx_text
+          - 'scsi0.present = "TRUE"' in installation_vmx_text
+          - 'ide1:0.present = "TRUE"' in installation_vmx_text
+          - 'ide1:0.startConnected = "TRUE"' in installation_vmx_text
+          - 'bios.bootDeviceClasses = "cd"' in installation_vmx_text
+        fail_msg: "Installation VMX validation failed."
+        success_msg: "Installation VMX validated successfully."
 
-
-    - name: Validate PCI bridge configuration
-      ansible.builtin.assert:
-        that:
-          - "'pciBridge0.present = \"TRUE\"' in vmx_text"
-          - "'pciBridge4.present = \"TRUE\"' in vmx_text"
-          - "'pciBridge4.virtualDev = \"pcieRootPort\"' in vmx_text"
-          - "'pciBridge4.functions = \"8\"' in vmx_text"
-          - "'pciBridge7.present = \"TRUE\"' in vmx_text"
-        fail_msg: "PCIe root-port configuration is missing."
-        success_msg: "PCIe root-port configuration verified."
-
-
-    - name: Validate SCSI configuration
-      ansible.builtin.assert:
-        that:
-          - "'scsi0.present = \"TRUE\"' in vmx_text"
-          - "'scsi0.virtualDev = \"lsilogic\"' in vmx_text"
-          - "'scsi0:0.present = \"TRUE\"' in vmx_text"
-        fail_msg: "SCSI configuration is missing."
-        success_msg: "SCSI configuration verified."
-
-
-    - name: Validate Ethernet configuration
-      ansible.builtin.assert:
-        that:
-          - "'ethernet0.present = \"TRUE\"' in vmx_text"
-          - "'ethernet0.virtualDev = \"e1000e\"' in vmx_text"
-        fail_msg: "Ethernet configuration is missing."
-        success_msg: "Ethernet configuration verified."
-
-
-    - name: Validate nested virtualization
-      ansible.builtin.assert:
-        that:
-          - "'vhv.enable = \"TRUE\"' in vmx_text"
-        fail_msg: "Nested virtualization is disabled."
-        success_msg: "Nested virtualization enabled."
-
-
-    - name: Display VMX validation
+    - name: Display installation VMX summary
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "VMX VALIDATION SUCCESSFUL"
+          - "INSTALLATION VMX READY"
           - "============================================================"
           - "Hardware Version : {{ virtual_hw_version }}"
-          - "PCI Bridges      : CONFIGURED"
-          - "PCIe Root Ports  : CONFIGURED"
-          - "SCSI             : CONFIGURED"
-          - "Ethernet         : CONFIGURED"
-          - "Nested VT        : ENABLED"
+          - "Firmware         : EFI"
+          - "Nested VT        : TRUE"
+          - "Network          : CUSTOM / VMnet0"
+          - "CD               : CONNECTED"
+          - "Boot Device      : CD"
+          - "Kickstart ISO    : {{ esxi_iso_windows }}"
           - "============================================================"
-
 
     # ========================================================================
     # REMOVE OLD LOG
@@ -625,21 +615,11 @@
         path: "{{ vmware_log_cygwin }}"
         state: absent
 
-
     # ========================================================================
-    # OPEN VM THROUGH VMWARE WORKSTATION
-    #
-    # IMPORTANT:
-    #
-    # vmrun register is NOT supported for VMware Workstation.
-    #
-    # vmware.exe -x is used instead.
-    #
-    # We launch it through PowerShell so the GUI process is detached
-    # from the Ansible shell.
+    # START INSTALLATION
     # ========================================================================
 
-    - name: Open ESXi VM through VMware Workstation
+    - name: Start ESXi unattended installation
       ansible.builtin.command:
         argv:
           - powershell.exe
@@ -650,77 +630,360 @@
             Start-Process
             -FilePath "{{ vmware_windows }}"
             -ArgumentList @("-x","{{ vmx_file_windows }}")
-      register: vmware_gui_start
+      register: installation_start
       changed_when: true
       failed_when: false
 
-
-    - name: Display VMware Workstation GUI launch result
+    - name: Display installation launch result
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "VMWARE WORKSTATION LAUNCH"
+          - "ESXi INSTALLATION STARTED"
           - "============================================================"
-          - "VM Name : {{ vm_name }}"
+          - "VM      : {{ vm_name }}"
           - "VMX     : {{ vmx_file_windows }}"
-          - "GUI RC  : {{ vmware_gui_start.rc }}"
-          - "STDOUT  : {{ vmware_gui_start.stdout | default('') }}"
-          - "STDERR  : {{ vmware_gui_start.stderr | default('') }}"
+          - "ISO     : {{ esxi_iso_windows }}"
+          - "Return  : {{ installation_start.rc }}"
           - "============================================================"
 
-
     # ========================================================================
-    # WAIT FOR VM STARTUP
+    # INITIAL WAIT
     # ========================================================================
 
-    - name: Wait for VMware Workstation
+    - name: Wait for ESXi installer to start
       ansible.builtin.pause:
-        seconds: "{{ startup_wait }}"
-
+        seconds: "{{ vm_start_wait_seconds }}"
 
     # ========================================================================
-    # VERIFY RUNNING VM
+    # VERIFY INSTALL VM RUNNING
     # ========================================================================
 
-    - name: Get VMware running VMs
+    - name: Check VM during installation
       ansible.builtin.command:
         argv:
           - "{{ vmrun_cygwin }}"
           - "-T"
           - "ws"
           - "list"
-      register: vmrun_after
+      register: install_vm_list
       changed_when: false
       failed_when: false
 
-
-    - name: Determine final VM running state
+    - name: Determine installation VM running state
       ansible.builtin.set_fact:
-        vm_running_after: >-
+        installation_vm_running: >-
           {{
             vmx_file_windows | lower
             in
-            (vmrun_after.stdout | lower)
+            (install_vm_list.stdout | lower)
           }}
 
+    - name: Fail if installation VM did not start
+      ansible.builtin.fail:
+        msg: |
+          ============================================================
+          ESXi INSTALLATION VM DID NOT START
+          ============================================================
 
-    - name: Display final VM running state
+          VMX:
+          {{ vmx_file_windows }}
+
+          VMware list:
+          {{ install_vm_list.stdout }}
+
+          ============================================================
+      when: not installation_vm_running
+
+    - name: Display installer running state
+      ansible.builtin.debug:
+        msg:
+          - "ESXi installer VM is running."
+          - "Waiting {{ esxi_install_wait_seconds }} seconds"
+          - "for unattended installation and reboot."
+
+    # ========================================================================
+    # WAIT FOR INSTALLATION
+    # ========================================================================
+
+    - name: Wait for unattended ESXi installation
+      ansible.builtin.pause:
+        seconds: "{{ esxi_install_wait_seconds }}"
+
+    # ========================================================================
+    # CHECK VM AFTER INSTALLATION
+    # ========================================================================
+
+    - name: Check VM after installation wait
+      ansible.builtin.command:
+        argv:
+          - "{{ vmrun_cygwin }}"
+          - "-T"
+          - "ws"
+          - "list"
+      register: install_vm_list_after_wait
+      changed_when: false
+      failed_when: false
+
+    - name: Determine VM state after installation wait
+      ansible.builtin.set_fact:
+        vm_running_after_install: >-
+          {{
+            vmx_file_windows | lower
+            in
+            (install_vm_list_after_wait.stdout | lower)
+          }}
+
+    - name: Display state after installation wait
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "FINAL ESXi VM STATUS"
+          - "POST-INSTALLATION STATE"
           - "============================================================"
-          - "VM Name : {{ vm_name }}"
-          - "VMX     : {{ vmx_file_windows }}"
-          - "Running : {{ vm_running_after }}"
+          - "VM Running : {{ vm_running_after_install }}"
           - "============================================================"
 
+    # ========================================================================
+    # STOP AFTER INSTALLATION
+    # ========================================================================
+
+    - name: Stop VM after installation
+      ansible.builtin.command:
+        argv:
+          - "{{ vmrun_cygwin }}"
+          - "-T"
+          - "ws"
+          - "stop"
+          - "{{ vmx_file_windows }}"
+          - "hard"
+      register: post_install_stop
+      failed_when: false
+      changed_when: post_install_stop.rc == 0
+      when: vm_running_after_install | bool
+
+    - name: Wait for post-installation shutdown
+      ansible.builtin.pause:
+        seconds: "{{ vm_shutdown_wait_seconds }}"
 
     # ========================================================================
-    # VERIFY VMWARE WORKSTATION PROCESS
+    # BACKUP INSTALLATION VMX
     # ========================================================================
 
-    - name: Check VMware Workstation process
+    - name: Backup installation VMX
+      ansible.builtin.copy:
+        src: "{{ vmx_file_cygwin }}"
+        dest: "{{ vmx_file_cygwin }}.installed-backup"
+        remote_src: true
+        mode: "0644"
+
+    # ========================================================================
+    # FINAL VMX
+    #
+    # CD disconnected
+    # Normal disk boot
+    # VMnet0 retained
+    # ========================================================================
+
+    - name: Create final installed ESXi VMX
+      ansible.builtin.copy:
+        dest: "{{ vmx_file_cygwin }}"
+        mode: "0644"
+        content: |
+          .encoding = "UTF-8"
+
+          config.version = "8"
+          virtualHW.version = "{{ virtual_hw_version }}"
+          virtualHW.productCompatibility = "hosted"
+
+          displayName = "{{ vm_name }}"
+          guestOS = "{{ guest_os }}"
+
+          firmware = "efi"
+          uefi.secureBoot.enabled = "FALSE"
+
+          memsize = "{{ vm_memory_mb }}"
+          numvcpus = "{{ vm_vcpu }}"
+          cpuid.coresPerSocket = "1"
+
+          # ==========================================================
+          # NESTED VIRTUALIZATION
+          # ==========================================================
+
+          vhv.enable = "TRUE"
+          hypervisor.cpuid.v0 = "FALSE"
+
+          monitor.virtual_exec = "hardware"
+          monitor.virtual_mmu = "hardware"
+
+          # ==========================================================
+          # PCIe BRIDGES
+          # ==========================================================
+
+          pciBridge0.present = "TRUE"
+          pciBridge0.pciSlotNumber = "17"
+
+          pciBridge1.present = "TRUE"
+          pciBridge1.pciSlotNumber = "18"
+
+          pciBridge2.present = "TRUE"
+          pciBridge2.pciSlotNumber = "19"
+
+          pciBridge3.present = "TRUE"
+          pciBridge3.pciSlotNumber = "20"
+
+          pciBridge4.present = "TRUE"
+          pciBridge4.virtualDev = "pcieRootPort"
+          pciBridge4.functions = "8"
+          pciBridge4.pciSlotNumber = "21"
+
+          pciBridge5.present = "TRUE"
+          pciBridge5.virtualDev = "pcieRootPort"
+          pciBridge5.functions = "8"
+          pciBridge5.pciSlotNumber = "22"
+
+          pciBridge6.present = "TRUE"
+          pciBridge6.virtualDev = "pcieRootPort"
+          pciBridge6.functions = "8"
+          pciBridge6.pciSlotNumber = "23"
+
+          pciBridge7.present = "TRUE"
+          pciBridge7.virtualDev = "pcieRootPort"
+          pciBridge7.functions = "8"
+          pciBridge7.pciSlotNumber = "24"
+
+          # ==========================================================
+          # SCSI / INSTALLED ESXi DISK
+          # ==========================================================
+
+          scsi0.present = "TRUE"
+          scsi0.virtualDev = "lsilogic"
+          scsi0.pciSlotNumber = "160"
+
+          scsi0:0.present = "TRUE"
+          scsi0:0.fileName = "{{ vmdk_file_windows }}"
+          scsi0:0.deviceType = "scsi-hardDisk"
+
+          # ==========================================================
+          # CD/DVD
+          # ISO remains configured but disconnected
+          # ==========================================================
+
+          ide1:0.present = "TRUE"
+          ide1:0.deviceType = "cdrom-image"
+          ide1:0.fileName = "{{ esxi_iso_windows }}"
+          ide1:0.startConnected = "FALSE"
+
+          # ==========================================================
+          # NETWORK - EXPLICIT VMnet0
+          # ==========================================================
+
+          ethernet0.present = "TRUE"
+          ethernet0.connectionType = "custom"
+          ethernet0.vnet = "VMnet0"
+          ethernet0.virtualDev = "e1000e"
+          ethernet0.addressType = "generated"
+          ethernet0.startConnected = "TRUE"
+          ethernet0.pciSlotNumber = "1184"
+
+          # ==========================================================
+          # DISABLE UNNECESSARY HARDWARE
+          # ==========================================================
+
+          usb.present = "FALSE"
+          usb_xhci.present = "FALSE"
+          ehci.present = "FALSE"
+
+          sound.present = "FALSE"
+
+          serial0.present = "FALSE"
+          parallel0.present = "FALSE"
+          floppy0.present = "FALSE"
+          printer0.present = "FALSE"
+
+          # ==========================================================
+          # DISPLAY
+          # ==========================================================
+
+          svga.present = "TRUE"
+          svga.autodetect = "TRUE"
+          svga.vramSize = "134217728"
+
+          # ==========================================================
+          # NORMAL DISK BOOT
+          # ==========================================================
+
+          bios.bootDeviceClasses = "allow:all"
+
+          # ==========================================================
+          # POWER
+          # ==========================================================
+
+          powerType.powerOff = "soft"
+          powerType.powerOn = "soft"
+          powerType.suspend = "soft"
+          powerType.reset = "soft"
+
+          # ==========================================================
+          # TOOLS
+          # ==========================================================
+
+          tools.upgrade.policy = "manual"
+          tools.syncTime = "FALSE"
+
+    # ========================================================================
+    # VERIFY FINAL VMX
+    # ========================================================================
+
+    - name: Read final VMX
+      ansible.builtin.slurp:
+        src: "{{ vmx_file_cygwin }}"
+      register: final_vmx_slurp
+
+    - name: Set final VMX text
+      ansible.builtin.set_fact:
+        final_vmx_text: >-
+          {{
+            final_vmx_slurp.content
+            | b64decode
+          }}
+
+    - name: Verify final VMX
+      ansible.builtin.assert:
+        that:
+          - ('virtualHW.version = "' ~ virtual_hw_version ~ '"') in final_vmx_text
+          - 'firmware = "efi"' in final_vmx_text
+          - 'vhv.enable = "TRUE"' in final_vmx_text
+          - 'ethernet0.connectionType = "custom"' in final_vmx_text
+          - 'ethernet0.vnet = "VMnet0"' in final_vmx_text
+          - 'scsi0:0.present = "TRUE"' in final_vmx_text
+          - 'ide1:0.startConnected = "FALSE"' in final_vmx_text
+        fail_msg: "Final installed ESXi VMX validation failed."
+        success_msg: "Final installed ESXi VMX validated."
+
+    - name: Display final VMX configuration
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "FINAL INSTALLED ESXi VMX"
+          - "============================================================"
+          - "Hardware Version : {{ virtual_hw_version }}"
+          - "Firmware         : EFI"
+          - "Disk             : {{ vmdk_file_windows }}"
+          - "CD Connected     : FALSE"
+          - "Network          : CUSTOM / VMnet0"
+          - "Nested VT        : TRUE"
+          - "Boot Mode        : NORMAL / DISK"
+          - "============================================================"
+
+    # ========================================================================
+    # FINAL BOOT
+    # ========================================================================
+
+    - name: Remove VMware log before final boot
+      ansible.builtin.file:
+        path: "{{ vmware_log_cygwin }}"
+        state: absent
+
+    - name: Start installed ESXi VM
       ansible.builtin.command:
         argv:
           - powershell.exe
@@ -728,89 +991,113 @@
           - "-NonInteractive"
           - "-Command"
           - >-
-            @(Get-Process -Name vmware -ErrorAction SilentlyContinue).Count
-      register: vmware_process_count
-      changed_when: false
+            Start-Process
+            -FilePath "{{ vmware_windows }}"
+            -ArgumentList @("-x","{{ vmx_file_windows }}")
+      register: final_start
+      changed_when: true
       failed_when: false
 
-
-    - name: Display VMware Workstation process status
-      ansible.builtin.debug:
-        msg:
-          - "VMware Workstation process count: {{ vmware_process_count.stdout | trim }}"
-
-
-    # ========================================================================
-    # SUCCESS
-    # ========================================================================
-
-    - name: Display successful startup
+    - name: Display final boot launch
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "SUCCESS - NESTED ESXi VM IS RUNNING"
+          - "FINAL ESXi BOOT"
           - "============================================================"
           - "VM Name : {{ vm_name }}"
-          - "VMX     : {{ vmx_file_windows }}"
-          - "Running : YES"
-          - "RAM     : {{ vm_memory_mb }} MB"
-          - "CPU     : {{ vm_vcpu }} vCPU"
-          - "Disk    : {{ vm_disk_gb }} GB"
-          - "Network : {{ network_name }}"
-          - ""
-          - "VMware Workstation was launched with:"
-          - "{{ vmx_file_windows }}"
-          - ""
-          - "ESXI-01 should now be available in the VMware Workstation UI."
+          - "Boot    : Installed VMDK"
+          - "CD      : DISCONNECTED"
+          - "Network : CUSTOM / VMnet0"
           - "============================================================"
-      when: vm_running_after | bool
 
+    - name: Wait for installed ESXi to boot
+      ansible.builtin.pause:
+        seconds: "{{ vm_start_wait_seconds }}"
 
     # ========================================================================
-    # FAILURE DIAGNOSTICS
+    # VERIFY FINAL VM
     # ========================================================================
 
-    - name: Check VMware log after failure
+    - name: Get final running VMware VMs
+      ansible.builtin.command:
+        argv:
+          - "{{ vmrun_cygwin }}"
+          - "-T"
+          - "ws"
+          - "list"
+      register: final_vmrun_list
+      changed_when: false
+      failed_when: false
+
+    - name: Determine final VM state
+      ansible.builtin.set_fact:
+        final_vm_running: >-
+          {{
+            vmx_file_windows | lower
+            in
+            (final_vmrun_list.stdout | lower)
+          }}
+
+    - name: Display final VM state
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "FINAL ESXi VM STATUS"
+          - "============================================================"
+          - "VM Name : {{ vm_name }}"
+          - "Running : {{ final_vm_running }}"
+          - "VMX     : {{ vmx_file_windows }}"
+          - "Network : CUSTOM / VMnet0"
+          - "Boot    : INSTALLED DISK"
+          - "ISO     : DISCONNECTED"
+          - "============================================================"
+
+    # ========================================================================
+    # FAILURE LOG
+    # ========================================================================
+
+    - name: Check VMware log
       ansible.builtin.stat:
         path: "{{ vmware_log_cygwin }}"
-      register: vmware_log_stat
-      when: not vm_running_after | bool
+      register: final_log_stat
+      when: not final_vm_running | bool
 
-
-    - name: Read current VMware log
+    - name: Read VMware log on final boot failure
       ansible.builtin.shell: |
-        tail -150 "{{ vmware_log_cygwin }}"
+        tail -200 "{{ vmware_log_cygwin }}"
       args:
         executable: /bin/bash
-      register: vmware_log_tail
+      register: final_log_tail
       changed_when: false
       failed_when: false
       when:
-        - not vm_running_after | bool
-        - vmware_log_stat.stat.exists
+        - not final_vm_running | bool
+        - final_log_stat.stat.exists
 
-
-    - name: Extract current VMware errors
+    - name: Extract VMware final boot errors
       ansible.builtin.shell: |
         grep -iE \
-        "error|failed|failure|no pcIe|pci|slot|ethernet|scsi|rootPort|power on failed|unable to allocate|cancel" \
+        "error|failed|failure|pci|slot|ethernet|scsi|power on failed|unable to allocate|cancel|unsupported" \
         "{{ vmware_log_cygwin }}" |
-        tail -80
+        tail -100
       args:
         executable: /bin/bash
-      register: vmware_errors
+      register: final_log_errors
       changed_when: false
       failed_when: false
       when:
-        - not vm_running_after | bool
-        - vmware_log_stat.stat.exists
+        - not final_vm_running | bool
+        - final_log_stat.stat.exists
 
+    # ========================================================================
+    # FAIL IF FINAL VM DID NOT START
+    # ========================================================================
 
-    - name: Fail with current VMware diagnostics
+    - name: Fail when installed ESXi VM is not running
       ansible.builtin.fail:
         msg: |
           ============================================================
-          FAILED TO START NESTED ESXi VM
+          FINAL ESXi BOOT FAILED
           ============================================================
 
           VM:
@@ -819,35 +1106,49 @@
           VMX:
           {{ vmx_file_windows }}
 
-          VMware executable:
-          {{ vmware_windows }}
+          Final running state:
+          {{ final_vm_running }}
 
-          GUI launch return code:
-          {{ vmware_gui_start.rc }}
-
-          GUI launch stdout:
-          {{ vmware_gui_start.stdout | default('') }}
-
-          GUI launch stderr:
-          {{ vmware_gui_start.stderr | default('') }}
+          vmrun output:
+          {{ final_vmrun_list.stdout | default('') }}
 
           ------------------------------------------------------------
-          CURRENT VMWARE ERRORS
+          IMPORTANT VMWARE ERRORS
           ------------------------------------------------------------
 
-          {{ vmware_errors.stdout | default('No filtered errors found.') }}
+          {{ final_log_errors.stdout | default('No filtered errors found.') }}
 
           ------------------------------------------------------------
           LAST VMWARE LOG
           ------------------------------------------------------------
 
-          {{ vmware_log_tail.stdout | default('VMware log unavailable.') }}
-
-          ------------------------------------------------------------
-          VMX BACKUP
-          ------------------------------------------------------------
-
-          {{ vmx_file_cygwin }}.ansible-backup
+          {{ final_log_tail.stdout | default('VMware log unavailable.') }}
 
           ============================================================
-      when: not vm_running_after | bool
+      when: not final_vm_running
+
+    # ========================================================================
+    # SUCCESS
+    # ========================================================================
+
+    - name: Display successful ESXi installation
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "SUCCESS - ESXi INSTALLATION COMPLETED"
+          - "============================================================"
+          - "VM Name        : {{ vm_name }}"
+          - "VMX            : {{ vmx_file_windows }}"
+          - "VMDK           : {{ vmdk_file_windows }}"
+          - "Running        : YES"
+          - "RAM            : {{ vm_memory_mb }} MB"
+          - "CPU            : {{ vm_vcpu }} vCPU"
+          - "Disk           : {{ vm_disk_gb }} GB"
+          - "Firmware       : EFI"
+          - "Nested VT      : ENABLED"
+          - "Network        : CUSTOM / VMnet0"
+          - "ISO            : E:\\vmware\\ESXi-8.0.1-auto.iso"
+          - "ISO Connected  : NO"
+          - "Boot           : INSTALLED ESXi DISK"
+          - "============================================================"
+      when: final_vm_running | bool
