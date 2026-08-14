@@ -279,10 +279,12 @@
           :config: /etc/dhcp/dhcpd.conf
           :leases: /var/lib/dhcpd/dhcpd.leases
           :key_name: {{ omapi_key_name }}
-          :key_secret: "{{ lookup('file', omapi_key_file) | regex_search('secret\s+"([^"]+)"', '\1') | first }}"
+          :key_secret: "{{ omapi_secret }}"
           :omapi_port: 7911
       notify: Restart Foreman Proxy
-      when: inventory_hostname == foreman_proxy
+      when:
+        - inventory_hostname == foreman_proxy
+        - omapi_secret | default('') | length > 0
 
     - name: Ensure DHCP leases directory exists
       ansible.builtin.file:
