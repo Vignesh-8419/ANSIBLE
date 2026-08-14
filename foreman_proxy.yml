@@ -504,6 +504,82 @@
       when: inventory_hostname == foreman_proxy
 
     ###########################################################################
+    # REFRESH SMART PROXY FEATURES IN FOREMAN
+    ###########################################################################
+
+    - name: Get Smart Proxy ID from Foreman
+      ansible.builtin.uri:
+        url: "https://{{ foreman_server }}/api/smart_proxies?search=name={{ foreman_proxy }}"
+        method: GET
+        user: "{{ foreman_api_user }}"
+        password: "{{ foreman_api_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        return_content: true
+        headers:
+          Accept: "application/json"
+      register: foreman_proxy_lookup
+      when: inventory_hostname == foreman_server
+
+    - name: Fail when Smart Proxy was not found in Foreman
+      ansible.builtin.fail:
+        msg: |
+          Smart Proxy was not found in Foreman.
+
+          Expected proxy:
+          {{ foreman_proxy }}
+
+          Foreman response:
+          {{ foreman_proxy_lookup.json }}
+      when:
+        - inventory_hostname == foreman_server
+        - foreman_proxy_lookup.json.total | int == 0
+
+    - name: Set Smart Proxy ID
+      ansible.builtin.set_fact:
+        foreman_proxy_id: "{{ foreman_proxy_lookup.json.results[0].id }}"
+      when:
+        - inventory_hostname == foreman_server
+        - foreman_proxy_lookup.json.total | int > 0
+
+    - name: Display Smart Proxy ID
+      ansible.builtin.debug:
+        msg: "Smart Proxy {{ foreman_proxy }} has ID {{ foreman_proxy_id }}"
+      when: inventory_hostname == foreman_server
+
+    - name: Refresh Smart Proxy features in Foreman
+      ansible.builtin.uri:
+        url: "https://{{ foreman_server }}/api/smart_proxies/{{ foreman_proxy_id }}/refresh"
+        method: PUT
+        user: "{{ foreman_api_user }}"
+        password: "{{ foreman_api_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        status_code:
+          - 200
+          - 201
+        return_content: true
+        headers:
+          Accept: "application/json"
+          Content-Type: "application/json"
+        body_format: json
+        body: {}
+      register: foreman_proxy_refresh
+      when: inventory_hostname == foreman_server
+
+    - name: Display refreshed Smart Proxy features
+      ansible.builtin.debug:
+        msg:
+          - "=================================================="
+          - "Foreman Smart Proxy Features Refreshed"
+          - "=================================================="
+          - "Proxy: {{ foreman_proxy }}"
+          - "Proxy ID: {{ foreman_proxy_id }}"
+          - "Features: {{ foreman_proxy_refresh.json.features | map(attribute='name') | list }}"
+          - "=================================================="
+      when: inventory_hostname == foreman_server
+
+    ###########################################################################
     # FINAL SUMMARY
     ###########################################################################
 
