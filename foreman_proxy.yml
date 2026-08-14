@@ -395,24 +395,22 @@
 
     - name: Wait for Smart Proxy HTTPS port
       ansible.builtin.wait_for:
-        host: 127.0.0.1
+        host: "{{ foreman_proxy }}"
         port: 9090
-        timeout: 30
+        delay: 2
+        timeout: 60
+        state: started
       when: inventory_hostname == foreman_proxy
 
     - name: Get Smart Proxy enabled features locally
       ansible.builtin.command:
-        argv:
-          - curl
-          - --silent
-          - --show-error
-          - --cacert
-          - "{{ proxy_ssl_ca }}"
-          - --cert
-          - "{{ proxy_ssl_cert }}"
-          - --key
-          - "{{ proxy_ssl_key }}"
-          - https://localhost:9090/v2/features
+        cmd: >
+          curl --silent --show-error
+          --fail
+          --cacert {{ proxy_ssl_ca }}
+          --cert {{ proxy_ssl_cert }}
+          --key {{ proxy_ssl_key }}
+          https://{{ foreman_proxy }}:9090/v2/features
       register: proxy_features
       changed_when: false
       when: inventory_hostname == foreman_proxy
