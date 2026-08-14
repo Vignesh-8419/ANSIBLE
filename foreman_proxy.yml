@@ -1,6 +1,6 @@
 ---
 - name: Install and Configure Foreman Smart Proxy
-  hosts: cent-07-02
+  hosts: all
   become: true
   gather_facts: true
 
