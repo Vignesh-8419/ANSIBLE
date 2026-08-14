@@ -170,21 +170,32 @@
     # CREATE VIRTUAL DISK
     # ============================================================
 
+    - name: Convert VM disk path to Windows format
+      ansible.builtin.command:
+        argv:
+          - cygpath
+          - -w
+          - "{{ vm_disk }}"
+      register: vm_disk_windows
+      changed_when: false
+
+    - name: Display Windows virtual disk path
+      ansible.builtin.debug:
+        msg: "Windows VMDK path: {{ vm_disk_windows.stdout }}"
+
     - name: Create ESXi virtual disk
       ansible.builtin.command:
         argv:
-          - "{{ vmware_vdiskmanager_path }}"
-          - "-c"
-          - "-s"
+          - "{{ vdiskmanager_path }}"
+          - -c
+          - -s
           - "{{ disk_size_gb }}GB"
-          - "-a"
-          - "lsilogic"
-          - "-t"
+          - -a
+          - lsilogic
+          - -t
           - "0"
-          - "{{ vm_disk_file }}"
-      when:
-        - not disk_stat.stat.exists
-        - vmware_vdiskmanager_path | length > 0
+          - "{{ vm_disk_windows.stdout }}"
+      when: not virtual_disk_check.stat.exists
 
     - name: Fail when vmware-vdiskmanager.exe is not found and disk does not exist
       ansible.builtin.fail:
