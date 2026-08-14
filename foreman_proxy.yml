@@ -167,14 +167,18 @@
         - inventory_hostname == foreman_proxy
         - not omapi_key_stat.stat.exists
 
-    - name: Extract OMAPI secret
-      ansible.builtin.shell: |
-        printf '%s\n' '{{ omapi_key_content.content | b64decode }}' |
-        awk -F'"' '/secret[[:space:]]+"/ {print $2; exit}'
-      args:
-        executable: /bin/bash
-      register: omapi_secret_result
-      changed_when: false
+    - name: Extract OMAPI secret from generated private key
+      ansible.builtin.set_fact:
+        omapi_secret: >-
+          {{
+            (
+              omapi_key_content.content | b64decode
+              | regex_search('(?m)^Key:[[:space:]]*([^[:space:]]+)', '\1')
+              | default([])
+              | first
+              | default('')
+            )
+          }}
       when:
         - inventory_hostname == foreman_proxy
         - not omapi_key_stat.stat.exists
@@ -184,23 +188,23 @@
         msg: |
           OMAPI secret extraction failed.
 
-          Generated key file:
+          Generated private key file:
           {{ omapi_generated_key_file }}
 
-          Key file content:
+          Private key file content:
           {{ omapi_key_content.content | b64decode }}
       when:
         - inventory_hostname == foreman_proxy
         - not omapi_key_stat.stat.exists
-        - omapi_secret_result.stdout | trim | length == 0
+        - omapi_secret | default('') | trim | length == 0
 
     - name: Display OMAPI secret extraction status
       ansible.builtin.debug:
         msg: "OMAPI secret successfully extracted"
       when:
         - inventory_hostname == foreman_proxy
-        - not omapi_key_existing.stat.exists
-        - omapi_secret | default('') | length > 0
+        - not omapi_key_stat.stat.exists
+        - omapi_secret | default('') | trim | length > 0
 
     - name: Create OMAPI key file
       ansible.builtin.copy:
@@ -218,17 +222,16 @@
         - Restart Foreman Proxy
       when:
         - inventory_hostname == foreman_proxy
-        - not omapi_key_existing.stat.exists
-        - omapi_secret | default('') | length > 0
+        - not omapi_key_stat.stat.exists
+        - omapi_secret | default('') | trim | length > 0
 
-    - name: Ensure existing OMAPI key has correct permissions
+    - name: Ensure OMAPI key file has correct permissions
       ansible.builtin.file:
         path: "{{ omapi_key_file }}"
         owner: root
         group: foreman-proxy
         mode: "0640"
-      when:
-        - inventory_hostname == foreman_proxy
+      when: inventory_hostname == foreman_proxy
 
     ###########################################################################
     # DHCP CONFIGURATION
