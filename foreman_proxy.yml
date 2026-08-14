@@ -1,277 +1,221 @@
 ---
-- name: Configure and Fix Foreman Smart Proxy Services
+- name: Configure Foreman Smart Proxy Features
   hosts: all
   become: true
   gather_facts: true
 
   vars:
     foreman_server: "cent-07-01.vgs.com"
-    smart_proxy: "cent-07-02.vgs.com"
+    foreman_proxy: "cent-07-02.vgs.com"
 
-    foreman_proxy_port: 9090
+    proxy_ssl_ca: "/etc/foreman-proxy/foreman_ssl_ca.pem"
+    proxy_ssl_cert: "/etc/foreman-proxy/foreman_ssl_cert.pem"
+    proxy_ssl_key: "/etc/foreman-proxy/foreman_ssl_key.pem"
 
-    dhcp_config: "/etc/dhcp/dhcpd.conf"
-    dhcp_leases: "/var/lib/dhcpd/dhcpd.leases"
-    omapi_key_file: "/etc/dhcp/omapi.key"
-
-    proxy_ca: "/etc/foreman-proxy/foreman_ssl_ca.pem"
-    proxy_cert: "/etc/foreman-proxy/foreman_ssl_cert.pem"
-    proxy_key: "/etc/foreman-proxy/foreman_ssl_key.pem"
-
-    foreman_client_cert: "/etc/foreman/client_cert.pem"
-    foreman_client_key: "/etc/foreman/client_key.pem"
-    foreman_proxy_ca: "/etc/foreman/proxy_ca.pem"
+    omapi_key_name: "omapi_key"
+    omapi_key_file: "/etc/foreman-proxy/dhcp-omapi.key"
 
   handlers:
-
     - name: Restart Foreman Proxy
-      ansible.builtin.systemd:
+      ansible.builtin.service:
         name: foreman-proxy
         state: restarted
         enabled: true
 
-    - name: Restart DHCPD
-      ansible.builtin.systemd:
+    - name: Restart DHCP
+      ansible.builtin.service:
         name: dhcpd
         state: restarted
         enabled: true
 
-    - name: Restart TFTP
-      ansible.builtin.systemd:
-        name: tftp
-        state: restarted
-        enabled: true
-      failed_when: false
-
   tasks:
-
-    ###########################################################################
-    # DISPLAY HOST INFORMATION
-    ###########################################################################
-
-    - name: Display host information
-      ansible.builtin.debug:
-        msg:
-          - "Hostname: {{ inventory_hostname }}"
-          - "Role: {{ 'Foreman Server' if inventory_hostname == foreman_server else 'Smart Proxy' if inventory_hostname == smart_proxy else 'Other Host' }}"
 
     ###########################################################################
     # FOREMAN SERVER
     ###########################################################################
 
+    - name: Display Foreman server information
+      ansible.builtin.debug:
+        msg:
+          - "Host: {{ inventory_hostname }}"
+          - "Foreman Server: {{ foreman_server }}"
+          - "Smart Proxy: {{ foreman_proxy }}"
+
     - name: Check Foreman client certificate
       ansible.builtin.stat:
-        path: "{{ foreman_client_cert }}"
-      register: foreman_client_cert_stat
-      when: inventory_hostname == foreman_server
-
-    - name: Check Foreman client key
-      ansible.builtin.stat:
-        path: "{{ foreman_client_key }}"
-      register: foreman_client_key_stat
-      when: inventory_hostname == foreman_server
-
-    - name: Check Foreman proxy CA
-      ansible.builtin.stat:
-        path: "{{ foreman_proxy_ca }}"
-      register: foreman_proxy_ca_stat
+        path: "{{ item }}"
+      loop:
+        - /etc/foreman/client_cert.pem
+        - /etc/foreman/client_key.pem
+        - /etc/foreman/proxy_ca.pem
+      register: foreman_cert_files
       when: inventory_hostname == foreman_server
 
     - name: Display Foreman certificate status
       ansible.builtin.debug:
-        msg:
-          - "Client certificate: {{ foreman_client_cert_stat.stat.exists | default(false) }}"
-          - "Client key: {{ foreman_client_key_stat.stat.exists | default(false) }}"
-          - "Proxy CA: {{ foreman_proxy_ca_stat.stat.exists | default(false) }}"
-      when: inventory_hostname == foreman_server
+        msg: "{{ item.item }} exists = {{ item.stat.exists }}"
+      loop: "{{ foreman_cert_files.results }}"
+      when:
+        - inventory_hostname == foreman_server
+        - foreman_cert_files is defined
 
     ###########################################################################
     # SMART PROXY CERTIFICATES
     ###########################################################################
 
-    - name: Check Smart Proxy CA certificate
+    - name: Check Smart Proxy SSL certificates
       ansible.builtin.stat:
-        path: "{{ proxy_ca }}"
-      register: proxy_ca_stat
-      when: inventory_hostname == smart_proxy
+        path: "{{ item }}"
+      loop:
+        - "{{ proxy_ssl_ca }}"
+        - "{{ proxy_ssl_cert }}"
+        - "{{ proxy_ssl_key }}"
+      register: proxy_cert_files
+      when: inventory_hostname == foreman_proxy
 
-    - name: Check Smart Proxy SSL certificate
-      ansible.builtin.stat:
-        path: "{{ proxy_cert }}"
-      register: proxy_cert_stat
-      when: inventory_hostname == smart_proxy
-
-    - name: Check Smart Proxy SSL key
-      ansible.builtin.stat:
-        path: "{{ proxy_key }}"
-      register: proxy_key_stat
-      when: inventory_hostname == smart_proxy
-
-    - name: Fail when Smart Proxy certificates are missing
+    - name: Fail when Smart Proxy SSL certificates are missing
       ansible.builtin.fail:
-        msg: |
-          Smart Proxy SSL certificates are missing.
-
-          Required files:
-          {{ proxy_ca }}
-          {{ proxy_cert }}
-          {{ proxy_key }}
-
-          Certificate status:
-          CA: {{ proxy_ca_stat.stat.exists | default(false) }}
-          CERT: {{ proxy_cert_stat.stat.exists | default(false) }}
-          KEY: {{ proxy_key_stat.stat.exists | default(false) }}
+        msg: "Required Smart Proxy SSL certificate is missing: {{ item.item }}"
       when:
-        - inventory_hostname == smart_proxy
-        - not (
-            proxy_ca_stat.stat.exists | default(false)
-            and proxy_cert_stat.stat.exists | default(false)
-            and proxy_key_stat.stat.exists | default(false)
-          )
+        - inventory_hostname == foreman_proxy
+        - not item.stat.exists
+      loop: "{{ proxy_cert_files.results }}"
 
     - name: Display Smart Proxy certificate status
       ansible.builtin.debug:
-        msg:
-          - "CA certificate: {{ proxy_ca_stat.stat.exists }}"
-          - "SSL certificate: {{ proxy_cert_stat.stat.exists }}"
-          - "SSL key: {{ proxy_key_stat.stat.exists }}"
-      when: inventory_hostname == smart_proxy
+        msg: "{{ item.item }} exists = {{ item.stat.exists }}"
+      loop: "{{ proxy_cert_files.results }}"
+      when: inventory_hostname == foreman_proxy
 
     ###########################################################################
-    # SMART PROXY PACKAGES
+    # DHCP OMAPI KEY
     ###########################################################################
 
-    - name: Install required Smart Proxy packages
-      ansible.builtin.yum:
-        name:
-          - dhcp
-          - bind-utils
-          - tftp-server
-          - foreman-proxy
-        state: present
-      when: inventory_hostname == smart_proxy
+    - name: Check existing OMAPI key
+      ansible.builtin.stat:
+        path: "{{ omapi_key_file }}"
+      register: omapi_key_existing
+      when: inventory_hostname == foreman_proxy
 
-    ###############################################################################
-    # OMAPI KEY CONFIGURATION - FIXED
-    ###############################################################################
-    
-    - name: Generate OMAPI key
-      ansible.builtin.command:
-        cmd: dnssec-keygen -a HMAC-MD5 -b 256 -n HOST omapi_key
-        chdir: /tmp
-      register: omapi_key_generate
-      changed_when: false
-      when: inventory_hostname == smart_proxy
-    
-    - name: Find generated OMAPI key files
+    - name: Find existing generated OMAPI key files
       ansible.builtin.find:
         paths: /tmp
-        patterns:
-          - "Komapi_key.+*.key"
-          - "Komapi_key.+*.private"
+        patterns: "Komapi_key.+*.key"
         file_type: file
-        recurse: false
-      register: omapi_generated_files
-      when: inventory_hostname == smart_proxy
-    
-    - name: Display generated OMAPI files
-      ansible.builtin.debug:
-        msg: "{{ omapi_generated_files.files | map(attribute='path') | list }}"
-      when: inventory_hostname == smart_proxy
-    
+      register: existing_omapi_tmp_keys
+      when:
+        - inventory_hostname == foreman_proxy
+        - not omapi_key_existing.stat.exists
+
+    - name: Generate OMAPI key when no generated key exists
+      ansible.builtin.command:
+        cmd: "dnssec-keygen -a HMAC-MD5.SIG-ALG.REG.INT -b 128 -n HOST {{ omapi_key_name }}"
+        chdir: /tmp
+      register: omapi_key_generate
+      changed_when: true
+      when:
+        - inventory_hostname == foreman_proxy
+        - not omapi_key_existing.stat.exists
+        - existing_omapi_tmp_keys.matched | int == 0
+
     - name: Find generated OMAPI key file
-      ansible.builtin.set_fact:
-        omapi_key_source_file: >-
-          {{
-            (
-              omapi_generated_files.files
-              | selectattr('path', 'search', '\\.key$')
-              | map(attribute='path')
-              | list
-              | first
-            )
-            | default('')
-          }}
-      when: inventory_hostname == smart_proxy
-    
+      ansible.builtin.find:
+        paths: /tmp
+        patterns: "Komapi_key.+*.key"
+        file_type: file
+      register: generated_omapi_key_files
+      when:
+        - inventory_hostname == foreman_proxy
+        - not omapi_key_existing.stat.exists
+
     - name: Fail when OMAPI key file was not generated
       ansible.builtin.fail:
         msg: |
           OMAPI key file was not found in /tmp.
-    
+
           Files found:
-          {{ omapi_generated_files.files | map(attribute='path') | list }}
+          {{ generated_omapi_key_files.files | map(attribute='path') | list }}
       when:
-        - inventory_hostname == smart_proxy
-        - omapi_key_source_file | length == 0
-    
+        - inventory_hostname == foreman_proxy
+        - not omapi_key_existing.stat.exists
+        - generated_omapi_key_files.matched | int == 0
+
     - name: Read generated OMAPI key file
       ansible.builtin.slurp:
-        src: "{{ omapi_key_source_file }}"
-      register: omapi_key_content
+        src: "{{ generated_omapi_key_files.files | map(attribute='path') | list | first }}"
+      register: generated_omapi_key_content
       when:
-        - inventory_hostname == smart_proxy
-        - omapi_key_source_file | length > 0
-    
-    - name: Extract OMAPI secret from key file
+        - inventory_hostname == foreman_proxy
+        - not omapi_key_existing.stat.exists
+        - generated_omapi_key_files.matched | int > 0
+
+    - name: Extract OMAPI secret
       ansible.builtin.set_fact:
         omapi_secret: >-
           {{
-            (
-              omapi_key_content.content
-              | b64decode
-              | regex_findall('secret\\s+"([^"]+)"')
-              | first
-            )
-            | default('')
+            (generated_omapi_key_content.content | b64decode
+            | regex_search('secret\\s+\"([^\"]+)\"', '\\1'))
+            | first
           }}
       when:
-        - inventory_hostname == smart_proxy
-        - omapi_key_source_file | length > 0
-    
-    - name: Display OMAPI key content for troubleshooting
-      ansible.builtin.debug:
-        msg: "{{ omapi_key_content.content | b64decode }}"
-      when:
-        - inventory_hostname == smart_proxy
-        - omapi_secret | default('') | length == 0
-    
+        - inventory_hostname == foreman_proxy
+        - not omapi_key_existing.stat.exists
+        - generated_omapi_key_files.matched | int > 0
+
     - name: Fail when OMAPI secret could not be extracted
       ansible.builtin.fail:
         msg: |
-          OMAPI secret could not be extracted.
-    
+          OMAPI key was found but no secret could be extracted.
+
           OMAPI key file:
-          {{ omapi_key_source_file }}
-    
-          Key file content:
-          {{ omapi_key_content.content | b64decode }}
+          {{ generated_omapi_key_files.files | map(attribute='path') | list | first }}
+
+          Content:
+          {{ generated_omapi_key_content.content | b64decode }}
       when:
-        - inventory_hostname == smart_proxy
+        - inventory_hostname == foreman_proxy
+        - not omapi_key_existing.stat.exists
         - omapi_secret | default('') | length == 0
-    
+
     - name: Display OMAPI secret extraction status
       ansible.builtin.debug:
-        msg: "OMAPI secret successfully extracted from {{ omapi_key_source_file }}"
+        msg: "OMAPI secret successfully extracted"
       when:
-        - inventory_hostname == smart_proxy
-        - omapi_secret | length > 0
-    
-    - name: Create OMAPI key file for ISC DHCP
+        - inventory_hostname == foreman_proxy
+        - not omapi_key_existing.stat.exists
+        - omapi_secret | default('') | length > 0
+
+    - name: Create OMAPI key file
       ansible.builtin.copy:
-        dest: /etc/dhcp/omapi.key
+        dest: "{{ omapi_key_file }}"
         owner: root
-        group: root
-        mode: "0600"
+        group: foreman-proxy
+        mode: "0640"
         content: |
-          key "omapi_key" {
+          key "{{ omapi_key_name }}" {
             algorithm hmac-md5;
             secret "{{ omapi_secret }}";
           };
-      notify: Restart DHCPD
+      notify:
+        - Restart DHCP
+        - Restart Foreman Proxy
       when:
-        - inventory_hostname == smart_proxy
-        - omapi_secret | length > 0
+        - inventory_hostname == foreman_proxy
+        - not omapi_key_existing.stat.exists
+        - omapi_secret | default('') | length > 0
+
+    - name: Ensure existing OMAPI key has correct permissions
+      ansible.builtin.file:
+        path: "{{ omapi_key_file }}"
+        owner: root
+        group: foreman-proxy
+        mode: "0640"
+      when:
+        - inventory_hostname == foreman_proxy
+
+    ###########################################################################
+    # DHCP CONFIGURATION
+    ###########################################################################
 
     - name: Enable DHCP feature in Foreman Smart Proxy
       ansible.builtin.copy:
@@ -286,7 +230,7 @@
           :server: 127.0.0.1
           :ping_free_ip: true
       notify: Restart Foreman Proxy
-      when: inventory_hostname == smart_proxy
+      when: inventory_hostname == foreman_proxy
 
     - name: Configure ISC DHCP provider
       ansible.builtin.copy:
@@ -296,24 +240,31 @@
         mode: "0640"
         content: |
           ---
-          :config: {{ dhcp_config }}
-          :leases: {{ dhcp_leases }}
-          :key_name: omapi_key
-          :key_secret: "{{ omapi_secret }}"
+          :config: /etc/dhcp/dhcpd.conf
+          :leases: /var/lib/dhcpd/dhcpd.leases
+          :key_name: {{ omapi_key_name }}
+          :key_secret: "{{ lookup('file', omapi_key_file) | regex_search('secret\\s+\"([^\"]+)\"', '\\1') | first }}"
           :omapi_port: 7911
       notify: Restart Foreman Proxy
-      when:
-        - inventory_hostname == smart_proxy
-        - omapi_secret | length > 0
+      when: inventory_hostname == foreman_proxy
+
+    - name: Ensure DHCP leases directory exists
+      ansible.builtin.file:
+        path: /var/lib/dhcpd
+        state: directory
+        owner: root
+        group: foreman-proxy
+        mode: "0750"
+      when: inventory_hostname == foreman_proxy
 
     - name: Ensure DHCP leases file exists
       ansible.builtin.file:
-        path: "{{ dhcp_leases }}"
+        path: /var/lib/dhcpd/dhcpd.leases
         state: touch
-        owner: dhcpd
-        group: dhcpd
-        mode: "0644"
-      when: inventory_hostname == smart_proxy
+        owner: root
+        group: foreman-proxy
+        mode: "0640"
+      when: inventory_hostname == foreman_proxy
 
     ###########################################################################
     # DNS CONFIGURATION
@@ -331,7 +282,7 @@
           :use_provider: dns_nsupdate
           :dns_ttl: 86400
       notify: Restart Foreman Proxy
-      when: inventory_hostname == smart_proxy
+      when: inventory_hostname == foreman_proxy
 
     ###########################################################################
     # TFTP CONFIGURATION
@@ -341,10 +292,10 @@
       ansible.builtin.file:
         path: /var/lib/tftpboot
         state: directory
-        owner: root
-        group: root
+        owner: foreman-proxy
+        group: foreman-proxy
         mode: "0755"
-      when: inventory_hostname == smart_proxy
+      when: inventory_hostname == foreman_proxy
 
     - name: Enable TFTP feature in Foreman Smart Proxy
       ansible.builtin.copy:
@@ -357,7 +308,7 @@
           :enabled: true
           :tftproot: /var/lib/tftpboot
       notify: Restart Foreman Proxy
-      when: inventory_hostname == smart_proxy
+      when: inventory_hostname == foreman_proxy
 
     ###########################################################################
     # PERMISSIONS
@@ -365,21 +316,19 @@
 
     - name: Ensure foreman-proxy can read DHCP configuration
       ansible.builtin.file:
-        path: "{{ dhcp_config }}"
+        path: /etc/dhcp/dhcpd.conf
         owner: root
         group: foreman-proxy
         mode: "0640"
-      failed_when: false
-      when: inventory_hostname == smart_proxy
+      when: inventory_hostname == foreman_proxy
 
     - name: Ensure foreman-proxy can read DHCP leases
       ansible.builtin.file:
-        path: "{{ dhcp_leases }}"
-        owner: dhcpd
+        path: /var/lib/dhcpd/dhcpd.leases
+        owner: root
         group: foreman-proxy
         mode: "0640"
-      failed_when: false
-      when: inventory_hostname == smart_proxy
+      when: inventory_hostname == foreman_proxy
 
     ###########################################################################
     # RESTART SERVICES
@@ -389,86 +338,82 @@
       ansible.builtin.meta: flush_handlers
 
     - name: Enable and restart Foreman Proxy
-      ansible.builtin.systemd:
+      ansible.builtin.service:
         name: foreman-proxy
         state: restarted
         enabled: true
-      when: inventory_hostname == smart_proxy
+      when: inventory_hostname == foreman_proxy
 
     - name: Enable and restart DHCP service
-      ansible.builtin.systemd:
+      ansible.builtin.service:
         name: dhcpd
         state: restarted
         enabled: true
-      failed_when: false
-      when: inventory_hostname == smart_proxy
+      when: inventory_hostname == foreman_proxy
 
     ###########################################################################
-    # VERIFY SERVICES
+    # VERIFY FEATURES
     ###########################################################################
 
-    - name: Get Smart Proxy enabled features
+    - name: Get Smart Proxy enabled features locally
       ansible.builtin.command:
-        cmd: foreman-proxy --features
+        cmd: >
+          curl --silent --show-error
+          --cacert {{ proxy_ssl_ca }}
+          --cert {{ proxy_ssl_cert }}
+          --key {{ proxy_ssl_key }}
+          https://localhost:9090/v2/features
       register: proxy_features
       changed_when: false
-      failed_when: false
-      when: inventory_hostname == smart_proxy
+      when: inventory_hostname == foreman_proxy
 
     - name: Display Smart Proxy features
       ansible.builtin.debug:
-        var: proxy_features.stdout_lines
-      when: inventory_hostname == smart_proxy
+        var: proxy_features.stdout
+      when: inventory_hostname == foreman_proxy
 
     - name: Check Foreman Proxy service
-      ansible.builtin.command:
-        cmd: systemctl is-active foreman-proxy
-      register: foreman_proxy_status
+      ansible.builtin.command: systemctl is-active foreman-proxy
+      register: proxy_service_status
       changed_when: false
       failed_when: false
-      when: inventory_hostname == smart_proxy
+      when: inventory_hostname == foreman_proxy
 
     - name: Check DHCP service
-      ansible.builtin.command:
-        cmd: systemctl is-active dhcpd
-      register: dhcp_status
+      ansible.builtin.command: systemctl is-active dhcpd
+      register: dhcp_service_status
       changed_when: false
       failed_when: false
-      when: inventory_hostname == smart_proxy
+      when: inventory_hostname == foreman_proxy
 
     - name: Display DHCP port listener
-      ansible.builtin.shell: |
-        ss -lunp | grep ':67 ' || true
-      register: dhcp_listener
+      ansible.builtin.shell: ss -lunp | grep ':67 ' || true
+      register: dhcp_port_status
       changed_when: false
-      when: inventory_hostname == smart_proxy
+      when: inventory_hostname == foreman_proxy
 
     - name: Display Smart Proxy HTTPS listener
-      ansible.builtin.shell: |
-        ss -ltnp | grep ':9090 ' || true
-      register: proxy_listener
+      ansible.builtin.shell: ss -ltnp | grep ':9090 ' || true
+      register: proxy_port_status
       changed_when: false
-      when: inventory_hostname == smart_proxy
+      when: inventory_hostname == foreman_proxy
+
+    ###########################################################################
+    # FINAL SUMMARY
+    ###########################################################################
 
     - name: Display final Smart Proxy summary
       ansible.builtin.debug:
         msg:
-          - "=========================================="
-          - "FOREMAN SMART PROXY CONFIGURATION SUMMARY"
-          - "=========================================="
+          - "=============================================="
+          - "Smart Proxy Configuration Summary"
+          - "=============================================="
           - "Host: {{ inventory_hostname }}"
-          - "Foreman Proxy: {{ foreman_proxy_status.stdout | default('UNKNOWN') }}"
-          - "DHCPD: {{ dhcp_status.stdout | default('UNKNOWN') }}"
-          - "DHCP listener:"
-          - "{{ dhcp_listener.stdout | default('Not listening') }}"
-          - "Proxy HTTPS listener:"
-          - "{{ proxy_listener.stdout | default('Not listening') }}"
-          - ""
-          - "Configured Smart Proxy features:"
-          - "{{ proxy_features.stdout | default('Unable to retrieve features') }}"
-          - ""
-          - "DHCP: ENABLED"
-          - "DNS: ENABLED"
-          - "TFTP: ENABLED"
-          - "=========================================="
-      when: inventory_hostname == smart_proxy
+          - "Foreman Proxy: {{ proxy_service_status.stdout }}"
+          - "DHCP Service: {{ dhcp_service_status.stdout }}"
+          - "DHCP Listener: {{ dhcp_port_status.stdout }}"
+          - "Proxy HTTPS Listener: {{ proxy_port_status.stdout }}"
+          - "Enabled Features:"
+          - "{{ proxy_features.stdout }}"
+          - "=============================================="
+      when: inventory_hostname == foreman_proxy
