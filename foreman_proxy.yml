@@ -87,46 +87,48 @@
       loop: "{{ proxy_cert_files.results }}"
       when: inventory_hostname == foreman_proxy
 
-    ###########################################################################
-    # DHCP OMAPI KEY
-    ###########################################################################
+    # ============================================================
+    # OMAPI KEY CONFIGURATION
+    # ============================================================
 
     - name: Check existing OMAPI key
       ansible.builtin.stat:
-        path: "{{ omapi_key_file }}"
-      register: omapi_key_existing
+        path: /etc/foreman-proxy/omapi.key
+      register: omapi_key_stat
       when: inventory_hostname == foreman_proxy
 
     - name: Find existing generated OMAPI key files
       ansible.builtin.find:
         paths: /tmp
-        patterns: "Komapi_key.+*.key"
+        patterns:
+          - 'Komapi_key.+*.key'
         file_type: file
-      register: existing_omapi_tmp_keys
+      register: existing_omapi_keys
       when:
         - inventory_hostname == foreman_proxy
-        - not omapi_key_existing.stat.exists
+        - not omapi_key_stat.stat.exists
 
     - name: Generate OMAPI key when no generated key exists
       ansible.builtin.command:
-        cmd: "dnssec-keygen -a HMAC-MD5.SIG-ALG.REG.INT -b 128 -n HOST {{ omapi_key_name }}"
+        cmd: dnssec-keygen -a HMAC-MD5 -b 128 -n HOST omapi_key
         chdir: /tmp
-      register: omapi_key_generate
+      register: omapi_generate
       changed_when: true
       when:
         - inventory_hostname == foreman_proxy
-        - not omapi_key_existing.stat.exists
-        - existing_omapi_tmp_keys.matched | int == 0
+        - not omapi_key_stat.stat.exists
+        - existing_omapi_keys.matched | int == 0
 
     - name: Find generated OMAPI key file
       ansible.builtin.find:
         paths: /tmp
-        patterns: "Komapi_key.+*.key"
+        patterns:
+          - 'Komapi_key.+*.key'
         file_type: file
-      register: generated_omapi_key_files
+      register: generated_omapi_keys
       when:
         - inventory_hostname == foreman_proxy
-        - not omapi_key_existing.stat.exists
+        - not omapi_key_stat.stat.exists
 
     - name: Fail when OMAPI key file was not generated
       ansible.builtin.fail:
@@ -134,33 +136,48 @@
           OMAPI key file was not found in /tmp.
 
           Files found:
-          {{ generated_omapi_key_files.files | map(attribute='path') | list }}
+          {{ generated_omapi_keys.files | map(attribute='path') | list }}
       when:
         - inventory_hostname == foreman_proxy
-        - not omapi_key_existing.stat.exists
-        - generated_omapi_key_files.matched | int == 0
+        - not omapi_key_stat.stat.exists
+        - generated_omapi_keys.matched | int == 0
 
-    - name: Read generated OMAPI key file
-      ansible.builtin.slurp:
-        src: "{{ generated_omapi_key_files.files | map(attribute='path') | list | first }}"
-      register: generated_omapi_key_content
-      when:
-        - inventory_hostname == foreman_proxy
-        - not omapi_key_existing.stat.exists
-        - generated_omapi_key_files.matched | int > 0
-
-    - name: Extract OMAPI secret
+    - name: Select generated OMAPI key file
       ansible.builtin.set_fact:
-        omapi_secret: >-
+        omapi_generated_key_file: >-
           {{
-            (generated_omapi_key_content.content | b64decode
-            | regex_search('secret\\s+\"([^\"]+)\"', '\\1'))
-            | first
+            (
+              existing_omapi_keys.files
+              if existing_omapi_keys.matched | int > 0
+              else generated_omapi_keys.files
+            )
+            | map(attribute='path')
+            | sort
+            | last
           }}
       when:
         - inventory_hostname == foreman_proxy
-        - not omapi_key_existing.stat.exists
-        - generated_omapi_key_files.matched | int > 0
+        - not omapi_key_stat.stat.exists
+
+    - name: Read generated OMAPI key file
+      ansible.builtin.slurp:
+        src: "{{ omapi_generated_key_file }}"
+      register: omapi_key_content
+      when:
+        - inventory_hostname == foreman_proxy
+        - not omapi_key_stat.stat.exists
+
+    - name: Extract OMAPI secret
+      ansible.builtin.shell: |
+        printf '%s\n' '{{ omapi_key_content.content | b64decode }}' |
+        awk -F'"' '/secret[[:space:]]+"/ {print $2; exit}'
+      args:
+        executable: /bin/bash
+      register: omapi_secret_result
+      changed_when: false
+      when:
+        - inventory_hostname == foreman_proxy
+        - not omapi_key_stat.stat.exists
 
     - name: Fail when OMAPI secret could not be extracted
       ansible.builtin.fail:
