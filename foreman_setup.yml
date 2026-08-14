@@ -97,14 +97,14 @@
 
           [mesa]
           name=Local Mesa Repo
-          baseurl=http://http-server-01.vgs.com/repo/mesa
+          baseurl=http://{{ mount_point }}/mesa
           enabled=1
           gpgcheck=0
           priority=1
 
           [gtk]
           name=Local GTK Repo
-          baseurl=http://http-server-01.vgs.com/repo/gtk
+          baseurl=http://{{ mount_point }}/gtk
           enabled=1
           gpgcheck=0
           priority=1
@@ -207,9 +207,9 @@
     # STEP 3: Install BIND Configure DNS (Conditional)
     # ===============================================================
 
-    - name: STEP 3 - Check DNS resolution for current server
+    - name: STEP 3 - Check DNS resolution for current server FQDN
       ansible.builtin.command:
-        cmd: "nslookup {{ ansible_hostname }}"
+        cmd: "nslookup {{ ansible_hostname }}.{{ domain }}"
       register: hostname_dns_check
       changed_when: false
       failed_when: false
@@ -466,139 +466,365 @@
       when: foreman_status.rc == 0
 
     # ===============================================================
-    # STEP 6.1: Relocate Pulp Storage to /home
+    # STEP 6.1: Relocate Pulp Storage to /home/pulp
     # ===============================================================
 
-    - name: STEP 6.1 - Check if Pulp is already mounted
+    - name: STEP 6.1 - Check current mount source for Pulp
       ansible.builtin.command:
-        cmd: mountpoint -q /var/lib/pulp
-      register: pulp_mount_check
+        cmd: findmnt -n -o SOURCE --target /var/lib/pulp
+      register: pulp_current_source
       changed_when: false
       failed_when: false
 
-    - name: STEP 6.1 - Pulp already using mount
-      ansible.builtin.debug:
-        msg: "Pulp is already using a bind mount. Skipping relocation."
-      when: pulp_mount_check.rc == 0
-
-    - name: STEP 6.1 - Stop Foreman services
+    - name: STEP 6.1 - Check whether /var/lib/pulp is a mountpoint
       ansible.builtin.command:
-        cmd: foreman-maintain service stop
-      when: pulp_mount_check.rc != 0
+        cmd: mountpoint -q /var/lib/pulp
+      register: pulp_mountpoint_check
+      changed_when: false
+      failed_when: false
 
-    - name: STEP 6.1 - Create destination Pulp directory
-      ansible.builtin.file:
+    - name: STEP 6.1 - Check Pulp source directory
+      ansible.builtin.stat:
+        path: "{{ pulp_source }}"
+      register: pulp_source_check
+
+    - name: STEP 6.1 - Check Pulp destination directory
+      ansible.builtin.stat:
         path: "{{ pulp_destination }}"
-        state: directory
-        mode: "0755"
-      when: pulp_mount_check.rc != 0
+      register: pulp_destination_check
 
-    - name: STEP 6.1 - Check for old Pulp backup directory
+    - name: STEP 6.1 - Check old Pulp backup directory
       ansible.builtin.stat:
         path: "{{ pulp_old }}"
-      register: pulp_old_dir
-      when: pulp_mount_check.rc != 0
+      register: pulp_old_check
+
+    - name: STEP 6.1 - Display current Pulp storage status
+      ansible.builtin.debug:
+        msg:
+          - "Pulp source: {{ pulp_source }}"
+          - "Pulp destination: {{ pulp_destination }}"
+          - "Current mount source: {{ pulp_current_source.stdout | default('NOT_MOUNTED') }}"
+          - "Is mountpoint: {{ pulp_mountpoint_check.rc == 0 }}"
+          - "Destination exists: {{ pulp_destination_check.stat.exists }}"
+          - "Old backup exists: {{ pulp_old_check.stat.exists }}"
+
+    # ---------------------------------------------------------------
+    # Already correctly migrated
+    # ---------------------------------------------------------------
+
+    - name: STEP 6.1 - Mark Pulp as already relocated
+      ansible.builtin.set_fact:
+        pulp_already_relocated: >-
+          {{
+            pulp_mountpoint_check.rc == 0 and
+            (
+              pulp_current_source.stdout == pulp_destination or
+              pulp_current_source.stdout | regex_search('^' ~ pulp_destination)
+            )
+          }}
+
+    - name: STEP 6.1 - Pulp already relocated
+      ansible.builtin.debug:
+        msg: >
+          Pulp is already correctly mounted from {{ pulp_destination }}
+          to {{ pulp_source }}. Skipping migration.
+      when: pulp_already_relocated | bool
+
+    # ---------------------------------------------------------------
+    # Safety check for unexpected mount
+    # ---------------------------------------------------------------
+
+    - name: STEP 6.1 - Fail if Pulp is mounted from an unexpected source
+      ansible.builtin.fail:
+        msg: >
+          /var/lib/pulp is mounted, but the source is not {{ pulp_destination }}.
+          Current source: {{ pulp_current_source.stdout }}.
+          Migration will not continue automatically.
+      when:
+        - pulp_mountpoint_check.rc == 0
+        - not (pulp_already_relocated | bool)
+
+    # ---------------------------------------------------------------
+    # Safety check for incomplete old migration
+    # ---------------------------------------------------------------
+
+    - name: STEP 6.1 - Fail if old Pulp backup exists before migration
+      ansible.builtin.fail:
+        msg: >
+          {{ pulp_old }} already exists while Pulp is not mounted from
+          {{ pulp_destination }}. This indicates a previous incomplete migration.
+          Verify the data manually before rerunning the playbook.
+      when:
+        - not (pulp_already_relocated | bool)
+        - pulp_old_check.stat.exists
+
+    # ---------------------------------------------------------------
+    # Check whether original Pulp data exists
+    # ---------------------------------------------------------------
+
+    - name: STEP 6.1 - Check if original Pulp directory contains data
+      ansible.builtin.find:
+        paths: "{{ pulp_source }}"
+        hidden: true
+        recurse: false
+      register: pulp_source_contents
+      when:
+        - not (pulp_already_relocated | bool)
+        - pulp_source_check.stat.exists
+
+    # ---------------------------------------------------------------
+    # Stop Foreman before migration
+    # ---------------------------------------------------------------
+
+    - name: STEP 6.1 - Stop Foreman and related services
+      ansible.builtin.command:
+        cmd: foreman-maintain service stop
+      register: foreman_services_stop
+      changed_when: true
+      when: not (pulp_already_relocated | bool)
+
+    # ---------------------------------------------------------------
+    # Install rsync
+    # ---------------------------------------------------------------
 
     - name: STEP 6.1 - Install rsync
       ansible.builtin.yum:
         name: rsync
         state: present
-      when:
-        - pulp_mount_check.rc != 0
-        - not pulp_old_dir.stat.exists
+        disable_gpg_check: true
+      when: not (pulp_already_relocated | bool)
 
-    - name: STEP 6.1 - Copy Pulp data
-      ansible.builtin.command:
-        cmd: "rsync -aHAX --numeric-ids /var/lib/pulp/ /home/pulp/"
-      when:
-        - pulp_mount_check.rc != 0
-        - not pulp_old_dir.stat.exists
+    # ---------------------------------------------------------------
+    # Create destination
+    # ---------------------------------------------------------------
 
-    - name: STEP 6.1 - Backup original Pulp directory
-      ansible.builtin.command:
-        cmd: mv /var/lib/pulp /var/lib/pulp.old
-      when:
-        - pulp_mount_check.rc != 0
-        - not pulp_old_dir.stat.exists
-
-    - name: STEP 6.1 - Create new Pulp mount directory
+    - name: STEP 6.1 - Create Pulp destination directory
       ansible.builtin.file:
-        path: /var/lib/pulp
+        path: "{{ pulp_destination }}"
         state: directory
+        owner: root
+        group: root
         mode: "0755"
-      when: pulp_mount_check.rc != 0
+      when: not (pulp_already_relocated | bool)
 
-    - name: STEP 6.1 - Add Pulp bind mount to fstab
+    # ---------------------------------------------------------------
+    # Copy Pulp data
+    # ---------------------------------------------------------------
+
+    - name: STEP 6.1 - Copy Pulp data to new destination
+      ansible.builtin.command:
+        cmd: >
+          rsync -aHAX --numeric-ids
+          {{ pulp_source }}/
+          {{ pulp_destination }}/
+      register: pulp_rsync
+      changed_when: true
+      when:
+        - not (pulp_already_relocated | bool)
+        - pulp_source_check.stat.exists
+        - pulp_source_contents.matched | int > 0
+
+    # ---------------------------------------------------------------
+    # Verify copied data
+    # ---------------------------------------------------------------
+
+    - name: STEP 6.1 - Check destination Pulp directory after copy
+      ansible.builtin.stat:
+        path: "{{ pulp_destination }}"
+      register: pulp_destination_after_copy
+      when: not (pulp_already_relocated | bool)
+
+    - name: STEP 6.1 - Fail if Pulp destination does not exist
+      ansible.builtin.fail:
+        msg: >
+          Pulp destination {{ pulp_destination }} was not created.
+          Migration cannot continue.
+      when:
+        - not (pulp_already_relocated | bool)
+        - not pulp_destination_after_copy.stat.exists
+
+    # ---------------------------------------------------------------
+    # Rename original directory
+    # ---------------------------------------------------------------
+
+    - name: STEP 6.1 - Rename original Pulp directory
+      ansible.builtin.command:
+        cmd: mv {{ pulp_source }} {{ pulp_old }}
+      when:
+        - not (pulp_already_relocated | bool)
+        - pulp_source_check.stat.exists
+
+    # ---------------------------------------------------------------
+    # Create mountpoint
+    # ---------------------------------------------------------------
+
+    - name: STEP 6.1 - Create new Pulp mountpoint directory
+      ansible.builtin.file:
+        path: "{{ pulp_source }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      when: not (pulp_already_relocated | bool)
+
+    # ---------------------------------------------------------------
+    # Configure persistent bind mount
+    # ---------------------------------------------------------------
+
+    - name: STEP 6.1 - Configure Pulp bind mount in fstab
       ansible.posix.mount:
-        path: /var/lib/pulp
-        src: /home/pulp
+        path: "{{ pulp_source }}"
+        src: "{{ pulp_destination }}"
         fstype: none
         opts: bind
         state: mounted
-      when: pulp_mount_check.rc != 0
-
-    - name: STEP 6.1 - Restore SELinux context on Pulp destination
-      ansible.builtin.command:
-        cmd: restorecon -RF /home/pulp
-      failed_when: false
-      when: pulp_mount_check.rc != 0
-
-    - name: STEP 6.1 - Restore SELinux context on Pulp mount
-      ansible.builtin.command:
-        cmd: restorecon -RF /var/lib/pulp
-      failed_when: false
-      when: pulp_mount_check.rc != 0
+      when: not (pulp_already_relocated | bool)
 
     - name: STEP 6.1 - Reload systemd daemon
       ansible.builtin.systemd:
         daemon_reload: true
-      when: pulp_mount_check.rc != 0
+      when: not (pulp_already_relocated | bool)
 
-    - name: STEP 6.1 - Verify Pulp bind mount
+    # ---------------------------------------------------------------
+    # Verify bind mount
+    # ---------------------------------------------------------------
+
+    - name: STEP 6.1 - Verify Pulp is a mountpoint
       ansible.builtin.command:
-        cmd: mountpoint -q /var/lib/pulp
+        cmd: mountpoint -q {{ pulp_source }}
+      register: pulp_mount_verify
       changed_when: false
-      when: pulp_mount_check.rc != 0
+      failed_when: false
+      when: not (pulp_already_relocated | bool)
 
-    - name: STEP 6.1 - Create Pulp migration test file
-      ansible.builtin.file:
-        path: /var/lib/pulp/.migration-test
-        state: touch
-      when: pulp_mount_check.rc != 0
-
-    - name: STEP 6.1 - Check migration test on destination
-      ansible.builtin.stat:
-        path: /home/pulp/.migration-test
-      register: pulp_migration_test
-      when: pulp_mount_check.rc != 0
-
-    - name: STEP 6.1 - Fail when Pulp bind mount verification failed
+    - name: STEP 6.1 - Fail if Pulp mount was not created
       ansible.builtin.fail:
-        msg: "Bind mount verification failed."
+        msg: >
+          Pulp bind mount failed. {{ pulp_source }} is not mounted.
+          Original data is preserved at {{ pulp_old }}.
       when:
-        - pulp_mount_check.rc != 0
-        - not pulp_migration_test.stat.exists
+        - not (pulp_already_relocated | bool)
+        - pulp_mount_verify.rc != 0
 
-    - name: STEP 6.1 - Remove Pulp migration test file
+    - name: STEP 6.1 - Check bind mount source
+      ansible.builtin.command:
+        cmd: findmnt -n -o SOURCE --target {{ pulp_source }}
+      register: pulp_mount_source_verify
+      changed_when: false
+      when: not (pulp_already_relocated | bool)
+
+    - name: STEP 6.1 - Display verified Pulp mount source
+      ansible.builtin.debug:
+        msg: >
+          Pulp mount verified.
+          {{ pulp_source }} is mounted from:
+          {{ pulp_mount_source_verify.stdout }}
+      when: not (pulp_already_relocated | bool)
+
+    # ---------------------------------------------------------------
+    # Test bind mount
+    # ---------------------------------------------------------------
+
+    - name: STEP 6.1 - Create Pulp bind mount test file
       ansible.builtin.file:
-        path: /var/lib/pulp/.migration-test
-        state: absent
-      when: pulp_mount_check.rc != 0
+        path: "{{ pulp_source }}/.pulp-bind-test"
+        state: touch
+        mode: "0600"
+      when: not (pulp_already_relocated | bool)
 
-    - name: STEP 6.1 - Start Foreman services
+    - name: STEP 6.1 - Verify test file exists on destination
+      ansible.builtin.stat:
+        path: "{{ pulp_destination }}/.pulp-bind-test"
+      register: pulp_bind_test
+      when: not (pulp_already_relocated | bool)
+
+    - name: STEP 6.1 - Fail if bind mount test failed
+      ansible.builtin.fail:
+        msg: >
+          Pulp bind mount verification failed.
+          Test file created in {{ pulp_source }} did not appear in
+          {{ pulp_destination }}.
+          Original data remains at {{ pulp_old }}.
+      when:
+        - not (pulp_already_relocated | bool)
+        - not pulp_bind_test.stat.exists
+
+    - name: STEP 6.1 - Remove Pulp bind mount test file
+      ansible.builtin.file:
+        path: "{{ pulp_source }}/.pulp-bind-test"
+        state: absent
+      when: not (pulp_already_relocated | bool)
+
+    # ---------------------------------------------------------------
+    # Restore SELinux contexts
+    # ---------------------------------------------------------------
+
+    - name: STEP 6.1 - Restore SELinux context on Pulp destination
+      ansible.builtin.command:
+        cmd: restorecon -RF {{ pulp_destination }}
+      changed_when: false
+      failed_when: false
+      when: not (pulp_already_relocated | bool)
+
+    - name: STEP 6.1 - Restore SELinux context on Pulp mountpoint
+      ansible.builtin.command:
+        cmd: restorecon -RF {{ pulp_source }}
+      changed_when: false
+      failed_when: false
+      when: not (pulp_already_relocated | bool)
+
+    # ---------------------------------------------------------------
+    # Start Foreman
+    # ---------------------------------------------------------------
+
+    - name: STEP 6.1 - Start Foreman and related services
       ansible.builtin.command:
         cmd: foreman-maintain service start
-      when: pulp_mount_check.rc != 0
+      register: foreman_services_start
+      changed_when: true
+      when: not (pulp_already_relocated | bool)
 
-    - name: STEP 6.1 - Remove old Pulp directory
-      ansible.builtin.file:
-        path: /var/lib/pulp.old
-        state: absent
-      when: pulp_mount_check.rc != 0
+    # ---------------------------------------------------------------
+    # Verify Pulp service
+    # ---------------------------------------------------------------
 
-    - name: STEP 6.1 - Pulp relocation completed
+    - name: STEP 6.1 - Check Pulp service status
+      ansible.builtin.command:
+        cmd: foreman-maintain service status
+      register: foreman_services_status
+      changed_when: false
+      failed_when: false
+
+    - name: STEP 6.1 - Display service status
       ansible.builtin.debug:
-        msg: "Pulp storage relocated."
+        var: foreman_services_status.stdout_lines
+
+    # ---------------------------------------------------------------
+    # Keep backup for safety
+    # ---------------------------------------------------------------
+
+    - name: STEP 6.1 - Pulp migration completed successfully
+      ansible.builtin.debug:
+        msg: >
+          Pulp storage migration completed successfully.
+          Active storage:
+          {{ pulp_destination }}
+          mounted at:
+          {{ pulp_source }}
+
+          Original data has been retained temporarily at:
+          {{ pulp_old }}
+
+          Do not delete {{ pulp_old }} until Pulp and Foreman have been
+          verified to be working correctly.
+      when: not (pulp_already_relocated | bool)
+
+    - name: STEP 6.1 - Pulp relocation already configured successfully
+      ansible.builtin.debug:
+        msg: >
+          Pulp storage is already configured correctly.
+          {{ pulp_destination }} is mounted at {{ pulp_source }}.
+      when: pulp_already_relocated | bool
 
     # ===============================================================
     # STEP 7: Configure Foreman Proxies
@@ -712,12 +938,19 @@
     # Configure DNS
     # ---------------------------------------------------------------
 
-    - name: STEP 7 - Generate DNSSEC key for Foreman proxy
+    - name: STEP 7 - Check if Foreman proxy DNS key already exists
+      ansible.builtin.stat:
+        path: /etc/foreman-proxy/dns.key
+      register: foreman_proxy_dns_key
+
+    - name: STEP 7 - Generate DNSSEC key for Foreman proxy when missing
       ansible.builtin.command:
         cmd: dnssec-keygen -a HMAC-SHA512 -b 512 -n USER foreman-proxy
       args:
         chdir: /root
       register: dnssec_keygen
+      changed_when: true
+      when: not foreman_proxy_dns_key.stat.exists
 
     - name: STEP 7 - Find generated private DNSSEC key
       ansible.builtin.find:
@@ -725,11 +958,14 @@
         patterns: "Kforeman-proxy*.private"
         file_type: file
       register: generated_dns_keys
+      when: not foreman_proxy_dns_key.stat.exists
 
     - name: STEP 7 - Fail if DNSSEC key was not generated
       ansible.builtin.fail:
         msg: "DNSSEC private key was not generated."
-      when: generated_dns_keys.matched | int == 0
+      when:
+        - not foreman_proxy_dns_key.stat.exists
+        - generated_dns_keys.matched | int == 0
 
     - name: STEP 7 - Move DNSSEC key to Foreman proxy
       ansible.builtin.copy:
@@ -739,11 +975,20 @@
         owner: foreman-proxy
         group: foreman-proxy
         mode: "0600"
+      when: not foreman_proxy_dns_key.stat.exists
 
     - name: STEP 7 - Remove original generated DNSSEC private key
       ansible.builtin.file:
         path: "{{ generated_dns_keys.files[0].path }}"
         state: absent
+      when: not foreman_proxy_dns_key.stat.exists
+
+    - name: STEP 7 - Ensure Foreman proxy DNS key permissions
+      ansible.builtin.file:
+        path: /etc/foreman-proxy/dns.key
+        owner: foreman-proxy
+        group: foreman-proxy
+        mode: "0600"
 
     - name: STEP 7 - Configure Foreman DNS proxy
       ansible.builtin.command:
@@ -769,9 +1014,8 @@
           --foreman-proxy-dhcp true
           --foreman-proxy-dhcp-managed true
           --foreman-proxy-dhcp-server {{ foreman_server_name }}
-          --foreman-proxy-dhcp-range ""
           --foreman-proxy-dhcp-gateway {{ dhcp_gateway }}
-          --foreman-proxy-dhcp-nameservers {{ foreman_server_name }}
+          --foreman-proxy-dhcp-nameservers {{ dns_server }}
           --foreman-proxy-dhcp-config /etc/dhcp/dhcpd.conf
           --foreman-proxy-dhcp-leases /var/lib/dhcpd/dhcpd.leases
       environment:
