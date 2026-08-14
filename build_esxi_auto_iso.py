@@ -47,7 +47,7 @@ KS_CFG = WORK_ISO_DIR / "KS.CFG"
 
 EXPECTED_KERNELOPT = (
     "kernelopt=runweasel "
-    "cdromBoot ks=cdrom:/KS.CFG"
+    "cdromBoot ks=http://http-server-01.vgs.com/repo/ks.cfg"
 )
 
 REQUIRED_KS_STRINGS = [
@@ -303,11 +303,6 @@ def build_custom_iso():
             )
 
         try:
-
-            iso.add_file(
-                str(BOOT_CFG),
-                iso_path="/BOOT.CFG;1"
-            )
 
             ok(
                 "Modified BOOT.CFG added"
