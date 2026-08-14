@@ -10,7 +10,8 @@
     # CONFIGURATION
     # ===============================================================
 
-    mount_point: "http-server-01.vgs.com/repo"
+    repo_server: "http-server-01.vgs.com"
+    repo_root: "http://http-server-01.vgs.com/repo"
 
     skip_patch: false
     run_only: ""
@@ -34,12 +35,12 @@
   tasks:
 
     # ===============================================================
-    # STEP 1: ISO SHARE
+    # STEP 1: REPOSITORY
     # ===============================================================
 
-    - name: STEP 1 - ISO share section is currently disabled
+    - name: STEP 1 - Display repository configuration
       ansible.builtin.debug:
-        msg: "ISO share mount is disabled. Using HTTP repository at {{ mount_point }}."
+        msg: "Using HTTP repository at {{ repo_root }}."
 
     # ===============================================================
     # STEP 2: CLEAN AND CONFIGURE YUM REPOSITORIES
@@ -58,20 +59,6 @@
         state: absent
       loop: "{{ existing_repo_files.files }}"
 
-    - name: STEP 2 - Check yum-complete-transaction pending cleanup
-      ansible.builtin.command:
-        cmd: yum-complete-transaction --cleanup-only --quiet --skip-broken
-      register: yum_cleanup
-      changed_when: false
-      failed_when: false
-
-    - name: STEP 2 - Run yum-complete-transaction
-      ansible.builtin.command:
-        cmd: yum-complete-transaction -y
-      register: yum_transaction
-      changed_when: yum_transaction.rc == 0
-      failed_when: false
-
     - name: STEP 2 - Create base.repo
       ansible.builtin.copy:
         dest: /etc/yum.repos.d/base.repo
@@ -81,20 +68,20 @@
         content: |
           [baseos]
           name=CentOS Base Repo
-          baseurl=http://{{ mount_point }}/centos
+          baseurl={{ repo_root }}/centos
           enabled=1
           gpgcheck=0
 
           [mesa]
           name=Local Mesa Repo
-          baseurl=http://{{ mount_point }}/mesa
+          baseurl={{ repo_root }}/mesa
           enabled=1
           gpgcheck=0
           priority=1
 
           [gtk]
           name=Local GTK Repo
-          baseurl=http://{{ mount_point }}/gtk
+          baseurl={{ repo_root }}/gtk
           enabled=1
           gpgcheck=0
           priority=1
@@ -108,7 +95,7 @@
         content: |
           [patch]
           name=CentOS Patch Repo
-          baseurl=http://{{ mount_point }}/installed_rhel7
+          baseurl={{ repo_root }}/installed_rhel7
           enabled=1
           gpgcheck=0
 
@@ -121,7 +108,7 @@
         content: |
           [foreman]
           name=CentOS Foreman Repo
-          baseurl=http://{{ mount_point }}/installed_rhel7
+          baseurl={{ repo_root }}/installed_rhel7
           enabled=1
           gpgcheck=0
 
@@ -175,6 +162,26 @@
       changed_when: false
       failed_when: false
 
+    - name: STEP 2 - Install yum utilities
+      ansible.builtin.yum:
+        name: yum-utils
+        state: present
+        disable_gpg_check: true
+
+    - name: STEP 2 - Check yum-complete-transaction pending cleanup
+      ansible.builtin.command:
+        cmd: yum-complete-transaction --cleanup-only --quiet --skip-broken
+      register: yum_cleanup
+      changed_when: false
+      failed_when: false
+
+    - name: STEP 2 - Complete pending yum transactions
+      ansible.builtin.command:
+        cmd: yum-complete-transaction -y
+      register: yum_transaction
+      changed_when: yum_transaction.rc == 0
+      failed_when: false
+
     - name: STEP 2 - Install required packages
       ansible.builtin.yum:
         name:
@@ -213,6 +220,7 @@
         group: root
         mode: "0644"
         content: |
+          search {{ domain }}
           nameserver {{ dns_ip }}
       when: hostname_dns_check.rc != 0
 
@@ -226,14 +234,16 @@
 
     - name: STEP 3 - Display DNS warning
       ansible.builtin.debug:
-        msg: "DNS resolution failed."
+        msg: "DNS resolution failed. Check {{ dns_ip }}."
       when:
         - hostname_dns_check.rc != 0
         - google_dns_check.rc != 0
 
     - name: STEP 3 - Install BIND packages
       ansible.builtin.yum:
-        name: "bind*"
+        name:
+          - bind
+          - bind-utils
         state: present
         disable_gpg_check: true
 
@@ -435,38 +445,46 @@
     # STEP 6.1: RELOCATE PULP STORAGE
     # ===============================================================
 
-    - name: STEP 6.1 - Check whether Pulp is already mounted
+    - name: STEP 6.1 - Check whether Pulp mountpoint exists
       ansible.builtin.command:
-        cmd: mountpoint -q {{ pulp_source }}
+        cmd: "mountpoint -q {{ pulp_source }}"
       register: pulp_mount_check
       changed_when: false
       failed_when: false
 
-    - name: STEP 6.1 - Check current Pulp mount source
+    - name: STEP 6.1 - Get current Pulp mount source
       ansible.builtin.command:
-        cmd: findmnt -n -o SOURCE --target {{ pulp_source }}
+        cmd: "findmnt -n -o SOURCE --target {{ pulp_source }}"
       register: pulp_current_source
       changed_when: false
       failed_when: false
 
-    - name: STEP 6.1 - Pulp already using bind mount
+    - name: STEP 6.1 - Set Pulp mount status
+      ansible.builtin.set_fact:
+        pulp_bind_mount_valid: >-
+          {{
+            pulp_mount_check.rc == 0 and
+            pulp_current_source.stdout == pulp_destination
+          }}
+
+    - name: STEP 6.1 - Display existing Pulp bind mount
       ansible.builtin.debug:
         msg: >
-          Pulp is already mounted.
-          Current source: {{ pulp_current_source.stdout | default('unknown') }}
-          Skipping relocation.
-      when: pulp_mount_check.rc == 0
+          Pulp is already correctly mounted.
+          Source: {{ pulp_current_source.stdout }}
+          Target: {{ pulp_source }}
+      when: pulp_bind_mount_valid
 
     - name: STEP 6.1 - Stop Foreman services
       ansible.builtin.command:
         cmd: foreman-maintain service stop
-      when: pulp_mount_check.rc != 0
+      when: not pulp_bind_mount_valid
 
     - name: STEP 6.1 - Check old Pulp backup directory
       ansible.builtin.stat:
         path: "{{ pulp_old }}"
       register: pulp_old_dir
-      when: pulp_mount_check.rc != 0
+      when: not pulp_bind_mount_valid
 
     - name: STEP 6.1 - Fail if previous incomplete migration exists
       ansible.builtin.fail:
@@ -475,7 +493,7 @@
           Previous Pulp migration may be incomplete.
           Verify the data before rerunning.
       when:
-        - pulp_mount_check.rc != 0
+        - not pulp_bind_mount_valid
         - pulp_old_dir.stat.exists
 
     - name: STEP 6.1 - Install rsync
@@ -483,7 +501,7 @@
         name: rsync
         state: present
         disable_gpg_check: true
-      when: pulp_mount_check.rc != 0
+      when: not pulp_bind_mount_valid
 
     - name: STEP 6.1 - Create destination Pulp directory
       ansible.builtin.file:
@@ -492,7 +510,7 @@
         owner: root
         group: root
         mode: "0755"
-      when: pulp_mount_check.rc != 0
+      when: not pulp_bind_mount_valid
 
     - name: STEP 6.1 - Copy Pulp data
       ansible.builtin.command:
@@ -500,12 +518,12 @@
           rsync -aHAX --numeric-ids
           {{ pulp_source }}/
           {{ pulp_destination }}/
-      when: pulp_mount_check.rc != 0
+      when: not pulp_bind_mount_valid
 
     - name: STEP 6.1 - Rename original Pulp directory
       ansible.builtin.command:
-        cmd: mv {{ pulp_source }} {{ pulp_old }}
-      when: pulp_mount_check.rc != 0
+        cmd: "mv {{ pulp_source }} {{ pulp_old }}"
+      when: not pulp_bind_mount_valid
 
     - name: STEP 6.1 - Create Pulp mountpoint
       ansible.builtin.file:
@@ -514,79 +532,89 @@
         owner: root
         group: root
         mode: "0755"
-      when: pulp_mount_check.rc != 0
+      when: not pulp_bind_mount_valid
 
-    - name: STEP 6.1 - Add Pulp bind mount to fstab
+    - name: STEP 6.1 - Add Pulp bind mount
       ansible.posix.mount:
         path: "{{ pulp_source }}"
         src: "{{ pulp_destination }}"
         fstype: none
         opts: bind
         state: mounted
-      when: pulp_mount_check.rc != 0
+      when: not pulp_bind_mount_valid
 
     - name: STEP 6.1 - Verify Pulp bind mount
       ansible.builtin.command:
-        cmd: mountpoint -q {{ pulp_source }}
+        cmd: "mountpoint -q {{ pulp_source }}"
       register: pulp_mount_verify
       changed_when: false
       failed_when: false
-      when: pulp_mount_check.rc != 0
+      when: not pulp_bind_mount_valid
+
+    - name: STEP 6.1 - Verify Pulp mount source
+      ansible.builtin.command:
+        cmd: "findmnt -n -o SOURCE --target {{ pulp_source }}"
+      register: pulp_mount_source_verify
+      changed_when: false
+      failed_when: false
+      when: not pulp_bind_mount_valid
 
     - name: STEP 6.1 - Fail when Pulp bind mount verification failed
       ansible.builtin.fail:
         msg: >
           Bind mount verification failed.
-          {{ pulp_source }} is not mounted.
-          Original data remains at {{ pulp_old }}.
+          Expected: {{ pulp_destination }}
+          Actual: {{ pulp_mount_source_verify.stdout | default('unknown') }}
       when:
-        - pulp_mount_check.rc != 0
-        - pulp_mount_verify.rc != 0
+        - not pulp_bind_mount_valid
+        - >
+          pulp_mount_verify.rc != 0 or
+          pulp_mount_source_verify.stdout != pulp_destination
 
     - name: STEP 6.1 - Create Pulp migration test file
       ansible.builtin.file:
         path: "{{ pulp_source }}/.migration-test"
         state: touch
         mode: "0600"
-      when: pulp_mount_check.rc != 0
+      when: not pulp_bind_mount_valid
 
     - name: STEP 6.1 - Check migration test on destination
       ansible.builtin.stat:
         path: "{{ pulp_destination }}/.migration-test"
       register: pulp_migration_test
-      when: pulp_mount_check.rc != 0
+      when: not pulp_bind_mount_valid
 
     - name: STEP 6.1 - Fail when Pulp bind mount test failed
       ansible.builtin.fail:
         msg: "Pulp bind mount test failed."
       when:
-        - pulp_mount_check.rc != 0
+        - not pulp_bind_mount_valid
         - not pulp_migration_test.stat.exists
 
     - name: STEP 6.1 - Remove Pulp migration test file
       ansible.builtin.file:
         path: "{{ pulp_source }}/.migration-test"
         state: absent
-      when: pulp_mount_check.rc != 0
+      when: not pulp_bind_mount_valid
 
     - name: STEP 6.1 - Restore SELinux context on Pulp destination
       ansible.builtin.command:
-        cmd: restorecon -RF {{ pulp_destination }}
+        cmd: "restorecon -RF {{ pulp_destination }}"
       changed_when: false
       failed_when: false
-      when: pulp_mount_check.rc != 0
+      when: not pulp_bind_mount_valid
 
     - name: STEP 6.1 - Restore SELinux context on Pulp mount
       ansible.builtin.command:
-        cmd: restorecon -RF {{ pulp_source }}
+        cmd: "restorecon -RF {{ pulp_source }}"
       changed_when: false
       failed_when: false
-      when: pulp_mount_check.rc != 0
+      when: not pulp_bind_mount_valid
 
     - name: STEP 6.1 - Start Foreman services
       ansible.builtin.command:
         cmd: foreman-maintain service start
-      when: pulp_mount_check.rc != 0
+      when: not pulp_bind_mount_valid
 
     - name: STEP 6.1 - Display Pulp relocation result
       ansible.builtin.debug:
@@ -594,104 +622,123 @@
           Pulp storage is available from {{ pulp_destination }}
           and mounted at {{ pulp_source }}.
           Original backup is retained at {{ pulp_old }}.
-      when: pulp_mount_check.rc != 0
+      when: not pulp_bind_mount_valid
 
     # ===============================================================
-    # STEP 7: CONFIGURE FOREMAN PROXIES
-    # EFI STEPS COMPLETELY REMOVED
+    # STEP 7: CONFIGURE FOREMAN PROXY
+    # EFI STEPS COMPLETELY SKIPPED
     # ===============================================================
 
-    - name: STEP 7 - Install DHCP and TFTP services
+    - name: STEP 7 - Install DHCP TFTP and BIND utilities
       ansible.builtin.yum:
         name:
           - dhcp
           - tftp-server
+          - bind-utils
+          - bind
         state: present
         disable_gpg_check: true
 
-    # ==============================================================================
-    # STEP 7 - Configure Foreman Proxy TFTP + DNS
-    # ==============================================================================
-    
+    - name: STEP 7 - Verify dnssec-keygen is available
+      ansible.builtin.command:
+        cmd: dnssec-keygen -h
+      register: dnssec_keygen_check
+      changed_when: false
+      failed_when: false
+
+    - name: STEP 7 - Fail when dnssec-keygen is unavailable
+      ansible.builtin.fail:
+        msg: >
+          dnssec-keygen is not available.
+          Ensure bind-utils and bind are installed correctly.
+      when: dnssec_keygen_check.rc != 0
+
+    # ===============================================================
+    # TFTP CONFIGURATION
+    # ===============================================================
+
     - name: STEP 7 - Ensure TFTP root exists
-      file:
+      ansible.builtin.file:
         path: "{{ tftp_root }}"
         state: directory
         owner: foreman-proxy
         group: foreman-proxy
-        mode: '0755'
-    
+        mode: "0755"
+
     - name: STEP 7 - Configure Foreman TFTP proxy
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/foreman-proxy/settings.d/tftp.yml
         regexp: '^:tftproot:'
         line: ":tftproot: {{ tftp_root }}"
-        create: yes
+        create: true
+        owner: root
+        group: root
+        mode: "0644"
       notify: Restart Foreman Proxy
-    
-    # ------------------------------------------------------------------------------
-    # FIX: Install dnssec-keygen
-    # ------------------------------------------------------------------------------
-    
-    - name: STEP 7 - Install BIND utilities required for dnssec-keygen
-      yum:
-        name:
-          - bind-utils
-          - bind
-        state: present
-    
-    - name: STEP 7 - Verify dnssec-keygen is available
-      command: which dnssec-keygen
-      register: dnssec_keygen_check
-      changed_when: false
-    
-    - name: STEP 7 - Display dnssec-keygen path
-      debug:
-        msg: "dnssec-keygen found at {{ dnssec_keygen_check.stdout }}"
-    
-    # ------------------------------------------------------------------------------
+
+    # ===============================================================
     # DNSSEC KEY
-    # ------------------------------------------------------------------------------
-    
-    - name: STEP 7 - Check if Foreman proxy DNS key already exists
-      stat:
-        path: /etc/foreman-proxy/foreman-proxy.key
+    # ===============================================================
+
+    - name: STEP 7 - Check if Foreman proxy DNS key exists
+      ansible.builtin.stat:
+        path: /etc/foreman-proxy/dns.key
       register: foreman_dns_key
-    
+
     - name: STEP 7 - Generate DNSSEC key when missing
-      command: >
-        dnssec-keygen
-        -a HMAC-SHA512
-        -b 512
-        -n USER
-        -K /etc/foreman-proxy
-        foreman-proxy
-      register: dnssec_keygen_result
+      ansible.builtin.command:
+        argv:
+          - dnssec-keygen
+          - -a
+          - HMAC-SHA512
+          - -b
+          - "512"
+          - -n
+          - USER
+          - -K
+          - /etc/foreman-proxy
+          - foreman-proxy
       when: not foreman_dns_key.stat.exists
+      register: dnssec_keygen_result
       changed_when: true
-    
-    - name: STEP 7 - Find generated private DNS key
-      find:
+      no_log: true
+
+    - name: STEP 7 - Find generated private DNSSEC key
+      ansible.builtin.find:
         paths: /etc/foreman-proxy
-        patterns: "Kforeman-proxy.+*.private"
+        patterns: "Kforeman-proxy.+\\.private"
+        use_regex: true
         file_type: file
       register: generated_private_key
       when: not foreman_dns_key.stat.exists
-    
-    - name: STEP 7 - Read generated private DNS key
-      shell: |
-        awk '/^Key:/ {print $2}' \
-        "{{ generated_private_key.files[0].path }}"
+
+    - name: STEP 7 - Fail if generated private key was not found
+      ansible.builtin.fail:
+        msg: "DNSSEC private key was generated but not found."
+      when:
+        - not foreman_dns_key.stat.exists
+        - generated_private_key.matched | int == 0
+
+    - name: STEP 7 - Read DNS secret from generated private key
+      ansible.builtin.shell: |
+        awk '/^Key:/ {print $2}' "{{ generated_private_key.files[0].path }}"
       register: generated_dns_secret
+      changed_when: false
+      no_log: true
       when:
         - not foreman_dns_key.stat.exists
         - generated_private_key.matched | int > 0
-      changed_when: false
-      no_log: true
-    
+
+    - name: STEP 7 - Fail if DNS secret could not be extracted
+      ansible.builtin.fail:
+        msg: "Unable to extract the Key value from the generated DNSSEC private key."
+      when:
+        - not foreman_dns_key.stat.exists
+        - generated_dns_secret.stdout | default('') | length == 0
+
     - name: STEP 7 - Create Foreman proxy DNS key file
-      copy:
-        dest: /etc/foreman-proxy/foreman-proxy.key
+      ansible.builtin.copy:
+        dest: /etc/foreman-proxy/dns.key
         content: |
           key "foreman-proxy" {
             algorithm hmac-sha512;
@@ -699,56 +746,81 @@
           };
         owner: foreman-proxy
         group: foreman-proxy
-        mode: '0600'
-      when:
-        - not foreman_dns_key.stat.exists
-        - generated_dns_secret is defined
-        - generated_dns_secret.stdout | length > 0
+        mode: "0600"
       no_log: true
       notify: Restart Foreman Proxy
-    
+      when:
+        - not foreman_dns_key.stat.exists
+        - generated_dns_secret.stdout | default('') | length > 0
+
     - name: STEP 7 - Ensure DNS key ownership is correct
-      file:
-        path: /etc/foreman-proxy/foreman-proxy.key
+      ansible.builtin.file:
+        path: /etc/foreman-proxy/dns.key
         owner: foreman-proxy
         group: foreman-proxy
-        mode: '0600'
-      when: foreman_dns_key.stat.exists or generated_dns_secret is defined
+        mode: "0600"
       notify: Restart Foreman Proxy
+
+    # ===============================================================
+    # DNS PROXY
+    # ===============================================================
 
     - name: STEP 7 - Configure Foreman DNS proxy
       ansible.builtin.command:
-        cmd: >
-          foreman-installer --scenario katello
-          --foreman-proxy-dns true
-          --foreman-proxy-dns-managed false
-          --foreman-proxy-dns-provider nsupdate
-          --foreman-proxy-dns-server {{ dns_server }}
-          --foreman-proxy-dns-forwarders=8.8.8.8,8.8.4.4
-          --foreman-proxy-keyfile /etc/foreman-proxy/dns.key
+        argv:
+          - foreman-installer
+          - --scenario
+          - katello
+          - --foreman-proxy-dns
+          - "true"
+          - --foreman-proxy-dns-managed
+          - "false"
+          - --foreman-proxy-dns-provider
+          - nsupdate
+          - --foreman-proxy-dns-server
+          - "{{ dns_server }}"
+          - --foreman-proxy-keyfile
+          - /etc/foreman-proxy/dns.key
       environment:
         PATH: "{{ java_environment_path }}"
+      notify: Restart Foreman Proxy
 
-    # ---------------------------------------------------------------
-    # CONFIGURE DHCP
-    # ---------------------------------------------------------------
+    - name: STEP 7 - Restart Foreman Proxy after DNS configuration
+      ansible.builtin.meta: flush_handlers
+
+    # ===============================================================
+    # DHCP PROXY
+    # ===============================================================
 
     - name: STEP 7 - Configure Foreman DHCP proxy
       ansible.builtin.command:
-        cmd: >
-          foreman-installer --scenario katello
-          --foreman-proxy-dhcp true
-          --foreman-proxy-dhcp-managed true
-          --foreman-proxy-dhcp-server {{ foreman_server_name }}
-          --foreman-proxy-dhcp-gateway {{ dhcp_gateway }}
-          --foreman-proxy-dhcp-nameservers {{ dns_server }}
-          --foreman-proxy-dhcp-config /etc/dhcp/dhcpd.conf
-          --foreman-proxy-dhcp-leases /var/lib/dhcpd/dhcpd.leases
+        argv:
+          - foreman-installer
+          - --scenario
+          - katello
+          - --foreman-proxy-dhcp
+          - "true"
+          - --foreman-proxy-dhcp-managed
+          - "true"
+          - --foreman-proxy-dhcp-server
+          - "{{ foreman_server_name }}"
+          - --foreman-proxy-dhcp-gateway
+          - "{{ dhcp_gateway }}"
+          - --foreman-proxy-dhcp-nameservers
+          - "{{ dns_server }}"
+          - --foreman-proxy-dhcp-config
+          - /etc/dhcp/dhcpd.conf
+          - --foreman-proxy-dhcp-leases
+          - /var/lib/dhcpd/dhcpd.leases
       environment:
         PATH: "{{ java_environment_path }}"
+      notify: Restart Foreman Proxy
+
+    - name: STEP 7 - Apply pending Foreman Proxy restart
+      ansible.builtin.meta: flush_handlers
 
     # ===============================================================
-    # STEP 7: FIREWALL
+    # FIREWALL
     # ===============================================================
 
     - name: STEP 7 - Open DHCP firewall service
@@ -795,30 +867,30 @@
         path: "{{ tftp_root }}/centos"
         state: directory
         owner: foreman-proxy
-        group: root
+        group: foreman-proxy
         mode: "0755"
 
     - name: STEP 8 - Download CentOS initrd.img
       ansible.builtin.get_url:
-        url: "http://http-server-01/repo/centos/isolinux/initrd.img"
+        url: "{{ repo_root }}/centos/isolinux/initrd.img"
         dest: "{{ tftp_root }}/centos/initrd.img"
         owner: foreman-proxy
-        group: root
+        group: foreman-proxy
         mode: "0644"
 
     - name: STEP 8 - Download CentOS vmlinuz
       ansible.builtin.get_url:
-        url: "http://http-server-01/repo/centos/isolinux/vmlinuz"
+        url: "{{ repo_root }}/centos/isolinux/vmlinuz"
         dest: "{{ tftp_root }}/centos/vmlinuz"
         owner: foreman-proxy
-        group: root
+        group: foreman-proxy
         mode: "0644"
 
     - name: STEP 8 - Ensure ownership of CentOS TFTP files
       ansible.builtin.file:
         path: "{{ tftp_root }}/centos"
         owner: foreman-proxy
-        group: root
+        group: foreman-proxy
         recurse: true
 
     - name: STEP 8 - Set permissions on CentOS PXE files
@@ -840,10 +912,25 @@
           Foreman Katello installation completed successfully.
           ============================================================
           Foreman Server : {{ foreman_server_name }}
+          Repository     : {{ repo_root }}
           Pulp Storage   : {{ pulp_destination }}
           Pulp Mount     : {{ pulp_source }}
+          Pulp Backup    : {{ pulp_old }}
           TFTP Root      : {{ tftp_root }}
           DNS Server     : {{ dns_server }}
           DHCP Gateway   : {{ dhcp_gateway }}
           EFI Steps      : COMPLETELY SKIPPED
           ============================================================
+
+  # ===============================================================
+  # HANDLERS
+  # ===============================================================
+
+  handlers:
+
+    - name: Restart Foreman Proxy
+      ansible.builtin.systemd:
+        name: foreman-proxy
+        state: restarted
+        enabled: true
+      failed_when: false
