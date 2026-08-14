@@ -568,17 +568,59 @@
         state: present
         disable_gpg_check: true
 
-    - name: STEP 7 - Verify dnssec-keygen is available
+    # ===============================================================
+    # DNSSEC-KEYGEN DETECTION
+    # CentOS 7 may install it under /usr/sbin or /sbin
+    # ===============================================================
+
+    - name: STEP 7 - Check dnssec-keygen in /usr/sbin
+      ansible.builtin.stat:
+        path: /usr/sbin/dnssec-keygen
+      register: dnssec_keygen_usr_sbin
+
+    - name: STEP 7 - Check dnssec-keygen in /sbin
+      ansible.builtin.stat:
+        path: /sbin/dnssec-keygen
+      register: dnssec_keygen_sbin
+
+    - name: STEP 7 - Set dnssec-keygen executable path
+      ansible.builtin.set_fact:
+        dnssec_keygen_path: >-
+          {{
+            '/usr/sbin/dnssec-keygen'
+            if dnssec_keygen_usr_sbin.stat.exists
+            else (
+              '/sbin/dnssec-keygen'
+              if dnssec_keygen_sbin.stat.exists
+              else ''
+            )
+          }}
+
+    - name: STEP 7 - Display dnssec-keygen path
+      ansible.builtin.debug:
+        msg: "dnssec-keygen path: {{ dnssec_keygen_path }}"
+
+    - name: STEP 7 - Fail when dnssec-keygen is unavailable
+      ansible.builtin.fail:
+        msg: >
+          dnssec-keygen was not found in /usr/sbin or /sbin.
+          bind and bind-utils are installed but the executable is unavailable.
+      when: dnssec_keygen_path | length == 0
+
+    - name: STEP 7 - Verify dnssec-keygen executable
       ansible.builtin.command:
-        cmd: dnssec-keygen -h
+        argv:
+          - "{{ dnssec_keygen_path }}"
+          - -h
       register: dnssec_keygen_check
       changed_when: false
       failed_when: false
 
-    - name: STEP 7 - Fail when dnssec-keygen is unavailable
-      ansible.builtin.fail:
-        msg: "dnssec-keygen is not available. Ensure bind and bind-utils are installed."
-      when: dnssec_keygen_check.rc != 0
+    - name: STEP 7 - Display dnssec-keygen verification result
+      ansible.builtin.debug:
+        msg:
+          - "dnssec-keygen executable: {{ dnssec_keygen_path }}"
+          - "Verification return code: {{ dnssec_keygen_check.rc }}"
 
     # ===============================================================
     # TFTP CONFIGURATION
@@ -607,6 +649,14 @@
     # DNSSEC KEY
     # ===============================================================
 
+    - name: STEP 7 - Ensure Foreman Proxy directory exists
+      ansible.builtin.file:
+        path: /etc/foreman-proxy
+        state: directory
+        owner: root
+        group: foreman-proxy
+        mode: "0755"
+
     - name: STEP 7 - Check if Foreman proxy DNS key exists
       ansible.builtin.stat:
         path: /etc/foreman-proxy/dns.key
@@ -615,7 +665,7 @@
     - name: STEP 7 - Generate DNSSEC key when missing
       ansible.builtin.command:
         argv:
-          - dnssec-keygen
+          - "{{ dnssec_keygen_path }}"
           - -a
           - HMAC-SHA512
           - -b
@@ -625,8 +675,10 @@
           - -K
           - /etc/foreman-proxy
           - foreman-proxy
-      when: not foreman_dns_key.stat.exists
+      register: dnssec_generate_result
+      changed_when: true
       no_log: true
+      when: not foreman_dns_key.stat.exists
 
     - name: STEP 7 - Find generated private DNSSEC key
       ansible.builtin.find:
@@ -637,15 +689,31 @@
       register: generated_private_key
       when: not foreman_dns_key.stat.exists
 
+    - name: STEP 7 - Fail when generated private key is missing
+      ansible.builtin.fail:
+        msg: "DNSSEC private key was not generated successfully."
+      when:
+        - not foreman_dns_key.stat.exists
+        - generated_private_key.matched | int == 0
+
     - name: STEP 7 - Read DNS secret
       ansible.builtin.shell: |
         awk '/^Key:/ {print $2}' "{{ generated_private_key.files[0].path }}"
+      args:
+        executable: /bin/bash
       register: generated_dns_secret
       changed_when: false
       no_log: true
       when:
         - not foreman_dns_key.stat.exists
         - generated_private_key.matched | int > 0
+
+    - name: STEP 7 - Fail when DNS secret cannot be extracted
+      ansible.builtin.fail:
+        msg: "Unable to extract the DNSSEC secret from the generated private key."
+      when:
+        - not foreman_dns_key.stat.exists
+        - generated_dns_secret.stdout | default('') | length == 0
 
     - name: STEP 7 - Create Foreman proxy DNS key file
       ansible.builtin.copy:
@@ -697,37 +765,6 @@
       notify: Restart Foreman Proxy
 
     - name: STEP 7 - Apply Foreman Proxy restart
-      ansible.builtin.meta: flush_handlers
-
-    # ===============================================================
-    # DHCP PROXY
-    # ===============================================================
-
-    - name: STEP 7 - Configure Foreman DHCP proxy
-      ansible.builtin.command:
-        argv:
-          - foreman-installer
-          - --scenario
-          - katello
-          - --foreman-proxy-dhcp
-          - "true"
-          - --foreman-proxy-dhcp-managed
-          - "true"
-          - --foreman-proxy-dhcp-server
-          - "{{ foreman_server_name }}"
-          - --foreman-proxy-dhcp-gateway
-          - "{{ dhcp_gateway }}"
-          - --foreman-proxy-dhcp-nameservers
-          - "{{ dns_server }}"
-          - --foreman-proxy-dhcp-config
-          - /etc/dhcp/dhcpd.conf
-          - --foreman-proxy-dhcp-leases
-          - /var/lib/dhcpd/dhcpd.leases
-      environment:
-        PATH: "{{ java_environment_path }}"
-      notify: Restart Foreman Proxy
-
-    - name: STEP 7 - Apply pending Foreman Proxy restart
       ansible.builtin.meta: flush_handlers
 
     # ===============================================================
