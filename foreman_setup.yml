@@ -191,11 +191,13 @@
     - name: STEP 2 - Clean yum metadata after repository creation
       ansible.builtin.command:
         cmd: yum clean all
+        ignore_errors: yes
       changed_when: false
 
     - name: STEP 2 - Create yum cache
       ansible.builtin.command:
         cmd: yum makecache
+        ignore_errors: yes
       changed_when: false
 
     - name: STEP 2 - Install SSH PASS
@@ -425,6 +427,7 @@
     - name: STEP 5.1 - Recreate yum cache
       ansible.builtin.command:
         cmd: yum makecache
+        ignore_errors: yes
       changed_when: false
 
     # ===============================================================
