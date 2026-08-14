@@ -182,17 +182,17 @@
     - name: Fail when OMAPI secret could not be extracted
       ansible.builtin.fail:
         msg: |
-          OMAPI key was found but no secret could be extracted.
+          OMAPI secret extraction failed.
 
-          OMAPI key file:
-          {{ generated_omapi_key_files.files | map(attribute='path') | list | first }}
+          Generated key file:
+          {{ omapi_generated_key_file }}
 
-          Content:
-          {{ generated_omapi_key_content.content | b64decode }}
+          Key file content:
+          {{ omapi_key_content.content | b64decode }}
       when:
         - inventory_hostname == foreman_proxy
-        - not omapi_key_existing.stat.exists
-        - omapi_secret | default('') | length == 0
+        - not omapi_key_stat.stat.exists
+        - omapi_secret_result.stdout | trim | length == 0
 
     - name: Display OMAPI secret extraction status
       ansible.builtin.debug:
