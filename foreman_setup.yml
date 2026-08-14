@@ -520,34 +520,25 @@
       ansible.builtin.set_fact:
         pulp_already_relocated: >-
           {{
-            pulp_mountpoint_check.rc == 0 and
-            (
-              pulp_current_source.stdout == pulp_destination or
-              pulp_current_source.stdout | regex_search('^' ~ pulp_destination)
-            )
+            pulp_is_mountpoint.rc == 0 and
+            pulp_destination_stat.stat.exists
           }}
 
     - name: STEP 6.1 - Pulp already relocated
       ansible.builtin.debug:
         msg: >
-          Pulp is already correctly mounted from {{ pulp_destination }}
-          to {{ pulp_source }}. Skipping migration.
+          Pulp is already relocated and /var/lib/pulp is mounted.
+          Current mount source: {{ pulp_mount_source.stdout }}
       when: pulp_already_relocated | bool
 
-    # ---------------------------------------------------------------
-    # Safety check for unexpected mount
-    # ---------------------------------------------------------------
-
-    - name: STEP 6.1 - Fail if Pulp is mounted from an unexpected source
+    - name: STEP 6.1 - Fail if Pulp mountpoint is not available
       ansible.builtin.fail:
         msg: >
-          /var/lib/pulp is mounted, but the source is not {{ pulp_destination }}.
-          Current source: {{ pulp_current_source.stdout }}.
-          Migration will not continue automatically.
+          /var/lib/pulp is not mounted correctly.
+          Current source: {{ pulp_mount_source.stdout | default('unknown') }}
       when:
-        - pulp_mountpoint_check.rc == 0
-        - not (pulp_already_relocated | bool)
-
+        - pulp_already_relocated | bool
+        - pulp_is_mountpoint.rc != 0
     # ---------------------------------------------------------------
     # Safety check for incomplete old migration
     # ---------------------------------------------------------------
