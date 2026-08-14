@@ -1,76 +1,44 @@
 ---
 - name: Create and Start Nested ESXi VM in VMware Workstation
-  hosts: localhost
+  hosts: all
   connection: local
   gather_facts: false
 
   vars:
-
     # ============================================================
     # ESXi VM CONFIGURATION
     # ============================================================
 
     vm_name: "ESXI-01"
 
-    # ESXi root credentials
-    # These are for the ESXi installation.
-    # Note: The standard ISO installer will still ask for the password
-    # unless you use an automated ESXi kickstart installation.
-    esxi_username: "root"
-    esxi_password: "Root@123"
-
-    # ============================================================
-    # ESXi 8 ISO LOCATION
-    # E:\vmware
-    # ============================================================
-
     esxi_iso: "/cygdrive/e/vmware/VMware-VMvisor-Installer-8.0U1-21495797.x86_64.iso"
 
-    # ============================================================
-    # ESXi VM INSTALLATION LOCATION
-    # D:\ESXI
-    # ============================================================
+    vm_directory: "/cygdrive/d/ESXI"
 
-    vm_path: "/cygdrive/d/ESXI"
+    vmx_file: "{{ vm_directory }}/{{ vm_name }}.vmx"
 
-    vmx_file: "/cygdrive/d/ESXI/ESXI-01.vmx"
+    vm_disk_file: "{{ vm_directory }}/{{ vm_name }}.vmdk"
 
-    vmdk_file: "/cygdrive/d/ESXI/ESXI-01.vmdk"
+    vmrun_path: "/cygdrive/d/VM workstation/vmrun.exe"
 
-    # ============================================================
-    # VM HARDWARE
-    # ============================================================
+    vmware_vdiskmanager_path: ""
 
-    vm_memory_mb: 24568
-
-    vm_cpu_count: 12
-
-    # 2 TB virtual disk
+    memory_mb: 24568
+    num_vcpus: 12
     disk_size_gb: 2000
 
-    # ============================================================
-    # NETWORK
-    # ============================================================
+    network_type: "bridged"
+    network_vnet: "VMnet0"
 
-    # VMware custom network
-    vmnet: "VMnet0"
+    firmware_type: "efi"
 
-    # ============================================================
-    # VMWARE WORKSTATION EXECUTABLE LOCATIONS
-    # ============================================================
-
-    vmrun_candidates:
-      - "/cygdrive/c/Program Files/VMware/VMware Workstation/vmrun.exe"
-      - "/cygdrive/c/Program Files (x86)/VMware/VMware Workstation/vmrun.exe"
-
-    vdiskmanager_candidates:
-      - "/cygdrive/c/Program Files/VMware/VMware Workstation/vmware-vdiskmanager.exe"
-      - "/cygdrive/c/Program Files (x86)/VMware/VMware Workstation/vmware-vdiskmanager.exe"
+    # Nested virtualization
+    enable_nested_vt: true
 
   tasks:
 
     # ============================================================
-    # STEP 1 - DISPLAY CONFIGURATION
+    # DISPLAY CONFIGURATION
     # ============================================================
 
     - name: Display ESXi configuration
@@ -81,17 +49,18 @@
           - "============================================================"
           - "VM Name      : {{ vm_name }}"
           - "ESXi ISO     : {{ esxi_iso }}"
-          - "VM Directory : {{ vm_path }}"
-          - "RAM          : {{ vm_memory_mb }} MB"
-          - "CPU          : {{ vm_cpu_count }} vCPU"
+          - "VM Directory : {{ vm_directory }}"
+          - "VMRUN Path   : {{ vmrun_path }}"
+          - "RAM          : {{ memory_mb }} MB"
+          - "CPU          : {{ num_vcpus }} vCPU"
           - "Disk         : {{ disk_size_gb }} GB"
-          - "Network      : {{ vmnet }}"
-          - "Firmware     : EFI"
-          - "Nested VT    : ENABLED"
+          - "Network      : {{ network_vnet }}"
+          - "Firmware     : {{ firmware_type | upper }}"
+          - "Nested VT    : {{ 'ENABLED' if enable_nested_vt else 'DISABLED' }}"
           - "============================================================"
 
     # ============================================================
-    # STEP 2 - CHECK ESXi ISO
+    # VALIDATE PATHS
     # ============================================================
 
     - name: Check ESXi ISO exists
@@ -107,57 +76,15 @@
           ============================================================
 
           Expected:
-
           {{ esxi_iso }}
 
           ============================================================
       when: not esxi_iso_stat.stat.exists
 
-    # ============================================================
-    # STEP 3 - CHECK D DRIVE
-    # ============================================================
-
-    - name: Check D drive exists
+    - name: Check VMware vmrun.exe exists
       ansible.builtin.stat:
-        path: "/cygdrive/d"
-      register: d_drive_stat
-
-    - name: Fail when D drive does not exist
-      ansible.builtin.fail:
-        msg: |
-          ============================================================
-          D DRIVE NOT FOUND
-          ============================================================
-
-          Expected installation location:
-
-          {{ vm_path }}
-
-          ============================================================
-      when: not d_drive_stat.stat.exists
-
-    # ============================================================
-    # STEP 4 - FIND VMWARE vmrun.exe
-    # ============================================================
-
-    - name: Check VMware vmrun.exe locations
-      ansible.builtin.stat:
-        path: "{{ item }}"
-      loop: "{{ vmrun_candidates }}"
-      register: vmrun_checks
-
-    - name: Set vmrun executable path
-      ansible.builtin.set_fact:
-        vmrun_exe: >-
-          {{
-            (
-              vmrun_checks.results
-              | selectattr('stat.exists', 'equalto', true)
-              | map(attribute='item')
-              | list
-              | first
-            ) | default('')
-          }}
+        path: "{{ vmrun_path }}"
+      register: vmrun_stat
 
     - name: Fail when vmrun.exe is not found
       ansible.builtin.fail:
@@ -166,112 +93,124 @@
           VMWARE WORKSTATION vmrun.exe NOT FOUND
           ============================================================
 
-          Checked:
-
-          /cygdrive/c/Program Files/VMware/VMware Workstation/vmrun.exe
-
-          /cygdrive/c/Program Files (x86)/VMware/VMware Workstation/vmrun.exe
-
-          Run:
-
-          find /cygdrive/c -iname "vmrun.exe" 2>/dev/null
+          Expected:
+          {{ vmrun_path }}
 
           ============================================================
-      when: vmrun_exe | length == 0
+      when: not vmrun_stat.stat.exists
 
-    # ============================================================
-    # STEP 5 - FIND vmware-vdiskmanager.exe
-    # ============================================================
-
-    - name: Check VMware disk manager locations
-      ansible.builtin.stat:
-        path: "{{ item }}"
-      loop: "{{ vdiskmanager_candidates }}"
-      register: vdisk_checks
-
-    - name: Set VMware disk manager executable path
-      ansible.builtin.set_fact:
-        vmware_vdiskmanager_exe: >-
-          {{
-            (
-              vdisk_checks.results
-              | selectattr('stat.exists', 'equalto', true)
-              | map(attribute='item')
-              | list
-              | first
-            ) | default('')
-          }}
-
-    - name: Fail when VMware disk manager is not found
-      ansible.builtin.fail:
-        msg: |
-          ============================================================
-          vmware-vdiskmanager.exe NOT FOUND
-          ============================================================
-
-          Run:
-
-          find /cygdrive/c -iname "vmware-vdiskmanager.exe" 2>/dev/null
-
-          ============================================================
-      when: vmware_vdiskmanager_exe | length == 0
-
-    - name: Display VMware executable paths
+    - name: Display detected VMware vmrun path
       ansible.builtin.debug:
         msg:
-          - "VMware vmrun.exe       : {{ vmrun_exe }}"
-          - "VMware disk manager    : {{ vmware_vdiskmanager_exe }}"
+          - "============================================================"
+          - "VMWARE WORKSTATION DETECTED"
+          - "============================================================"
+          - "vmrun.exe: {{ vmrun_path }}"
+          - "============================================================"
 
     # ============================================================
-    # STEP 6 - CREATE D:\ESXI
+    # CREATE VM DIRECTORY
     # ============================================================
 
-    - name: Create ESXi VM installation directory
+    - name: Create ESXi VM directory
       ansible.builtin.file:
-        path: "{{ vm_path }}"
+        path: "{{ vm_directory }}"
         state: directory
         mode: "0755"
 
     # ============================================================
-    # STEP 7 - CHECK EXISTING VM FILES
+    # CHECK EXISTING VM
     # ============================================================
 
-    - name: Check whether VMX already exists
+    - name: Check whether VMX file already exists
       ansible.builtin.stat:
         path: "{{ vmx_file }}"
       register: vmx_stat
 
-    - name: Check whether VMDK already exists
+    - name: Check whether virtual disk already exists
       ansible.builtin.stat:
-        path: "{{ vmdk_file }}"
-      register: vmdk_stat
+        path: "{{ vm_disk_file }}"
+      register: disk_stat
 
     # ============================================================
-    # STEP 8 - CREATE 2 TB VIRTUAL DISK
+    # FIND vmware-vdiskmanager.exe
+    # ============================================================
+
+    - name: Check common vmware-vdiskmanager.exe locations
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "/cygdrive/d/VM workstation/vmware-vdiskmanager.exe"
+        - "/cygdrive/c/Program Files/VMware/VMware Workstation/vmware-vdiskmanager.exe"
+        - "/cygdrive/c/Program Files (x86)/VMware/VMware Workstation/vmware-vdiskmanager.exe"
+      register: vdiskmanager_check
+      when: not disk_stat.stat.exists
+
+    - name: Set vmware-vdiskmanager path
+      ansible.builtin.set_fact:
+        vmware_vdiskmanager_path: >-
+          {{
+            (
+              vdiskmanager_check.results
+              | selectattr('stat.exists', 'equalto', true)
+              | map(attribute='item')
+              | list
+              | first
+            )
+            | default('')
+          }}
+      when: not disk_stat.stat.exists
+
+    - name: Display vmware-vdiskmanager path
+      ansible.builtin.debug:
+        msg: "vmware-vdiskmanager.exe: {{ vmware_vdiskmanager_path | default('NOT FOUND') }}"
+      when: not disk_stat.stat.exists
+
+    # ============================================================
+    # CREATE VIRTUAL DISK
     # ============================================================
 
     - name: Create ESXi virtual disk
       ansible.builtin.command:
         argv:
-          - "{{ vmware_vdiskmanager_exe }}"
+          - "{{ vmware_vdiskmanager_path }}"
           - "-c"
           - "-s"
           - "{{ disk_size_gb }}GB"
           - "-a"
           - "lsilogic"
           - "-t"
-          - "1"
-          - "{{ vmdk_file }}"
-      register: disk_create
-      when: not vmdk_stat.stat.exists
+          - "0"
+          - "{{ vm_disk_file }}"
+      when:
+        - not disk_stat.stat.exists
+        - vmware_vdiskmanager_path | length > 0
 
-    - name: Display existing disk message
-      ansible.builtin.debug:
-        msg: "Virtual disk already exists. Skipping disk creation."
-      when: vmdk_stat.stat.exists
+    - name: Fail when vmware-vdiskmanager.exe is not found and disk does not exist
+      ansible.builtin.fail:
+        msg: |
+          ============================================================
+          VIRTUAL DISK CANNOT BE CREATED
+          ============================================================
+
+          vmware-vdiskmanager.exe was not found.
+
+          Checked:
+          /cygdrive/d/VM workstation/vmware-vdiskmanager.exe
+          /cygdrive/c/Program Files/VMware/VMware Workstation/vmware-vdiskmanager.exe
+          /cygdrive/c/Program Files (x86)/VMware/VMware Workstation/vmware-vdiskmanager.exe
+
+          Run:
+
+          find /cygdrive/d -iname "vmware-vdiskmanager.exe" 2>/dev/null
+
+          ============================================================
+      when:
+        - not disk_stat.stat.exists
+        - vmware_vdiskmanager_path | length == 0
 
     # ============================================================
-    # STEP 9 - CREATE VMX FILE
+    # CREATE VMX CONFIGURATION
     # ============================================================
 
     - name: Create ESXi VMware VMX configuration
@@ -281,46 +220,39 @@
         content: |
           .encoding = "windows-1252"
           config.version = "8"
+          virtualHW.version = "20"
 
-          # VMware hardware version
-          virtualHW.version = "21"
-
-          # VM Name
           displayName = "{{ vm_name }}"
+          guestOS = "vmkernel7"
 
-          # Guest OS
-          guestOS = "vmkernel8"
+          firmware = "{{ firmware_type }}"
 
-          # ====================================================
-          # CPU
-          # ====================================================
+          memsize = "{{ memory_mb }}"
+          numvcpus = "{{ num_vcpus }}"
 
-          numvcpus = "{{ vm_cpu_count }}"
-          cpuid.coresPerSocket = "{{ vm_cpu_count }}"
+          cpuid.coresPerSocket = "1"
 
-          # ====================================================
-          # MEMORY
-          # ====================================================
-
-          memsize = "{{ vm_memory_mb }}"
-
-          # ====================================================
-          # NESTED VIRTUALIZATION
-          # Required for running VMs inside ESXi
-          # ====================================================
-
-          vhv.enable = "TRUE"
+          vhv.enable = "{{ 'TRUE' if enable_nested_vt else 'FALSE' }}"
           hypervisor.cpuid.v0 = "FALSE"
 
-          # ====================================================
-          # EFI FIRMWARE
-          # ====================================================
+          hpet0.present = "TRUE"
 
-          firmware = "efi"
+          tools.syncTime = "FALSE"
 
-          # ====================================================
-          # ESXi INSTALLER ISO
-          # ====================================================
+          # ========================================================
+          # STORAGE
+          # ========================================================
+
+          scsi0.present = "TRUE"
+          scsi0.virtualDev = "lsilogic"
+
+          scsi0:0.present = "TRUE"
+          scsi0:0.fileName = "{{ vm_disk_file }}"
+          scsi0:0.deviceType = "scsi-hardDisk"
+
+          # ========================================================
+          # ESXi ISO
+          # ========================================================
 
           sata0.present = "TRUE"
 
@@ -329,108 +261,156 @@
           sata0:0.fileName = "{{ esxi_iso }}"
           sata0:0.startConnected = "TRUE"
 
-          # ====================================================
-          # ESXi INSTALLATION DISK
-          # ====================================================
-
-          scsi0.present = "TRUE"
-          scsi0.virtualDev = "lsilogic"
-
-          scsi0:0.present = "TRUE"
-          scsi0:0.fileName = "{{ vm_name }}.vmdk"
-
-          # ====================================================
+          # ========================================================
           # NETWORK
-          # Custom VMware Network: VMnet0
-          # ====================================================
+          # ========================================================
 
           ethernet0.present = "TRUE"
-          ethernet0.connectionType = "custom"
-          ethernet0.vnet = "{{ vmnet }}"
+          ethernet0.connectionType = "{{ network_type }}"
+          ethernet0.virtualDev = "vmxnet3"
           ethernet0.startConnected = "TRUE"
-          ethernet0.virtualDev = "e1000e"
 
-          # ====================================================
+          # ========================================================
+          # BOOT
+          # ========================================================
+
+          bios.bootOrder = "cdrom,hdd"
+
+          # ========================================================
           # USB
-          # ====================================================
+          # ========================================================
 
           usb.present = "TRUE"
+          usb.generic.autoconnect = "FALSE"
 
-          # ====================================================
-          # LOGGING
-          # ====================================================
+          # ========================================================
+          # MISC
+          # ========================================================
 
-          logging = "TRUE"
-          tools.syncTime = "FALSE"
-
-          # Generate VM UUID automatically
           uuid.action = "create"
-      when: not vmx_stat.stat.exists
+      register: vmx_create
 
-    - name: Display existing VMX message
+    - name: Display VMX status
       ansible.builtin.debug:
-        msg: "VMX configuration already exists. Skipping VMX creation."
-      when: vmx_stat.stat.exists
+        msg:
+          - "VMX File: {{ vmx_file }}"
+          - "VMX Status: {{ 'Created/Updated' if vmx_create.changed else 'Already current' }}"
 
     # ============================================================
-    # STEP 10 - CHECK RUNNING VM
+    # VERIFY VM FILES
     # ============================================================
 
-    - name: Get currently running VMware VMs
+    - name: Check VMX file after creation
+      ansible.builtin.stat:
+        path: "{{ vmx_file }}"
+      register: final_vmx_stat
+
+    - name: Check virtual disk after creation
+      ansible.builtin.stat:
+        path: "{{ vm_disk_file }}"
+      register: final_disk_stat
+
+    - name: Fail when VMX file was not created
+      ansible.builtin.fail:
+        msg: "VMX file was not created: {{ vmx_file }}"
+      when: not final_vmx_stat.stat.exists
+
+    - name: Fail when virtual disk was not created
+      ansible.builtin.fail:
+        msg: "Virtual disk was not created: {{ vm_disk_file }}"
+      when: not final_disk_stat.stat.exists
+
+    # ============================================================
+    # CHECK VM POWER STATE
+    # ============================================================
+
+    - name: Get ESXi VM power state
       ansible.builtin.command:
         argv:
-          - "{{ vmrun_exe }}"
+          - "{{ vmrun_path }}"
+          - "-T"
+          - "ws"
           - "list"
-      register: running_vms
+      register: vmrun_list
       changed_when: false
 
-    - name: Display running VMware VMs
+    - name: Display currently running VMware VMs
       ansible.builtin.debug:
-        var: running_vms.stdout_lines
+        var: vmrun_list.stdout_lines
 
     # ============================================================
-    # STEP 11 - START ESXi VM
+    # START ESXi VM
     # ============================================================
 
-    - name: Start ESXi VM in VMware Workstation
+    - name: Start ESXi VM when not already running
       ansible.builtin.command:
         argv:
-          - "{{ vmrun_exe }}"
+          - "{{ vmrun_path }}"
+          - "-T"
+          - "ws"
           - "start"
           - "{{ vmx_file }}"
-          - "gui"
-      when: vmx_file not in running_vms.stdout
+          - "nogui"
+      when: vmx_file not in vmrun_list.stdout
+      register: vm_start
 
-    - name: ESXi VM already running
+    - name: Display VM start result
       ansible.builtin.debug:
-        msg: "ESXi VM is already running: {{ vm_name }}"
-      when: vmx_file in running_vms.stdout
+        msg: "{{ vm_start.stdout | default('ESXi VM is already running') }}"
+
+    - name: Wait for ESXi VM startup
+      ansible.builtin.pause:
+        seconds: 10
 
     # ============================================================
-    # COMPLETED
+    # VERIFY FINAL POWER STATE
     # ============================================================
 
-    - name: Display final result
+    - name: Get final VMware VM list
+      ansible.builtin.command:
+        argv:
+          - "{{ vmrun_path }}"
+          - "-T"
+          - "ws"
+          - "list"
+      register: final_vmrun_list
+      changed_when: false
+
+    - name: Fail when ESXi VM did not start
+      ansible.builtin.fail:
+        msg: |
+          ============================================================
+          ESXi VM FAILED TO START
+          ============================================================
+
+          Expected VMX:
+          {{ vmx_file }}
+
+          Running VMs:
+          {{ final_vmrun_list.stdout }}
+
+          ============================================================
+      when: vmx_file not in final_vmrun_list.stdout
+
+    # ============================================================
+    # FINAL SUMMARY
+    # ============================================================
+
+    - name: Display final ESXi VM summary
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "NESTED ESXi VM CREATED AND STARTED"
+          - "NESTED ESXi VM SUCCESSFULLY STARTED"
           - "============================================================"
-          - ""
           - "VM Name       : {{ vm_name }}"
-          - "ESXi ISO      : E:\\vmware\\VMware-VMvisor-Installer-8.0U1-21495797.x86_64.iso"
-          - "VM Location   : D:\\ESXI"
-          - "VMX File      : D:\\ESXI\\ESXI-01.vmx"
-          - "VMDK File     : D:\\ESXI\\ESXI-01.vmdk"
-          - ""
-          - "RAM           : {{ vm_memory_mb }} MB"
-          - "CPU           : {{ vm_cpu_count }} vCPU"
+          - "VMX File      : {{ vmx_file }}"
+          - "Virtual Disk  : {{ vm_disk_file }}"
+          - "ESXi ISO      : {{ esxi_iso }}"
+          - "VMRUN         : {{ vmrun_path }}"
+          - "RAM           : {{ memory_mb }} MB"
+          - "CPU           : {{ num_vcpus }} vCPU"
           - "Disk          : {{ disk_size_gb }} GB"
-          - "Network       : Custom {{ vmnet }}"
-          - "Firmware      : EFI"
-          - "Nested VT     : ENABLED"
-          - ""
-          - "============================================================"
-          - "VMware Workstation has been instructed to start the VM."
-          - "Complete the ESXi installation in the VMware console."
+          - "Firmware      : {{ firmware_type | upper }}"
+          - "Nested VT     : {{ 'ENABLED' if enable_nested_vt else 'DISABLED' }}"
+          - "Power State   : RUNNING"
           - "============================================================"
