@@ -8,11 +8,7 @@ import pycdlib
 
 
 # ============================================================================
-# CURRENT CUSTOMIZED ISO
-#
-# The original VMware ISO was deleted.
-#
-# We now use the existing customized ISO as the source.
+# CONFIGURATION
 # ============================================================================
 
 SOURCE_ISO = Path(
@@ -23,47 +19,30 @@ OUTPUT_ISO = Path(
     "/cygdrive/e/vmware/ESXi-8.0.1-auto.iso"
 )
 
-# Temporary source backup used while rebuilding the same ISO.
 SOURCE_BACKUP_ISO = Path(
     "/cygdrive/e/vmware/ESXi-8.0.1-auto-source-backup.iso"
 )
-
-
-# ============================================================================
-# EXTRACTED WORKING CONTENT
-# ============================================================================
 
 WORK_ISO_DIR = Path(
     "/cygdrive/d/ESXI/esxi-auto/work/current-iso"
 )
 
 BOOT_CFG = WORK_ISO_DIR / "BOOT.CFG"
-KS_CFG = WORK_ISO_DIR / "KS.CFG"
 
 
 # ============================================================================
-# EXPECTED CONFIGURATION
+# HTTP KICKSTART
 # ============================================================================
+
+KS_URL = (
+    "http://http-server-01.vgs.com/repo/ks.cfg"
+)
 
 EXPECTED_KERNELOPT = (
     "kernelopt=runweasel "
-    "cdromBoot ks=http://http-server-01.vgs.com/repo/ks.cfg"
+    "cdromBoot "
+    f"ks={KS_URL}"
 )
-
-REQUIRED_KS_STRINGS = [
-    "vmaccepteula",
-    "rootpw ",
-    "network --bootproto=static",
-    "--ip=192.168.253.128",
-    "--netmask=255.255.255.0",
-    "--gateway=192.168.253.2",
-    "--nameserver=192.168.253.1",
-    "--hostname=esxi-host-01.vgs.com",
-    "--device=vmnic0",
-    "install --firstdisk --overwritevmfs",
-    "reboot",
-    "%firstboot",
-]
 
 
 # ============================================================================
@@ -118,11 +97,106 @@ def require_file(path, description):
 
 
 # ============================================================================
-# VERIFY BOOT.CFG FROM WORK DIRECTORY
+# VERIFY HTTP KICKSTART
+# ============================================================================
+
+def verify_http_kickstart():
+    """
+    Verify that the HTTP KS.CFG is reachable.
+
+    Uses curl because the user has already confirmed curl is available
+    in the Cygwin environment.
+    """
+
+    import subprocess
+
+    info(
+        "Checking HTTP kickstart URL:\n"
+        f"     {KS_URL}"
+    )
+
+    try:
+        result = subprocess.run(
+            [
+                "curl",
+                "-fsS",
+                KS_URL,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+
+    except FileNotFoundError:
+        fail(
+            "curl was not found.\n\n"
+            "Install/use curl in Cygwin."
+        )
+
+    except subprocess.TimeoutExpired:
+        fail(
+            "HTTP kickstart request timed out:\n\n"
+            f"{KS_URL}"
+        )
+
+    if result.returncode != 0:
+        fail(
+            "HTTP kickstart could not be downloaded.\n\n"
+            f"URL:\n{KS_URL}\n\n"
+            f"curl stderr:\n{result.stderr}"
+        )
+
+    ks_text = result.stdout
+
+    required = [
+        "vmaccepteula",
+        "rootpw",
+        "network --bootproto=static",
+        "--ip=192.168.253.128",
+        "--netmask=255.255.255.0",
+        "--gateway=192.168.253.2",
+        "--nameserver=192.168.253.1",
+        "--hostname=esxi-host-01.vgs.com",
+        "--device=vmnic0",
+        "install --firstdisk --overwritevmfs",
+        "reboot",
+        "%firstboot",
+    ]
+
+    missing = [
+        item
+        for item in required
+        if item not in ks_text
+    ]
+
+    if missing:
+        fail(
+            "HTTP KS.CFG is reachable but is missing required "
+            "configuration:\n\n"
+            + "\n".join(
+                f"- {item}"
+                for item in missing
+            )
+        )
+
+    ok("HTTP KS.CFG is reachable and valid")
+
+    print()
+    print("HTTP KS.CFG configuration:")
+    print("  URL      :", KS_URL)
+    print("  IP       : 192.168.253.128")
+    print("  Netmask  : 255.255.255.0")
+    print("  Gateway  : 192.168.253.2")
+    print("  DNS      : 192.168.253.1")
+    print("  Hostname : esxi-host-01.vgs.com")
+    print("  Device   : vmnic0")
+
+
+# ============================================================================
+# VERIFY BOOT.CFG SOURCE
 # ============================================================================
 
 def verify_boot_cfg_source():
-
     require_file(
         BOOT_CFG,
         "Source BOOT.CFG"
@@ -136,82 +210,36 @@ def verify_boot_cfg_source():
     kernelopt = None
 
     for line in text.splitlines():
-
         if line.startswith("kernelopt="):
             kernelopt = line.strip()
             break
 
     if kernelopt != EXPECTED_KERNELOPT:
-
         fail(
             "BOOT.CFG is not configured correctly.\n\n"
-            f"Expected:\n{EXPECTED_KERNELOPT}\n\n"
-            f"Found:\n{kernelopt}"
+            f"Expected:\n"
+            f"{EXPECTED_KERNELOPT}\n\n"
+            f"Found:\n"
+            f"{kernelopt}"
         )
 
     ok(
-        f"BOOT.CFG kernelopt: {kernelopt}"
+        f"BOOT.CFG kernelopt:\n"
+        f"     {kernelopt}"
     )
 
 
 # ============================================================================
-# VERIFY KS.CFG FROM WORK DIRECTORY
-# ============================================================================
-
-def verify_ks_cfg_source():
-
-    require_file(
-        KS_CFG,
-        "Source KS.CFG"
-    )
-
-    text = KS_CFG.read_text(
-        encoding="utf-8",
-        errors="replace"
-    )
-
-    missing = []
-
-    for required in REQUIRED_KS_STRINGS:
-
-        if required not in text:
-            missing.append(required)
-
-    if missing:
-
-        fail(
-            "KS.CFG is missing required content:\n\n"
-            + "\n".join(
-                f"- {item}"
-                for item in missing
-            )
-        )
-
-    ok("KS.CFG contains required directives")
-
-    print()
-    print("KS.CFG network configuration:")
-    print("  IP       : 192.168.253.128")
-    print("  Netmask  : 255.255.255.0")
-    print("  Gateway  : 192.168.253.2")
-    print("  DNS      : 192.168.253.1")
-    print("  Hostname : esxi-host-01.vgs.com")
-    print("  Device   : vmnic0")
-
-
-# ============================================================================
-# CREATE SAFE SOURCE BACKUP
+# CREATE SOURCE BACKUP
 # ============================================================================
 
 def create_source_backup():
-
     require_file(
         SOURCE_ISO,
         "Current customized ESXi ISO"
     )
 
     if SOURCE_BACKUP_ISO.exists():
-
         info(
             "Removing previous temporary source backup:\n"
             f"     {SOURCE_BACKUP_ISO}"
@@ -231,19 +259,20 @@ def create_source_backup():
 
 
 # ============================================================================
-# BUILD CUSTOMIZED ISO
+# BUILD ISO
 #
-# Important:
+# The ISO already contains all ESXi files and the boot catalog.
 #
-# SOURCE_BACKUP_ISO is opened.
-# OUTPUT_ISO is written.
+# We only replace BOOT.CFG.
 #
-# This avoids trying to read and overwrite the same ISO simultaneously.
+# KS.CFG is NOT added to the ISO because it is now served over HTTP.
 # ============================================================================
 
 def build_custom_iso():
 
-    header("OPENING CURRENT CUSTOMIZED ESXi ISO")
+    header(
+        "OPENING CURRENT CUSTOMIZED ESXi ISO"
+    )
 
     iso = pycdlib.PyCdlib()
 
@@ -258,7 +287,6 @@ def build_custom_iso():
         )
 
         if iso.eltorito_boot_catalog is None:
-
             fail(
                 "Current ISO does not contain "
                 "an El Torito boot catalog."
@@ -269,7 +297,7 @@ def build_custom_iso():
         )
 
         # ------------------------------------------------------------
-        # Remove old output before writing.
+        # Remove old output.
         # ------------------------------------------------------------
 
         if OUTPUT_ISO.exists():
@@ -282,7 +310,7 @@ def build_custom_iso():
             OUTPUT_ISO.unlink()
 
         # ------------------------------------------------------------
-        # Replace BOOT.CFG
+        # Replace BOOT.CFG.
         # ------------------------------------------------------------
 
         try:
@@ -304,6 +332,11 @@ def build_custom_iso():
 
         try:
 
+            iso.add_file(
+                str(BOOT_CFG),
+                iso_path="/BOOT.CFG;1"
+            )
+
             ok(
                 "Modified BOOT.CFG added"
             )
@@ -316,49 +349,12 @@ def build_custom_iso():
             )
 
         # ------------------------------------------------------------
-        # Replace KS.CFG
+        # Write output ISO.
         # ------------------------------------------------------------
 
-        try:
-
-            iso.rm_file(
-                iso_path="/KS.CFG;1"
-            )
-
-            ok(
-                "Existing KS.CFG removed"
-            )
-
-        except Exception:
-
-            warn(
-                "Existing KS.CFG was not found; "
-                "adding it as a new file."
-            )
-
-        try:
-
-            iso.add_file(
-                str(KS_CFG),
-                iso_path="/KS.CFG;1"
-            )
-
-            ok(
-                "Modified KS.CFG added"
-            )
-
-        except Exception as exc:
-
-            fail(
-                "Could not add modified KS.CFG:\n\n"
-                f"{exc}"
-            )
-
-        # ------------------------------------------------------------
-        # Write output ISO
-        # ------------------------------------------------------------
-
-        header("WRITING CUSTOMIZED ISO")
+        header(
+            "WRITING CUSTOMIZED ISO"
+        )
 
         iso.write(
             str(OUTPUT_ISO)
@@ -375,7 +371,7 @@ def build_custom_iso():
 
 
 # ============================================================================
-# EXTRACT FILE FROM ISO FOR VERIFICATION
+# EXTRACT FILE FOR VERIFICATION
 # ============================================================================
 
 def extract_iso_file(iso, iso_path, suffix):
@@ -401,12 +397,14 @@ def extract_iso_file(iso, iso_path, suffix):
 
 
 # ============================================================================
-# VERIFY OUTPUT ISO
+# VERIFY FINAL ISO
 # ============================================================================
 
 def verify_custom_iso():
 
-    header("VERIFYING CUSTOMIZED ISO")
+    header(
+        "VERIFYING CUSTOMIZED ISO"
+    )
 
     require_file(
         OUTPUT_ISO,
@@ -418,18 +416,19 @@ def verify_custom_iso():
     )
 
     if output_size < 100 * 1024 * 1024:
-
         fail(
             "Customized ISO is unexpectedly small.\n\n"
             f"Size: {output_size:,} bytes"
         )
 
     ok(
-        f"Output ISO exists: {OUTPUT_ISO}"
+        f"Output ISO exists:\n"
+        f"     {OUTPUT_ISO}"
     )
 
     ok(
-        f"Output ISO size: {output_size:,} bytes"
+        f"Output ISO size:\n"
+        f"     {output_size:,} bytes"
     )
 
     iso = pycdlib.PyCdlib()
@@ -447,7 +446,6 @@ def verify_custom_iso():
         )
 
         if iso.eltorito_boot_catalog is None:
-
             fail(
                 "Customized ISO does not contain "
                 "an El Torito boot catalog."
@@ -458,7 +456,7 @@ def verify_custom_iso():
         )
 
         # ------------------------------------------------------------
-        # Verify BOOT.CFG
+        # Verify BOOT.CFG.
         # ------------------------------------------------------------
 
         try:
@@ -488,9 +486,7 @@ def verify_custom_iso():
         found_kernelopt = None
 
         for line in boot_cfg_text.splitlines():
-
             if line.startswith("kernelopt="):
-
                 found_kernelopt = line.strip()
                 break
 
@@ -498,8 +494,10 @@ def verify_custom_iso():
 
             fail(
                 "Customized ISO contains incorrect BOOT.CFG.\n\n"
-                f"Expected:\n{EXPECTED_KERNELOPT}\n\n"
-                f"Found:\n{found_kernelopt}"
+                f"Expected:\n"
+                f"{EXPECTED_KERNELOPT}\n\n"
+                f"Found:\n"
+                f"{found_kernelopt}"
             )
 
         ok(
@@ -507,108 +505,30 @@ def verify_custom_iso():
             f"     {found_kernelopt}"
         )
 
-        # ------------------------------------------------------------
-        # Verify KS.CFG
-        # ------------------------------------------------------------
-
-        try:
-
-            ks_cfg_temp = extract_iso_file(
-                iso,
-                "/KS.CFG;1",
-                ".cfg"
-            )
-
-            temp_files.append(
-                ks_cfg_temp
-            )
-
-            ks_cfg_text = ks_cfg_temp.read_text(
-                encoding="utf-8",
-                errors="replace"
-            )
-
-        except Exception as exc:
-
-            fail(
-                "Could not read KS.CFG from customized ISO:\n\n"
-                f"{exc}"
-            )
-
-        missing = []
-
-        for required in REQUIRED_KS_STRINGS:
-
-            if required not in ks_cfg_text:
-                missing.append(required)
-
-        if missing:
-
-            fail(
-                "KS.CFG inside customized ISO is missing:\n\n"
-                + "\n".join(
-                    f"- {item}"
-                    for item in missing
-                )
-            )
-
-        ok(
-            "KS.CFG exists and contains required directives"
-        )
-
-        print()
-        print(
-            "Verified ESXi network configuration:"
-        )
-
-        print(
-            "  IP       : 192.168.253.128"
-        )
-
-        print(
-            "  Netmask  : 255.255.255.0"
-        )
-
-        print(
-            "  Gateway  : 192.168.253.2"
-        )
-
-        print(
-            "  DNS      : 192.168.253.1"
-        )
-
-        print(
-            "  Hostname : esxi-host-01.vgs.com"
-        )
-
-        print(
-            "  Device   : vmnic0"
-        )
-
     finally:
 
         iso.close()
 
         for temp_file in temp_files:
-
             try:
                 temp_file.unlink()
-
             except OSError:
                 pass
 
 
 # ============================================================================
-# DISPLAY ISO SIZE
+# DISPLAY RESULT
 # ============================================================================
 
-def display_iso_size():
+def display_iso_summary():
 
     output_size = (
         OUTPUT_ISO.stat().st_size
     )
 
-    header("ISO SUMMARY")
+    header(
+        "ISO SUMMARY"
+    )
 
     print(
         f"Customized ISO : {OUTPUT_ISO}"
@@ -618,9 +538,55 @@ def display_iso_size():
         f"Size           : {output_size:,} bytes"
     )
 
+    print()
+
+    print(
+        "Kickstart URL:"
+    )
+
+    print(
+        f"  {KS_URL}"
+    )
+
+    print()
+
+    print(
+        "Kernel option:"
+    )
+
+    print(
+        f"  {EXPECTED_KERNELOPT}"
+    )
+
+    print()
+
+    print(
+        "Static network:"
+    )
+
+    print(
+        "  IP       : 192.168.253.128"
+    )
+
+    print(
+        "  Netmask  : 255.255.255.0"
+    )
+
+    print(
+        "  Gateway  : 192.168.253.2"
+    )
+
+    print(
+        "  DNS      : 192.168.253.1"
+    )
+
+    print(
+        "  Hostname : esxi-host-01.vgs.com"
+    )
+
 
 # ============================================================================
-# CLEAN TEMP SOURCE BACKUP
+# CLEANUP
 # ============================================================================
 
 def cleanup_source_backup():
@@ -652,38 +618,39 @@ def cleanup_source_backup():
 def main():
 
     header(
-        "ESXi 8.0U1 UNATTENDED ISO BUILDER"
+        "ESXi 8.0U1 HTTP-KICKSTART ISO BUILDER"
     )
 
     print(
-        f"Current ISO    : {SOURCE_ISO}"
+        f"Current ISO : {SOURCE_ISO}"
     )
 
     print(
-        f"BOOT.CFG       : {BOOT_CFG}"
+        f"BOOT.CFG    : {BOOT_CFG}"
     )
 
     print(
-        f"KS.CFG         : {KS_CFG}"
+        f"Output ISO  : {OUTPUT_ISO}"
     )
 
     print(
-        f"Output ISO     : {OUTPUT_ISO}"
-    )
-
-    print(
-        f"Source Backup  : {SOURCE_BACKUP_ISO}"
+        f"KS URL      : {KS_URL}"
     )
 
     # ------------------------------------------------------------
-    # Validate working files first.
+    # Validate HTTP KS.CFG first.
+    # ------------------------------------------------------------
+
+    verify_http_kickstart()
+
+    # ------------------------------------------------------------
+    # Validate BOOT.CFG.
     # ------------------------------------------------------------
 
     verify_boot_cfg_source()
-    verify_ks_cfg_source()
 
     # ------------------------------------------------------------
-    # Backup existing customized ISO.
+    # Backup current ISO.
     # ------------------------------------------------------------
 
     create_source_backup()
@@ -691,37 +658,39 @@ def main():
     try:
 
         # --------------------------------------------------------
-        # Build
+        # Build.
         # --------------------------------------------------------
 
         build_custom_iso()
 
         # --------------------------------------------------------
-        # Verify
+        # Verify.
         # --------------------------------------------------------
 
         verify_custom_iso()
 
         # --------------------------------------------------------
-        # Display result
+        # Display.
         # --------------------------------------------------------
 
-        display_iso_size()
+        display_iso_summary()
 
-        header("SUCCESS")
-
-        print(
-            "Customized ISO:"
+        header(
+            "SUCCESS"
         )
 
         print(
-            f"  {OUTPUT_ISO}"
+            "The ISO now points to the HTTP kickstart:"
+        )
+
+        print(
+            f"  {KS_URL}"
         )
 
         print()
 
         print(
-            "Kernel option:"
+            "BOOT.CFG:"
         )
 
         print(
@@ -731,33 +700,7 @@ def main():
         print()
 
         print(
-            "Static network:"
-        )
-
-        print(
-            "  IP       : 192.168.253.128"
-        )
-
-        print(
-            "  Netmask  : 255.255.255.0"
-        )
-
-        print(
-            "  Gateway  : 192.168.253.2"
-        )
-
-        print(
-            "  DNS      : 192.168.253.1"
-        )
-
-        print(
-            "  Hostname : esxi-host-01.vgs.com"
-        )
-
-        print()
-
-        print(
-            "ISO rebuild completed successfully."
+            "No KS.CFG is required inside the ISO."
         )
 
     finally:
