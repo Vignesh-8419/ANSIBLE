@@ -11,46 +11,46 @@
 
     vm_name: "ESXI-01"
 
-    vm_dir: "/cygdrive/d/ESXI/{{ vm_name }}"
-    vm_dir_windows: 'D:\ESXI\{{ vm_name }}'
+    vm_dir: "/cygdrive/d/ESXI/ESXI-01"
+    vmx_file: "/cygdrive/d/ESXI/ESXI-01/ESXI-01.vmx"
+    vmdk_file: "/cygdrive/d/ESXI/ESXI-01/ESXI-01.vmdk"
+    vmware_log: "/cygdrive/d/ESXI/ESXI-01/vmware.log"
 
-    vmx_file: "{{ vm_dir }}/{{ vm_name }}.vmx"
-    vmx_file_windows: 'D:\ESXI\{{ vm_name }}\{{ vm_name }}.vmx'
+    # Windows paths required inside VMware commands/VMX
+    vmx_file_windows: 'D:\ESXI\ESXI-01\ESXI-01.vmx'
+    vmdk_file_windows: 'D:\ESXI\ESXI-01\ESXI-01.vmdk'
 
-    vmdk_file: "{{ vm_dir }}/{{ vm_name }}.vmdk"
-    vmdk_file_windows: 'D:\ESXI\{{ vm_name }}\{{ vm_name }}.vmdk'
+    # VMware Workstation paths
+    vmrun_path: "/cygdrive/d/VM workstation/vmrun.exe"
+    vdiskmanager_path: "/cygdrive/d/VM workstation/vmware-vdiskmanager.exe"
+
+    vmrun_path_windows: 'D:\VM workstation\vmrun.exe'
+    vdiskmanager_path_windows: 'D:\VM workstation\vmware-vdiskmanager.exe'
 
     # ESXi ISO
     esxi_iso: "/cygdrive/e/vmware/VMware-VMvisor-Installer-8.0U1-21495797.x86_64.iso"
     esxi_iso_windows: 'E:\vmware\VMware-VMvisor-Installer-8.0U1-21495797.x86_64.iso'
 
-    # VMware Workstation executables
-    vmware_dir: "/cygdrive/d/VM workstation"
+    # ============================================================
+    # VM RESOURCES
+    # ============================================================
 
-    vmrun_path: "/cygdrive/d/VM workstation/vmrun.exe"
-    vdiskmanager_path: "/cygdrive/d/VM workstation/vmware-vdiskmanager.exe"
+    memory_mb: 24568
+    num_cpus: 12
 
-    # VM resources
-    vm_memory_mb: 24568
-    vm_cpu: 12
-    vm_disk_size: "2000GB"
+    # Disk size in GB
+    disk_size_gb: 2000
 
-    # VMware virtual hardware compatibility
+    # VMware hardware version
+    # Your installed VMware build:
+    # vmrun 1.17.0 build-20089737
     #
-    # Version 19 is used instead of 20 because the installed
-    # VMware build previously reported:
-    # "Unable to load future VM version"
-    #
+    # Version 19 successfully passes the old HW-version error.
     virtual_hw_version: "19"
 
-    # Networking
-    vm_network: "VMnet0"
-
-    # ============================================================
-    # FILE LOCATIONS
-    # ============================================================
-
-    vmware_log: "{{ vm_dir }}/vmware.log"
+    # Network
+    network_type: "bridged"
+    network_vnet: "VMnet0"
 
   tasks:
 
@@ -70,13 +70,17 @@
           - "VMX File      : {{ vmx_file }}"
           - "VMRUN Path    : {{ vmrun_path }}"
           - "VDISK Path    : {{ vdiskmanager_path }}"
-          - "RAM           : {{ vm_memory_mb }} MB"
-          - "CPU           : {{ vm_cpu }} vCPU"
-          - "Disk          : {{ vm_disk_size }}"
-          - "Network       : {{ vm_network }}"
+          - "RAM           : {{ memory_mb }} MB"
+          - "CPU           : {{ num_cpus }} vCPU"
+          - "Disk          : {{ disk_size_gb }}GB"
+          - "Network       : {{ network_vnet }}"
           - "Firmware      : EFI"
           - "Hardware Ver  : {{ virtual_hw_version }}"
           - "Nested VT     : ENABLED"
+          - "USB xHCI      : DISABLED"
+          - "Sound         : DISABLED"
+          - "Printer       : DISABLED"
+          - "Floppy        : DISABLED"
           - "============================================================"
 
     # ============================================================
@@ -95,10 +99,11 @@
           ESXi ISO NOT FOUND
           ============================================================
 
-          Expected:
+          Expected ISO:
+
           {{ esxi_iso }}
 
-          Update esxi_iso in the playbook.
+          Please correct esxi_iso in the playbook.
           ============================================================
       when: not esxi_iso_stat.stat.exists
 
@@ -111,11 +116,14 @@
       ansible.builtin.fail:
         msg: |
           ============================================================
-          VMWARE WORKSTATION vmrun.exe NOT FOUND
+          VMRUN.EXE NOT FOUND
           ============================================================
 
           Expected:
+
           {{ vmrun_path }}
+
+          Please correct vmrun_path.
           ============================================================
       when: not vmrun_stat.stat.exists
 
@@ -128,11 +136,14 @@
       ansible.builtin.fail:
         msg: |
           ============================================================
-          VMWARE VDISKMANAGER NOT FOUND
+          VMWARE-VDISKMANAGER.EXE NOT FOUND
           ============================================================
 
           Expected:
+
           {{ vdiskmanager_path }}
+
+          Please correct vdiskmanager_path.
           ============================================================
       when: not vdiskmanager_stat.stat.exists
 
@@ -157,7 +168,7 @@
         mode: "0755"
 
     # ============================================================
-    # CHECK EXISTING VM FILES
+    # CHECK EXISTING VM STATE
     # ============================================================
 
     - name: Check whether VMX file already exists
@@ -170,22 +181,18 @@
         path: "{{ vmdk_file }}"
       register: vmdk_stat
 
-    # ============================================================
-    # STOP VM IF ALREADY RUNNING
-    # ============================================================
-
-    - name: Check whether VM is running
+    - name: Get running VMware virtual machines
       ansible.builtin.command:
         argv:
           - "{{ vmrun_path }}"
           - "list"
-      register: vmrun_list
+      register: vmrun_list_before
       changed_when: false
       failed_when: false
 
     - name: Set ESXi VM running status
       ansible.builtin.set_fact:
-        esxi_vm_running: "{{ vmx_file_windows in vmrun_list.stdout }}"
+        esxi_vm_running: "{{ vmx_file_windows in vmrun_list_before.stdout }}"
 
     - name: Stop existing ESXi VM before configuration
       ansible.builtin.command:
@@ -193,19 +200,19 @@
           - "{{ vmrun_path }}"
           - "stop"
           - "{{ vmx_file_windows }}"
-          - "soft"
+          - "hard"
       when: esxi_vm_running | bool
-      register: vm_stop
+      register: stop_vm
       failed_when: false
-      changed_when: vm_stop.rc == 0
+      changed_when: true
 
     - name: Wait after stopping ESXi VM
       ansible.builtin.pause:
-        seconds: 5
+        seconds: 3
       when: esxi_vm_running | bool
 
     # ============================================================
-    # REMOVE OLD VMWARE STATE AND LOCK FILES
+    # REMOVE STALE VMWARE LOCKS
     # ============================================================
 
     - name: Find stale VMware lock directories
@@ -220,6 +227,7 @@
         path: "{{ item.path }}"
         state: absent
       loop: "{{ stale_lock_dirs.files }}"
+      when: stale_lock_dirs.matched | int > 0
 
     - name: Find stale VMware state files
       ansible.builtin.find:
@@ -227,9 +235,10 @@
         patterns:
           - "*.vmem"
           - "*.vmss"
-          - "*.vmx.lck"
-          - "*.vmdk.lck"
-        file_type: file
+          - "*.vmem.lck"
+          - "*.vmss.lck"
+      file_type: any
+      recurse: false
       register: stale_state_files
 
     - name: Remove stale VMware state files
@@ -237,6 +246,7 @@
         path: "{{ item.path }}"
         state: absent
       loop: "{{ stale_state_files.files }}"
+      when: stale_state_files.matched | int > 0
 
     # ============================================================
     # CREATE VIRTUAL DISK
@@ -248,7 +258,7 @@
           - "{{ vdiskmanager_path }}"
           - "-c"
           - "-s"
-          - "{{ vm_disk_size }}"
+          - "{{ disk_size_gb }}GB"
           - "-a"
           - "lsilogic"
           - "-t"
@@ -259,10 +269,13 @@
 
     - name: Display virtual disk creation result
       ansible.builtin.debug:
-        msg: "{{ create_disk.stdout_lines | default(['Virtual disk already exists']) }}"
+        var: create_disk.stdout_lines
+      when:
+        - create_disk is defined
+        - create_disk.stdout_lines is defined
 
     # ============================================================
-    # CREATE / UPDATE VMX
+    # CREATE VMX CONFIGURATION
     # ============================================================
 
     - name: Create ESXi VMware VMX configuration
@@ -270,62 +283,119 @@
         dest: "{{ vmx_file }}"
         mode: "0644"
         content: |
-          .encoding = "windows-1252"
+          # ==========================================================
+          # VMware Workstation Nested ESXi
+          # ==========================================================
 
           config.version = "8"
           virtualHW.version = "{{ virtual_hw_version }}"
-
-          displayName = "{{ vm_name }}"
           guestOS = "vmkernel7"
 
-          firmware = "efi"
+          displayName = "{{ vm_name }}"
 
-          memsize = "{{ vm_memory_mb }}"
-          numvcpus = "{{ vm_cpu }}"
-          cpuid.coresPerSocket = "{{ vm_cpu }}"
+          # ==========================================================
+          # CPU / MEMORY
+          # ==========================================================
 
+          memsize = "{{ memory_mb }}"
+          numvcpus = "{{ num_cpus }}"
+          cpuid.coresPerSocket = "{{ num_cpus }}"
+
+          # Enable nested virtualization
           vhv.enable = "TRUE"
+
+          # Required for nested ESXi
           hypervisor.cpuid.v0 = "FALSE"
 
-          monitor.virtual_exec = "hardware"
-          monitor.virtual_mmu = "hardware"
+          # ==========================================================
+          # FIRMWARE
+          # ==========================================================
+
+          firmware = "efi"
+          efi.secureBoot.enabled = "FALSE"
+
+          # ==========================================================
+          # DISK
+          # ==========================================================
 
           scsi0.present = "TRUE"
           scsi0.virtualDev = "lsilogic"
 
           scsi0:0.present = "TRUE"
-          scsi0:0.fileName = "{{ vm_name }}.vmdk"
+          scsi0:0.fileName = "{{ vmdk_file_windows }}"
           scsi0:0.deviceType = "disk"
+
+          # ==========================================================
+          # ESXi INSTALLATION ISO
+          # ==========================================================
 
           ide1:0.present = "TRUE"
           ide1:0.deviceType = "cdrom-image"
           ide1:0.fileName = "{{ esxi_iso_windows }}"
           ide1:0.startConnected = "TRUE"
 
+          # ==========================================================
+          # NETWORK
+          # ==========================================================
+
           ethernet0.present = "TRUE"
-          ethernet0.connectionType = "custom"
-          ethernet0.vnet = "{{ vm_network }}"
+          ethernet0.connectionType = "{{ network_type }}"
+          ethernet0.vnet = "{{ network_vnet }}"
+          ethernet0.virtualDev = "e1000e"
           ethernet0.startConnected = "TRUE"
 
-          usb.present = "TRUE"
-          usb_xhci.present = "TRUE"
+          # ==========================================================
+          # USB
+          #
+          # IMPORTANT:
+          # Completely disabled because VMware log reported:
+          #
+          # No PCIe slot available for usb_xhci
+          # PCIXHCI: Failed to register xHCI PCIe device
+          # ==========================================================
 
-          powerType.powerOn = "soft"
-          powerType.powerOff = "soft"
-          powerType.reset = "soft"
+          usb.present = "FALSE"
+          usb_xhci.present = "FALSE"
 
-          nvram = "{{ vm_name }}.nvram"
+          # ==========================================================
+          # DISABLE UNNECESSARY DEVICES
+          # ==========================================================
 
-          uuid.action = "create"
+          sound.present = "FALSE"
+          printer0.present = "FALSE"
 
-          tools.syncTime = "FALSE"
+          floppy0.present = "FALSE"
+          floppy1.present = "FALSE"
 
-          isolation.tools.copy.disable = "FALSE"
-          isolation.tools.paste.disable = "FALSE"
-      register: vmx_write
+          parallel0.present = "FALSE"
+          serial0.present = "FALSE"
+
+          # ==========================================================
+          # DISPLAY
+          # ==========================================================
+
+          svga.present = "TRUE"
+          svga.vramSize = "134217728"
+          mks.enable3d = "FALSE"
+
+          # ==========================================================
+          # VMWARE OPTIONS
+          # ==========================================================
+
+          tools.upgrade.policy = "manual"
+
+          # Avoid automatic suspend state
+          checkpoint.vmState = ""
+
+          # ==========================================================
+          # PERFORMANCE
+          # ==========================================================
+
+          mainMem.useNamedFile = "FALSE"
+          MemTrimRate = "0"
 
     # ============================================================
-    # VERIFY VMX CONFIGURATION
+    # VERIFY VMX
     # ============================================================
 
     - name: Read VMX hardware version
@@ -346,6 +416,16 @@
       register: vmx_guest_os
       changed_when: false
 
+    - name: Read VMX USB configuration
+      ansible.builtin.command:
+        argv:
+          - "grep"
+          - "-E"
+          - "^usb|^usb_xhci"
+          - "{{ vmx_file }}"
+      register: vmx_usb
+      changed_when: false
+
     - name: Display verified VMX configuration
       ansible.builtin.debug:
         msg:
@@ -354,6 +434,7 @@
           - "============================================================"
           - "{{ vmx_hw_version.stdout }}"
           - "{{ vmx_guest_os.stdout }}"
+          - "{{ vmx_usb.stdout_lines | join(' | ') }}"
           - "============================================================"
 
     - name: Fail if VMX hardware version is incorrect
@@ -362,14 +443,16 @@
           VMX hardware version verification failed.
 
           Expected:
+
           virtualHW.version = "{{ virtual_hw_version }}"
 
-          Found:
+          Actual:
+
           {{ vmx_hw_version.stdout }}
-      when: ('virtualHW.version = "' ~ virtual_hw_version ~ '"') not in vmx_hw_version.stdout
+      when: ('"' ~ virtual_hw_version ~ '"') not in vmx_hw_version.stdout
 
     # ============================================================
-    # CHECK VMWARE COMPATIBILITY BEFORE STARTING
+    # DISPLAY VMWARE VERSION
     # ============================================================
 
     - name: Display VMware vmrun version information
@@ -377,16 +460,16 @@
         argv:
           - "{{ vmrun_path }}"
           - "-h"
-      register: vmrun_help
+      register: vmrun_info
       changed_when: false
       failed_when: false
 
     - name: Display VMware information
       ansible.builtin.debug:
-        msg: "{{ vmrun_help.stdout_lines[0:10] | default([]) }}"
+        msg: "{{ vmrun_info.stdout_lines + vmrun_info.stderr_lines }}"
 
     # ============================================================
-    # START NESTED ESXi VM
+    # START ESXi VM
     # ============================================================
 
     - name: Start Nested ESXi VM
@@ -396,24 +479,20 @@
           - "start"
           - "{{ vmx_file_windows }}"
           - "nogui"
-      register: vm_start
-      changed_when: vm_start.rc == 0
+      register: start_vm
+      changed_when: start_vm.rc == 0
       failed_when: false
-
-    # ============================================================
-    # WAIT FOR VMWARE TO INITIALIZE
-    # ============================================================
 
     - name: Wait for VMware startup processing
       ansible.builtin.pause:
         seconds: 10
-      when: vm_start.rc == 0
+      when: start_vm.rc == 0
 
     # ============================================================
-    # VERIFY VM RUNNING STATUS
+    # CHECK FINAL VM STATE
     # ============================================================
 
-    - name: Get running VMware virtual machines
+    - name: Get running VMware virtual machines after start
       ansible.builtin.command:
         argv:
           - "{{ vmrun_path }}"
@@ -424,47 +503,42 @@
 
     - name: Set final ESXi VM running status
       ansible.builtin.set_fact:
-        esxi_vm_running_after: "{{ vmx_file_windows in vmrun_list_after.stdout }}"
+        esxi_vm_running_final: "{{ vmx_file_windows in vmrun_list_after.stdout }}"
 
     # ============================================================
-    # GET VMWARE LOG ON FAILURE
+    # READ VMWARE LOG
     # ============================================================
 
     - name: Check VMware log exists
       ansible.builtin.stat:
         path: "{{ vmware_log }}"
       register: vmware_log_stat
-      when: not esxi_vm_running_after | bool
 
-    - name: Read last 100 lines of VMware log
+    - name: Read last 150 lines of VMware log
       ansible.builtin.command:
         argv:
           - "tail"
-          - "-100"
+          - "-150"
           - "{{ vmware_log }}"
-      register: vmware_log_output
+      register: vmware_log_tail
       changed_when: false
       failed_when: false
-      when:
-        - not esxi_vm_running_after | bool
-        - vmware_log_stat.stat.exists
+      when: vmware_log_stat.stat.exists
 
     - name: Extract important VMware errors
-      ansible.builtin.shell: |
-        grep -iE \
-        "error|failed|fail|cancel|future VM version|hardware version|vt-x|amd-v|hyper-v|virtualization|module" \
-        "{{ vmware_log }}" | tail -50
-      args:
-        executable: /bin/bash
-      register: vmware_errors
+      ansible.builtin.command:
+        argv:
+          - "grep"
+          - "-iE"
+          - "No PCIe slot|usb_xhci|power on failed|Failed to start|Error|hardware version|VT-x|AMD-V|Hyper-V|virtualization"
+          - "{{ vmware_log }}"
+      register: vmware_log_errors
       changed_when: false
       failed_when: false
-      when:
-        - not esxi_vm_running_after | bool
-        - vmware_log_stat.stat.exists
+      when: vmware_log_stat.stat.exists
 
     # ============================================================
-    # FAIL WITH FULL TROUBLESHOOTING INFORMATION
+    # FAIL ONLY IF VM DID NOT START
     # ============================================================
 
     - name: Fail with VMware troubleshooting information
@@ -475,74 +549,61 @@
           ============================================================
 
           VMX:
+
           {{ vmx_file_windows }}
 
           VMware hardware version:
+
           {{ vmx_hw_version.stdout }}
 
+          USB configuration:
+
+          {{ vmx_usb.stdout }}
+
           vmrun return code:
-          {{ vm_start.rc }}
+
+          {{ start_vm.rc }}
 
           vmrun output:
-          {{ vm_start.stdout | default('No stdout') }}
 
-          {{ vm_start.stderr | default('No stderr') }}
+          {{ start_vm.stdout }}
+
+          {{ start_vm.stderr }}
 
           ------------------------------------------------------------
           IMPORTANT VMWARE LOG ERRORS
           ------------------------------------------------------------
 
-          {{ vmware_errors.stdout | default('No matching errors found') }}
+          {{ vmware_log_errors.stdout | default('No matching errors found.') }}
 
           ------------------------------------------------------------
           LAST VMWARE LOG ENTRIES
           ------------------------------------------------------------
 
-          {{ vmware_log_output.stdout | default('VMware log was not available') }}
+          {{ vmware_log_tail.stdout | default('VMware log not found.') }}
 
           ============================================================
-          NEXT ACTION
           ============================================================
-
-          If the log contains:
-
-          "The virtual machine is using a hardware version that is not
-          supported by this version of VMware Workstation"
-
-          then change:
-
-          virtual_hw_version
-
-          in this playbook to a version supported by your installed
-          VMware Workstation.
-
-          Current configured version:
-          {{ virtual_hw_version }}
-
-          ============================================================
-      when: not esxi_vm_running_after | bool
+      when: not (esxi_vm_running_final | bool)
 
     # ============================================================
-    # FINAL SUCCESS SUMMARY
+    # SUCCESS
     # ============================================================
 
-    - name: Display successful Nested ESXi VM summary
+    - name: Display ESXi VM success information
       ansible.builtin.debug:
         msg:
           - "============================================================"
           - "NESTED ESXi VM STARTED SUCCESSFULLY"
           - "============================================================"
-          - "VM Name       : {{ vm_name }}"
-          - "VMX           : {{ vmx_file_windows }}"
-          - "Virtual Disk  : {{ vmdk_file_windows }}"
-          - "ESXi ISO      : {{ esxi_iso_windows }}"
-          - "Hardware Ver  : {{ virtual_hw_version }}"
-          - "RAM           : {{ vm_memory_mb }} MB"
-          - "CPU           : {{ vm_cpu }} vCPU"
-          - "Disk          : {{ vm_disk_size }}"
-          - "Network       : {{ vm_network }}"
-          - "Firmware      : EFI"
-          - "Nested VT     : ENABLED"
-          - "Status        : RUNNING"
+          - "VM Name : {{ vm_name }}"
+          - "VMX     : {{ vmx_file_windows }}"
+          - "RAM     : {{ memory_mb }} MB"
+          - "CPU     : {{ num_cpus }} vCPU"
+          - "Disk    : {{ disk_size_gb }}GB"
+          - "Network : {{ network_vnet }}"
+          - "Firmware: EFI"
+          - "Nested VT: ENABLED"
+          - "USB/xHCI: DISABLED"
           - "============================================================"
-      when: esxi_vm_running_after | bool
+      when: esxi_vm_running_final | bool
