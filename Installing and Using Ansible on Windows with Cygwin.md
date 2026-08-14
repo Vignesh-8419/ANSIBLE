@@ -3008,7 +3008,8 @@ Run your foreman_setup.yml from ~/ANSIBLE like this:
 ```bash
 cd ~/ANSIBLE
 
-ansible-playbook -i centos-07-servers_inventory.yml foreman_setup.yml --limit cent-07-01.vgs.com --ask-pass --ask-become-pass
+ansible-playbook -i centos-07-servers_inventory.yml foreman_setup.yml --limit cent-07-01.vgs.com -e "ansible_python_interpreter=/usr/bin/python3" -u admin
+
 ```
 
 # No Existing Script Changes Required
