@@ -609,82 +609,112 @@
         state: present
         disable_gpg_check: true
 
-    # ---------------------------------------------------------------
-    # CONFIGURE TFTP
-    # ---------------------------------------------------------------
-
+    # ==============================================================================
+    # STEP 7 - Configure Foreman Proxy TFTP + DNS
+    # ==============================================================================
+    
     - name: STEP 7 - Ensure TFTP root exists
-      ansible.builtin.file:
+      file:
         path: "{{ tftp_root }}"
         state: directory
         owner: foreman-proxy
-        group: root
-        mode: "0755"
-
+        group: foreman-proxy
+        mode: '0755'
+    
     - name: STEP 7 - Configure Foreman TFTP proxy
-      ansible.builtin.command:
-        cmd: >
-          foreman-installer --scenario katello
-          --foreman-proxy-tftp true
-          --foreman-proxy-tftp-managed true
-          --foreman-proxy-tftp-root {{ tftp_root }}
-          --foreman-proxy-tftp-servername {{ foreman_server_name }}
-      environment:
-        PATH: "{{ java_environment_path }}"
-
-    # ---------------------------------------------------------------
-    # CONFIGURE DNS
-    # ---------------------------------------------------------------
-
+      lineinfile:
+        path: /etc/foreman-proxy/settings.d/tftp.yml
+        regexp: '^:tftproot:'
+        line: ":tftproot: {{ tftp_root }}"
+        create: yes
+      notify: Restart Foreman Proxy
+    
+    # ------------------------------------------------------------------------------
+    # FIX: Install dnssec-keygen
+    # ------------------------------------------------------------------------------
+    
+    - name: STEP 7 - Install BIND utilities required for dnssec-keygen
+      yum:
+        name:
+          - bind-utils
+          - bind
+        state: present
+    
+    - name: STEP 7 - Verify dnssec-keygen is available
+      command: which dnssec-keygen
+      register: dnssec_keygen_check
+      changed_when: false
+    
+    - name: STEP 7 - Display dnssec-keygen path
+      debug:
+        msg: "dnssec-keygen found at {{ dnssec_keygen_check.stdout }}"
+    
+    # ------------------------------------------------------------------------------
+    # DNSSEC KEY
+    # ------------------------------------------------------------------------------
+    
     - name: STEP 7 - Check if Foreman proxy DNS key already exists
-      ansible.builtin.stat:
-        path: /etc/foreman-proxy/dns.key
-      register: foreman_proxy_dns_key
-
+      stat:
+        path: /etc/foreman-proxy/foreman-proxy.key
+      register: foreman_dns_key
+    
     - name: STEP 7 - Generate DNSSEC key when missing
-      ansible.builtin.command:
-        cmd: dnssec-keygen -a HMAC-SHA512 -b 512 -n USER foreman-proxy
-      args:
-        chdir: /root
-      when: not foreman_proxy_dns_key.stat.exists
-
-    - name: STEP 7 - Find generated private DNSSEC key
-      ansible.builtin.find:
-        paths: /root
-        patterns: "Kforeman-proxy*.private"
+      command: >
+        dnssec-keygen
+        -a HMAC-SHA512
+        -b 512
+        -n USER
+        -K /etc/foreman-proxy
+        foreman-proxy
+      register: dnssec_keygen_result
+      when: not foreman_dns_key.stat.exists
+      changed_when: true
+    
+    - name: STEP 7 - Find generated private DNS key
+      find:
+        paths: /etc/foreman-proxy
+        patterns: "Kforeman-proxy.+*.private"
         file_type: file
-      register: generated_dns_keys
-      when: not foreman_proxy_dns_key.stat.exists
-
-    - name: STEP 7 - Fail if DNSSEC key was not generated
-      ansible.builtin.fail:
-        msg: "DNSSEC private key was not generated."
+      register: generated_private_key
+      when: not foreman_dns_key.stat.exists
+    
+    - name: STEP 7 - Read generated private DNS key
+      shell: |
+        awk '/^Key:/ {print $2}' \
+        "{{ generated_private_key.files[0].path }}"
+      register: generated_dns_secret
       when:
-        - not foreman_proxy_dns_key.stat.exists
-        - generated_dns_keys.matched | int == 0
-
-    - name: STEP 7 - Copy DNSSEC key to Foreman proxy
-      ansible.builtin.copy:
-        src: "{{ generated_dns_keys.files[0].path }}"
-        dest: /etc/foreman-proxy/dns.key
-        remote_src: true
+        - not foreman_dns_key.stat.exists
+        - generated_private_key.matched | int > 0
+      changed_when: false
+      no_log: true
+    
+    - name: STEP 7 - Create Foreman proxy DNS key file
+      copy:
+        dest: /etc/foreman-proxy/foreman-proxy.key
+        content: |
+          key "foreman-proxy" {
+            algorithm hmac-sha512;
+            secret "{{ generated_dns_secret.stdout }}";
+          };
         owner: foreman-proxy
         group: foreman-proxy
-        mode: "0600"
-      when: not foreman_proxy_dns_key.stat.exists
-
-    - name: STEP 7 - Remove original generated DNSSEC key
-      ansible.builtin.file:
-        path: "{{ generated_dns_keys.files[0].path }}"
-        state: absent
-      when: not foreman_proxy_dns_key.stat.exists
-
-    - name: STEP 7 - Ensure DNS key permissions
-      ansible.builtin.file:
-        path: /etc/foreman-proxy/dns.key
+        mode: '0600'
+      when:
+        - not foreman_dns_key.stat.exists
+        - generated_dns_secret is defined
+        - generated_dns_secret.stdout | length > 0
+      no_log: true
+      notify: Restart Foreman Proxy
+    
+    - name: STEP 7 - Ensure DNS key ownership is correct
+      file:
+        path: /etc/foreman-proxy/foreman-proxy.key
         owner: foreman-proxy
         group: foreman-proxy
-        mode: "0600"
+        mode: '0600'
+      when: foreman_dns_key.stat.exists or generated_dns_secret is defined
+      notify: Restart Foreman Proxy
 
     - name: STEP 7 - Configure Foreman DNS proxy
       ansible.builtin.command:
