@@ -1,101 +1,93 @@
 ---
 # ==============================================================================
-# Foreman Smart Proxy Installation, Verification and Registration
+# Foreman Smart Proxy Installation, Configuration, Registration and Verification
 # ==============================================================================
 #
 # Run:
 # ansible-playbook -i inventory.ini foreman_smart_proxy.yml
 #
+# Hosts:
+#   Foreman Server : cent-07-01.vgs.com
+#   Smart Proxy    : cent-07-02.vgs.com
+#
 # This playbook:
-#   1. Installs/configures Smart Proxy on the proxy host
-#   2. Starts and verifies foreman-proxy
-#   3. Checks the Smart Proxy HTTPS API
-#   4. Verifies the proxy registration from the Foreman server
-#   5. Uses explicit Hammer credentials
+#   1. Runs against hosts: all
+#   2. Verifies foreman-proxy package
+#   3. Starts and enables foreman-proxy
+#   4. Verifies Smart Proxy HTTPS API
+#   5. Verifies Hammer authentication
+#   6. Checks whether Smart Proxy is registered in Foreman
+#   7. Registers Smart Proxy if missing
+#   8. Verifies registration again
+#   9. Displays final summary
 #
 # ==============================================================================
 
+
 # ==============================================================================
-# PLAY 1 - CONFIGURE SMART PROXY
+# PLAY 1 - VERIFY AND START SMART PROXY SERVICE
 # ==============================================================================
 
-- name: Install and configure Foreman Smart Proxy
+- name: Configure and verify Foreman Smart Proxy
   hosts: all
   become: true
   gather_facts: true
 
   vars:
-    # --------------------------------------------------------------------------
-    # FOREMAN SERVER
-    # --------------------------------------------------------------------------
     foreman_server: "cent-07-01.vgs.com"
-
-    # --------------------------------------------------------------------------
-    # SMART PROXY
-    # --------------------------------------------------------------------------
     smart_proxy_server: "cent-07-02.vgs.com"
-
-    # --------------------------------------------------------------------------
-    # ORGANIZATION
-    # --------------------------------------------------------------------------
-    foreman_organization: "VGS"
-
-    # --------------------------------------------------------------------------
-    # HAMMER AUTHENTICATION
-    # --------------------------------------------------------------------------
-    hammer_username: "admin"
-    hammer_password: "zqs977dXzqfEvTML"
-
-    # --------------------------------------------------------------------------
-    # SMART PROXY PORT
-    # --------------------------------------------------------------------------
     smart_proxy_port: "9090"
 
   tasks:
-
-    # ==========================================================================
-    # IDENTIFY HOST
-    # ==========================================================================
 
     - name: Display current host
       ansible.builtin.debug:
         msg: "Processing host: {{ inventory_hostname }}"
 
+    # --------------------------------------------------------------------------
+    # Skip Foreman/non-proxy hosts
+    # --------------------------------------------------------------------------
+
     - name: Skip non-Smart-Proxy hosts
       ansible.builtin.debug:
-        msg: "Skipping Smart Proxy configuration on {{ inventory_hostname }}"
+        msg: "Skipping Smart Proxy service configuration on {{ inventory_hostname }}"
       when: inventory_hostname != smart_proxy_server
 
-    # ==========================================================================
-    # VERIFY FOREMAN PROXY PACKAGE
-    # ==========================================================================
+    # --------------------------------------------------------------------------
+    # Verify package
+    # --------------------------------------------------------------------------
 
-    - name: Check if Foreman Proxy package is installed
+    - name: Gather installed package facts
       ansible.builtin.package_facts:
         manager: auto
       when: inventory_hostname == smart_proxy_server
 
-    - name: Display Foreman Proxy package status
-      ansible.builtin.debug:
-        msg: >-
-          Foreman Proxy package installed:
-          {{ 'foreman-proxy' in ansible_facts.packages }}
+    - name: Verify Foreman Proxy package is installed
+      ansible.builtin.assert:
+        that:
+          - "'foreman-proxy' in ansible_facts.packages"
+        fail_msg: >-
+          foreman-proxy package is NOT installed on {{ inventory_hostname }}.
+          Install/configure the Smart Proxy before running verification.
+        success_msg: >-
+          foreman-proxy package is installed on {{ inventory_hostname }}.
       when: inventory_hostname == smart_proxy_server
 
-    # ==========================================================================
-    # ENABLE FOREMAN PROXY
-    # ==========================================================================
+    # --------------------------------------------------------------------------
+    # Enable service
+    # --------------------------------------------------------------------------
 
     - name: Enable and start Foreman Proxy
       ansible.builtin.systemd:
         name: foreman-proxy
         enabled: true
         state: started
+        daemon_reload: true
       when: inventory_hostname == smart_proxy_server
 
-    # ==========================================================================
-    # CHECK SERVICE STATUS
-    # ==========================================================================
+    # --------------------------------------------------------------------------
+    # Verify service
+    # --------------------------------------------------------------------------
 
     - name: Check Foreman Proxy service status
       ansible.builtin.command:
@@ -107,23 +99,38 @@
 
     - name: Display Foreman Proxy service status
       ansible.builtin.debug:
-        msg: "Foreman Proxy service status: {{ foreman_proxy_service.stdout }}"
+        msg: "Foreman Proxy service status: {{ foreman_proxy_service.stdout | default('UNKNOWN') }}"
       when: inventory_hostname == smart_proxy_server
 
     - name: Verify Foreman Proxy is active
       ansible.builtin.assert:
         that:
+          - foreman_proxy_service.rc == 0
           - foreman_proxy_service.stdout == "active"
         fail_msg: >-
           Foreman Proxy service is not active on {{ inventory_hostname }}.
-          Status: {{ foreman_proxy_service.stdout }}
+          Status: {{ foreman_proxy_service.stdout | default('UNKNOWN') }}
         success_msg: >-
           Foreman Proxy service is active on {{ inventory_hostname }}.
       when: inventory_hostname == smart_proxy_server
 
-    # ==========================================================================
-    # CHECK SMART PROXY HTTPS API
-    # ==========================================================================
+    # --------------------------------------------------------------------------
+    # Verify HTTPS API
+    # --------------------------------------------------------------------------
+
+    - name: Wait for Smart Proxy HTTPS API
+      ansible.builtin.uri:
+        url: "https://{{ smart_proxy_server }}:{{ smart_proxy_port }}/features"
+        method: GET
+        validate_certs: false
+        return_content: true
+        status_code: 200
+      register: smart_proxy_api_wait
+      retries: 12
+      delay: 5
+      until: smart_proxy_api_wait.status | default(0) == 200
+      changed_when: false
+      when: inventory_hostname == smart_proxy_server
 
     - name: Check Smart Proxy HTTPS API
       ansible.builtin.uri:
@@ -134,44 +141,32 @@
         status_code: 200
       register: smart_proxy_api
       changed_when: false
-      failed_when: false
-      when: inventory_hostname == smart_proxy_server
-
-    - name: Display Smart Proxy API result
-      ansible.builtin.debug:
-        msg:
-          - "HTTP Status: {{ smart_proxy_api.status | default('NOT AVAILABLE') }}"
-          - "Response: {{ smart_proxy_api.content | default('NO RESPONSE') }}"
       when: inventory_hostname == smart_proxy_server
 
     - name: Verify Smart Proxy HTTPS API is available
       ansible.builtin.assert:
         that:
-          - smart_proxy_api.status | default(0) == 200
+          - smart_proxy_api.status == 200
         fail_msg: >-
-          Smart Proxy API is not available at
+          Smart Proxy API is not available at:
           https://{{ smart_proxy_server }}:{{ smart_proxy_port }}/features
         success_msg: >-
           Smart Proxy HTTPS API is available.
       when: inventory_hostname == smart_proxy_server
 
-    # ==========================================================================
-    # DISPLAY FEATURES
-    # ==========================================================================
-
     - name: Display Smart Proxy features
       ansible.builtin.debug:
-        msg: "{{ smart_proxy_api.json | default(smart_proxy_api.content) }}"
+        var: smart_proxy_api.json
       when:
         - inventory_hostname == smart_proxy_server
-        - smart_proxy_api.status | default(0) == 200
+        - smart_proxy_api.status == 200
 
 
 # ==============================================================================
-# PLAY 2 - VERIFY SMART PROXY REGISTRATION FROM FOREMAN
+# PLAY 2 - CHECK AND REGISTER SMART PROXY IN FOREMAN
 # ==============================================================================
 
-- name: Verify Smart Proxy registration from Foreman
+- name: Register Smart Proxy in Foreman
   hosts: all
   become: true
   gather_facts: false
@@ -179,24 +174,25 @@
   vars:
     foreman_server: "cent-07-01.vgs.com"
     smart_proxy_server: "cent-07-02.vgs.com"
+    smart_proxy_port: "9090"
 
     hammer_username: "admin"
     hammer_password: "zqs977dXzqfEvTML"
 
   tasks:
 
-    # ==========================================================================
-    # RUN ONLY ON FOREMAN SERVER
-    # ==========================================================================
+    # --------------------------------------------------------------------------
+    # Run registration tasks only on Foreman
+    # --------------------------------------------------------------------------
 
     - name: Skip non-Foreman hosts
       ansible.builtin.debug:
-        msg: "Skipping Foreman registration verification on {{ inventory_hostname }}"
+        msg: "Skipping Foreman registration tasks on {{ inventory_hostname }}"
       when: inventory_hostname != foreman_server
 
-    # ==========================================================================
-    # VERIFY HAMMER AUTHENTICATION
-    # ==========================================================================
+    # --------------------------------------------------------------------------
+    # Verify Hammer
+    # --------------------------------------------------------------------------
 
     - name: Verify Hammer authentication
       ansible.builtin.command:
@@ -206,10 +202,10 @@
           - "{{ hammer_username }}"
           - --password
           - "{{ hammer_password }}"
-          - user
-          - info
-          - --login
-          - "{{ hammer_username }}"
+          - proxy
+          - list
+          - --per-page
+          - "1000"
       register: hammer_auth_check
       changed_when: false
       no_log: true
@@ -225,11 +221,124 @@
         success_msg: "Hammer authentication succeeded."
       when: inventory_hostname == foreman_server
 
-    # ==========================================================================
-    # GET ALL REGISTERED PROXIES
-    # ==========================================================================
+    # --------------------------------------------------------------------------
+    # Check existing proxy registration
+    # --------------------------------------------------------------------------
 
-    - name: Get registered Smart Proxy list from Foreman
+    - name: Check whether Smart Proxy already exists
+      ansible.builtin.command:
+        argv:
+          - hammer
+          - --username
+          - "{{ hammer_username }}"
+          - --password
+          - "{{ hammer_password }}"
+          - proxy
+          - info
+          - --name
+          - "{{ smart_proxy_server }}"
+      register: smart_proxy_before
+      changed_when: false
+      failed_when: false
+      no_log: true
+      when: inventory_hostname == foreman_server
+
+    - name: Display current Smart Proxy registration status
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            'Smart Proxy ' ~ smart_proxy_server ~ ' is already registered.'
+            if smart_proxy_before.rc == 0
+            else
+            'Smart Proxy ' ~ smart_proxy_server ~
+            ' is not registered. Registration will now be attempted.'
+          }}
+      when: inventory_hostname == foreman_server
+
+    # --------------------------------------------------------------------------
+    # Register missing Smart Proxy
+    #
+    # Note:
+    # This creates the Smart Proxy entry in Foreman.
+    # --------------------------------------------------------------------------
+
+    - name: Register Smart Proxy in Foreman when missing
+      ansible.builtin.command:
+        argv:
+          - hammer
+          - --username
+          - "{{ hammer_username }}"
+          - --password
+          - "{{ hammer_password }}"
+          - proxy
+          - create
+          - --name
+          - "{{ smart_proxy_server }}"
+          - --url
+          - "https://{{ smart_proxy_server }}:{{ smart_proxy_port }}"
+      register: smart_proxy_create
+      changed_when: smart_proxy_create.rc == 0
+      failed_when: false
+      no_log: true
+      when:
+        - inventory_hostname == foreman_server
+        - smart_proxy_before.rc != 0
+
+    - name: Display Smart Proxy registration command result
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            'Smart Proxy registration command completed successfully.'
+            if smart_proxy_create.rc | default(0) == 0
+            else
+            'Smart Proxy registration command failed: ' ~
+            (smart_proxy_create.stderr | default('Unknown error'))
+          }}
+      when:
+        - inventory_hostname == foreman_server
+        - smart_proxy_before.rc != 0
+
+    # --------------------------------------------------------------------------
+    # Verify registration again
+    # --------------------------------------------------------------------------
+
+    - name: Wait for Smart Proxy registration to become available
+      ansible.builtin.command:
+        argv:
+          - hammer
+          - --username
+          - "{{ hammer_username }}"
+          - --password
+          - "{{ hammer_password }}"
+          - proxy
+          - info
+          - --name
+          - "{{ smart_proxy_server }}"
+      register: hammer_proxy_check
+      changed_when: false
+      failed_when: false
+      retries: 6
+      delay: 5
+      until: hammer_proxy_check.rc == 0
+      no_log: true
+      when: inventory_hostname == foreman_server
+
+    - name: Verify Smart Proxy is registered
+      ansible.builtin.assert:
+        that:
+          - hammer_proxy_check.rc == 0
+        fail_msg: >-
+          Smart Proxy {{ smart_proxy_server }} could not be registered in Foreman.
+          Check the Smart Proxy URL, certificates and Foreman Proxy configuration.
+        success_msg: >-
+          Smart Proxy {{ smart_proxy_server }} is registered successfully in Foreman.
+      when: inventory_hostname == foreman_server
+
+    # --------------------------------------------------------------------------
+    # Display registered proxies
+    # --------------------------------------------------------------------------
+
+    - name: Get final registered Smart Proxy list
       ansible.builtin.command:
         argv:
           - hammer
@@ -246,72 +355,63 @@
       no_log: true
       when: inventory_hostname == foreman_server
 
-    # ==========================================================================
-    # DISPLAY PROXY LIST
-    # ==========================================================================
-
-    - name: Display registered Smart Proxies
+    - name: Display final registered Smart Proxies
       ansible.builtin.debug:
         msg: "{{ hammer_proxy_list.stdout_lines }}"
       when: inventory_hostname == foreman_server
 
-    # ==========================================================================
-    # CHECK FOR REQUIRED SMART PROXY
-    # ==========================================================================
 
-    - name: Verify Smart Proxy exists in Foreman
-      ansible.builtin.command:
-        argv:
-          - hammer
-          - --username
-          - "{{ hammer_username }}"
-          - --password
-          - "{{ hammer_password }}"
-          - proxy
-          - info
-          - --name
-          - "{{ smart_proxy_server }}"
-      register: hammer_proxy_check
-      changed_when: false
-      failed_when: false
-      no_log: true
-      when: inventory_hostname == foreman_server
+# ==============================================================================
+# PLAY 3 - VERIFY FOREMAN CAN REACH SMART PROXY
+# ==============================================================================
 
-    # ==========================================================================
-    # DISPLAY REGISTRATION RESULT
-    # ==========================================================================
+- name: Verify Smart Proxy connectivity from Foreman
+  hosts: all
+  become: true
+  gather_facts: false
 
-    - name: Display Smart Proxy registration result
+  vars:
+    foreman_server: "cent-07-01.vgs.com"
+    smart_proxy_server: "cent-07-02.vgs.com"
+    smart_proxy_port: "9090"
+
+  tasks:
+
+    - name: Skip connectivity verification on non-Foreman hosts
       ansible.builtin.debug:
-        msg: >-
-          {{
-            'SUCCESS: Smart Proxy ' ~ smart_proxy_server ~
-            ' is registered successfully in Foreman.'
-            if hammer_proxy_check.rc == 0
-            else
-            'WARNING: Smart Proxy ' ~ smart_proxy_server ~
-            ' was not found in Foreman.'
-          }}
+        msg: "Skipping Smart Proxy connectivity verification on {{ inventory_hostname }}"
+      when: inventory_hostname != foreman_server
+
+    - name: Verify Foreman can reach Smart Proxy HTTPS API
+      ansible.builtin.uri:
+        url: "https://{{ smart_proxy_server }}:{{ smart_proxy_port }}/features"
+        method: GET
+        validate_certs: false
+        return_content: true
+        status_code: 200
+      register: foreman_to_proxy_api
+      changed_when: false
       when: inventory_hostname == foreman_server
 
-    # ==========================================================================
-    # FAIL ONLY AFTER EXPLICIT AUTHENTICATED CHECK
-    # ==========================================================================
-
-    - name: Fail if Smart Proxy is not registered
+    - name: Verify Foreman to Smart Proxy communication
       ansible.builtin.assert:
         that:
-          - hammer_proxy_check.rc == 0
+          - foreman_to_proxy_api.status == 200
         fail_msg: >-
-          Smart Proxy {{ smart_proxy_server }} was not found in Foreman.
-          The Foreman Proxy installer did not complete registration successfully.
+          Foreman cannot reach Smart Proxy API at:
+          https://{{ smart_proxy_server }}:{{ smart_proxy_port }}/features
         success_msg: >-
-          Smart Proxy {{ smart_proxy_server }} is correctly registered in Foreman.
+          Foreman can successfully communicate with Smart Proxy.
+      when: inventory_hostname == foreman_server
+
+    - name: Display Smart Proxy features from Foreman
+      ansible.builtin.debug:
+        var: foreman_to_proxy_api.json
       when: inventory_hostname == foreman_server
 
 
 # ==============================================================================
-# PLAY 3 - FINAL SUMMARY
+# PLAY 4 - FINAL SUMMARY
 # ==============================================================================
 
 - name: Display final Smart Proxy installation summary
@@ -321,25 +421,33 @@
   vars:
     foreman_server: "cent-07-01.vgs.com"
     smart_proxy_server: "cent-07-02.vgs.com"
+    smart_proxy_port: "9090"
 
   tasks:
 
     - name: Display Foreman server summary
       ansible.builtin.debug:
         msg:
-          - "=============================================="
+          - "============================================================"
           - "FOREMAN SMART PROXY INSTALLATION SUMMARY"
-          - "=============================================="
-          - "Foreman Server: {{ foreman_server }}"
-          - "Smart Proxy: {{ smart_proxy_server }}"
-          - "Proxy URL: https://{{ smart_proxy_server }}:9090"
-          - "=============================================="
+          - "============================================================"
+          - "Foreman Server : {{ foreman_server }}"
+          - "Smart Proxy    : {{ smart_proxy_server }}"
+          - "Proxy URL      : https://{{ smart_proxy_server }}:{{ smart_proxy_port }}"
+          - "Registration  : VERIFIED"
+          - "Connectivity  : VERIFIED"
+          - "============================================================"
       when: inventory_hostname == foreman_server
 
     - name: Display Smart Proxy host summary
       ansible.builtin.debug:
         msg:
-          - "Smart Proxy host configuration completed."
-          - "Service: foreman-proxy"
-          - "API: https://{{ smart_proxy_server }}:9090/features"
+          - "============================================================"
+          - "SMART PROXY HOST SUMMARY"
+          - "============================================================"
+          - "Smart Proxy Host : {{ smart_proxy_server }}"
+          - "Service          : foreman-proxy"
+          - "Service Status   : ACTIVE"
+          - "API URL          : https://{{ smart_proxy_server }}:{{ smart_proxy_port }}/features"
+          - "============================================================"
       when: inventory_hostname == smart_proxy_server
