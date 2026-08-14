@@ -2,6 +2,11 @@
 ###############################################################################
 # FOREMAN / KATELLO SMART PROXY INSTALLATION
 #
+# Run with:
+#
+# ansible-playbook -i centos-07-servers_inventory.yml foreman_proxy.yml \
+#   -e ansible_python_interpreter=/usr/bin/python3 -u admin
+#
 # Foreman/Katello Server : cent-07-01.vgs.com
 # Smart Proxy Server     : cent-07-02.vgs.com
 #
@@ -10,33 +15,14 @@
 #   2. Extract OAuth credentials
 #   3. Fetch certificate to Ansible controller
 #   4. Copy certificate to Smart Proxy
-#   5. Install Katello CA consumer on Smart Proxy
-#   6. Install foreman-installer-katello
-#   7. Run foreman-proxy-content installer
-#   8. Register Smart Proxy in Foreman
-#   9. Verify services and registration
+#   5. Prepare Smart Proxy
+#   6. Install Katello CA consumer
+#   7. Check Katello registration
+#   8. Install foreman-installer-katello
+#   9. Install Smart Proxy
+#  10. Start and verify services
+#  11. Verify registration from Foreman
 ###############################################################################
-
-###############################################################################
-# VARIABLES
-###############################################################################
-
-- name: Define Smart Proxy deployment variables
-  hosts: localhost
-  gather_facts: false
-
-  vars:
-    foreman_server: "cent-07-01.vgs.com"
-    smart_proxy_server: "cent-07-02.vgs.com"
-    organization: "Default_Organization"
-
-  tasks:
-
-    - name: Set deployment variables
-      set_fact:
-        foreman_server_name: "{{ foreman_server }}"
-        smart_proxy_server_name: "{{ smart_proxy_server }}"
-        foreman_organization: "{{ organization }}"
 
 
 ###############################################################################
@@ -44,11 +30,12 @@
 ###############################################################################
 
 - name: Generate Smart Proxy certificate on Foreman Server
-  hosts: foreman
+  hosts: cent-07-01.vgs.com
   become: true
   gather_facts: false
 
   vars:
+    foreman_server: "cent-07-01.vgs.com"
     smart_proxy_fqdn: "cent-07-02.vgs.com"
     cert_tar_file: "/root/cent-07-02.vgs.com-certs.tar"
     cert_output_file: "/root/cent-07-02.vgs.com-certs-generation.out"
@@ -66,7 +53,6 @@
           - cert_generator.stat.exists
         fail_msg: >-
           /usr/bin/foreman-proxy-certs-generate does not exist.
-          Ensure Katello/Foreman Proxy certificate tools are installed.
 
     - name: Remove old Smart Proxy certificate archive
       file:
@@ -86,7 +72,6 @@
           --foreman-proxy-fqdn "{{ smart_proxy_fqdn }}" \
           --certs-tar "{{ cert_tar_file }}" \
           > "{{ cert_output_file }}" 2>&1
-
       args:
         executable: /bin/bash
       register: cert_generation
@@ -114,16 +99,11 @@
 
     - name: Store certificate generation output as text
       set_fact:
-        cert_generation_text: >-
-          {{ cert_generation_output.content | b64decode }}
+        cert_generation_text: "{{ cert_generation_output.content | b64decode }}"
 
     - name: Display certificate generation output
       debug:
         var: cert_generation_text
-
-    ###########################################################################
-    # EXTRACT OAUTH CONSUMER KEY
-    ###########################################################################
 
     - name: Extract OAuth consumer key
       set_fact:
@@ -136,10 +116,6 @@
               )
             | first
           }}
-
-    ###########################################################################
-    # EXTRACT OAUTH CONSUMER SECRET
-    ###########################################################################
 
     - name: Extract OAuth consumer secret
       set_fact:
@@ -167,24 +143,18 @@
           - smart_proxy_oauth_secret | length > 0
         fail_msg: "Unable to extract Smart Proxy OAuth consumer secret."
 
-    ###########################################################################
-    # STORE FACTS FOR OTHER PLAYS
-    ###########################################################################
-
-    - name: Store Smart Proxy variables for later plays
+    - name: Store Smart Proxy deployment facts
       set_fact:
-        smart_proxy_certificate: "{{ cert_tar_file }}"
-        generated_smart_proxy_fqdn: "{{ smart_proxy_fqdn }}"
         generated_oauth_key: "{{ smart_proxy_oauth_key }}"
         generated_oauth_secret: "{{ smart_proxy_oauth_secret }}"
+        generated_certificate: "{{ cert_tar_file }}"
 
     - name: Display certificate generation status
       debug:
         msg:
           - "Smart Proxy certificate generated successfully"
-          - "Certificate: {{ smart_proxy_certificate }}"
-          - "OAuth consumer key extracted successfully"
-          - "OAuth consumer secret extracted successfully"
+          - "Certificate: {{ cert_tar_file }}"
+          - "OAuth credentials extracted successfully"
 
 
 ###############################################################################
@@ -192,12 +162,11 @@
 ###############################################################################
 
 - name: Fetch Smart Proxy certificate to Ansible controller
-  hosts: foreman
+  hosts: cent-07-01.vgs.com
   become: true
   gather_facts: false
 
   vars:
-    smart_proxy_fqdn: "cent-07-02.vgs.com"
     cert_tar_file: "/root/cent-07-02.vgs.com-certs.tar"
     controller_cert_dir: "{{ playbook_dir }}/smart-proxy-certs"
 
@@ -214,7 +183,7 @@
     - name: Fetch certificate archive from Foreman server
       fetch:
         src: "{{ cert_tar_file }}"
-        dest: "{{ controller_cert_dir }}/"
+        dest: "{{ controller_cert_dir }}/cent-07-02.vgs.com-certs.tar"
         flat: true
 
 
@@ -223,12 +192,11 @@
 ###############################################################################
 
 - name: Copy Smart Proxy certificate to Smart Proxy server
-  hosts: foreman_proxy
+  hosts: cent-07-02.vgs.com
   become: true
   gather_facts: false
 
   vars:
-    smart_proxy_fqdn: "cent-07-02.vgs.com"
     cert_tar_file: "/root/cent-07-02.vgs.com-certs.tar"
     controller_cert_file: "{{ playbook_dir }}/smart-proxy-certs/cent-07-02.vgs.com-certs.tar"
 
@@ -247,7 +215,7 @@
           - controller_cert_check.stat.exists
           - controller_cert_check.stat.size | int > 0
         fail_msg: >-
-          Certificate does not exist on the Ansible controller:
+          Certificate does not exist on Ansible controller:
           {{ controller_cert_file }}
 
     - name: Copy certificate archive to Smart Proxy
@@ -268,9 +236,6 @@
         that:
           - proxy_cert_check.stat.exists
           - proxy_cert_check.stat.size | int > 0
-        fail_msg: >-
-          Certificate archive is missing on Smart Proxy:
-          {{ cert_tar_file }}
 
 
 ###############################################################################
@@ -278,7 +243,7 @@
 ###############################################################################
 
 - name: Prepare Smart Proxy server
-  hosts: foreman_proxy
+  hosts: cent-07-02.vgs.com
   become: true
   gather_facts: true
 
@@ -288,18 +253,11 @@
 
   tasks:
 
-    - name: Display Smart Proxy target
-      debug:
-        msg:
-          - "Preparing Smart Proxy: {{ inventory_hostname }}"
-          - "Foreman Server: {{ foreman_server }}"
-          - "Smart Proxy FQDN: {{ smart_proxy_fqdn }}"
-
-    - name: Ensure hostname is configured
+    - name: Configure Smart Proxy hostname
       hostname:
         name: "{{ smart_proxy_fqdn }}"
 
-    - name: Verify Foreman server resolves
+    - name: Verify Foreman hostname resolves
       command: getent hosts "{{ foreman_server }}"
       changed_when: false
 
@@ -323,38 +281,29 @@
         state: started
         enabled: true
 
-    ###########################################################################
-    # INSTALL KATELLO CA CONSUMER
-    ###########################################################################
-
-    - name: Check whether Katello CA consumer is installed
+    - name: Check Katello CA consumer
       command: rpm -q katello-ca-consumer
       register: katello_ca_check
       changed_when: false
       failed_when: false
 
-    - name: Install Katello CA consumer from Foreman server
+    - name: Install Katello CA consumer
       yum:
-        name: >-
-          http://{{ foreman_server }}/pub/katello-ca-consumer-latest.noarch.rpm
+        name: "http://{{ foreman_server }}/pub/katello-ca-consumer-latest.noarch.rpm"
         state: present
       when: katello_ca_check.rc != 0
 
-    - name: Verify Katello CA consumer installation
+    - name: Verify Katello CA consumer
       command: rpm -q katello-ca-consumer
       changed_when: false
 
 
 ###############################################################################
-# PLAY 5 - REGISTER SMART PROXY TO KATELLO
-#
-# Registration is interactive when only --org is supplied. The playbook therefore
-# checks registration status but does not automatically register unless a
-# username/password or activation key is supplied.
+# PLAY 5 - CHECK KATELLO REGISTRATION
 ###############################################################################
 
 - name: Check Smart Proxy Katello registration
-  hosts: foreman_proxy
+  hosts: cent-07-02.vgs.com
   become: true
   gather_facts: false
 
@@ -366,23 +315,23 @@
       changed_when: false
       failed_when: false
 
-    - name: Display Katello registration status
+    - name: Display registration status
       debug:
         msg: >-
           {{
             'Smart Proxy is already registered to Katello.'
             if subscription_identity.rc == 0
             else
-            'Smart Proxy is not currently registered. Configure registration credentials/activation key before enabling content-managed installation.'
+            'Smart Proxy is not registered to Katello. Installer package installation may fail if required repositories are unavailable.'
           }}
 
 
 ###############################################################################
-# PLAY 6 - INSTALL FOREMAN INSTALLER KATELLO PACKAGE
+# PLAY 6 - INSTALL FOREMAN INSTALLER PACKAGE
 ###############################################################################
 
 - name: Install Smart Proxy content installer packages
-  hosts: foreman_proxy
+  hosts: cent-07-02.vgs.com
   become: true
   gather_facts: false
 
@@ -393,12 +342,11 @@
         name: foreman-installer-katello
         state: present
 
-    - name: Verify foreman-installer-katello is installed
+    - name: Verify foreman-installer-katello
       command: rpm -q foreman-installer-katello
       changed_when: false
-      register: installer_package_check
 
-    - name: Verify foreman-installer command exists
+    - name: Verify foreman-installer command
       command: which foreman-installer
       changed_when: false
 
@@ -408,7 +356,7 @@
 ###############################################################################
 
 - name: Install and configure Smart Proxy
-  hosts: foreman_proxy
+  hosts: cent-07-02.vgs.com
   become: true
   gather_facts: false
 
@@ -417,12 +365,11 @@
     smart_proxy_fqdn: "cent-07-02.vgs.com"
     cert_tar_file: "/root/cent-07-02.vgs.com-certs.tar"
 
-    # Retrieve credentials generated during Play 1.
     oauth_consumer_key: >-
-      {{ hostvars[groups['foreman'][0]].generated_oauth_key }}
+      {{ hostvars['cent-07-01.vgs.com'].generated_oauth_key }}
 
     oauth_consumer_secret: >-
-      {{ hostvars[groups['foreman'][0]].generated_oauth_secret }}
+      {{ hostvars['cent-07-01.vgs.com'].generated_oauth_secret }}
 
   tasks:
 
@@ -436,9 +383,21 @@
         that:
           - installer_cert_check.stat.exists
           - installer_cert_check.stat.size | int > 0
-        fail_msg: >-
-          Cannot start Smart Proxy installation because certificate archive
-          is missing: {{ cert_tar_file }}
+        fail_msg: "Certificate archive is missing: {{ cert_tar_file }}"
+
+    - name: Verify OAuth key is available
+      assert:
+        that:
+          - oauth_consumer_key is defined
+          - oauth_consumer_key | length > 0
+        fail_msg: "OAuth consumer key is not available."
+
+    - name: Verify OAuth secret is available
+      assert:
+        that:
+          - oauth_consumer_secret is defined
+          - oauth_consumer_secret | length > 0
+        fail_msg: "OAuth consumer secret is not available."
 
     - name: Run Smart Proxy content installer
       command:
@@ -463,13 +422,11 @@
       register: smart_proxy_installer
       no_log: true
 
-    - name: Display Smart Proxy installer completion
+    - name: Display installer completion
       debug:
         msg:
-          - "Smart Proxy installer completed"
+          - "Smart Proxy installer completed successfully"
           - "Scenario: foreman-proxy-content"
-          - "Proxy: {{ smart_proxy_fqdn }}"
-          - "Foreman: {{ foreman_server }}"
 
 
 ###############################################################################
@@ -477,9 +434,12 @@
 ###############################################################################
 
 - name: Start and verify Smart Proxy services
-  hosts: foreman_proxy
+  hosts: cent-07-02.vgs.com
   become: true
   gather_facts: false
+
+  vars:
+    smart_proxy_fqdn: "cent-07-02.vgs.com"
 
   tasks:
 
@@ -494,20 +454,20 @@
       register: foreman_proxy_service
       changed_when: false
 
-    - name: Verify Foreman Proxy service is active
+    - name: Verify Foreman Proxy is active
       assert:
         that:
           - foreman_proxy_service.stdout == "active"
         fail_msg: "Foreman Proxy service is not active."
 
-    - name: Check Smart Proxy HTTPS API
+    - name: Wait for Smart Proxy API
       uri:
-        url: "https://{{ inventory_hostname }}:8443/features"
+        url: "https://{{ smart_proxy_fqdn }}:8443/features"
         validate_certs: false
         return_content: true
         status_code: 200
       register: proxy_features
-      retries: 5
+      retries: 12
       delay: 10
       until: proxy_features.status == 200
 
@@ -517,11 +477,11 @@
 
 
 ###############################################################################
-# PLAY 9 - VERIFY SMART PROXY FROM FOREMAN SERVER
+# PLAY 9 - VERIFY SMART PROXY REGISTRATION FROM FOREMAN
 ###############################################################################
 
 - name: Verify Smart Proxy registration from Foreman server
-  hosts: foreman
+  hosts: cent-07-01.vgs.com
   become: true
   gather_facts: false
 
@@ -530,7 +490,7 @@
 
   tasks:
 
-    - name: Verify Smart Proxy exists in Foreman using Hammer
+    - name: Check Smart Proxy registration using Hammer
       shell: |
         hammer proxy list --per-page 999 | grep -F "{{ smart_proxy_fqdn }}"
       register: hammer_proxy_check
@@ -545,16 +505,15 @@
             ' is registered in Foreman.'
             if hammer_proxy_check.rc == 0
             else
-            'WARNING: Smart Proxy was installed but was not found by hammer proxy list.'
+            'FAILED: Smart Proxy was not found in Foreman.'
           }}
 
-    - name: Fail if Smart Proxy is not registered in Foreman
+    - name: Fail if Smart Proxy is not registered
       assert:
         that:
           - hammer_proxy_check.rc == 0
         fail_msg: >-
           Smart Proxy {{ smart_proxy_fqdn }} was not found in Foreman.
-          Review /var/log/foreman-proxy/proxy.log and installer logs.
 
 
 ###############################################################################
@@ -562,7 +521,7 @@
 ###############################################################################
 
 - name: Display final Smart Proxy installation summary
-  hosts: foreman_proxy
+  hosts: cent-07-02.vgs.com
   become: false
   gather_facts: false
 
