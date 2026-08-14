@@ -6,10 +6,11 @@
   gather_facts: true
 
   vars:
-    # -------------------------------
+    # ===============================================================
     # CONFIGURATION
-    # -------------------------------
-    mount_point: "http-server-01.vgs.com/repo"
+    # ===============================================================
+
+    repo_server_url: "http://http-server-01.vgs.com/repo"
 
     # username: "vigne"
     # password: "Vigneshv12$"
@@ -42,18 +43,15 @@
   tasks:
 
     # ===============================================================
-    # STEP 1: Mount ISO Share (Always Required)
+    # STEP 1: ISO SHARE
     # ===============================================================
-
-    # Your original mount section is commented out.
-    # It is intentionally kept disabled here.
 
     - name: STEP 1 - ISO share section is currently disabled
       ansible.builtin.debug:
         msg: "ISO share mount is commented out in the original script. Skipping."
 
     # ===============================================================
-    # STEP 2: Clean and Configure YUM Repositories (Always)
+    # STEP 2: CLEAN AND CONFIGURE YUM REPOSITORIES
     # ===============================================================
 
     - name: STEP 2 - Find existing YUM repository files
@@ -76,7 +74,7 @@
       changed_when: false
       failed_when: false
 
-    - name: STEP 2 - Run yum-complete-transaction if pending
+    - name: STEP 2 - Run yum-complete-transaction
       ansible.builtin.command:
         cmd: yum-complete-transaction -y
       register: yum_transaction
@@ -92,37 +90,23 @@
         content: |
           [baseos]
           name=CentOS Base Repo
-          baseurl=http://{{ mount_point }}/centos
+          baseurl={{ repo_server_url }}/centos
           enabled=1
           gpgcheck=0
 
           [mesa]
           name=Local Mesa Repo
-          baseurl=http://{{ mount_point }}/mesa
+          baseurl={{ repo_server_url }}/mesa
           enabled=1
           gpgcheck=0
           priority=1
 
           [gtk]
           name=Local GTK Repo
-          baseurl=http://{{ mount_point }}/gtk
+          baseurl={{ repo_server_url }}/gtk
           enabled=1
           gpgcheck=0
           priority=1
-
-    - name: STEP 2 - Install GTK Mesa Tomcat Ruby Apache RPM Build and JQ
-      ansible.builtin.yum:
-        name:
-          - gtk2
-          - gtk3
-          - "mesa-libEGL*"
-          - "tomcat*"
-          - "ruby*"
-          - "apache*"
-          - "rpm-build*"
-          - jq-1.5-1.el7
-        state: present
-        disable_gpg_check: true
 
     - name: STEP 2 - Create patch.repo
       ansible.builtin.copy:
@@ -133,7 +117,7 @@
         content: |
           [patch]
           name=CentOS Patch Repo
-          baseurl=http://{{ mount_point }}/installed_rhel7
+          baseurl={{ repo_server_url }}/installed_rhel7
           enabled=1
           gpgcheck=0
 
@@ -146,7 +130,7 @@
         content: |
           [foreman]
           name=CentOS Foreman Repo
-          baseurl=http://{{ mount_point }}/installed_rhel7
+          baseurl={{ repo_server_url }}/installed_rhel7
           enabled=1
           gpgcheck=0
 
@@ -188,17 +172,31 @@
           enabled=1
           gpgcheck=0
 
-    - name: STEP 2 - Clean yum metadata after repository creation
+    - name: STEP 2 - Clean yum metadata
       ansible.builtin.command:
         cmd: yum clean all
       changed_when: false
-      ignore_errors: yes
+      failed_when: false
 
     - name: STEP 2 - Create yum cache
       ansible.builtin.command:
         cmd: yum makecache
       changed_when: false
-      ignore_errors: yes
+      failed_when: false
+
+    - name: STEP 2 - Install GTK Mesa Tomcat Ruby Apache RPM Build and JQ
+      ansible.builtin.yum:
+        name:
+          - gtk2
+          - gtk3
+          - "mesa-libEGL*"
+          - "tomcat*"
+          - "ruby*"
+          - "apache*"
+          - "rpm-build*"
+          - jq-1.5-1.el7
+        state: present
+        disable_gpg_check: true
 
     - name: STEP 2 - Install SSH PASS
       ansible.builtin.yum:
@@ -207,7 +205,7 @@
         disable_gpg_check: true
 
     # ===============================================================
-    # STEP 3: Install BIND Configure DNS (Conditional)
+    # STEP 3: DNS
     # ===============================================================
 
     - name: STEP 3 - Check DNS resolution for current server FQDN
@@ -219,7 +217,7 @@
 
     - name: STEP 3 - DNS resolution working
       ansible.builtin.debug:
-        msg: "DNS resolution is working. Skipping DNS configuration steps."
+        msg: "DNS resolution is working. Skipping DNS resolver changes."
       when: hostname_dns_check.rc == 0
 
     - name: STEP 3 - DNS resolution failed
@@ -259,7 +257,7 @@
         disable_gpg_check: true
 
     # ===============================================================
-    # STEP 4: Install Java & Foreman Stack
+    # STEP 4: INSTALL JAVA AND FOREMAN STACK
     # ===============================================================
 
     - name: STEP 4 - Install Java
@@ -296,7 +294,7 @@
         java_environment_path: "{{ java_path }}:{{ ansible_env.PATH }}"
 
     # ===============================================================
-    # STEP 5: Puppet Module Setup
+    # STEP 5: PUPPET MODULE SETUP
     # ===============================================================
 
     - name: STEP 5 - Check puppetlabs-java_ks module directory
@@ -332,106 +330,91 @@
         force: true
 
     # ===============================================================
-    # STEP 4.5: Yum History Health Check
+    # STEP 5.1: YUM HISTORY HEALTH CHECK
     # ===============================================================
 
-    - name: STEP 4.5 - Check yum history
+    - name: STEP 5.1 - Check yum history
       ansible.builtin.command:
         cmd: yum history list
       register: yum_history_check
       changed_when: false
       failed_when: false
 
-    - name: STEP 4.5 - Yum history is healthy
-      ansible.builtin.debug:
-        msg: "Yum history is healthy."
-      when: yum_history_check.rc == 0
-
-    - name: STEP 4.5 - Yum history is corrupted
-      ansible.builtin.debug:
-        msg: "Yum history is corrupted. Resetting..."
-      when: yum_history_check.rc != 0
-
-    - name: STEP 4.5 - Check yum history directory
+    - name: STEP 5.1 - Check yum history directory
       ansible.builtin.stat:
         path: /var/lib/yum/history
       register: yum_history_dir
       when: yum_history_check.rc != 0
 
-    - name: STEP 4.5 - Backup yum history
+    - name: STEP 5.1 - Backup corrupted yum history
       ansible.builtin.command:
         cmd: mv /var/lib/yum/history /var/lib/yum/history.bak
       when:
         - yum_history_check.rc != 0
         - yum_history_dir.stat.exists
 
-    - name: STEP 4.5 - Clean yum after history reset
+    - name: STEP 5.1 - Clean yum after history reset
       ansible.builtin.command:
         cmd: yum clean all
       changed_when: false
       when: yum_history_check.rc != 0
 
-    - name: STEP 4.5 - Rebuild RPM database
+    - name: STEP 5.1 - Rebuild RPM database
       ansible.builtin.command:
         cmd: rpm --rebuilddb
       when: yum_history_check.rc != 0
 
     # ===============================================================
-    # STEP 5.1: Pre-task for Foreman Installer
+    # STEP 5.2: PREPARE HOSTNAME
     # ===============================================================
 
-    - name: STEP 5.1 - Get short hostname
+    - name: STEP 5.2 - Get short hostname
       ansible.builtin.command:
         cmd: hostname -s
       register: short_hostname
       changed_when: false
 
-    - name: STEP 5.1 - Get primary IP address
+    - name: STEP 5.2 - Get primary IP address
       ansible.builtin.command:
         cmd: hostname -I
       register: hostname_ips
       changed_when: false
 
-    - name: STEP 5.1 - Set primary IP fact
+    - name: STEP 5.2 - Set hostname facts
       ansible.builtin.set_fact:
         just_ip: "{{ hostname_ips.stdout.split()[0] }}"
         new_hostname: "{{ short_hostname.stdout }}"
 
-    - name: STEP 5.1 - Remove old hostname entries from hosts file
+    - name: STEP 5.2 - Remove old hostname entries from hosts file
       ansible.builtin.lineinfile:
         path: /etc/hosts
         regexp: ".*{{ new_hostname | regex_escape }}.*"
         state: absent
 
-    - name: STEP 5.1 - Add hostname entry to hosts file
+    - name: STEP 5.2 - Add hostname entry to hosts file
       ansible.builtin.lineinfile:
         path: /etc/hosts
         line: "{{ just_ip }} {{ new_hostname }}.{{ domain }} {{ new_hostname }}"
         state: present
 
-    - name: STEP 5.1 - Verify hostname hosts entry
-      ansible.builtin.command:
-        cmd: "grep {{ new_hostname }}.{{ domain }} /etc/hosts"
-      changed_when: false
-
-    - name: STEP 5.1 - Clean yum
+    - name: STEP 5.2 - Clean yum
       ansible.builtin.command:
         cmd: yum clean all
       changed_when: false
 
-    - name: STEP 5.1 - Remove yum cache
+    - name: STEP 5.2 - Remove yum cache
       ansible.builtin.file:
         path: /var/cache/yum
         state: absent
 
-    - name: STEP 5.1 - Recreate yum cache
+    - name: STEP 5.2 - Recreate yum cache
       ansible.builtin.command:
         cmd: yum makecache
       changed_when: false
-      ignore_errors: yes
+      failed_when: false
 
     # ===============================================================
-    # STEP 6: Run Foreman Installer
+    # STEP 6: RUN FOREMAN INSTALLER
     # ===============================================================
 
     - name: STEP 6 - Check Foreman service status
@@ -448,41 +431,34 @@
         PATH: "{{ java_environment_path }}"
       when: foreman_status.rc != 0
 
-    - name: STEP 6 - Add HTTP firewall service
+    - name: STEP 6 - Open HTTP firewall service
       ansible.posix.firewalld:
         service: http
         permanent: true
         immediate: true
         state: enabled
-      when: foreman_status.rc != 0
 
-    - name: STEP 6 - Add HTTPS firewall service
+    - name: STEP 6 - Open HTTPS firewall service
       ansible.posix.firewalld:
         service: https
         permanent: true
         immediate: true
         state: enabled
-      when: foreman_status.rc != 0
-
-    - name: STEP 6 - Foreman already running
-      ansible.builtin.debug:
-        msg: "Foreman already running. Skipping installer."
-      when: foreman_status.rc == 0
 
     # ===============================================================
-    # STEP 6.1: Relocate Pulp Storage to /home/pulp
+    # STEP 6.1: RELOCATE PULP STORAGE
     # ===============================================================
 
     - name: STEP 6.1 - Check current mount source for Pulp
       ansible.builtin.command:
-        cmd: findmnt -n -o SOURCE --target /var/lib/pulp
+        cmd: findmnt -n -o SOURCE --target {{ pulp_source }}
       register: pulp_current_source
       changed_when: false
       failed_when: false
 
-    - name: STEP 6.1 - Check whether /var/lib/pulp is a mountpoint
+    - name: STEP 6.1 - Check whether Pulp is a mountpoint
       ansible.builtin.command:
-        cmd: mountpoint -q /var/lib/pulp
+        cmd: mountpoint -q {{ pulp_source }}
       register: pulp_mountpoint_check
       changed_when: false
       failed_when: false
@@ -502,85 +478,46 @@
         path: "{{ pulp_old }}"
       register: pulp_old_check
 
-    - name: STEP 6.1 - Display current Pulp storage status
-      ansible.builtin.debug:
-        msg:
-          - "Pulp source: {{ pulp_source }}"
-          - "Pulp destination: {{ pulp_destination }}"
-          - "Current mount source: {{ pulp_current_source.stdout | default('NOT_MOUNTED') }}"
-          - "Is mountpoint: {{ pulp_mountpoint_check.rc == 0 }}"
-          - "Destination exists: {{ pulp_destination_check.stat.exists }}"
-          - "Old backup exists: {{ pulp_old_check.stat.exists }}"
-
-    # ---------------------------------------------------------------
-    # Already correctly migrated
-    # ---------------------------------------------------------------
-
     - name: STEP 6.1 - Mark Pulp as already relocated
       ansible.builtin.set_fact:
         pulp_already_relocated: >-
           {{
-            pulp_is_mountpoint.rc == 0 and
-            pulp_destination_stat.stat.exists
+            pulp_mountpoint_check.rc == 0 and
+            pulp_destination_check.stat.exists
           }}
+
+    - name: STEP 6.1 - Display Pulp status
+      ansible.builtin.debug:
+        msg:
+          - "Pulp source: {{ pulp_source }}"
+          - "Pulp destination: {{ pulp_destination }}"
+          - "Mountpoint: {{ pulp_mountpoint_check.rc == 0 }}"
+          - "Current mount source: {{ pulp_current_source.stdout | default('NOT_MOUNTED', true) }}"
+          - "Already relocated: {{ pulp_already_relocated }}"
 
     - name: STEP 6.1 - Pulp already relocated
       ansible.builtin.debug:
         msg: >
-          Pulp is already relocated and /var/lib/pulp is mounted.
-          Current mount source: {{ pulp_mount_source.stdout }}
+          Pulp is already relocated.
+          {{ pulp_destination }} is mounted at {{ pulp_source }}.
+          Current mount source: {{ pulp_current_source.stdout }}
       when: pulp_already_relocated | bool
 
-    - name: STEP 6.1 - Fail if Pulp mountpoint is not available
+    - name: STEP 6.1 - Fail on incomplete previous migration
       ansible.builtin.fail:
         msg: >
-          /var/lib/pulp is not mounted correctly.
-          Current source: {{ pulp_mount_source.stdout | default('unknown') }}
-      when:
-        - pulp_already_relocated | bool
-        - pulp_is_mountpoint.rc != 0
-    # ---------------------------------------------------------------
-    # Safety check for incomplete old migration
-    # ---------------------------------------------------------------
-
-    - name: STEP 6.1 - Fail if old Pulp backup exists before migration
-      ansible.builtin.fail:
-        msg: >
-          {{ pulp_old }} already exists while Pulp is not mounted from
-          {{ pulp_destination }}. This indicates a previous incomplete migration.
-          Verify the data manually before rerunning the playbook.
+          {{ pulp_old }} already exists while Pulp is not correctly relocated.
+          This may be an incomplete previous migration.
+          Verify the Pulp data before continuing.
       when:
         - not (pulp_already_relocated | bool)
         - pulp_old_check.stat.exists
 
-    # ---------------------------------------------------------------
-    # Check whether original Pulp data exists
-    # ---------------------------------------------------------------
-
-    - name: STEP 6.1 - Check if original Pulp directory contains data
-      ansible.builtin.find:
-        paths: "{{ pulp_source }}"
-        hidden: true
-        recurse: false
-      register: pulp_source_contents
-      when:
-        - not (pulp_already_relocated | bool)
-        - pulp_source_check.stat.exists
-
-    # ---------------------------------------------------------------
-    # Stop Foreman before migration
-    # ---------------------------------------------------------------
-
-    - name: STEP 6.1 - Stop Foreman and related services
+    - name: STEP 6.1 - Stop Foreman services
       ansible.builtin.command:
         cmd: foreman-maintain service stop
-      register: foreman_services_stop
       changed_when: true
       when: not (pulp_already_relocated | bool)
-
-    # ---------------------------------------------------------------
-    # Install rsync
-    # ---------------------------------------------------------------
 
     - name: STEP 6.1 - Install rsync
       ansible.builtin.yum:
@@ -589,11 +526,7 @@
         disable_gpg_check: true
       when: not (pulp_already_relocated | bool)
 
-    # ---------------------------------------------------------------
-    # Create destination
-    # ---------------------------------------------------------------
-
-    - name: STEP 6.1 - Create Pulp destination directory
+    - name: STEP 6.1 - Create Pulp destination
       ansible.builtin.file:
         path: "{{ pulp_destination }}"
         state: directory
@@ -602,58 +535,26 @@
         mode: "0755"
       when: not (pulp_already_relocated | bool)
 
-    # ---------------------------------------------------------------
-    # Copy Pulp data
-    # ---------------------------------------------------------------
-
-    - name: STEP 6.1 - Copy Pulp data to new destination
+    - name: STEP 6.1 - Copy Pulp data
       ansible.builtin.command:
         cmd: >
           rsync -aHAX --numeric-ids
           {{ pulp_source }}/
           {{ pulp_destination }}/
-      register: pulp_rsync
       changed_when: true
       when:
         - not (pulp_already_relocated | bool)
         - pulp_source_check.stat.exists
-        - pulp_source_contents.matched | int > 0
-
-    # ---------------------------------------------------------------
-    # Verify copied data
-    # ---------------------------------------------------------------
-
-    - name: STEP 6.1 - Check destination Pulp directory after copy
-      ansible.builtin.stat:
-        path: "{{ pulp_destination }}"
-      register: pulp_destination_after_copy
-      when: not (pulp_already_relocated | bool)
-
-    - name: STEP 6.1 - Fail if Pulp destination does not exist
-      ansible.builtin.fail:
-        msg: >
-          Pulp destination {{ pulp_destination }} was not created.
-          Migration cannot continue.
-      when:
-        - not (pulp_already_relocated | bool)
-        - not pulp_destination_after_copy.stat.exists
-
-    # ---------------------------------------------------------------
-    # Rename original directory
-    # ---------------------------------------------------------------
 
     - name: STEP 6.1 - Rename original Pulp directory
       ansible.builtin.command:
         cmd: mv {{ pulp_source }} {{ pulp_old }}
+      changed_when: true
       when:
         - not (pulp_already_relocated | bool)
         - pulp_source_check.stat.exists
 
-    # ---------------------------------------------------------------
-    # Create mountpoint
-    # ---------------------------------------------------------------
-
-    - name: STEP 6.1 - Create new Pulp mountpoint directory
+    - name: STEP 6.1 - Create Pulp mountpoint
       ansible.builtin.file:
         path: "{{ pulp_source }}"
         state: directory
@@ -662,11 +563,7 @@
         mode: "0755"
       when: not (pulp_already_relocated | bool)
 
-    # ---------------------------------------------------------------
-    # Configure persistent bind mount
-    # ---------------------------------------------------------------
-
-    - name: STEP 6.1 - Configure Pulp bind mount in fstab
+    - name: STEP 6.1 - Configure persistent Pulp bind mount
       ansible.posix.mount:
         path: "{{ pulp_source }}"
         src: "{{ pulp_destination }}"
@@ -675,16 +572,7 @@
         state: mounted
       when: not (pulp_already_relocated | bool)
 
-    - name: STEP 6.1 - Reload systemd daemon
-      ansible.builtin.systemd:
-        daemon_reload: true
-      when: not (pulp_already_relocated | bool)
-
-    # ---------------------------------------------------------------
-    # Verify bind mount
-    # ---------------------------------------------------------------
-
-    - name: STEP 6.1 - Verify Pulp is a mountpoint
+    - name: STEP 6.1 - Verify Pulp mountpoint
       ansible.builtin.command:
         cmd: mountpoint -q {{ pulp_source }}
       register: pulp_mount_verify
@@ -692,67 +580,14 @@
       failed_when: false
       when: not (pulp_already_relocated | bool)
 
-    - name: STEP 6.1 - Fail if Pulp mount was not created
+    - name: STEP 6.1 - Fail if Pulp bind mount failed
       ansible.builtin.fail:
         msg: >
-          Pulp bind mount failed. {{ pulp_source }} is not mounted.
+          Pulp bind mount failed.
           Original data is preserved at {{ pulp_old }}.
       when:
         - not (pulp_already_relocated | bool)
         - pulp_mount_verify.rc != 0
-
-    - name: STEP 6.1 - Check bind mount source
-      ansible.builtin.command:
-        cmd: findmnt -n -o SOURCE --target {{ pulp_source }}
-      register: pulp_mount_source_verify
-      changed_when: false
-      when: not (pulp_already_relocated | bool)
-
-    - name: STEP 6.1 - Display verified Pulp mount source
-      ansible.builtin.debug:
-        msg: >
-          Pulp mount verified.
-          {{ pulp_source }} is mounted from:
-          {{ pulp_mount_source_verify.stdout }}
-      when: not (pulp_already_relocated | bool)
-
-    # ---------------------------------------------------------------
-    # Test bind mount
-    # ---------------------------------------------------------------
-
-    - name: STEP 6.1 - Create Pulp bind mount test file
-      ansible.builtin.file:
-        path: "{{ pulp_source }}/.pulp-bind-test"
-        state: touch
-        mode: "0600"
-      when: not (pulp_already_relocated | bool)
-
-    - name: STEP 6.1 - Verify test file exists on destination
-      ansible.builtin.stat:
-        path: "{{ pulp_destination }}/.pulp-bind-test"
-      register: pulp_bind_test
-      when: not (pulp_already_relocated | bool)
-
-    - name: STEP 6.1 - Fail if bind mount test failed
-      ansible.builtin.fail:
-        msg: >
-          Pulp bind mount verification failed.
-          Test file created in {{ pulp_source }} did not appear in
-          {{ pulp_destination }}.
-          Original data remains at {{ pulp_old }}.
-      when:
-        - not (pulp_already_relocated | bool)
-        - not pulp_bind_test.stat.exists
-
-    - name: STEP 6.1 - Remove Pulp bind mount test file
-      ansible.builtin.file:
-        path: "{{ pulp_source }}/.pulp-bind-test"
-        state: absent
-      when: not (pulp_already_relocated | bool)
-
-    # ---------------------------------------------------------------
-    # Restore SELinux contexts
-    # ---------------------------------------------------------------
 
     - name: STEP 6.1 - Restore SELinux context on Pulp destination
       ansible.builtin.command:
@@ -768,61 +603,25 @@
       failed_when: false
       when: not (pulp_already_relocated | bool)
 
-    # ---------------------------------------------------------------
-    # Start Foreman
-    # ---------------------------------------------------------------
-
-    - name: STEP 6.1 - Start Foreman and related services
+    - name: STEP 6.1 - Start Foreman services
       ansible.builtin.command:
         cmd: foreman-maintain service start
-      register: foreman_services_start
       changed_when: true
       when: not (pulp_already_relocated | bool)
 
-    # ---------------------------------------------------------------
-    # Verify Pulp service
-    # ---------------------------------------------------------------
-
-    - name: STEP 6.1 - Check Pulp service status
+    - name: STEP 6.1 - Check Foreman services
       ansible.builtin.command:
         cmd: foreman-maintain service status
       register: foreman_services_status
       changed_when: false
       failed_when: false
 
-    - name: STEP 6.1 - Display service status
+    - name: STEP 6.1 - Display Foreman service status
       ansible.builtin.debug:
         var: foreman_services_status.stdout_lines
 
-    # ---------------------------------------------------------------
-    # Keep backup for safety
-    # ---------------------------------------------------------------
-
-    - name: STEP 6.1 - Pulp migration completed successfully
-      ansible.builtin.debug:
-        msg: >
-          Pulp storage migration completed successfully.
-          Active storage:
-          {{ pulp_destination }}
-          mounted at:
-          {{ pulp_source }}
-
-          Original data has been retained temporarily at:
-          {{ pulp_old }}
-
-          Do not delete {{ pulp_old }} until Pulp and Foreman have been
-          verified to be working correctly.
-      when: not (pulp_already_relocated | bool)
-
-    - name: STEP 6.1 - Pulp relocation already configured successfully
-      ansible.builtin.debug:
-        msg: >
-          Pulp storage is already configured correctly.
-          {{ pulp_destination }} is mounted at {{ pulp_source }}.
-      when: pulp_already_relocated | bool
-
     # ===============================================================
-    # STEP 7: Configure Foreman Proxies
+    # STEP 7: CONFIGURE FOREMAN PROXIES
     # ===============================================================
 
     - name: STEP 7 - Install DHCP and TFTP services
@@ -834,7 +633,7 @@
         disable_gpg_check: true
 
     # ---------------------------------------------------------------
-    # Temporarily mount EFI partitions
+    # EFI MOUNTS
     # ---------------------------------------------------------------
 
     - name: STEP 7 - Create first EFI mount point
@@ -851,13 +650,13 @@
 
     - name: STEP 7 - Check first EFI mount
       ansible.builtin.command:
-        cmd: "mountpoint -q {{ efi1_mount }}"
+        cmd: mountpoint -q {{ efi1_mount }}
       register: efi1_mounted
       changed_when: false
       failed_when: false
 
     - name: STEP 7 - Mount first EFI partition
-      ansible.builtin.mount:
+      ansible.posix.mount:
         path: "{{ efi1_mount }}"
         src: "{{ efi1_device }}"
         fstype: auto
@@ -866,28 +665,18 @@
 
     - name: STEP 7 - Check second EFI mount
       ansible.builtin.command:
-        cmd: "mountpoint -q {{ efi2_mount }}"
+        cmd: mountpoint -q {{ efi2_mount }}
       register: efi2_mounted
       changed_when: false
       failed_when: false
 
     - name: STEP 7 - Mount second EFI partition
-      ansible.builtin.mount:
+      ansible.posix.mount:
         path: "{{ efi2_mount }}"
         src: "{{ efi2_device }}"
         fstype: auto
         state: mounted
       when: efi2_mounted.rc != 0
-
-    - name: STEP 7 - Verify first EFI contents
-      ansible.builtin.command:
-        cmd: "ls -l {{ efi1_mount }}/EFI/"
-      changed_when: false
-
-    - name: STEP 7 - Verify second EFI contents
-      ansible.builtin.command:
-        cmd: "ls -l {{ efi2_mount }}/EFI/"
-      changed_when: false
 
     - name: STEP 7 - Check first CentOS shim
       ansible.builtin.stat:
@@ -909,12 +698,8 @@
         msg: "{{ efi2_mount }}/EFI/centos/shimx64.efi not found"
       when: not efi2_shim.stat.exists
 
-    - name: STEP 7 - EFI partitions mounted successfully
-      ansible.builtin.debug:
-        msg: "EFI partitions mounted successfully."
-
     # ---------------------------------------------------------------
-    # Configure TFTP
+    # TFTP
     # ---------------------------------------------------------------
 
     - name: STEP 7 - Configure Foreman TFTP proxy
@@ -929,24 +714,22 @@
         PATH: "{{ java_environment_path }}"
 
     # ---------------------------------------------------------------
-    # Configure DNS
+    # DNS
     # ---------------------------------------------------------------
 
-    - name: STEP 7 - Check if Foreman proxy DNS key already exists
+    - name: STEP 7 - Check Foreman proxy DNS key
       ansible.builtin.stat:
         path: /etc/foreman-proxy/dns.key
       register: foreman_proxy_dns_key
 
-    - name: STEP 7 - Generate DNSSEC key for Foreman proxy when missing
+    - name: STEP 7 - Generate DNSSEC key
       ansible.builtin.command:
         cmd: dnssec-keygen -a HMAC-SHA512 -b 512 -n USER foreman-proxy
       args:
         chdir: /root
-      register: dnssec_keygen
-      changed_when: true
       when: not foreman_proxy_dns_key.stat.exists
 
-    - name: STEP 7 - Find generated private DNSSEC key
+    - name: STEP 7 - Find generated DNSSEC private key
       ansible.builtin.find:
         paths: /root
         patterns: "Kforeman-proxy*.private"
@@ -961,7 +744,7 @@
         - not foreman_proxy_dns_key.stat.exists
         - generated_dns_keys.matched | int == 0
 
-    - name: STEP 7 - Move DNSSEC key to Foreman proxy
+    - name: STEP 7 - Copy DNSSEC key to Foreman proxy
       ansible.builtin.copy:
         src: "{{ generated_dns_keys.files[0].path }}"
         dest: /etc/foreman-proxy/dns.key
@@ -971,19 +754,6 @@
         mode: "0600"
       when: not foreman_proxy_dns_key.stat.exists
 
-    - name: STEP 7 - Remove original generated DNSSEC private key
-      ansible.builtin.file:
-        path: "{{ generated_dns_keys.files[0].path }}"
-        state: absent
-      when: not foreman_proxy_dns_key.stat.exists
-
-    - name: STEP 7 - Ensure Foreman proxy DNS key permissions
-      ansible.builtin.file:
-        path: /etc/foreman-proxy/dns.key
-        owner: foreman-proxy
-        group: foreman-proxy
-        mode: "0600"
-
     - name: STEP 7 - Configure Foreman DNS proxy
       ansible.builtin.command:
         cmd: >
@@ -992,13 +762,13 @@
           --foreman-proxy-dns-managed false
           --foreman-proxy-dns-provider nsupdate
           --foreman-proxy-dns-server {{ dns_server }}
-          --foreman-proxy-dns-forwarders=8.8.8.8,8.8.4.4
+          --foreman-proxy-dns-forwarders 8.8.8.8,8.8.4.4
           --foreman-proxy-keyfile /etc/foreman-proxy/dns.key
       environment:
         PATH: "{{ java_environment_path }}"
 
     # ---------------------------------------------------------------
-    # Configure DHCP
+    # DHCP
     # ---------------------------------------------------------------
 
     - name: STEP 7 - Configure Foreman DHCP proxy
@@ -1016,57 +786,43 @@
         PATH: "{{ java_environment_path }}"
 
     # ---------------------------------------------------------------
-    # Unmount temporary EFI partitions
+    # PXE FILES
     # ---------------------------------------------------------------
 
-    - name: STEP 7 - Sync disks before unmounting EFI
-      ansible.builtin.command:
-        cmd: sync
-      changed_when: false
-
-    - name: STEP 7 - Check second EFI mount before unmount
-      ansible.builtin.command:
-        cmd: "mountpoint -q {{ efi2_mount }}"
-      register: efi2_before_unmount
-      changed_when: false
-      failed_when: false
-
-    - name: STEP 7 - Unmount second EFI partition
-      ansible.posix.mount:
-        path: "{{ efi2_mount }}"
-        state: unmounted
-      when: efi2_before_unmount.rc == 0
-
-    - name: STEP 7 - Check first EFI mount before unmount
-      ansible.builtin.command:
-        cmd: "mountpoint -q {{ efi1_mount }}"
-      register: efi1_before_unmount
-      changed_when: false
-      failed_when: false
-
-    - name: STEP 7 - Unmount first EFI partition
-      ansible.posix.mount:
-        path: "{{ efi1_mount }}"
-        state: unmounted
-      when: efi1_before_unmount.rc == 0
-
-    - name: STEP 7 - Remove second temporary EFI directory
+    - name: STEP 7 - Create CentOS TFTP directory
       ansible.builtin.file:
-        path: "{{ efi2_mount }}"
-        state: absent
+        path: "{{ tftp_root }}/centos"
+        state: directory
+        owner: foreman-proxy
+        group: root
+        mode: "0755"
 
-    - name: STEP 7 - Remove first temporary EFI directory
+    - name: STEP 7 - Download CentOS initrd.img
+      ansible.builtin.get_url:
+        url: "{{ repo_server_url }}/centos/isolinux/initrd.img"
+        dest: "{{ tftp_root }}/centos/initrd.img"
+        owner: foreman-proxy
+        group: root
+        mode: "0644"
+
+    - name: STEP 7 - Download CentOS vmlinuz
+      ansible.builtin.get_url:
+        url: "{{ repo_server_url }}/centos/isolinux/vmlinuz"
+        dest: "{{ tftp_root }}/centos/vmlinuz"
+        owner: foreman-proxy
+        group: root
+        mode: "0644"
+
+    - name: STEP 7 - Ensure ownership of CentOS TFTP files
       ansible.builtin.file:
-        path: "{{ efi1_mount }}"
-        state: absent
+        path: "{{ tftp_root }}/centos"
+        owner: foreman-proxy
+        group: root
+        recurse: true
 
-    - name: STEP 7 - Temporary EFI mounts removed
-      ansible.builtin.debug:
-        msg: "Temporary EFI mounts removed."
-
-    # ===============================================================
-    # Firewall
-    # ===============================================================
+    # ---------------------------------------------------------------
+    # FIREWALL
+    # ---------------------------------------------------------------
 
     - name: STEP 7 - Open DHCP firewall service
       ansible.posix.firewalld:
@@ -1103,49 +859,67 @@
         immediate: true
         state: enabled
 
+    # ---------------------------------------------------------------
+    # CLEAN UP TEMPORARY EFI MOUNTS
+    # ---------------------------------------------------------------
+
+    - name: STEP 7 - Sync disks
+      ansible.builtin.command:
+        cmd: sync
+      changed_when: false
+
+    - name: STEP 7 - Check second EFI mount before unmount
+      ansible.builtin.command:
+        cmd: mountpoint -q {{ efi2_mount }}
+      register: efi2_before_unmount
+      changed_when: false
+      failed_when: false
+
+    - name: STEP 7 - Unmount second EFI partition
+      ansible.posix.mount:
+        path: "{{ efi2_mount }}"
+        state: unmounted
+      when: efi2_before_unmount.rc == 0
+
+    - name: STEP 7 - Check first EFI mount before unmount
+      ansible.builtin.command:
+        cmd: mountpoint -q {{ efi1_mount }}
+      register: efi1_before_unmount
+      changed_when: false
+      failed_when: false
+
+    - name: STEP 7 - Unmount first EFI partition
+      ansible.posix.mount:
+        path: "{{ efi1_mount }}"
+        state: unmounted
+      when: efi1_before_unmount.rc == 0
+
+    - name: STEP 7 - Remove second temporary EFI directory
+      ansible.builtin.file:
+        path: "{{ efi2_mount }}"
+        state: absent
+
+    - name: STEP 7 - Remove first temporary EFI directory
+      ansible.builtin.file:
+        path: "{{ efi1_mount }}"
+        state: absent
+
     # ===============================================================
-    # Download CentOS PXE Boot Files
+    # FINAL STATUS
     # ===============================================================
-
-    - name: STEP 7 - Create CentOS TFTP directory
-      ansible.builtin.file:
-        path: "{{ tftp_root }}/centos"
-        state: directory
-        owner: foreman-proxy
-        group: root
-        mode: "0755"
-
-    - name: STEP 7 - Download CentOS initrd.img
-      ansible.builtin.get_url:
-        url: "http://http-server-01/repo/centos/isolinux/initrd.img"
-        dest: "{{ tftp_root }}/centos/initrd.img"
-        owner: foreman-proxy
-        group: root
-        mode: "0644"
-
-    - name: STEP 7 - Download CentOS vmlinuz
-      ansible.builtin.get_url:
-        url: "http://http-server-01/repo/centos/isolinux/vmlinuz"
-        dest: "{{ tftp_root }}/centos/vmlinuz"
-        owner: foreman-proxy
-        group: root
-        mode: "0644"
-
-    - name: STEP 7 - Ensure ownership of CentOS TFTP files
-      ansible.builtin.file:
-        path: "{{ tftp_root }}/centos"
-        owner: foreman-proxy
-        group: root
-        recurse: true
-
-    - name: STEP 7 - Set permissions on CentOS PXE files
-      ansible.builtin.file:
-        path: "{{ item }}"
-        mode: "0644"
-      loop:
-        - "{{ tftp_root }}/centos/initrd.img"
-        - "{{ tftp_root }}/centos/vmlinuz"
 
     - name: Installation completed
       ansible.builtin.debug:
-        msg: "Foreman Katello installation and proxy configuration completed successfully."
+        msg: |
+          ============================================================
+          Foreman Katello installation and proxy configuration
+          completed successfully.
+          ============================================================
+
+          Foreman Server : {{ foreman_server_name }}
+          Repository    : {{ repo_server_url }}
+          Pulp Storage  : {{ pulp_destination }}
+          Pulp Mount    : {{ pulp_source }}
+          TFTP Root     : {{ tftp_root }}
+
+          ============================================================
