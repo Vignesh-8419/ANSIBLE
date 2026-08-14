@@ -35,12 +35,17 @@ BOOT_CFG = WORK_ISO_DIR / "BOOT.CFG"
 # ============================================================================
 
 KS_URL = (
-    "http://http-server-01.vgs.com/repo/ks.cfg"
+    "http://192.168.253.136/repo/ks.cfg"
 )
 
 EXPECTED_KERNELOPT = (
     "kernelopt=runweasel "
     "cdromBoot "
+    "ip=192.168.253.128 "
+    "netmask=255.255.255.0 "
+    "gateway=192.168.253.2 "
+    "nameserver=192.168.253.1 "
+    "netdevice=vmnic0 "
     f"ks={KS_URL}"
 )
 
