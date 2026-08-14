@@ -1,660 +1,906 @@
 ---
-- name: Install and Configure Foreman Smart Proxy
-  hosts: all
+# ==============================================================================
+# Foreman Smart Proxy Complete Installation
+#
+# Run this playbook FROM THE ANSIBLE CONTROLLER NODE
+#
+# Workflow:
+#
+#   1. cent-07-01.vgs.com
+#      - Generate Smart Proxy certificate archive
+#      - Extract OAuth credentials
+#      - Fetch certificate to Ansible controller
+#
+#   2. cent-07-02.vgs.com
+#      - Install Foreman Smart Proxy
+#      - Copy certificate archive from controller
+#      - Configure Smart Proxy
+#      - Configure DHCP
+#      - Configure DNS
+#      - Configure TFTP
+#      - Download Rocky PXE boot files
+#
+# Run:
+#   ansible-playbook foreman_proxy.yml
+# ==============================================================================
+
+# ==============================================================================
+# PLAY 1 - GENERATE SMART PROXY CERTIFICATE ON FOREMAN SERVER
+# ==============================================================================
+
+- name: Generate Smart Proxy certificate on Foreman server
+  hosts: cent-07-01.vgs.com
   become: true
   gather_facts: true
 
   vars:
-    foreman_proxy: "cent-07-02.vgs.com"
-    foreman_server: "cent-07-01.vgs.com"
 
+    # ==========================================================================
+    # CONFIGURATION
+    # ==========================================================================
+
+    foreman_server_name: "cent-07-01.vgs.com"
+    foreman_server_ip: "192.168.253.131"
+
+    foreman_proxy_name: "cent-07-02.vgs.com"
     foreman_proxy_ip: "192.168.253.132"
 
-    foreman_base_url: "https://cent-07-01.vgs.com"
+    domain: "vgs.com"
 
-    certs_tar_file: "/root/cent-07-02.vgs.com-certs.tar"
+    # Certificate location ON FOREMAN SERVER
+    certificate_tar_remote: "/root/cent-07-02.vgs.com-certs.tar"
 
-    oauth_key: ""
-    oauth_secret: ""
+    # Certificate temporary location ON CONTROLLER
+    certificate_tar_controller: "/tmp/cent-07-02.vgs.com-certs.tar"
 
-    repo_server: "http://http-server-01.vgs.com/repo"
-
-    dhcp_gateway: "192.168.253.2"
-
-    # Required for copying Rocky EFI files from NetBox
-    netbox_host: "netbox.vgs.com"
-    netbox_user: "admin"
-    netbox_password: "Vigneshv12$"
+    # Output used to extract OAuth values
+    certificate_output: "/tmp/cent-07-02-certs-generate.out"
 
   tasks:
 
-    # ============================================================
-    # STEP 1 - VALIDATE REQUIRED FILES AND VARIABLES
-    # ============================================================
+    # ==========================================================================
+    # STEP 1 - VERIFY THIS IS FOREMAN SERVER
+    # ==========================================================================
+
+    - name: Display Foreman certificate generation information
+      ansible.builtin.debug:
+        msg:
+          - "=========================================================="
+          - "FOREMAN SERVER CERTIFICATE GENERATION"
+          - "=========================================================="
+          - "Foreman Server : {{ foreman_server_name }}"
+          - "Smart Proxy    : {{ foreman_proxy_name }}"
+          - "Certificate    : {{ certificate_tar_remote }}"
+          - "=========================================================="
+
+    - name: Verify Foreman installer exists
+      ansible.builtin.stat:
+        path: /usr/sbin/foreman-installer
+      register: foreman_installer_binary
+
+    - name: Check alternative Foreman installer location
+      ansible.builtin.stat:
+        path: /bin/foreman-installer
+      register: foreman_installer_binary_alt
+      when: not foreman_installer_binary.stat.exists
+
+    - name: Verify foreman-proxy-certs-generate exists
+      ansible.builtin.command:
+        cmd: which foreman-proxy-certs-generate
+      register: proxy_certs_command
+      changed_when: false
+      failed_when: proxy_certs_command.rc != 0
+
+    # ==========================================================================
+    # STEP 2 - CHECK EXISTING CERTIFICATE
+    # ==========================================================================
+
+    - name: Check existing Smart Proxy certificate archive
+      ansible.builtin.stat:
+        path: "{{ certificate_tar_remote }}"
+      register: existing_certificate
+
+    - name: Remove incomplete certificate output file
+      ansible.builtin.file:
+        path: "{{ certificate_output }}"
+        state: absent
+      when: not existing_certificate.stat.exists
+
+    # ==========================================================================
+    # STEP 3 - GENERATE CERTIFICATE ON CENT-07-01
+    # ==========================================================================
+
+    - name: Generate Smart Proxy certificates
+      ansible.builtin.shell: |
+        set -o pipefail
+
+        foreman-proxy-certs-generate \
+          --foreman-proxy-fqdn "{{ foreman_proxy_name }}" \
+          --certs-tar "{{ certificate_tar_remote }}" \
+          2>&1 | tee "{{ certificate_output }}"
+      args:
+        executable: /bin/bash
+      register: certificate_generate
+      when: not existing_certificate.stat.exists
+      changed_when: certificate_generate.rc == 0
+
+    - name: Verify Smart Proxy certificate archive exists
+      ansible.builtin.stat:
+        path: "{{ certificate_tar_remote }}"
+      register: generated_certificate
+
+    - name: Fail if Smart Proxy certificate was not generated
+      ansible.builtin.fail:
+        msg: |
+          Smart Proxy certificate archive was not created.
+
+          Expected:
+          {{ certificate_tar_remote }}
+      when: not generated_certificate.stat.exists
+
+    # ==========================================================================
+    # STEP 4 - READ CERTIFICATE GENERATION OUTPUT
+    # ==========================================================================
+
+    - name: Check certificate output file
+      ansible.builtin.stat:
+        path: "{{ certificate_output }}"
+      register: certificate_output_file
+
+    - name: Read certificate generation output
+      ansible.builtin.slurp:
+        src: "{{ certificate_output }}"
+      register: certificate_output_content
+      when: certificate_output_file.stat.exists
+      no_log: true
+
+    # ==========================================================================
+    # STEP 5 - EXTRACT OAUTH KEY
+    # ==========================================================================
+
+    - name: Extract OAuth consumer key
+      ansible.builtin.shell: |
+        grep -- '--foreman-proxy-oauth-consumer-key' "{{ certificate_output }}" \
+        | tail -1 \
+        | sed -n 's/.*"\([^"]*\)".*/\1/p'
+      args:
+        executable: /bin/bash
+      register: generated_oauth_key
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Extract OAuth consumer secret
+      ansible.builtin.shell: |
+        grep -- '--foreman-proxy-oauth-consumer-secret' "{{ certificate_output }}" \
+        | tail -1 \
+        | sed -n 's/.*"\([^"]*\)".*/\1/p'
+      args:
+        executable: /bin/bash
+      register: generated_oauth_secret
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Store OAuth credentials
+      ansible.builtin.set_fact:
+        proxy_oauth_key: "{{ generated_oauth_key.stdout | trim }}"
+        proxy_oauth_secret: "{{ generated_oauth_secret.stdout | trim }}"
+      no_log: true
+
+    - name: Fail if OAuth consumer key is missing
+      ansible.builtin.fail:
+        msg: |
+          Unable to extract Smart Proxy OAuth consumer key.
+
+          Certificate:
+          {{ certificate_tar_remote }}
+      when: proxy_oauth_key | length == 0
+
+    - name: Fail if OAuth consumer secret is missing
+      ansible.builtin.fail:
+        msg: |
+          Unable to extract Smart Proxy OAuth consumer secret.
+      when: proxy_oauth_secret | length == 0
+
+    # ==========================================================================
+    # STEP 6 - FETCH CERTIFICATE TO ANSIBLE CONTROLLER
+    # ==========================================================================
+
+    - name: Fetch Smart Proxy certificate to Ansible controller
+      ansible.builtin.fetch:
+        src: "{{ certificate_tar_remote }}"
+        dest: "{{ certificate_tar_controller }}"
+        flat: true
+
+    - name: Verify certificate exists on Ansible controller
+      ansible.builtin.stat:
+        path: "{{ certificate_tar_controller }}"
+      delegate_to: localhost
+      become: false
+      register: controller_certificate
+
+    - name: Fail if certificate was not copied to controller
+      ansible.builtin.fail:
+        msg: |
+          Certificate archive was not copied to the Ansible controller.
+
+          Expected controller path:
+          {{ certificate_tar_controller }}
+      when: not controller_certificate.stat.exists
+
+    - name: Display Foreman certificate generation completion
+      ansible.builtin.debug:
+        msg:
+          - "=========================================================="
+          - "CERTIFICATE GENERATION COMPLETED"
+          - "=========================================================="
+          - "Generated on       : {{ foreman_server_name }}"
+          - "Certificate remote : {{ certificate_tar_remote }}"
+          - "Certificate local  : {{ certificate_tar_controller }}"
+          - "=========================================================="
+
+
+# ==============================================================================
+# PLAY 2 - INSTALL AND CONFIGURE SMART PROXY ON CENT-07-02
+# ==============================================================================
+
+- name: Install and configure Foreman Smart Proxy
+  hosts: cent-07-02.vgs.com
+  become: true
+  gather_facts: true
+
+  vars:
+
+    # ==========================================================================
+    # GLOBAL CONFIGURATION
+    # ==========================================================================
+
+    repo_server: "http-server-01.vgs.com"
+    repo_root: "http://http-server-01.vgs.com/repo"
+
+    domain: "vgs.com"
+
+    dns_ip: "192.168.253.1"
+    dns_server: "192.168.253.1"
+
+    dhcp_gateway: "192.168.253.2"
+
+    foreman_server_name: "cent-07-01.vgs.com"
+    foreman_server_ip: "192.168.253.131"
+
+    foreman_proxy_name: "cent-07-02.vgs.com"
+    foreman_proxy_ip: "192.168.253.132"
+
+    # Certificate on controller
+    certificate_tar_controller: "/tmp/cent-07-02.vgs.com-certs.tar"
+
+    # Certificate destination on proxy
+    certificate_tar_proxy: "/root/cent-07-02.vgs.com-certs.tar"
+
+    # TFTP
+    tftp_root: "/var/lib/tftpboot"
+
+  tasks:
+
+    # ==========================================================================
+    # STEP 1 - DISPLAY INFORMATION
+    # ==========================================================================
 
     - name: Display Smart Proxy installation information
-      debug:
+      ansible.builtin.debug:
         msg:
-          - "Foreman Server: {{ foreman_server }}"
-          - "Smart Proxy: {{ foreman_proxy }}"
-          - "Certificate TAR: {{ certs_tar_file }}"
+          - "=========================================================="
+          - "FOREMAN SMART PROXY INSTALLATION"
+          - "=========================================================="
+          - "Proxy Host       : {{ foreman_proxy_name }}"
+          - "Proxy IP         : {{ foreman_proxy_ip }}"
+          - "Foreman Server   : {{ foreman_server_name }}"
+          - "Foreman IP       : {{ foreman_server_ip }}"
+          - "Repository       : {{ repo_root }}"
+          - "DNS Server       : {{ dns_server }}"
+          - "DHCP Gateway     : {{ dhcp_gateway }}"
+          - "TFTP Root        : {{ tftp_root }}"
+          - "=========================================================="
 
-    - name: Check certificate archive exists
-      stat:
-        path: "{{ certs_tar_file }}"
-      register: cert_tar
+    # ==========================================================================
+    # STEP 2 - HOSTNAME
+    # ==========================================================================
 
-    - name: Fail if certificate archive is missing
-      fail:
-        msg: |
-          Certificate archive not found:
+    - name: Configure Smart Proxy hostname
+      ansible.builtin.hostname:
+        name: "{{ foreman_proxy_name }}"
 
-          {{ certs_tar_file }}
+    - name: Add Foreman server to hosts file
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "{{ foreman_server_ip }} {{ foreman_server_name }} cent-07-01"
+        state: present
 
-          Copy the certificate archive generated on cent-07-01
-          to this Smart Proxy before running the playbook.
-      when: not cert_tar.stat.exists
+    - name: Add Smart Proxy to hosts file
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "{{ foreman_proxy_ip }} {{ foreman_proxy_name }} cent-07-02"
+        state: present
 
-    - name: Check OAuth key is provided
-      fail:
-        msg: "oauth_key is empty. Pass it using -e or configure it in vars."
-      when: oauth_key | length == 0
+    # ==========================================================================
+    # STEP 3 - DNS
+    # ==========================================================================
 
-    - name: Check OAuth secret is provided
-      fail:
-        msg: "oauth_secret is empty. Pass it using -e or configure it in vars."
-      when: oauth_secret | length == 0
+    - name: Configure DNS resolver
+      ansible.builtin.copy:
+        dest: /etc/resolv.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          search {{ domain }}
+          nameserver {{ dns_ip }}
 
+    # ==========================================================================
+    # STEP 4 - CLEAN YUM REPOSITORIES
+    # ==========================================================================
 
-    # ============================================================
-    # STEP 2 - REMOVE OLD REPOSITORIES
-    # ============================================================
-
-    - name: Find existing repository files
-      find:
+    - name: Find existing YUM repository files
+      ansible.builtin.find:
         paths: /etc/yum.repos.d
         patterns: "*.repo"
         file_type: file
-      register: repo_files
+      register: existing_repo_files
 
-    - name: Remove existing repository files
-      file:
+    - name: Remove existing YUM repository files
+      ansible.builtin.file:
         path: "{{ item.path }}"
         state: absent
-      loop: "{{ repo_files.files }}"
+      loop: "{{ existing_repo_files.files }}"
 
-
-    # ============================================================
-    # STEP 3 - CREATE LOCAL PATCH REPOSITORY
-    # ============================================================
-
-    - name: Create patch repository
-      copy:
-        dest: /etc/yum.repos.d/patch.repo
+    - name: Create base repository
+      ansible.builtin.copy:
+        dest: /etc/yum.repos.d/base.repo
         mode: "0644"
         content: |
-          [local-patch]
-          name=Local CentOS Patch Repo
-          baseurl={{ repo_server }}/installed_rhel7
+          [baseos]
+          name=Local CentOS BaseOS Repository
+          baseurl={{ repo_root }}/centos
           enabled=1
           gpgcheck=0
 
           [mesa]
-          name=Local Mesa Repo
-          baseurl={{ repo_server }}/mesa
+          name=Local Mesa Repository
+          baseurl={{ repo_root }}/mesa
           enabled=1
           gpgcheck=0
           priority=1
 
           [gtk]
-          name=Local GTK Repo
-          baseurl={{ repo_server }}/gtk
+          name=Local GTK Repository
+          baseurl={{ repo_root }}/gtk
           enabled=1
           gpgcheck=0
           priority=1
 
+    - name: Create patch repository
+      ansible.builtin.copy:
+        dest: /etc/yum.repos.d/patch.repo
+        mode: "0644"
+        content: |
+          [patch]
+          name=Local CentOS Patch Repository
+          baseurl={{ repo_root }}/installed_rhel7
+          enabled=1
+          gpgcheck=0
 
-    # ============================================================
-    # STEP 4 - PUPPET REPOSITORY
-    # ============================================================
+    - name: Create Foreman repository
+      ansible.builtin.copy:
+        dest: /etc/yum.repos.d/foreman.repo
+        mode: "0644"
+        content: |
+          [foreman]
+          name=Local Foreman Repository
+          baseurl={{ repo_root }}/installed_rhel7
+          enabled=1
+          gpgcheck=0
 
     - name: Create Puppet repository
-      copy:
+      ansible.builtin.copy:
         dest: /etc/yum.repos.d/puppet.repo
         mode: "0644"
         content: |
           [puppet7]
-          name=Puppet 7 Repository EL7
-          baseurl=https://yum.puppet.com/puppet7/el/7/x86_64/
+          name=Local Puppet Repository
+          baseurl={{ repo_root }}/installed_rhel7
           enabled=1
           gpgcheck=0
 
+    - name: Clean yum metadata
+      ansible.builtin.command:
+        cmd: yum clean all
+      changed_when: false
+      failed_when: false
 
-    # ============================================================
-    # STEP 5 - FOREMAN REPOSITORIES
-    # ============================================================
+    - name: Remove yum cache
+      ansible.builtin.file:
+        path: /var/cache/yum
+        state: absent
 
-    - name: Create Foreman repository
-      copy:
-        dest: /etc/yum.repos.d/foreman-online.repo
-        mode: "0644"
-        content: |
-          [foreman-new-repo]
-          name=Foreman New Repo
-          baseurl=https://yum-backend.repo-rpm01.osuosl.theforeman.org/releases/3.0/el7/x86_64/
-          enabled=1
-          gpgcheck=0
-
-          [foreman-add-repo]
-          name=Foreman Add Repo
-          baseurl=https://yum.theforeman.org/plugins/3.2/el7/x86_64/
-          enabled=1
-          gpgcheck=0
-
-
-    # ============================================================
-    # STEP 6 - CENTOS VAULT REPOSITORIES
-    # ============================================================
-
-    - name: Create CentOS Vault repository
-      copy:
-        dest: /etc/yum.repos.d/vault.repo
-        mode: "0644"
-        content: |
-          [vaultbase]
-          name=CentOS Vault Base
-          baseurl=http://vault.centos.org/7.9.2009/os/x86_64/
-          enabled=1
-          gpgcheck=0
-
-          [updates]
-          name=CentOS Vault Updates
-          baseurl=http://vault.centos.org/7.9.2009/updates/x86_64/
-          enabled=1
-          gpgcheck=0
-
-          [extras]
-          name=CentOS Vault Extras
-          baseurl=http://vault.centos.org/7.9.2009/extras/x86_64/
-          enabled=1
-          gpgcheck=0
-
-
-    # ============================================================
-    # STEP 7 - INSTALL REQUIRED PACKAGES
-    # ============================================================
-
-    - name: Clean YUM metadata
-      command: yum clean all
+    - name: Rebuild yum cache
+      ansible.builtin.command:
+        cmd: yum makecache
       changed_when: false
 
-    - name: Install SSH and required packages
-      yum:
-        name:
-          - sshpass
-          - mesa-libEGL*
-          - gtk*
-        state: present
+    # ==========================================================================
+    # STEP 5 - INSTALL REQUIRED PACKAGES
+    # ==========================================================================
 
-    - name: Install Foreman packages
-      yum:
+    - name: Install required packages
+      ansible.builtin.yum:
         name:
-          - foreman
+          - yum-utils
+          - bind
+          - bind-utils
+          - dhcp
+          - tftp-server
           - foreman-proxy
-          - puppetserver
+          - foreman-installer
         state: present
-        skip_broken: true
+        disable_gpg_check: true
 
-    - name: Install Foreman installer packages
-      yum:
-        name: "foreman-installer*"
-        state: present
-        skip_broken: true
-
-
-    # ============================================================
-    # STEP 8 - EXTRACT FOREMAN CERTIFICATES
-    # ============================================================
-
-    - name: Create Foreman Proxy certificate directory
-      file:
-        path: /etc/foreman-proxy
-        state: directory
-        mode: "0755"
-
-    - name: Extract Smart Proxy certificates
-      unarchive:
-        src: "{{ certs_tar_file }}"
-        dest: /etc/foreman-proxy
-        remote_src: true
-
-
-    # ============================================================
-    # STEP 9 - DETECT ACTIVE NETWORK INTERFACE
-    # ============================================================
+    # ==========================================================================
+    # STEP 6 - DETECT NETWORK INTERFACE
+    # ==========================================================================
 
     - name: Detect default network interface
-      set_fact:
-        proxy_interface: "{{ ansible_default_ipv4.interface }}"
+      ansible.builtin.shell: |
+        ip route show default | awk '{print $5; exit}'
+      args:
+        executable: /bin/bash
+      register: detected_interface
+      changed_when: false
+
+    - name: Detect fallback network interface
+      ansible.builtin.shell: |
+        ip -o -4 addr show | awk '$2 != "lo" {print $2; exit}'
+      args:
+        executable: /bin/bash
+      register: fallback_interface
+      changed_when: false
+      when: detected_interface.stdout | trim | length == 0
+
+    - name: Set Smart Proxy network interface
+      ansible.builtin.set_fact:
+        proxy_interface: >-
+          {{
+            detected_interface.stdout | trim
+            if detected_interface.stdout | trim | length > 0
+            else fallback_interface.stdout | trim
+          }}
 
     - name: Fail when interface cannot be detected
-      fail:
-        msg: "Unable to detect the active network interface."
-      when: proxy_interface is not defined or proxy_interface | length == 0
+      ansible.builtin.fail:
+        msg: "Unable to detect active network interface."
+      when: proxy_interface | length == 0
 
-    - name: Display network information
-      debug:
-        msg:
-          - "Detected Interface: {{ proxy_interface }}"
-          - "IP Address: {{ ansible_default_ipv4.address }}"
-          - "Gateway: {{ ansible_default_ipv4.gateway }}"
+    - name: Display detected interface
+      ansible.builtin.debug:
+        msg: "Detected Smart Proxy interface: {{ proxy_interface }}"
 
+    # ==========================================================================
+    # STEP 7 - COPY CERTIFICATE FROM CONTROLLER
+    # ==========================================================================
 
-    # ============================================================
-    # STEP 10 - FIREWALL CONFIGURATION
-    # ============================================================
+    - name: Check certificate on controller
+      ansible.builtin.stat:
+        path: "{{ certificate_tar_controller }}"
+      delegate_to: localhost
+      become: false
+      register: certificate_on_controller
+
+    - name: Fail if controller certificate is missing
+      ansible.builtin.fail:
+        msg: |
+          Smart Proxy certificate is missing on the Ansible controller.
+
+          Expected:
+          {{ certificate_tar_controller }}
+      when: not certificate_on_controller.stat.exists
+
+    - name: Copy Smart Proxy certificate archive to proxy
+      ansible.builtin.copy:
+        src: "{{ certificate_tar_controller }}"
+        dest: "{{ certificate_tar_proxy }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Verify certificate archive on proxy
+      ansible.builtin.stat:
+        path: "{{ certificate_tar_proxy }}"
+      register: proxy_certificate
+
+    - name: Fail if certificate archive is missing on proxy
+      ansible.builtin.fail:
+        msg: |
+          Certificate archive was not copied successfully.
+
+          Expected:
+          {{ certificate_tar_proxy }}
+      when: not proxy_certificate.stat.exists
+
+    # ==========================================================================
+    # STEP 8 - GET OAUTH DATA FROM FOREMAN PLAY
+    # ==========================================================================
+
+    - name: Get OAuth credentials generated on Foreman server
+      ansible.builtin.set_fact:
+        proxy_oauth_key: "{{ hostvars[foreman_server_name].proxy_oauth_key }}"
+        proxy_oauth_secret: "{{ hostvars[foreman_server_name].proxy_oauth_secret }}"
+      no_log: true
+
+    - name: Verify OAuth consumer key
+      ansible.builtin.fail:
+        msg: "OAuth consumer key is unavailable."
+      when: proxy_oauth_key | default('') | length == 0
+
+    - name: Verify OAuth consumer secret
+      ansible.builtin.fail:
+        msg: "OAuth consumer secret is unavailable."
+      when: proxy_oauth_secret | default('') | length == 0
+
+    # ==========================================================================
+    # STEP 9 - CONFIGURE FIREWALL
+    # ==========================================================================
 
     - name: Enable DHCP firewall service
-      firewalld:
+      ansible.posix.firewalld:
         service: dhcp
         permanent: true
         immediate: true
         state: enabled
+      failed_when: false
 
     - name: Enable TFTP firewall service
-      firewalld:
+      ansible.posix.firewalld:
         service: tftp
         permanent: true
         immediate: true
         state: enabled
+      failed_when: false
 
     - name: Enable HTTP firewall service
-      firewalld:
+      ansible.posix.firewalld:
         service: http
         permanent: true
         immediate: true
         state: enabled
+      failed_when: false
 
     - name: Enable HTTPS firewall service
-      firewalld:
+      ansible.posix.firewalld:
         service: https
         permanent: true
         immediate: true
         state: enabled
+      failed_when: false
 
-    - name: Open Foreman Proxy port 9090
-      firewalld:
+    - name: Open Foreman Proxy port
+      ansible.posix.firewalld:
         port: 9090/tcp
         permanent: true
         immediate: true
         state: enabled
-
-    - name: Open HTTPS port 443
-      firewalld:
-        port: 443/tcp
-        permanent: true
-        immediate: true
-        state: enabled
-
-
-    # ============================================================
-    # STEP 11 - CONFIGURE HOSTNAME
-    # ============================================================
-
-    - name: Set Smart Proxy hostname
-      hostname:
-        name: "{{ foreman_proxy }}"
-
-    - name: Configure hosts file
-      copy:
-        dest: /etc/hosts
-        mode: "0644"
-        content: |
-          127.0.0.1 localhost localhost.localdomain localhost4 localhost4.localdomain4
-          ::1 localhost localhost.localdomain localhost6 localhost6.localdomain6
-
-          {{ foreman_proxy_ip }} {{ foreman_proxy }} cent-07-02
-
-    - name: Verify hostname
-      command: hostname -f
-      register: hostname_check
-      changed_when: false
-
-    - name: Display hostname
-      debug:
-        var: hostname_check.stdout
-
-
-    # ============================================================
-    # STEP 12 - TEMPORARILY MOUNT EFI PARTITIONS
-    # ============================================================
-
-    - name: Create EFI mount points
-      file:
-        path: "{{ item }}"
-        state: directory
-        mode: "0755"
-      loop:
-        - /boot/efi
-        - /boot/efi2
-
-    - name: Check first EFI mount
-      command: mountpoint -q /boot/efi
-      register: efi1_mounted
       failed_when: false
-      changed_when: false
 
-    - name: Mount first EFI partition
-      mount:
-        path: /boot/efi
-        src: /dev/sda1
-        fstype: auto
-        state: mounted
-      when: efi1_mounted.rc != 0
+    # ==========================================================================
+    # STEP 10 - RUN SMART PROXY INSTALLER
+    # ==========================================================================
 
-    - name: Check second EFI mount
-      command: mountpoint -q /boot/efi2
-      register: efi2_mounted
-      failed_when: false
-      changed_when: false
+    - name: Run Foreman Smart Proxy installer
+      ansible.builtin.command:
+        argv:
+          - foreman-installer
+          - --force
+          - --scenario
+          - foreman-proxy-content
+          - --certs-tar-file
+          - "{{ certificate_tar_proxy }}"
+          - --foreman-proxy-register-in-foreman
+          - "true"
+          - --foreman-proxy-foreman-base-url
+          - "https://{{ foreman_server_name }}"
+          - --foreman-proxy-trusted-hosts
+          - "{{ foreman_server_name }}"
+          - --foreman-proxy-trusted-hosts
+          - "{{ foreman_proxy_name }}"
+          - --foreman-proxy-oauth-consumer-key
+          - "{{ proxy_oauth_key }}"
+          - --foreman-proxy-oauth-consumer-secret
+          - "{{ proxy_oauth_secret }}"
+          - --foreman-proxy-dhcp
+          - "true"
+          - --foreman-proxy-dhcp-interface
+          - "{{ proxy_interface }}"
+          - --foreman-proxy-tftp
+          - "true"
+          - --foreman-proxy-tftp-servername
+          - "{{ foreman_proxy_name }}"
+      no_log: true
 
-    - name: Mount second EFI partition
-      mount:
-        path: /boot/efi2
-        src: /dev/sdb1
-        fstype: auto
-        state: mounted
-      when: efi2_mounted.rc != 0
+    # ==========================================================================
+    # STEP 11 - DHCP CONFIGURATION
+    # ==========================================================================
 
-    - name: Check first CentOS shim file
-      stat:
-        path: /boot/efi/EFI/centos/shimx64.efi
-      register: shim1
-
-    - name: Fail if first CentOS shim is missing
-      fail:
-        msg: "/boot/efi/EFI/centos/shimx64.efi not found"
-      when: not shim1.stat.exists
-
-    - name: Check second CentOS shim file
-      stat:
-        path: /boot/efi2/EFI/centos/shimx64.efi
-      register: shim2
-
-    - name: Fail if second CentOS shim is missing
-      fail:
-        msg: "/boot/efi2/EFI/centos/shimx64.efi not found"
-      when: not shim2.stat.exists
-
-
-    # ============================================================
-    # STEP 13 - RUN FOREMAN SMART PROXY INSTALLER
-    # ============================================================
-
-    - name: Run Foreman Proxy installer
-      command: >
-        foreman-installer
-        --force
-        --scenario foreman-proxy-content
-        --certs-tar-file {{ certs_tar_file }}
-        --foreman-proxy-register-in-foreman true
-        --foreman-proxy-foreman-base-url {{ foreman_base_url }}
-        --foreman-proxy-trusted-hosts {{ foreman_server }}
-        --foreman-proxy-trusted-hosts {{ foreman_proxy }}
-        --foreman-proxy-oauth-consumer-key {{ oauth_key }}
-        --foreman-proxy-oauth-consumer-secret {{ oauth_secret }}
-        --foreman-proxy-dhcp true
-        --foreman-proxy-dhcp-interface {{ proxy_interface }}
-        --foreman-proxy-dns true
-        --foreman-proxy-dns-interface {{ proxy_interface }}
-        --foreman-proxy-tftp true
-        --foreman-proxy-tftp-servername {{ foreman_proxy }}
-      register: installer_result
-
-    - name: Display installer result
-      debug:
-        var: installer_result.stdout_lines
-
-
-    # ============================================================
-    # STEP 14 - UNMOUNT LOCAL EFI PARTITIONS
-    # ============================================================
-
-    - name: Unmount second EFI partition
-      mount:
-        path: /boot/efi2
-        state: unmounted
-      when: efi2_mounted.rc != 0
-
-    - name: Unmount first EFI partition
-      mount:
-        path: /boot/efi
-        state: unmounted
-      when: efi1_mounted.rc != 0
-
-
-    # ============================================================
-    # STEP 15 - CONFIGURE DHCP
-    # ============================================================
-
-    - name: Check DHCP configuration file
-      stat:
+    - name: Check DHCP configuration exists
+      ansible.builtin.stat:
         path: /etc/dhcp/dhcpd.conf
-      register: dhcp_conf
+      register: dhcp_configuration
+
+    - name: Ensure DHCP configuration file exists
+      ansible.builtin.file:
+        path: /etc/dhcp/dhcpd.conf
+        state: touch
+        mode: "0644"
+      when: not dhcp_configuration.stat.exists
+
+    - name: Ensure DHCP is authoritative
+      ansible.builtin.lineinfile:
+        path: /etc/dhcp/dhcpd.conf
+        regexp: '^authoritative;'
+        line: 'authoritative;'
+        insertafter: BOF
 
     - name: Add DHCP router option
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/dhcp/dhcpd.conf
-        insertafter: 'option subnet-mask'
-        line: "  option routers {{ dhcp_gateway }};"
+        regexp: '^\s*option routers '
+        line: "option routers {{ dhcp_gateway }};"
         state: present
-      when: dhcp_conf.stat.exists
 
-    - name: Configure DHCP as authoritative
-      replace:
-        path: /etc/dhcp/dhcpd.conf
-        regexp: '^not authoritative;'
-        replace: 'authoritative;'
-      when: dhcp_conf.stat.exists
-
-    - name: Start and enable DHCP service
-      service:
+    - name: Enable DHCP service
+      ansible.builtin.systemd:
         name: dhcpd
+        enabled: true
         state: restarted
-        enabled: true
-
-
-    # ============================================================
-    # STEP 16 - CREATE GRUB2 TFTP DIRECTORY
-    # ============================================================
-
-    - name: Ensure grub2 TFTP directory exists
-      file:
-        path: /var/lib/tftpboot/grub2
-        state: directory
-        owner: foreman-proxy
-        group: root
-        mode: "0755"
-
-
-    # ============================================================
-    # STEP 17 - COPY EFI FILES FROM NETBOX
-    # ============================================================
-
-    - name: Mount NetBox first EFI partition
-      shell: |
-        sshpass -p '{{ netbox_password }}' ssh \
-          -o StrictHostKeyChecking=no \
-          -o UserKnownHostsFile=/dev/null \
-          {{ netbox_user }}@{{ netbox_host }} \
-          "echo '{{ netbox_password }}' | sudo -S mkdir -p /boot/efi && \
-           echo '{{ netbox_password }}' | sudo -S mountpoint -q /boot/efi || \
-           echo '{{ netbox_password }}' | sudo -S mount /dev/sda1 /boot/efi"
-      changed_when: false
-
-    - name: Copy shimx64.efi from NetBox
-      shell: |
-        sshpass -p '{{ netbox_password }}' scp \
-          -o StrictHostKeyChecking=no \
-          -o UserKnownHostsFile=/dev/null \
-          {{ netbox_user }}@{{ netbox_host }}:/boot/efi/EFI/rocky/shimx64.efi \
-          /var/lib/tftpboot/grub2/shimx64.efi
-
-    - name: Copy grub.cfg from NetBox
-      shell: |
-        sshpass -p '{{ netbox_password }}' scp \
-          -o StrictHostKeyChecking=no \
-          -o UserKnownHostsFile=/dev/null \
-          {{ netbox_user }}@{{ netbox_host }}:/boot/efi/EFI/rocky/grub.cfg \
-          /var/lib/tftpboot/grub2/grub.cfg
-
-    - name: Unmount NetBox EFI partitions
-      shell: |
-        sshpass -p '{{ netbox_password }}' ssh \
-          -o StrictHostKeyChecking=no \
-          -o UserKnownHostsFile=/dev/null \
-          {{ netbox_user }}@{{ netbox_host }} \
-          "echo '{{ netbox_password }}' | sudo -S sync; \
-           echo '{{ netbox_password }}' | sudo -S umount /boot/efi 2>/dev/null || true; \
-           echo '{{ netbox_password }}' | sudo -S umount /boot/efi2 2>/dev/null || true"
-      changed_when: false
-
-
-    # ============================================================
-    # STEP 18 - SET EFI TFTP FILE PERMISSIONS
-    # ============================================================
-
-    - name: Set EFI boot file permissions
-      file:
-        path: "{{ item }}"
-        owner: foreman-proxy
-        group: root
-        mode: "0644"
-      loop:
-        - /var/lib/tftpboot/grub2/shimx64.efi
-        - /var/lib/tftpboot/grub2/grub.cfg
-
-
-    # ============================================================
-    # STEP 19 - DOWNLOAD ROCKY LINUX 8 PXE FILES
-    # ============================================================
-
-    - name: Create Rocky Linux 8 TFTP directory
-      file:
-        path: /var/lib/tftpboot/rocky8
-        state: directory
-        owner: foreman-proxy
-        group: root
-        mode: "0755"
-
-    - name: Download Rocky Linux 8 vmlinuz
-      get_url:
-        url: "{{ repo_server }}/rocky8/isolinux/vmlinuz"
-        dest: /var/lib/tftpboot/rocky8/vmlinuz
-        owner: foreman-proxy
-        group: root
-        mode: "0644"
-
-    - name: Download Rocky Linux 8 initrd
-      get_url:
-        url: "{{ repo_server }}/rocky8/isolinux/initrd.img"
-        dest: /var/lib/tftpboot/rocky8/initrd.img
-        owner: foreman-proxy
-        group: root
-        mode: "0644"
-
-
-    # ============================================================
-    # STEP 20 - DOWNLOAD ROCKY LINUX 9 PXE FILES
-    # ============================================================
-
-    - name: Create Rocky Linux 9 TFTP directory
-      file:
-        path: /var/lib/tftpboot/rocky9
-        state: directory
-        owner: foreman-proxy
-        group: root
-        mode: "0755"
-
-    - name: Download Rocky Linux 9 vmlinuz
-      get_url:
-        url: "{{ repo_server }}/rocky9/images/pxeboot/vmlinuz"
-        dest: /var/lib/tftpboot/rocky9/vmlinuz
-        owner: foreman-proxy
-        group: root
-        mode: "0644"
-
-    - name: Download Rocky Linux 9 initrd
-      get_url:
-        url: "{{ repo_server }}/rocky9/images/pxeboot/initrd.img"
-        dest: /var/lib/tftpboot/rocky9/initrd.img
-        owner: foreman-proxy
-        group: root
-        mode: "0644"
-
-
-    # ============================================================
-    # STEP 21 - DOWNLOAD ROCKY LINUX 9.2 PXE FILES
-    # ============================================================
-
-    - name: Create Rocky Linux 9.2 TFTP directory
-      file:
-        path: /var/lib/tftpboot/rocky92
-        state: directory
-        owner: foreman-proxy
-        group: root
-        mode: "0755"
-
-    - name: Download Rocky Linux 9.2 vmlinuz
-      get_url:
-        url: "{{ repo_server }}/rocky9.2/images/pxeboot/vmlinuz"
-        dest: /var/lib/tftpboot/rocky92/vmlinuz
-        owner: foreman-proxy
-        group: root
-        mode: "0644"
-
-    - name: Download Rocky Linux 9.2 initrd
-      get_url:
-        url: "{{ repo_server }}/rocky9.2/images/pxeboot/initrd.img"
-        dest: /var/lib/tftpboot/rocky92/initrd.img
-        owner: foreman-proxy
-        group: root
-        mode: "0644"
-
-
-    # ============================================================
-    # STEP 22 - VERIFY SERVICES
-    # ============================================================
-
-    - name: Ensure Foreman Proxy is enabled
-      service:
-        name: foreman-proxy
-        state: started
-        enabled: true
-
-    - name: Verify Foreman Proxy status
-      command: systemctl is-active foreman-proxy
-      register: proxy_status
-      changed_when: false
-
-    - name: Verify DHCP status
-      command: systemctl is-active dhcpd
-      register: dhcp_status
-      changed_when: false
       failed_when: false
 
-    - name: Installation summary
-      debug:
+    # ==========================================================================
+    # STEP 12 - DETECT DNSSEC-KEYGEN
+    # ==========================================================================
+
+    - name: Check dnssec-keygen in usr sbin
+      ansible.builtin.stat:
+        path: /usr/sbin/dnssec-keygen
+      register: dnssec_usr_sbin
+
+    - name: Check dnssec-keygen in sbin
+      ansible.builtin.stat:
+        path: /sbin/dnssec-keygen
+      register: dnssec_sbin
+
+    - name: Set dnssec-keygen path
+      ansible.builtin.set_fact:
+        dnssec_keygen_path: >-
+          {{
+            '/usr/sbin/dnssec-keygen'
+            if dnssec_usr_sbin.stat.exists
+            else (
+              '/sbin/dnssec-keygen'
+              if dnssec_sbin.stat.exists
+              else ''
+            )
+          }}
+
+    - name: Fail when dnssec-keygen is unavailable
+      ansible.builtin.fail:
+        msg: "dnssec-keygen was not found."
+      when: dnssec_keygen_path | length == 0
+
+    # ==========================================================================
+    # STEP 13 - CREATE DNS KEY
+    # ==========================================================================
+
+    - name: Check existing DNS key
+      ansible.builtin.stat:
+        path: /etc/foreman-proxy/dns.key
+      register: existing_dns_key
+
+    - name: Generate DNSSEC key
+      ansible.builtin.command:
+        argv:
+          - "{{ dnssec_keygen_path }}"
+          - -a
+          - HMAC-SHA512
+          - -b
+          - "512"
+          - -n
+          - USER
+          - -K
+          - /etc/foreman-proxy
+          - foreman-proxy
+      when: not existing_dns_key.stat.exists
+      no_log: true
+
+    - name: Find generated DNS private key
+      ansible.builtin.find:
+        paths: /etc/foreman-proxy
+        patterns: "Kforeman-proxy*.private"
+        file_type: file
+      register: generated_dns_private_key
+      when: not existing_dns_key.stat.exists
+
+    - name: Fail if DNS private key was not generated
+      ansible.builtin.fail:
+        msg: "DNS private key was not generated."
+      when:
+        - not existing_dns_key.stat.exists
+        - generated_dns_private_key.matched | int == 0
+
+    - name: Extract DNS secret
+      ansible.builtin.shell: |
+        awk '/^Key:/ {print $2}' "{{ generated_dns_private_key.files[0].path }}"
+      args:
+        executable: /bin/bash
+      register: generated_dns_secret
+      changed_when: false
+      no_log: true
+      when: not existing_dns_key.stat.exists
+
+    - name: Create Foreman Proxy DNS key
+      ansible.builtin.copy:
+        dest: /etc/foreman-proxy/dns.key
+        owner: foreman-proxy
+        group: foreman-proxy
+        mode: "0600"
+        content: |
+          key "foreman-proxy" {
+            algorithm hmac-sha512;
+            secret "{{ generated_dns_secret.stdout }}";
+          };
+      no_log: true
+      when:
+        - not existing_dns_key.stat.exists
+        - generated_dns_secret.stdout | default('') | length > 0
+
+    # ==========================================================================
+    # STEP 14 - CONFIGURE DNS PROVIDER
+    # ==========================================================================
+
+    - name: Configure Foreman Proxy DNS
+      ansible.builtin.command:
+        argv:
+          - foreman-installer
+          - --scenario
+          - foreman-proxy-content
+          - --foreman-proxy-dns
+          - "true"
+          - --foreman-proxy-dns-managed
+          - "false"
+          - --foreman-proxy-dns-provider
+          - nsupdate
+          - --foreman-proxy-dns-server
+          - "{{ dns_server }}"
+          - --foreman-proxy-keyfile
+          - /etc/foreman-proxy/dns.key
+      failed_when: false
+
+    # ==========================================================================
+    # STEP 15 - TFTP
+    # ==========================================================================
+
+    - name: Ensure TFTP root exists
+      ansible.builtin.file:
+        path: "{{ tftp_root }}"
+        state: directory
+        owner: foreman-proxy
+        group: root
+        mode: "0755"
+
+    # ==========================================================================
+    # STEP 16 - ROCKY 8 PXE
+    # ==========================================================================
+
+    - name: Create Rocky 8 PXE directory
+      ansible.builtin.file:
+        path: "{{ tftp_root }}/rocky8"
+        state: directory
+        owner: foreman-proxy
+        group: root
+        mode: "0755"
+
+    - name: Download Rocky 8 vmlinuz
+      ansible.builtin.get_url:
+        url: "{{ repo_root }}/rocky8/isolinux/vmlinuz"
+        dest: "{{ tftp_root }}/rocky8/vmlinuz"
+        owner: foreman-proxy
+        group: root
+        mode: "0644"
+
+    - name: Download Rocky 8 initrd
+      ansible.builtin.get_url:
+        url: "{{ repo_root }}/rocky8/isolinux/initrd.img"
+        dest: "{{ tftp_root }}/rocky8/initrd.img"
+        owner: foreman-proxy
+        group: root
+        mode: "0644"
+
+    # ==========================================================================
+    # STEP 17 - ROCKY 9 PXE
+    # ==========================================================================
+
+    - name: Create Rocky 9 PXE directory
+      ansible.builtin.file:
+        path: "{{ tftp_root }}/rocky9"
+        state: directory
+        owner: foreman-proxy
+        group: root
+        mode: "0755"
+
+    - name: Download Rocky 9 vmlinuz
+      ansible.builtin.get_url:
+        url: "{{ repo_root }}/rocky9/images/pxeboot/vmlinuz"
+        dest: "{{ tftp_root }}/rocky9/vmlinuz"
+        owner: foreman-proxy
+        group: root
+        mode: "0644"
+
+    - name: Download Rocky 9 initrd
+      ansible.builtin.get_url:
+        url: "{{ repo_root }}/rocky9/images/pxeboot/initrd.img"
+        dest: "{{ tftp_root }}/rocky9/initrd.img"
+        owner: foreman-proxy
+        group: root
+        mode: "0644"
+
+    # ==========================================================================
+    # STEP 18 - ROCKY 9.2 PXE
+    # ==========================================================================
+
+    - name: Create Rocky 9.2 PXE directory
+      ansible.builtin.file:
+        path: "{{ tftp_root }}/rocky92"
+        state: directory
+        owner: foreman-proxy
+        group: root
+        mode: "0755"
+
+    - name: Download Rocky 9.2 vmlinuz
+      ansible.builtin.get_url:
+        url: "{{ repo_root }}/rocky9.2/images/pxeboot/vmlinuz"
+        dest: "{{ tftp_root }}/rocky92/vmlinuz"
+        owner: foreman-proxy
+        group: root
+        mode: "0644"
+
+    - name: Download Rocky 9.2 initrd
+      ansible.builtin.get_url:
+        url: "{{ repo_root }}/rocky9.2/images/pxeboot/initrd.img"
+        dest: "{{ tftp_root }}/rocky92/initrd.img"
+        owner: foreman-proxy
+        group: root
+        mode: "0644"
+
+    # ==========================================================================
+    # STEP 19 - FINAL SERVICE RESTART
+    # ==========================================================================
+
+    - name: Restart Foreman Smart Proxy
+      ansible.builtin.systemd:
+        name: foreman-proxy
+        enabled: true
+        state: restarted
+
+    - name: Display final installation summary
+      ansible.builtin.debug:
         msg:
-          - "=============================================="
-          - "Foreman Smart Proxy installation completed"
-          - "=============================================="
-          - "Smart Proxy: {{ foreman_proxy }}"
-          - "Foreman Server: {{ foreman_server }}"
-          - "Interface: {{ proxy_interface }}"
-          - "Foreman Proxy Status: {{ proxy_status.stdout }}"
-          - "DHCP Status: {{ dhcp_status.stdout }}"
-          - "Rocky 8 PXE: /var/lib/tftpboot/rocky8"
-          - "Rocky 9 PXE: /var/lib/tftpboot/rocky9"
-          - "Rocky 9.2 PXE: /var/lib/tftpboot/rocky92"
-          - "=============================================="
+          - "=========================================================="
+          - "FOREMAN SMART PROXY INSTALLATION COMPLETED"
+          - "=========================================================="
+          - "Foreman Server : {{ foreman_server_name }}"
+          - "Smart Proxy    : {{ foreman_proxy_name }}"
+          - "Repository     : {{ repo_root }}"
+          - "DNS Server     : {{ dns_server }}"
+          - "DHCP Gateway   : {{ dhcp_gateway }}"
+          - "TFTP Root      : {{ tftp_root }}"
+          - "Rocky 8 PXE    : {{ tftp_root }}/rocky8"
+          - "Rocky 9 PXE    : {{ tftp_root }}/rocky9"
+          - "Rocky 9.2 PXE  : {{ tftp_root }}/rocky92"
+          - "=========================================================="
