@@ -12,16 +12,18 @@
 
     vm_name: "ESXI-01"
 
+    # Cygwin paths - used by Ansible file operations
     vm_dir_cygwin: "/cygdrive/d/ESXI/ESXI-01"
     vmx_file_cygwin: "/cygdrive/d/ESXI/ESXI-01/ESXI-01.vmx"
     vmdk_file_cygwin: "/cygdrive/d/ESXI/ESXI-01/ESXI-01.vmdk"
     vmware_log_cygwin: "/cygdrive/d/ESXI/ESXI-01/vmware.log"
 
+    # Windows paths - used by VMware Windows executables
     vmx_file_windows: 'D:\ESXI\ESXI-01\ESXI-01.vmx'
     vmdk_file_windows: 'D:\ESXI\ESXI-01\ESXI-01.vmdk'
 
     # ========================================================================
-    # ESXi ISO
+    # ISO
     # ========================================================================
 
     esxi_iso_cygwin: "/cygdrive/e/vmware/ESXi-8.0.1-auto.iso"
@@ -34,7 +36,7 @@
     ks_url: "http://192.168.253.136/repo/ks.cfg"
 
     # ========================================================================
-    # VMware Workstation
+    # VMWARE WORKSTATION
     # ========================================================================
 
     vmrun_cygwin: "/cygdrive/d/VM workstation/vmrun.exe"
@@ -56,7 +58,10 @@
     # ========================================================================
 
     vm_network_name: "VMnet0"
-    vm_network_adapter: "e1000"
+
+    # IMPORTANT:
+    # VMXNET3 is used for ESXi 8 nested installation.
+    vm_network_adapter: "vmxnet3"
 
     esxi_ip: "192.168.253.128"
     esxi_netmask: "255.255.255.0"
@@ -77,7 +82,7 @@
     https_timeout_seconds: 300
 
     # ========================================================================
-    # EXPECTED VMX LINES
+    # VMX VALIDATION STRINGS
     # ========================================================================
 
     vmx_hw_line: 'virtualHW.version = "19"'
@@ -95,7 +100,7 @@
     vmx_network_present_line: 'ethernet0.present = "TRUE"'
     vmx_network_type_line: 'ethernet0.connectionType = "custom"'
     vmx_network_name_line: 'ethernet0.vnet = "VMnet0"'
-    vmx_network_device_line: 'ethernet0.virtualDev = "e1000"'
+    vmx_network_device_line: 'ethernet0.virtualDev = "vmxnet3"'
     vmx_network_connected_line: 'ethernet0.startConnected = "TRUE"'
 
     vmx_install_boot_line: 'efi.bootOrder = "cdrom,hdd"'
@@ -124,8 +129,8 @@
           - "Disk          : {{ vm_disk_gb }} GB"
           - "Firmware      : EFI"
           - "Nested VT     : ENABLED"
-          - "Network       : CUSTOM / VMnet0"
-          - "Adapter       : e1000"
+          - "Network       : CUSTOM / {{ vm_network_name }}"
+          - "Adapter       : {{ vm_network_adapter }}"
           - "ESXi IP       : {{ esxi_ip }}"
           - "Netmask       : {{ esxi_netmask }}"
           - "Gateway       : {{ esxi_gateway }}"
@@ -150,15 +155,13 @@
           ESXi CUSTOMIZED ISO NOT FOUND
           ============================================================
 
-          Expected:
-
           {{ esxi_iso_windows }}
 
           ============================================================
       when: not iso_stat.stat.exists
 
     # ========================================================================
-    # CHECK VMRUN
+    # CHECK VMWARE TOOLS
     # ========================================================================
 
     - name: Check vmrun.exe
@@ -174,10 +177,6 @@
           {{ vmrun_cygwin }}
       when: not vmrun_stat.stat.exists
 
-    # ========================================================================
-    # CHECK VMWARE
-    # ========================================================================
-
     - name: Check VMware Workstation executable
       ansible.builtin.stat:
         path: "{{ vmware_cygwin }}"
@@ -190,10 +189,6 @@
 
           {{ vmware_cygwin }}
       when: not vmware_stat.stat.exists
-
-    # ========================================================================
-    # CHECK VDISKMANAGER
-    # ========================================================================
 
     - name: Check vmware-vdiskmanager.exe
       ansible.builtin.stat:
@@ -234,22 +229,19 @@
           {{ ks_url }}
 
           Return code:
-
           {{ ks_http_result.rc }}
 
           STDOUT:
-
           {{ ks_http_result.stdout }}
 
           STDERR:
-
           {{ ks_http_result.stderr }}
 
           ============================================================
       when: ks_http_result.rc != 0
 
     # ========================================================================
-    # VALIDATE HTTP KS.CFG
+    # VALIDATE HTTP KS
     # ========================================================================
 
     - name: Calculate HTTP KS validation flags
@@ -304,7 +296,7 @@
         success_msg: "HTTP KS.CFG validated successfully."
 
     # ========================================================================
-    # VERIFY BOOT.CFG
+    # VERIFY ISO BOOT.CFG
     # ========================================================================
 
     - name: Extract BOOT.CFG from ISO
@@ -364,7 +356,7 @@
         mode: "0755"
 
     # ========================================================================
-    # GET CURRENT VM STATE
+    # CHECK CURRENT VM
     # ========================================================================
 
     - name: Get running VMware VMs
@@ -456,7 +448,7 @@
     # ========================================================================
     # REMOVE STALE LOCKS / RUNTIME STATE
     #
-    # VM directory and VMDK are NOT deleted.
+    # DOES NOT DELETE VMDK.
     # ========================================================================
 
     - name: Remove stale VMware lock directories
@@ -561,12 +553,12 @@
     # CREATE INSTALLATION VMX
     #
     # IMPORTANT:
+    # - VMXNET3 NIC
+    # - VMnet0
     # - NO pciBridge*
     # - NO pciSlotNumber
-    # - e1000 NIC
-    # - VMnet0
     # - CD connected
-    # - CD-ROM first
+    # - CD-ROM boot first
     # ========================================================================
 
     - name: Create installation VMX
@@ -582,6 +574,10 @@
 
           displayName = "ESXI-01"
           guestOS = "vmkernel7"
+
+          # ==========================================================
+          # CPU / MEMORY
+          # ==========================================================
 
           memsize = "24568"
           numvcpus = "12"
@@ -605,7 +601,7 @@
           monitor.virtual_mmu = "hardware"
 
           # ==========================================================
-          # SCSI CONTROLLER / DISK
+          # SCSI
           # ==========================================================
 
           scsi0.present = "TRUE"
@@ -631,12 +627,12 @@
           ethernet0.present = "TRUE"
           ethernet0.connectionType = "custom"
           ethernet0.vnet = "VMnet0"
-          ethernet0.virtualDev = "e1000"
+          ethernet0.virtualDev = "vmxnet3"
           ethernet0.addressType = "generated"
           ethernet0.startConnected = "TRUE"
 
           # ==========================================================
-          # DISABLE UNNECESSARY DEVICES
+          # DEVICES
           # ==========================================================
 
           usb.present = "FALSE"
@@ -648,10 +644,6 @@
           serial0.present = "FALSE"
           parallel0.present = "FALSE"
           printer0.present = "FALSE"
-
-          # ==========================================================
-          # DISPLAY
-          # ==========================================================
 
           svga.present = "TRUE"
           svga.autodetect = "TRUE"
@@ -733,9 +725,9 @@
           INSTALLATION VMX VALIDATION FAILED
           ============================================================
 
-          Hardware       : {{ install_hw_ok }}
-          Firmware       : {{ install_firmware_ok }}
-          Nested VT      : {{ install_nested_ok }}
+          Hardware        : {{ install_hw_ok }}
+          Firmware        : {{ install_firmware_ok }}
+          Nested VT       : {{ install_nested_ok }}
           Disk            : {{ install_disk_ok }}
           Disk Path       : {{ install_disk_path_ok }}
           CD              : {{ install_cd_ok }}
@@ -752,23 +744,32 @@
           ============================================================
         success_msg: "Installation VMX validated successfully."
 
-    - name: Ensure installation VMX has no manual PCI topology
+    # ========================================================================
+    # MAKE SURE OLD PCI CONFIGURATION IS GONE
+    # ========================================================================
+
+    - name: Check for unwanted manual PCI configuration
       ansible.builtin.shell: |
-        if grep -qE '^(pciBridge|.*\.pciSlotNumber)' "{{ vmx_file_cygwin }}"; then
-          echo "Manual PCI topology detected:"
-          grep -nE '^(pciBridge|.*\.pciSlotNumber)' "{{ vmx_file_cygwin }}"
+        if grep -qE 'pciBridge|pciSlotNumber' "{{ vmx_file_cygwin }}"; then
+          echo "Unwanted PCI configuration found:"
+          grep -nE 'pciBridge|pciSlotNumber' "{{ vmx_file_cygwin }}"
           exit 1
         fi
-        echo "No manual PCI bridge/slot configuration detected."
+
+        echo "No manual PCI bridge or PCI slot configuration found."
       args:
         executable: /bin/bash
+      register: pci_check
       changed_when: false
 
     # ========================================================================
-    # START INSTALLATION USING VMWARE WORKSTATION
+    # START INSTALLATION VM
+    #
+    # Do not use vmrun start nogui.
+    # Start the VM through VMware Workstation.
     # ========================================================================
 
-    - name: Launch VMware Workstation with ESXi installer VM
+    - name: Launch VMware Workstation with ESXi installer
       ansible.builtin.command:
         argv:
           - powershell.exe
@@ -861,7 +862,7 @@
         seconds: "{{ installation_wait_seconds }}"
 
     # ========================================================================
-    # READ LOG
+    # SHOW LOG
     # ========================================================================
 
     - name: Check VMware log
@@ -880,7 +881,7 @@
       when: installation_log_stat.stat.exists
 
     # ========================================================================
-    # STOP INSTALLATION
+    # STOP INSTALLATION VM
     # ========================================================================
 
     - name: Stop installation VM
@@ -896,7 +897,18 @@
       changed_when: installation_stop.rc == 0
       failed_when: false
 
-    - name: Wait for installation VM shutdown
+    - name: Display installation stop result
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "INSTALLATION VM STOP"
+          - "============================================================"
+          - "Return Code : {{ installation_stop.rc }}"
+          - "STDOUT      : {{ installation_stop.stdout }}"
+          - "STDERR      : {{ installation_stop.stderr }}"
+          - "============================================================"
+
+    - name: Wait after installation shutdown
       ansible.builtin.pause:
         seconds: "{{ shutdown_wait_seconds }}"
 
@@ -937,7 +949,7 @@
       when: not installation_vm_stopped
 
     # ========================================================================
-    # REMOVE LOCKS AFTER STOP
+    # REMOVE LOCKS
     # ========================================================================
 
     - name: Remove post-install VMware lock directories
@@ -951,7 +963,7 @@
         executable: /bin/bash
       changed_when: false
 
-    - name: Remove post-install runtime state
+    - name: Remove post-install runtime files
       ansible.builtin.shell: |
         rm -f "{{ vm_dir_cygwin }}"/*.vmem 2>/dev/null || true
         rm -f "{{ vm_dir_cygwin }}"/*.vmss 2>/dev/null || true
@@ -975,6 +987,13 @@
 
     # ========================================================================
     # CREATE FINAL VMX
+    #
+    # Final state:
+    #   - VMXNET3
+    #   - VMnet0
+    #   - ISO disconnected
+    #   - HDD boot
+    #   - No PCI topology overrides
     # ========================================================================
 
     - name: Create final installed ESXi VMX
@@ -1013,7 +1032,7 @@
           monitor.virtual_mmu = "hardware"
 
           # ==========================================================
-          # DISK
+          # SCSI / DISK
           # ==========================================================
 
           scsi0.present = "TRUE"
@@ -1024,7 +1043,7 @@
           scsi0:0.deviceType = "scsi-hardDisk"
 
           # ==========================================================
-          # CD/DVD - DISCONNECTED
+          # CD/DVD
           # ==========================================================
 
           ide1:0.present = "TRUE"
@@ -1039,12 +1058,12 @@
           ethernet0.present = "TRUE"
           ethernet0.connectionType = "custom"
           ethernet0.vnet = "VMnet0"
-          ethernet0.virtualDev = "e1000"
+          ethernet0.virtualDev = "vmxnet3"
           ethernet0.addressType = "generated"
           ethernet0.startConnected = "TRUE"
 
           # ==========================================================
-          # DISABLE DEVICES
+          # DISABLE UNNECESSARY DEVICES
           # ==========================================================
 
           usb.present = "FALSE"
@@ -1145,8 +1164,8 @@
           CD              : {{ final_cd_ok }}
           ISO Path        : {{ final_iso_ok }}
           CD Disconnected : {{ final_cd_disconnected_ok }}
-          Net Present     : {{ final_network_present_ok }}
-          Net Type        : {{ final_network_type_ok }}
+          Network Present : {{ final_network_present_ok }}
+          Network Type    : {{ final_network_type_ok }}
           VMnet           : {{ final_network_name_ok }}
           Adapter         : {{ final_network_device_ok }}
           Network Online  : {{ final_network_connected_ok }}
@@ -1156,20 +1175,25 @@
           ============================================================
         success_msg: "Final VMX validated successfully."
 
+    # ========================================================================
+    # ENSURE NO MANUAL PCI CONFIGURATION
+    # ========================================================================
+
     - name: Ensure final VMX has no manual PCI topology
       ansible.builtin.shell: |
-        if grep -qE '^(pciBridge|.*\.pciSlotNumber)' "{{ vmx_file_cygwin }}"; then
-          echo "Manual PCI topology detected:"
-          grep -nE '^(pciBridge|.*\.pciSlotNumber)' "{{ vmx_file_cygwin }}"
+        if grep -qE 'pciBridge|pciSlotNumber' "{{ vmx_file_cygwin }}"; then
+          echo "Unwanted manual PCI configuration detected:"
+          grep -nE 'pciBridge|pciSlotNumber' "{{ vmx_file_cygwin }}"
           exit 1
         fi
-        echo "No manual PCI bridge/slot configuration detected."
+
+        echo "No manual PCI bridge or PCI slot configuration found."
       args:
         executable: /bin/bash
       changed_when: false
 
     # ========================================================================
-    # FINAL POWER ON THROUGH WORKSTATION
+    # FINAL POWER ON
     # ========================================================================
 
     - name: Launch final ESXi VM through VMware Workstation
@@ -1206,7 +1230,7 @@
         seconds: "{{ final_boot_wait_seconds }}"
 
     # ========================================================================
-    # FINAL STATE
+    # FINAL VM STATE
     # ========================================================================
 
     - name: Get final VMware VM list
@@ -1240,7 +1264,7 @@
           - "Boot          : HDD / scsi0:0"
           - "ISO Connected : FALSE"
           - "Network       : VMnet0"
-          - "Adapter       : e1000"
+          - "Adapter       : vmxnet3"
           - "IP            : {{ esxi_ip }}"
           - 'VMX           : D:\ESXI\ESXI-01\ESXI-01.vmx'
           - 'VMDK          : D:\ESXI\ESXI-01\ESXI-01.vmdk'
@@ -1266,7 +1290,7 @@
       when: not final_vm_running
 
     # ========================================================================
-    # WAIT FOR HTTPS
+    # WAIT FOR ESXi HTTPS
     # ========================================================================
 
     - name: Wait for ESXi HTTPS management interface
@@ -1299,7 +1323,7 @@
     # SUCCESS
     # ========================================================================
 
-    - name: Display successful installation
+    - name: Display successful ESXi installation
       ansible.builtin.debug:
         msg:
           - "============================================================"
@@ -1315,7 +1339,7 @@
           - "Boot          : HDD / scsi0:0"
           - "ISO Connected : FALSE"
           - "Network       : CUSTOM / VMnet0"
-          - "Adapter       : e1000"
+          - "Adapter       : vmxnet3"
           - "IP            : {{ esxi_ip }}"
           - "Netmask       : {{ esxi_netmask }}"
           - "Gateway       : {{ esxi_gateway }}"
