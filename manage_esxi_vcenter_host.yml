@@ -26,34 +26,46 @@
     vcenter_datacenter: "Datacenter"
 
     # ========================================================================
-    # ESXi
+    # ESXi HOST
     # ========================================================================
 
+    # IMPORTANT:
+    # vCenter currently identifies your ESXi host as:
+    #
+    # 192.168.253.128
+    #
     esxi_hostname: "192.168.253.128"
+
     esxi_username: "root"
     esxi_password: "Root@123"
 
     # ========================================================================
-    # TARGET LOCATION
+    # OPTIONAL CLUSTER
     #
-    # Empty cluster means add host directly to the datacenter host folder.
+    # Empty = add directly under Datacenter.
+    #
+    # Example:
+    #
+    # esxi_cluster: "LAB-CLUSTER"
+    #
     # ========================================================================
 
     esxi_cluster: ""
 
     # ========================================================================
-    # WAIT / RETRY
+    # TIMEOUTS
     # ========================================================================
 
     remove_wait_seconds: 10
     verify_wait_seconds: 15
+
     verify_retries: 10
     verify_delay: 15
 
   tasks:
 
     # ========================================================================
-    # DISPLAY
+    # DISPLAY CONFIGURATION
     # ========================================================================
 
     - name: Display configuration
@@ -71,7 +83,7 @@
           - "============================================================"
 
     # ========================================================================
-    # PASSWORD CHECKS
+    # PASSWORD CHECK
     # ========================================================================
 
     - name: Fail if VCENTER_PASSWORD is not set
@@ -103,7 +115,57 @@
       when: esxi_password | length == 0
 
     # ========================================================================
-    # CHECK vCENTER API
+    # TEST ESXi MANAGEMENT ACCESS
+    # ========================================================================
+
+    - name: Test ESXi HTTPS endpoint
+      ansible.builtin.uri:
+        url: "https://{{ esxi_hostname }}"
+        method: GET
+        validate_certs: "{{ validate_certs }}"
+        status_code:
+          - 200
+          - 301
+          - 302
+          - 401
+          - 403
+      register: esxi_https
+      failed_when: false
+
+    - name: Display ESXi reachability
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "ESXi REACHABILITY"
+          - "============================================================"
+          - "Host       : {{ esxi_hostname }}"
+          - "HTTP Status: {{ esxi_https.status | default('UNREACHABLE') }}"
+          - "============================================================"
+
+    - name: Fail if ESXi is unreachable
+      ansible.builtin.fail:
+        msg: |
+          ============================================================
+          ESXi HOST IS UNREACHABLE
+          ============================================================
+
+          ESXi:
+          https://{{ esxi_hostname }}
+
+          Make sure the ESXi management interface is reachable.
+
+          ============================================================
+      when: esxi_https.status is not defined
+
+    # ========================================================================
+    # CREATE vCENTER API SESSION
+    #
+    # vCenter returns:
+    #
+    # "session-id"
+    #
+    # in the JSON response body.
+    #
     # ========================================================================
 
     - name: Create vCenter API session
@@ -118,13 +180,39 @@
         return_content: true
       register: vcenter_session
 
-    - name: Save vCenter API session
+    # ========================================================================
+    # EXTRACT SESSION ID
+    # ========================================================================
+
+    - name: Extract vCenter API session ID
       ansible.builtin.set_fact:
         vcenter_session_id: >-
           {{
-            vcenter_session.headers['vmware-api-session-id']
-            | default('')
+            (
+              vcenter_session.json
+              if vcenter_session.json is defined
+              else
+              (
+                vcenter_session.content
+                | default('')
+                | trim
+                | regex_replace('^"', '')
+                | regex_replace('"$', '')
+              )
+            )
+            | string
+            | trim
           }}
+
+    - name: Display vCenter session status
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "vCENTER API SESSION"
+          - "============================================================"
+          - "HTTP Status : {{ vcenter_session.status | default('UNKNOWN') }}"
+          - "Session ID  : {{ vcenter_session_id }}"
+          - "============================================================"
 
     - name: Fail if vCenter API session was not created
       ansible.builtin.fail:
@@ -135,6 +223,9 @@
 
           vCenter:
           {{ vcenter_hostname }}
+
+          HTTP Status:
+          {{ vcenter_session.status | default('UNKNOWN') }}
 
           Response:
           {{ vcenter_session.content | default('') }}
@@ -157,7 +248,7 @@
         return_content: true
       register: vcenter_hosts_response
 
-    - name: Decode vCenter host inventory
+    - name: Save vCenter host inventory
       ansible.builtin.set_fact:
         vcenter_hosts: "{{ vcenter_hosts_response.json | default([]) }}"
 
@@ -178,16 +269,16 @@
     # INITIALIZE TARGET STATE
     # ========================================================================
 
-    - name: Initialize target ESXi host state
+    - name: Initialize target host state
       ansible.builtin.set_fact:
         target_host_found: false
         target_host_connection_state: "NOT_FOUND"
         target_host_id: ""
 
     # ========================================================================
-    # FIND TARGET HOST
+    # FIND TARGET ESXi HOST
     #
-    # vCenter API returns records such as:
+    # Expected vCenter API record:
     #
     # {
     #   "host": "host-60014",
@@ -197,7 +288,7 @@
     #
     # ========================================================================
 
-    - name: Find target ESXi host
+    - name: Find target ESXi host in vCenter
       ansible.builtin.set_fact:
         target_host_found: true
         target_host_id: "{{ item.host }}"
@@ -220,63 +311,49 @@
           - "TARGET ESXi STATE"
           - "============================================================"
           - "Requested Host   : {{ esxi_hostname }}"
-          - "Found            : {{ target_host_found }}"
+          - "Found in vCenter : {{ target_host_found }}"
           - "Host ID          : {{ target_host_id }}"
           - "Connection State : {{ target_host_connection_state }}"
           - "============================================================"
 
     # ========================================================================
-    # CASE 1 - HOST ABSENT
+    # CONNECTED -> SKIP
     # ========================================================================
 
-    - name: Display add action for absent ESXi host
-      ansible.builtin.debug:
-        msg:
-          - "============================================================"
-          - "ESXi HOST NOT FOUND"
-          - "============================================================"
-          - "Action: ADD HOST TO vCENTER"
-          - "============================================================"
-      when: not target_host_found
-
-    # ========================================================================
-    # CASE 2 - HOST CONNECTED
-    # ========================================================================
-
-    - name: Display skip action for connected ESXi host
+    - name: Display connected host action
       ansible.builtin.debug:
         msg:
           - "============================================================"
           - "ESXi HOST ALREADY CONNECTED"
           - "============================================================"
-          - "Action: SKIP"
-          - "No inventory change required."
+          - "Host:"
+          - "{{ esxi_hostname }}"
+          - "Action:"
+          - "SKIP"
           - "============================================================"
       when:
         - target_host_found
         - target_host_connection_state == "CONNECTED"
 
     # ========================================================================
-    # CASE 3 - HOST DISCONNECTED
+    # DISCONNECTED -> REMOVE
     # ========================================================================
 
-    - name: Display repair action for disconnected ESXi host
+    - name: Display disconnected host repair action
       ansible.builtin.debug:
         msg:
           - "============================================================"
           - "ESXi HOST IS DISCONNECTED"
           - "============================================================"
+          - "Host:"
+          - "{{ esxi_hostname }}"
           - "Action:"
-          - "1. REMOVE FROM vCENTER"
-          - "2. RE-ADD TO vCENTER"
+          - "REMOVE FROM vCENTER"
+          - "THEN RE-ADD"
           - "============================================================"
       when:
         - target_host_found
         - target_host_connection_state == "DISCONNECTED"
-
-    # ========================================================================
-    # REMOVE DISCONNECTED HOST
-    # ========================================================================
 
     - name: Remove disconnected ESXi host from vCenter
       community.vmware.vmware_host:
@@ -294,31 +371,29 @@
 
       delegate_to: localhost
 
+      register: remove_host_result
+
       when:
         - target_host_found
         - target_host_connection_state == "DISCONNECTED"
-
-      register: remove_host_result
 
     - name: Display host removal result
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "REMOVE ESXi HOST"
+          - "REMOVE RESULT"
           - "============================================================"
           - "Host:"
           - "{{ esxi_hostname }}"
           - "Changed:"
           - "{{ remove_host_result.changed | default(false) }}"
-          - "Result:"
-          - "{{ remove_host_result.result | default(remove_host_result.msg | default('')) }}"
           - "============================================================"
       when:
         - target_host_found
         - target_host_connection_state == "DISCONNECTED"
 
     # ========================================================================
-    # WAIT AFTER REMOVAL
+    # WAIT AFTER REMOVE
     # ========================================================================
 
     - name: Wait after removing disconnected host
@@ -329,7 +404,7 @@
         - target_host_connection_state == "DISCONNECTED"
 
     # ========================================================================
-    # DETERMINE WHETHER HOST MUST BE ADDED
+    # DETERMINE IF ADD IS REQUIRED
     # ========================================================================
 
     - name: Determine whether ESXi host must be added
@@ -345,12 +420,28 @@
           }}
 
     # ========================================================================
-    # ADD / RE-ADD HOST
-    #
-    # For an empty cluster, use the datacenter host folder.
+    # DISPLAY ADD ACTION
     # ========================================================================
 
-    - name: Add or re-add ESXi host
+    - name: Display add action
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "ESXi HOST ADD"
+          - "============================================================"
+          - "Host:"
+          - "{{ esxi_hostname }}"
+          - "Action:"
+          - "{{ 'ADD / RE-ADD' if add_host_required else 'SKIP' }}"
+          - "============================================================"
+
+    # ========================================================================
+    # ADD / RE-ADD HOST
+    #
+    # If esxi_cluster is empty, add directly under the datacenter.
+    # ========================================================================
+
+    - name: Add ESXi host to vCenter
       community.vmware.vmware_host:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
@@ -358,7 +449,12 @@
 
         datacenter: "{{ vcenter_datacenter }}"
 
-        folder: "/{{ vcenter_datacenter }}/host"
+        folder: >-
+          {{
+            "/"
+            ~ vcenter_datacenter
+            ~ "/host"
+          }}
 
         esxi_hostname: "{{ esxi_hostname }}"
 
@@ -384,22 +480,22 @@
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "ADD / RE-ADD ESXi HOST"
+          - "ADD / RE-ADD RESULT"
           - "============================================================"
           - "Host:"
           - "{{ esxi_hostname }}"
           - "Changed:"
           - "{{ add_host_result.changed | default(false) }}"
-          - "Result:"
-          - "{{ add_host_result.result | default(add_host_result.msg | default('')) }}"
+          - "Message:"
+          - "{{ add_host_result.msg | default('Host added successfully') }}"
           - "============================================================"
       when: add_host_required
 
     # ========================================================================
-    # WAIT BEFORE VERIFICATION
+    # WAIT BEFORE FINAL VERIFICATION
     # ========================================================================
 
-    - name: Wait before verifying vCenter host state
+    - name: Wait before final verification
       ansible.builtin.pause:
         seconds: "{{ verify_wait_seconds }}"
       when: add_host_required
@@ -422,20 +518,50 @@
 
       when: add_host_required
 
-    - name: Save verification API session
+    - name: Extract verification session ID
       ansible.builtin.set_fact:
         verify_session_id: >-
           {{
-            verify_vcenter_session.headers['vmware-api-session-id']
-            | default('')
+            (
+              verify_vcenter_session.json
+              if verify_vcenter_session.json is defined
+              else
+              (
+                verify_vcenter_session.content
+                | default('')
+                | trim
+                | regex_replace('^"', '')
+                | regex_replace('"$', '')
+              )
+            )
+            | string
+            | trim
           }}
       when: add_host_required
+
+    - name: Fail if verification API session was not created
+      ansible.builtin.fail:
+        msg: |
+          ============================================================
+          VERIFICATION API SESSION FAILED
+          ============================================================
+
+          vCenter:
+          {{ vcenter_hostname }}
+
+          Response:
+          {{ verify_vcenter_session.content | default('') }}
+
+          ============================================================
+      when:
+        - add_host_required
+        - verify_session_id | default('') | length == 0
 
     # ========================================================================
     # VERIFY UNTIL CONNECTED
     # ========================================================================
 
-    - name: Verify ESXi host becomes connected
+    - name: Verify ESXi host is connected in vCenter
       ansible.builtin.uri:
         url: "https://{{ vcenter_hostname }}/api/vcenter/host"
         method: GET
@@ -444,14 +570,16 @@
         validate_certs: "{{ validate_certs }}"
         status_code: 200
         return_content: true
-      register: verify_hosts_response
+      register: final_hosts_response
+
       retries: "{{ verify_retries }}"
       delay: "{{ verify_delay }}"
 
       until:
         - >-
           (
-            verify_hosts_response.json | default([])
+            final_hosts_response.json
+            | default([])
             | selectattr('name', 'defined')
             | selectattr('name', 'equalto', esxi_hostname)
             | selectattr('connection_state', 'equalto', 'CONNECTED')
@@ -462,34 +590,38 @@
       when: add_host_required
 
     # ========================================================================
-    # FINAL STATE
+    # DETERMINE FINAL STATE
     # ========================================================================
 
-    - name: Create final state
+    - name: Set final ESXi host state
       ansible.builtin.set_fact:
         final_host_state: >-
           {{
             (
-              verify_hosts_response.json | default([])
+              final_hosts_response.json
+              | default([])
               | selectattr('name', 'equalto', esxi_hostname)
               | map(attribute='connection_state')
               | list
               | first
+              | default('NOT_FOUND')
             )
             if add_host_required
             else target_host_connection_state
           }}
 
-    - name: Display final state
+    # ========================================================================
+    # DISPLAY FINAL STATE
+    # ========================================================================
+
+    - name: Display final ESXi host state
       ansible.builtin.debug:
         msg:
           - "============================================================"
           - "FINAL ESXi HOST STATE"
           - "============================================================"
-          - "Host:"
-          - "{{ esxi_hostname }}"
-          - "Connection:"
-          - "{{ final_host_state }}"
+          - "Host       : {{ esxi_hostname }}"
+          - "Connection : {{ final_host_state }}"
           - "============================================================"
 
     # ========================================================================
@@ -513,10 +645,11 @@
           {{ final_host_state }}
 
           ============================================================
+
         success_msg: "ESXi host is connected to vCenter."
 
     # ========================================================================
-    # SUCCESS
+    # FINAL SUCCESS
     # ========================================================================
 
     - name: Display final success
@@ -525,8 +658,8 @@
           - "============================================================"
           - "SUCCESS - ESXi HOST MANAGEMENT COMPLETE"
           - "============================================================"
-          - "vCenter       : {{ vcenter_hostname }}"
-          - "Datacenter    : {{ vcenter_datacenter }}"
-          - "ESXi Host     : {{ esxi_hostname }}"
-          - "Connection    : {{ final_host_state }}"
+          - "vCenter    : {{ vcenter_hostname }}"
+          - "Datacenter : {{ vcenter_datacenter }}"
+          - "ESXi Host  : {{ esxi_hostname }}"
+          - "State      : {{ final_host_state }}"
           - "============================================================"
