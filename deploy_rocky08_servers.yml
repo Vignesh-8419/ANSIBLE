@@ -1,0 +1,529 @@
+---
+- name: Deploy Rocky Linux 8 Servers from Golden Template
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  collections:
+    - community.vmware
+
+  vars:
+
+    # ========================================================================
+    # vCENTER
+    # ========================================================================
+
+    vcenter_hostname: "vcenter-01.vgs.com"
+    vcenter_username: "administrator@vsphere.local"
+    vcenter_password: "Vigneshv12$"
+
+    validate_certs: false
+
+    # ========================================================================
+    # vCENTER DATACENTER
+    # ========================================================================
+
+    vcenter_datacenter: "Datacenter"
+
+    # ========================================================================
+    # SOURCE TEMPLATE
+    # ========================================================================
+
+    rocky8_template: "GOLDENTEMPLATE_ROCKYOS_08"
+
+    # ========================================================================
+    # DESTINATION
+    # ========================================================================
+
+    target_datastore: "datastore1"
+    target_network: "VM Network"
+
+    # Destination VM folder.
+    #
+    # Change this if your VMs belong in another folder.
+    # ========================================================================
+
+    vm_folder: "/Datacenter/vm"
+
+    # ========================================================================
+    # HARDWARE
+    #
+    # Change these values to whatever you want for your servers.
+    # ========================================================================
+
+    vm_memory_mb: 4096
+    vm_vcpu: 4
+
+    # Enable hot-add on the newly created VMs.
+    enable_cpu_hotadd: true
+    enable_memory_hotadd: true
+
+    # ========================================================================
+    # VM DEFINITIONS
+    # ========================================================================
+
+    rocky8_servers:
+
+      - vm_name: "netbox.vgs.com"
+        hostname: "netbox"
+        fqdn: "netbox.vgs.com"
+        ip: "192.168.253.143"
+        netmask: "255.255.255.0"
+        gateway: "192.168.253.2"
+        dns:
+          - "192.168.253.1"
+
+      - vm_name: "ansible-server-01.vgs.com"
+        hostname: "ansible-server-01"
+        fqdn: "ansible-server-01.vgs.com"
+        ip: "192.168.253.145"
+        netmask: "255.255.255.0"
+        gateway: "192.168.253.2"
+        dns:
+          - "192.168.253.1"
+
+  tasks:
+
+    # ========================================================================
+    # DISPLAY
+    # ========================================================================
+
+    - name: Display deployment configuration
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "ROCKY LINUX 8 VM DEPLOYMENT"
+          - "============================================================"
+          - "vCenter        : {{ vcenter_hostname }}"
+          - "Datacenter     : {{ vcenter_datacenter }}"
+          - "Template       : {{ rocky8_template }}"
+          - "Datastore      : {{ target_datastore }}"
+          - "Network        : {{ target_network }}"
+          - "Folder         : {{ vm_folder }}"
+          - "vCPU           : {{ vm_vcpu }}"
+          - "Memory         : {{ vm_memory_mb }} MB"
+          - "CPU Hot Add    : {{ enable_cpu_hotadd }}"
+          - "Memory Hot Add: {{ enable_memory_hotadd }}"
+          - "============================================================"
+          - "VMs:"
+          - >-
+            {{
+              rocky8_servers
+              | map(attribute='vm_name')
+              | list
+            }}
+          - "============================================================"
+
+    # ========================================================================
+    # PASSWORD CHECK
+    # ========================================================================
+
+    - name: Fail if VCENTER_PASSWORD is not supplied
+      ansible.builtin.fail:
+        msg: |
+          ============================================================
+          VCENTER_PASSWORD IS NOT SET
+          ============================================================
+
+          Run:
+
+          export VCENTER_PASSWORD='YOUR_VCENTER_PASSWORD'
+
+          Then:
+
+          ansible-playbook deploy_rocky08_servers.yml
+
+          ============================================================
+      when: vcenter_password | length == 0
+
+    # ========================================================================
+    # CHECK SOURCE TEMPLATE
+    # ========================================================================
+
+    - name: Check Rocky Linux 8 golden template
+      community.vmware.vmware_guest_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+
+        datacenter: "{{ vcenter_datacenter }}"
+
+        name: "{{ rocky8_template }}"
+
+        schema: vsphere
+
+        properties:
+          - config.name
+          - config.template
+          - config.cpuHotAddEnabled
+          - config.memoryHotAddEnabled
+
+        validate_certs: "{{ validate_certs }}"
+
+      delegate_to: localhost
+      register: rocky8_template_info
+
+    - name: Verify Rocky Linux 8 source is a template
+      ansible.builtin.assert:
+        that:
+          - rocky8_template_info.instance.config.template | bool
+        fail_msg: |
+          ============================================================
+          SOURCE IS NOT A TEMPLATE
+          ============================================================
+
+          Template:
+          {{ rocky8_template }}
+
+          vCenter reports:
+
+          {{
+            rocky8_template_info.instance.config.template
+            | default(false)
+          }}
+
+          ============================================================
+        success_msg: "Rocky Linux 8 golden template verified."
+
+    # ========================================================================
+    # DISPLAY SOURCE TEMPLATE
+    # ========================================================================
+
+    - name: Display source template details
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "ROCKY 8 GOLDEN TEMPLATE"
+          - "============================================================"
+          - "Template       : {{ rocky8_template }}"
+          - "Template       : {{ rocky8_template_info.instance.config.template }}"
+          - "CPU Hot Add    : {{ rocky8_template_info.instance.config.cpuHotAddEnabled | default('UNKNOWN') }}"
+          - "Memory Hot Add : {{ rocky8_template_info.instance.config.memoryHotAddEnabled | default('UNKNOWN') }}"
+          - "============================================================"
+
+    # ========================================================================
+    # CHECK WHETHER DESTINATION VMs ALREADY EXIST
+    #
+    # This makes the playbook idempotent.
+    # Existing VMs are skipped.
+    # ========================================================================
+
+    - name: Check destination VM
+      community.vmware.vmware_guest_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+
+        datacenter: "{{ vcenter_datacenter }}"
+
+        folder: "{{ vm_folder }}"
+
+        name: "{{ item.vm_name }}"
+
+        schema: vsphere
+
+        properties:
+          - config.name
+          - config.template
+          - runtime.powerState
+          - config.cpuHotAddEnabled
+          - config.memoryHotAddEnabled
+
+        validate_certs: "{{ validate_certs }}"
+
+      delegate_to: localhost
+
+      loop: "{{ rocky8_servers }}"
+
+      loop_control:
+        label: "{{ item.vm_name }}"
+
+      register: destination_vm_info
+
+      failed_when: false
+
+    # ========================================================================
+    # DISPLAY EXISTING VMs
+    # ========================================================================
+
+    - name: Display existing destination VMs
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "{{ item.item.vm_name }}"
+          - "============================================================"
+          - "Already exists : TRUE"
+          - "Power State    : {{ item.instance.runtime.powerState | default('UNKNOWN') }}"
+          - "Template       : {{ item.instance.config.template | default(false) }}"
+          - "CPU Hot Add    : {{ item.instance.config.cpuHotAddEnabled | default('UNKNOWN') }}"
+          - "Memory Hot Add : {{ item.instance.config.memoryHotAddEnabled | default('UNKNOWN') }}"
+          - "============================================================"
+      loop: "{{ destination_vm_info.results }}"
+      loop_control:
+        label: "{{ item.item.vm_name }}"
+      when:
+        - item.instance is defined
+
+    # ========================================================================
+    # DEPLOY NETBOX
+    # ========================================================================
+
+    - name: Deploy netbox.vgs.com
+      community.vmware.vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+
+        datacenter: "{{ vcenter_datacenter }}"
+
+        folder: "{{ vm_folder }}"
+
+        name: "netbox.vgs.com"
+
+        template: "{{ rocky8_template }}"
+
+        datastore: "{{ target_datastore }}"
+
+        state: poweredon
+
+        hardware:
+          memory_mb: "{{ vm_memory_mb }}"
+          num_cpus: "{{ vm_vcpu }}"
+          hotadd_cpu: "{{ enable_cpu_hotadd }}"
+          hotadd_memory: "{{ enable_memory_hotadd }}"
+
+        networks:
+          - name: "{{ target_network }}"
+            type: static
+            ip: "192.168.253.143"
+            netmask: "255.255.255.0"
+            gateway: "192.168.253.2"
+            dns_servers:
+              - "192.168.253.1"
+            connected: true
+            start_connected: true
+            device_type: vmxnet3
+
+        customization:
+          hostname: "netbox"
+          domain: "vgs.com"
+          dns_servers:
+            - "192.168.253.1"
+          dns_suffix:
+            - "vgs.com"
+          hwclockUTC: true
+
+        wait_for_ip_address: true
+        wait_for_ip_address_timeout: 600
+
+        validate_certs: "{{ validate_certs }}"
+
+      delegate_to: localhost
+
+      when:
+        - >-
+          (
+            destination_vm_info.results
+            | selectattr('item.vm_name', 'equalto', 'netbox.vgs.com')
+            | list
+            | first
+            | default({})
+          ).instance is not defined
+
+    # ========================================================================
+    # DEPLOY ANSIBLE SERVER
+    # ========================================================================
+
+    - name: Deploy ansible-server-01.vgs.com
+      community.vmware.vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+
+        datacenter: "{{ vcenter_datacenter }}"
+
+        folder: "{{ vm_folder }}"
+
+        name: "ansible-server-01.vgs.com"
+
+        template: "{{ rocky8_template }}"
+
+        datastore: "{{ target_datastore }}"
+
+        state: poweredon
+
+        hardware:
+          memory_mb: "{{ vm_memory_mb }}"
+          num_cpus: "{{ vm_vcpu }}"
+          hotadd_cpu: "{{ enable_cpu_hotadd }}"
+          hotadd_memory: "{{ enable_memory_hotadd }}"
+
+        networks:
+          - name: "{{ target_network }}"
+            type: static
+            ip: "192.168.253.145"
+            netmask: "255.255.255.0"
+            gateway: "192.168.253.2"
+            dns_servers:
+              - "192.168.253.1"
+            connected: true
+            start_connected: true
+            device_type: vmxnet3
+
+        customization:
+          hostname: "ansible-server-01"
+          domain: "vgs.com"
+          dns_servers:
+            - "192.168.253.1"
+          dns_suffix:
+            - "vgs.com"
+          hwclockUTC: true
+
+        wait_for_ip_address: true
+        wait_for_ip_address_timeout: 600
+
+        validate_certs: "{{ validate_certs }}"
+
+      delegate_to: localhost
+
+      when:
+        - >-
+          (
+            destination_vm_info.results
+            | selectattr('item.vm_name', 'equalto', 'ansible-server-01.vgs.com')
+            | list
+            | first
+            | default({})
+          ).instance is not defined
+
+    # ========================================================================
+    # WAIT FOR GUEST CUSTOMIZATION
+    # ========================================================================
+
+    - name: Wait for VM customization
+      ansible.builtin.pause:
+        seconds: 15
+
+    # ========================================================================
+    # VERIFY NETBOX
+    # ========================================================================
+
+    - name: Verify netbox.vgs.com
+      community.vmware.vmware_guest_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+
+        datacenter: "{{ vcenter_datacenter }}"
+
+        folder: "{{ vm_folder }}"
+
+        name: "netbox.vgs.com"
+
+        schema: vsphere
+
+        properties:
+          - config.name
+          - config.cpuHotAddEnabled
+          - config.memoryHotAddEnabled
+          - config.hardware.numCPU
+          - config.hardware.memoryMB
+          - runtime.powerState
+
+        validate_certs: "{{ validate_certs }}"
+
+      delegate_to: localhost
+      register: netbox_vm_info
+
+    - name: Display netbox.vgs.com
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "NETBOX.VGS.COM"
+          - "============================================================"
+          - "Name          : {{ netbox_vm_info.instance.config.name }}"
+          - "Power State   : {{ netbox_vm_info.instance.runtime.powerState }}"
+          - "vCPU          : {{ netbox_vm_info.instance.config.hardware.numCPU }}"
+          - "Memory MB     : {{ netbox_vm_info.instance.config.hardware.memoryMB }}"
+          - "CPU Hot Add   : {{ netbox_vm_info.instance.config.cpuHotAddEnabled }}"
+          - "Memory Hot Add: {{ netbox_vm_info.instance.config.memoryHotAddEnabled }}"
+          - "IP            : 192.168.253.143"
+          - "Hostname      : netbox.vgs.com"
+          - "============================================================"
+
+    # ========================================================================
+    # VERIFY ANSIBLE SERVER
+    # ========================================================================
+
+    - name: Verify ansible-server-01.vgs.com
+      community.vmware.vmware_guest_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+
+        datacenter: "{{ vcenter_datacenter }}"
+
+        folder: "{{ vm_folder }}"
+
+        name: "ansible-server-01.vgs.com"
+
+        schema: vsphere
+
+        properties:
+          - config.name
+          - config.cpuHotAddEnabled
+          - config.memoryHotAddEnabled
+          - config.hardware.numCPU
+          - config.hardware.memoryMB
+          - runtime.powerState
+
+        validate_certs: "{{ validate_certs }}"
+
+      delegate_to: localhost
+      register: ansible_vm_info
+
+    - name: Display ansible-server-01.vgs.com
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "ANSIBLE-SERVER-01.VGS.COM"
+          - "============================================================"
+          - "Name          : {{ ansible_vm_info.instance.config.name }}"
+          - "Power State   : {{ ansible_vm_info.instance.runtime.powerState }}"
+          - "vCPU          : {{ ansible_vm_info.instance.config.hardware.numCPU }}"
+          - "Memory MB     : {{ ansible_vm_info.instance.config.hardware.memoryMB }}"
+          - "CPU Hot Add   : {{ ansible_vm_info.instance.config.cpuHotAddEnabled }}"
+          - "Memory Hot Add: {{ ansible_vm_info.instance.config.memoryHotAddEnabled }}"
+          - "IP            : 192.168.253.145"
+          - "Hostname      : ansible-server-01.vgs.com"
+          - "============================================================"
+
+    # ========================================================================
+    # FINAL SUCCESS
+    # ========================================================================
+
+    - name: Display deployment success
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "SUCCESS - ROCKY LINUX 8 SERVERS DEPLOYED"
+          - "============================================================"
+          - "Template       : {{ rocky8_template }}"
+          - "============================================================"
+          - "VM 1           : netbox.vgs.com"
+          - "IP             : 192.168.253.143/24"
+          - "Gateway        : 192.168.253.2"
+          - "DNS            : 192.168.253.1"
+          - "============================================================"
+          - "VM 2           : ansible-server-01.vgs.com"
+          - "IP             : 192.168.253.145/24"
+          - "Gateway        : 192.168.253.2"
+          - "DNS            : 192.168.253.1"
+          - "============================================================"
+          - "vCPU           : {{ vm_vcpu }}"
+          - "Memory         : {{ vm_memory_mb }} MB"
+          - "CPU Hot Add    : {{ enable_cpu_hotadd }}"
+          - "Memory Hot Add : {{ enable_memory_hotadd }}"
+          - "Network        : {{ target_network }}"
+          - "Datastore      : {{ target_datastore }}"
+          - "============================================================"
