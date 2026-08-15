@@ -1,5 +1,5 @@
 ---
-- name: Deploy CentOS 7 / Rocky Linux 8 / Rocky Linux 9 Golden Templates
+- name: Deploy CentOS 7 Rocky 8 Rocky 9 Golden Templates
   hosts: localhost
   connection: local
   gather_facts: false
@@ -10,40 +10,44 @@
   vars:
 
     # ========================================================================
-    # TARGET ESXi
+    # ESXi
     # ========================================================================
 
-    # Your nested ESXi host created by install_esxi_workstation.yml
     esxi_hostname: "192.168.253.128"
-
-    # Standalone ESXi uses this datacenter name
-    esxi_datacenter: "ha-datacenter"
-
-    # Change this if your ESXi datastore has another name.
-    target_datastore: "datastore1"
-
-    # Standard VMware port group created by ESXi.
-    target_network: "VM Network"
-
-    # ========================================================================
-    # ESXi CREDENTIALS
-    #
-    # Prefer passing these through -e or environment variables.
-    # ========================================================================
-
     esxi_username: "root"
-    esxi_password: "Root@123"
+    esxi_password: "{{ lookup('env', 'ESXI_PASSWORD') }}"
+
+    esxi_datacenter: "ha-datacenter"
 
     validate_certs: false
 
     # ========================================================================
-    # TEMPLATE ROOT
+    # ESXi STORAGE / NETWORK
     # ========================================================================
 
-    template_root: "/cygdrive/e/repo"
+    target_datastore: "datastore1"
+
+    target_network: "VM Network"
 
     # ========================================================================
-    # POWER / DEPLOYMENT
+    # HOT ADD
+    # ========================================================================
+
+    enable_cpu_hotadd: true
+    enable_memory_hotadd: true
+
+    # ========================================================================
+    # POWER
+    #
+    # Deployment is intentionally done powered off.
+    # Hot-add settings are applied while powered off.
+    # Then VMs can optionally be powered on.
+    # ========================================================================
+
+    power_on_after_hotadd: true
+
+    # ========================================================================
+    # OVF DEPLOYMENT
     # ========================================================================
 
     power_on_after_deploy: false
@@ -52,10 +56,19 @@
 
     fail_on_spec_warnings: false
 
+    deployment_wait: true
+
     # ========================================================================
-    # SELECT WHICH TEMPLATES TO DEPLOY
+    # TEMPLATE ROOT
+    # ========================================================================
+
+    template_root: "/cygdrive/e/repo"
+
+    # ========================================================================
+    # SELECT TEMPLATES
     #
-    # Default = all three.
+    # Default:
+    #   all three
     #
     # Examples:
     #
@@ -66,7 +79,6 @@
     #   -e 'deploy_templates=["ROCKYOS_09"]'
     #
     #   -e 'deploy_templates=["CENTOS_07","ROCKYOS_08"]'
-    #
     # ========================================================================
 
     deploy_templates:
@@ -81,24 +93,58 @@
     golden_templates:
 
       - id: "CENTOS_07"
+
         vm_name: "GOLDENTEMPLATE_CENTOS_07"
-        template_dir: "{{ template_root }}/GOLDENTEMPLATE_CENTOS_07"
-        ovf_file: "{{ template_root }}/GOLDENTEMPLATE_CENTOS_07/GOLDENTEMPLATE_CENTOS_07.ovf"
+
+        template_dir: >-
+          {{ template_root }}/GOLDENTEMPLATE_CENTOS_07
+
+        ovf_file: >-
+          {{ template_root }}/GOLDENTEMPLATE_CENTOS_07/GOLDENTEMPLATE_CENTOS_07.ovf
+
+        expected_files:
+          - "GOLDENTEMPLATE_CENTOS_07.ovf"
+          - "GOLDENTEMPLATE_CENTOS_07-1.vmdk"
+          - "GOLDENTEMPLATE_CENTOS_07-2.iso"
+          - "GOLDENTEMPLATE_CENTOS_07-3.nvram"
+          - "GOLDENTEMPLATE_CENTOS_07.mf"
 
       - id: "ROCKYOS_08"
+
         vm_name: "GOLDENTEMPLATE_ROCKYOS_08"
-        template_dir: "{{ template_root }}/GOLDENTEMPLATE_ROCKYOS_08"
-        ovf_file: "{{ template_root }}/GOLDENTEMPLATE_ROCKYOS_08/GOLDENTEMPLATE_ROCKYOS_08.ovf"
+
+        template_dir: >-
+          {{ template_root }}/GOLDENTEMPLATE_ROCKYOS_08
+
+        ovf_file: >-
+          {{ template_root }}/GOLDENTEMPLATE_ROCKYOS_08/GOLDENTEMPLATE_ROCKYOS_08.ovf
+
+        expected_files:
+          - "GOLDENTEMPLATE_ROCKYOS_08.ovf"
+          - "GOLDENTEMPLATE_ROCKYOS_08-1.vmdk"
+          - "GOLDENTEMPLATE_ROCKYOS_08-2.nvram"
+          - "GOLDENTEMPLATE_ROCKYOS_08.mf"
 
       - id: "ROCKYOS_09"
+
         vm_name: "GOLDENTEMPLATE_ROCKYOS_09"
-        template_dir: "{{ template_root }}/GOLDENTEMPLATE_ROCKYOS_09"
-        ovf_file: "{{ template_root }}/GOLDENTEMPLATE_ROCKYOS_09/GOLDENTEMPLATE_ROCKYOS_09.ovf"
+
+        template_dir: >-
+          {{ template_root }}/GOLDENTEMPLATE_ROCKYOS_09
+
+        ovf_file: >-
+          {{ template_root }}/GOLDENTEMPLATE_ROCKYOS_09/GOLDENTEMPLATE_ROCKYOS_09.ovf
+
+        expected_files:
+          - "GOLDENTEMPLATE_ROCKYOS_09.ovf"
+          - "GOLDENTEMPLATE_ROCKYOS_09-1.vmdk"
+          - "GOLDENTEMPLATE_ROCKYOS_09-2.nvram"
+          - "GOLDENTEMPLATE_ROCKYOS_09.mf"
 
   tasks:
 
     # ========================================================================
-    # DISPLAY
+    # DISPLAY CONFIGURATION
     # ========================================================================
 
     - name: Display deployment configuration
@@ -107,14 +153,16 @@
           - "============================================================"
           - "GOLDEN TEMPLATE DEPLOYMENT"
           - "============================================================"
-          - "ESXi Host      : {{ esxi_hostname }}"
-          - "Datacenter     : {{ esxi_datacenter }}"
-          - "Datastore      : {{ target_datastore }}"
-          - "Network        : {{ target_network }}"
-          - "Power On       : {{ power_on_after_deploy }}"
-          - "Validate Certs : {{ validate_certs }}"
+          - "ESXi Host       : {{ esxi_hostname }}"
+          - "Datacenter      : {{ esxi_datacenter }}"
+          - "Datastore       : {{ target_datastore }}"
+          - "Network         : {{ target_network }}"
+          - "CPU Hot Add     : {{ enable_cpu_hotadd }}"
+          - "Memory Hot Add  : {{ enable_memory_hotadd }}"
+          - "Power On        : {{ power_on_after_hotadd }}"
+          - "Validate Certs  : {{ validate_certs }}"
           - "============================================================"
-          - "Templates:"
+          - "Selected:"
           - >-
             {{
               golden_templates
@@ -125,7 +173,29 @@
           - "============================================================"
 
     # ========================================================================
-    # CHECK COMMUNITY.VMWARE COLLECTION
+    # CHECK ESXi PASSWORD
+    # ========================================================================
+
+    - name: Fail if ESXi password is not supplied
+      ansible.builtin.fail:
+        msg: |
+          ============================================================
+          ESXI_PASSWORD IS NOT SET
+          ============================================================
+
+          Run:
+
+          export ESXI_PASSWORD='YOUR_ESXI_ROOT_PASSWORD'
+
+          Then:
+
+          ansible-playbook deploy_golden_templates.yml
+
+          ============================================================
+      when: esxi_password | length == 0
+
+    # ========================================================================
+    # CHECK COMMUNITY.VMWARE
     # ========================================================================
 
     - name: Check community.vmware collection
@@ -142,25 +212,7 @@
         msg: "{{ vmware_collection_list.stdout }}"
 
     # ========================================================================
-    # CHECK ESXi PASSWORD
-    # ========================================================================
-
-    - name: Fail if ESXi password is not supplied
-      ansible.builtin.fail:
-        msg: |
-          ESXI_PASSWORD is not set.
-
-          Run:
-
-          export ESXI_PASSWORD='Root@123'
-
-          Then run:
-
-          ansible-playbook deploy_golden_templates.yml
-      when: esxi_password | length == 0
-
-    # ========================================================================
-    # VERIFY TEMPLATE FILES
+    # SELECT TEMPLATES
     # ========================================================================
 
     - name: Build selected template list
@@ -175,54 +227,30 @@
     - name: Fail if no templates were selected
       ansible.builtin.fail:
         msg: |
-          No valid templates selected.
+          ============================================================
+          NO VALID TEMPLATES SELECTED
+          ============================================================
 
-          Valid values:
+          Valid IDs:
 
           CENTOS_07
           ROCKYOS_08
           ROCKYOS_09
+
+          ============================================================
       when: selected_templates | length == 0
 
-    - name: Check selected OVF files
-      ansible.builtin.stat:
-        path: "{{ item.ovf_file }}"
-      loop: "{{ selected_templates }}"
-      loop_control:
-        label: "{{ item.vm_name }}"
-      register: selected_ovfs
-
-    - name: Fail if selected OVF is missing
-      ansible.builtin.fail:
-        msg: |
-          ============================================================
-          OVF FILE NOT FOUND
-          ============================================================
-
-          Template:
-          {{ item.item.vm_name }}
-
-          Expected:
-
-          {{ item.item.ovf_file }}
-
-          ============================================================
-      loop: "{{ selected_ovfs.results }}"
-      loop_control:
-        label: "{{ item.item.vm_name }}"
-      when: not item.stat.exists
-
     # ========================================================================
-    # VERIFY PACKAGE FILES
+    # CHECK TEMPLATE DIRECTORIES
     # ========================================================================
 
-    - name: Check selected template directories
+    - name: Check template directories
       ansible.builtin.stat:
         path: "{{ item.template_dir }}"
       loop: "{{ selected_templates }}"
       loop_control:
         label: "{{ item.vm_name }}"
-      register: selected_template_dirs
+      register: template_directory_results
 
     - name: Fail if template directory is missing
       ansible.builtin.fail:
@@ -231,16 +259,58 @@
           TEMPLATE DIRECTORY NOT FOUND
           ============================================================
 
+          VM:
+          {{ item.item.vm_name }}
+
+          Directory:
           {{ item.item.template_dir }}
 
           ============================================================
-      loop: "{{ selected_template_dirs.results }}"
+      loop: "{{ template_directory_results.results }}"
       loop_control:
         label: "{{ item.item.vm_name }}"
       when: not item.stat.exists
 
     # ========================================================================
-    # TEST ESXi CONNECTION
+    # CHECK ALL TEMPLATE FILES
+    # ========================================================================
+
+    - name: Check required OVF template files
+      ansible.builtin.stat:
+        path: "{{ item.0.template_dir }}/{{ item.1 }}"
+      loop: >-
+        {{
+          selected_templates
+          | subelements('expected_files')
+        }}
+      loop_control:
+        label: "{{ item.0.vm_name }} -> {{ item.1 }}"
+      register: template_file_results
+
+    - name: Fail if a template file is missing
+      ansible.builtin.fail:
+        msg: |
+          ============================================================
+          TEMPLATE FILE NOT FOUND
+          ============================================================
+
+          VM:
+          {{ item.item.0.vm_name }}
+
+          File:
+          {{ item.item.1 }}
+
+          Expected:
+          {{ item.item.0.template_dir }}/{{ item.item.1 }}
+
+          ============================================================
+      loop: "{{ template_file_results.results }}"
+      loop_control:
+        label: "{{ item.item.0.vm_name }} -> {{ item.item.1 }}"
+      when: not item.stat.exists
+
+    # ========================================================================
+    # CHECK DATASTORE
     # ========================================================================
 
     - name: Query ESXi datastores
@@ -257,7 +327,7 @@
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "AVAILABLE ESXi DATASTORES"
+          - "AVAILABLE DATASTORES"
           - "============================================================"
           - >-
             {{
@@ -299,20 +369,23 @@
           ============================================================
 
     # ========================================================================
-    # DEPLOY TEMPLATES
-    #
-    # Do them one at a time so the console clearly shows which template
-    # succeeded or failed.
+    # DEPLOY OVF TEMPLATES
     # ========================================================================
 
     - name: Deploy selected golden template
       community.vmware.vmware_deploy_ovf:
+
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
 
         datacenter: "{{ esxi_datacenter }}"
+
+        esxi_hostname: "{{ esxi_hostname }}"
+
         datastore: "{{ target_datastore }}"
+
+        folder: "/{{ esxi_datacenter }}/vm"
 
         name: "{{ item.vm_name }}"
 
@@ -322,7 +395,9 @@
           "VM Network": "{{ target_network }}"
 
         power_on: "{{ power_on_after_deploy }}"
-        wait: true
+
+        wait: "{{ deployment_wait }}"
+
         wait_for_ip_address: false
 
         allow_duplicates: "{{ allow_duplicates }}"
@@ -334,29 +409,282 @@
       delegate_to: localhost
 
       loop: "{{ selected_templates }}"
+
       loop_control:
         label: "{{ item.vm_name }}"
 
       register: deployment_results
 
     # ========================================================================
-    # DEPLOYMENT SUMMARY
+    # DISPLAY DEPLOYMENT RESULTS
     # ========================================================================
 
-    - name: Display deployment summary
+    - name: Display deployment results
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "OVF DEPLOYMENT RESULTS"
+          - "============================================================"
+          - "VM              : {{ item.item.vm_name }}"
+          - "Changed         : {{ item.changed | default(false) }}"
+          - "Failed          : {{ item.failed | default(false) }}"
+          - "Result          : {{ item.msg | default('Deployment completed') }}"
+          - "============================================================"
+      loop: "{{ deployment_results.results }}"
+      loop_control:
+        label: "{{ item.item.vm_name }}"
+
+    # ========================================================================
+    # ENABLE CPU + MEMORY HOT ADD
+    #
+    # VM is powered off at this point.
+    #
+    # community.vmware.vmware_guest supports hotadd_cpu and hotadd_memory.
+    # ========================================================================
+
+    - name: Enable CPU and Memory Hot Add
+      community.vmware.vmware_guest:
+
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+
+        datacenter: "{{ esxi_datacenter }}"
+
+        folder: "/{{ esxi_datacenter }}/vm"
+
+        name: "{{ item.vm_name }}"
+
+        state: present
+
+        hardware:
+          hotadd_cpu: "{{ enable_cpu_hotadd }}"
+          hotadd_memory: "{{ enable_memory_hotadd }}"
+
+        validate_certs: "{{ validate_certs }}"
+
+      delegate_to: localhost
+
+      loop: "{{ selected_templates }}"
+
+      loop_control:
+        label: "{{ item.vm_name }}"
+
+      register: hotadd_results
+
+    # ========================================================================
+    # DISPLAY HOT ADD RESULTS
+    # ========================================================================
+
+    - name: Display Hot Add results
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "HOT ADD CONFIGURATION"
+          - "============================================================"
+          - "VM              : {{ item.item.vm_name }}"
+          - "Changed         : {{ item.changed | default(false) }}"
+          - "Failed          : {{ item.failed | default(false) }}"
+          - "Message         : {{ item.msg | default('Hot Add configured') }}"
+          - "============================================================"
+      loop: "{{ hotadd_results.results }}"
+      loop_control:
+        label: "{{ item.item.vm_name }}"
+
+    # ========================================================================
+    # VERIFY HOT ADD
+    # ========================================================================
+
+    - name: Gather deployed VM information
+      community.vmware.vmware_guest_info:
+
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+
+        datacenter: "{{ esxi_datacenter }}"
+
+        folder: "/{{ esxi_datacenter }}/vm"
+
+        name: "{{ item.vm_name }}"
+
+        schema: vsphere
+
+        properties:
+          - config.name
+          - config.runtime.powerState
+          - config.hardware.cpuHotAddEnabled
+          - config.hardware.memoryHotAddEnabled
+          - config.hardware.numCPU
+          - config.hardware.memoryMB
+
+        validate_certs: "{{ validate_certs }}"
+
+      delegate_to: localhost
+
+      loop: "{{ selected_templates }}"
+
+      loop_control:
+        label: "{{ item.vm_name }}"
+
+      register: hotadd_verification
+
+    # ========================================================================
+    # DISPLAY HOT ADD VERIFICATION
+    # ========================================================================
+
+    - name: Display Hot Add verification
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "{{ item.item.vm_name }}"
+          - "============================================================"
+          - "CPU Hot Add    : {{ item.instance.config.hardware.cpuHotAddEnabled | default('UNKNOWN') }}"
+          - "Memory Hot Add : {{ item.instance.config.hardware.memoryHotAddEnabled | default('UNKNOWN') }}"
+          - "vCPU           : {{ item.instance.config.hardware.numCPU | default('UNKNOWN') }}"
+          - "Memory MB      : {{ item.instance.config.hardware.memoryMB | default('UNKNOWN') }}"
+          - "Power State    : {{ item.instance.runtime.powerState | default('UNKNOWN') }}"
+          - "============================================================"
+      loop: "{{ hotadd_verification.results }}"
+      loop_control:
+        label: "{{ item.item.vm_name }}"
+
+    # ========================================================================
+    # ASSERT HOT ADD
+    # ========================================================================
+
+    - name: Assert CPU and Memory Hot Add
+      ansible.builtin.assert:
+        that:
+          - item.instance.config.hardware.cpuHotAddEnabled | default(false) | bool
+          - item.instance.config.hardware.memoryHotAddEnabled | default(false) | bool
+        fail_msg: |
+          ============================================================
+          HOT ADD VALIDATION FAILED
+          ============================================================
+
+          VM:
+          {{ item.item.vm_name }}
+
+          CPU Hot Add:
+          {{ item.instance.config.hardware.cpuHotAddEnabled | default('UNKNOWN') }}
+
+          Memory Hot Add:
+          {{ item.instance.config.hardware.memoryHotAddEnabled | default('UNKNOWN') }}
+
+          ============================================================
+      loop: "{{ hotadd_verification.results }}"
+      loop_control:
+        label: "{{ item.item.vm_name }}"
+
+    # ========================================================================
+    # POWER ON
+    # ========================================================================
+
+    - name: Power on golden templates
+      community.vmware.vmware_guest:
+
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+
+        datacenter: "{{ esxi_datacenter }}"
+
+        folder: "/{{ esxi_datacenter }}/vm"
+
+        name: "{{ item.vm_name }}"
+
+        state: poweredon
+
+        validate_certs: "{{ validate_certs }}"
+
+      delegate_to: localhost
+
+      loop: "{{ selected_templates }}"
+
+      loop_control:
+        label: "{{ item.vm_name }}"
+
+      when: power_on_after_hotadd | bool
+
+      register: poweron_results
+
+    # ========================================================================
+    # FINAL VM INFO
+    # ========================================================================
+
+    - name: Gather final VM information
+      community.vmware.vmware_guest_info:
+
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+
+        datacenter: "{{ esxi_datacenter }}"
+
+        folder: "/{{ esxi_datacenter }}/vm"
+
+        name: "{{ item.vm_name }}"
+
+        schema: vsphere
+
+        properties:
+          - config.name
+          - config.hardware.cpuHotAddEnabled
+          - config.hardware.memoryHotAddEnabled
+          - config.hardware.numCPU
+          - config.hardware.memoryMB
+          - config.runtime.powerState
+          - runtime.powerState
+
+        validate_certs: "{{ validate_certs }}"
+
+      delegate_to: localhost
+
+      loop: "{{ selected_templates }}"
+
+      loop_control:
+        label: "{{ item.vm_name }}"
+
+      register: final_vm_info
+
+    # ========================================================================
+    # FINAL SUMMARY
+    # ========================================================================
+
+    - name: Display final golden template summary
       ansible.builtin.debug:
         msg:
           - "============================================================"
           - "GOLDEN TEMPLATE DEPLOYMENT COMPLETE"
           - "============================================================"
-          - "CentOS 7     : GOLDENTEMPLATE_CENTOS_07"
-          - "Rocky Linux8 : GOLDENTEMPLATE_ROCKYOS_08"
-          - "Rocky Linux9 : GOLDENTEMPLATE_ROCKYOS_09"
-          - "ESXi Host    : {{ esxi_hostname }}"
-          - "Datastore    : {{ target_datastore }}"
-          - "Network      : {{ target_network }}"
-          - "Power On     : {{ power_on_after_deploy }}"
+          - "VM              : {{ item.item.vm_name }}"
+          - "CPU Hot Add     : {{ item.instance.config.hardware.cpuHotAddEnabled | default('UNKNOWN') }}"
+          - "Memory Hot Add  : {{ item.instance.config.hardware.memoryHotAddEnabled | default('UNKNOWN') }}"
+          - "vCPU            : {{ item.instance.config.hardware.numCPU | default('UNKNOWN') }}"
+          - "Memory MB       : {{ item.instance.config.hardware.memoryMB | default('UNKNOWN') }}"
+          - "Power State     : {{ item.instance.runtime.powerState | default('UNKNOWN') }}"
+          - "ESXi            : {{ esxi_hostname }}"
+          - "Datastore       : {{ target_datastore }}"
+          - "Network         : {{ target_network }}"
           - "============================================================"
-          - "Deployment results:"
-          - "{{ deployment_results.results }}"
+      loop: "{{ final_vm_info.results }}"
+      loop_control:
+        label: "{{ item.item.vm_name }}"
+
+    - name: Display overall success
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "SUCCESS"
+          - "============================================================"
+          - "CentOS 7      : GOLDENTEMPLATE_CENTOS_07"
+          - "Rocky Linux 8 : GOLDENTEMPLATE_ROCKYOS_08"
+          - "Rocky Linux 9 : GOLDENTEMPLATE_ROCKYOS_09"
+          - "CPU Hot Add   : ENABLED"
+          - "Memory Hot Add: ENABLED"
+          - "ESXi          : {{ esxi_hostname }}"
+          - "Datastore     : {{ target_datastore }}"
+          - "Network       : {{ target_network }}"
+          - "Power On      : {{ power_on_after_hotadd }}"
           - "============================================================"
