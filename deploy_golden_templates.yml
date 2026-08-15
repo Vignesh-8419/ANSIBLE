@@ -45,7 +45,7 @@
     power_on_after_deploy: false
 
     # Power on after Hot Add has been configured and verified.
-    power_on_after_hotadd: true
+    power_on_after_hotadd: false
 
     # ========================================================================
     # OVF DEPLOYMENT
