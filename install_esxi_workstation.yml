@@ -21,7 +21,7 @@
     vmdk_file_windows: 'D:\ESXI\ESXI-01\ESXI-01.vmdk'
 
     # ========================================================================
-    # ISO
+    # ESXi ISO
     # ========================================================================
 
     esxi_iso_cygwin: "/cygdrive/e/vmware/ESXi-8.0.1-auto.iso"
@@ -34,7 +34,7 @@
     ks_url: "http://192.168.253.136/repo/ks.cfg"
 
     # ========================================================================
-    # VMWARE
+    # VMWARE WORKSTATION
     # ========================================================================
 
     vmrun_cygwin: "/cygdrive/d/VM workstation/vmrun.exe"
@@ -58,7 +58,6 @@
     # NETWORK
     # ========================================================================
 
-    vm_network_type: "custom"
     vm_network_name: "VMnet0"
 
     esxi_ip: "192.168.253.128"
@@ -66,8 +65,6 @@
     esxi_gateway: "192.168.253.2"
     esxi_dns: "192.168.253.1"
     esxi_hostname: "esxi-host-01.vgs.com"
-
-    http_server_ip: "192.168.253.136"
 
     # ========================================================================
     # TIMING
@@ -108,7 +105,6 @@
           - "Gateway       : {{ esxi_gateway }}"
           - "DNS           : {{ esxi_dns }}"
           - "Hostname      : {{ esxi_hostname }}"
-          - "HTTP Server   : {{ http_server_ip }}"
           - "============================================================"
 
     # ========================================================================
@@ -152,7 +148,7 @@
       when: not vmrun_stat.stat.exists
 
     # ========================================================================
-    # CHECK VMWARE
+    # CHECK VMWARE.EXE
     # ========================================================================
 
     - name: Check VMware Workstation executable
@@ -189,7 +185,7 @@
     # CHECK HTTP KS.CFG
     # ========================================================================
 
-    - name: Download HTTP kickstart for validation
+    - name: Download HTTP kickstart
       ansible.builtin.command:
         argv:
           - curl
@@ -207,46 +203,82 @@
           ============================================================
 
           URL:
-
           {{ ks_url }}
 
           Return code:
-
           {{ ks_http_result.rc }}
 
           STDOUT:
-
           {{ ks_http_result.stdout }}
 
           STDERR:
-
           {{ ks_http_result.stderr }}
 
           ============================================================
       when: ks_http_result.rc != 0
 
     # ========================================================================
-    # VALIDATE KS CONTENT
+    # VALIDATE HTTP KS CONTENT
     # ========================================================================
 
-    - name: Validate HTTP kickstart content
+    - name: Calculate HTTP KS validation flags
+      ansible.builtin.set_fact:
+        ks_has_vm_accept: >-
+          {{ 'vmaccepteula' in ks_http_result.stdout }}
+        ks_has_rootpw: >-
+          {{ 'rootpw ' in ks_http_result.stdout }}
+        ks_has_network: >-
+          {{ 'network --bootproto=static' in ks_http_result.stdout }}
+        ks_has_ip: >-
+          {{ '192.168.253.128' in ks_http_result.stdout }}
+        ks_has_netmask: >-
+          {{ '255.255.255.0' in ks_http_result.stdout }}
+        ks_has_gateway: >-
+          {{ '192.168.253.2' in ks_http_result.stdout }}
+        ks_has_dns: >-
+          {{ '192.168.253.1' in ks_http_result.stdout }}
+        ks_has_hostname: >-
+          {{ 'esxi-host-01.vgs.com' in ks_http_result.stdout }}
+        ks_has_vmnic: >-
+          {{ 'vmnic0' in ks_http_result.stdout }}
+        ks_has_install: >-
+          {{ 'install --firstdisk --overwritevmfs' in ks_http_result.stdout }}
+        ks_has_reboot: >-
+          {{ 'reboot' in ks_http_result.stdout }}
+
+    - name: Assert HTTP KS content
       ansible.builtin.assert:
         that:
-          - "'vmaccepteula' in ks_http_result.stdout"
-          - "'rootpw ' in ks_http_result.stdout"
-          - "'network --bootproto=static' in ks_http_result.stdout"
-          - "'192.168.253.128' in ks_http_result.stdout"
-          - "'255.255.255.0' in ks_http_result.stdout"
-          - "'192.168.253.2' in ks_http_result.stdout"
-          - "'192.168.253.1' in ks_http_result.stdout"
-          - "'esxi-host-01.vgs.com' in ks_http_result.stdout"
-          - "'vmnic0' in ks_http_result.stdout"
-          - "'install --firstdisk --overwritevmfs' in ks_http_result.stdout"
-          - "'reboot' in ks_http_result.stdout"
+          - ks_has_vm_accept | bool
+          - ks_has_rootpw | bool
+          - ks_has_network | bool
+          - ks_has_ip | bool
+          - ks_has_netmask | bool
+          - ks_has_gateway | bool
+          - ks_has_dns | bool
+          - ks_has_hostname | bool
+          - ks_has_vmnic | bool
+          - ks_has_install | bool
+          - ks_has_reboot | bool
         fail_msg: |
-          HTTP KS.CFG content is not what is expected.
-        success_msg: |
-          HTTP KS.CFG validated successfully.
+          ============================================================
+          HTTP KS.CFG VALIDATION FAILED
+          ============================================================
+
+          vmaccepteula : {{ ks_has_vm_accept }}
+          rootpw       : {{ ks_has_rootpw }}
+          network      : {{ ks_has_network }}
+          IP           : {{ ks_has_ip }}
+          netmask      : {{ ks_has_netmask }}
+          gateway      : {{ ks_has_gateway }}
+          DNS           : {{ ks_has_dns }}
+          hostname     : {{ ks_has_hostname }}
+          vmnic0       : {{ ks_has_vmnic }}
+          install      : {{ ks_has_install }}
+          reboot       : {{ ks_has_reboot }}
+
+          ============================================================
+        success_msg: "HTTP KS.CFG validated successfully."
 
     # ========================================================================
     # VERIFY ISO BOOT.CFG
@@ -264,7 +296,7 @@
       changed_when: false
       failed_when: iso_boot_cfg.rc != 0
 
-    - name: Extract kernelopt line
+    - name: Extract kernelopt from ISO
       ansible.builtin.shell: |
         printf '%s\n' '{{ iso_boot_cfg.stdout }}' |
         grep '^kernelopt='
@@ -274,9 +306,30 @@
       changed_when: false
       failed_when: false
 
-    - name: Fail if ISO BOOT.CFG is incorrect
-      ansible.builtin.fail:
-        msg: |
+    - name: Calculate ISO kernelopt validation
+      ansible.builtin.set_fact:
+        iso_kernelopt_valid: >-
+          {{
+            (
+              iso_kernelopt.stdout | trim
+            )
+            ==
+            (
+              'kernelopt=runweasel cdromBoot '
+              'ip=192.168.253.128 '
+              'netmask=255.255.255.0 '
+              'gateway=192.168.253.2 '
+              'nameserver=192.168.253.1 '
+              'netdevice=vmnic0 '
+              'ks=http://192.168.253.136/repo/ks.cfg'
+            )
+          }}
+
+    - name: Assert ISO BOOT.CFG
+      ansible.builtin.assert:
+        that:
+          - iso_kernelopt_valid | bool
+        fail_msg: |
           ============================================================
           ISO BOOT.CFG IS INCORRECT
           ============================================================
@@ -290,17 +343,7 @@
           {{ iso_kernelopt.stdout }}
 
           ============================================================
-      when:
-        - iso_kernelopt.stdout | trim != 'kernelopt=runweasel cdromBoot ip=192.168.253.128 netmask=255.255.255.0 gateway=192.168.253.2 nameserver=192.168.253.1 netdevice=vmnic0 ks=http://192.168.253.136/repo/ks.cfg'
-
-    - name: Display ISO boot configuration
-      ansible.builtin.debug:
-        msg:
-          - "============================================================"
-          - "ISO BOOT CONFIGURATION"
-          - "============================================================"
-          - "{{ iso_kernelopt.stdout }}"
-          - "============================================================"
+        success_msg: "ISO BOOT.CFG validated successfully."
 
     # ========================================================================
     # CREATE VM DIRECTORY
@@ -313,16 +356,16 @@
         mode: "0755"
 
     # ========================================================================
-    # CHECK RUNNING VMS
+    # CHECK CURRENT VM
     # ========================================================================
 
-    - name: Get running VMware virtual machines
+    - name: Get running VMware VMs
       ansible.builtin.command:
         argv:
           - "{{ vmrun_cygwin }}"
           - "-T"
           - "ws"
-          - list
+          - "list"
       register: vmrun_before
       changed_when: false
       failed_when: false
@@ -363,22 +406,10 @@
       failed_when: false
       when: esxi_running_before
 
-    - name: Display stop result
-      ansible.builtin.debug:
-        msg:
-          - "Return code : {{ stop_existing.rc | default('not executed') }}"
-          - "STDOUT      : {{ stop_existing.stdout | default('') }}"
-          - "STDERR      : {{ stop_existing.stderr | default('') }}"
-      when: esxi_running_before
-
-    - name: Wait for VM shutdown
+    - name: Wait after VM stop
       ansible.builtin.pause:
         seconds: "{{ shutdown_wait_seconds }}"
       when: esxi_running_before
-
-    # ========================================================================
-    # VERIFY STOP
-    # ========================================================================
 
     - name: Check VMware VMs after stop
       ansible.builtin.command:
@@ -391,7 +422,7 @@
       changed_when: false
       failed_when: false
 
-    - name: Determine stopped state
+    - name: Determine whether ESXI-01 is still running
       ansible.builtin.set_fact:
         esxi_running_after_stop: >-
           {{
@@ -407,7 +438,7 @@
           ESXI-01 IS STILL RUNNING
           ============================================================
 
-          vmrun list:
+          Current vmrun list:
 
           {{ vmrun_after_stop.stdout }}
 
@@ -417,7 +448,7 @@
         - esxi_running_after_stop
 
     # ========================================================================
-    # REMOVE STALE LOCKS
+    # REMOVE LOCKS
     # ========================================================================
 
     - name: Remove stale VMware lock directories
@@ -432,7 +463,7 @@
       changed_when: false
 
     # ========================================================================
-    # REMOVE RUNTIME STATE
+    # REMOVE STALE RUNTIME STATE
     # ========================================================================
 
     - name: Remove stale VMware runtime state
@@ -455,8 +486,22 @@
         path: "{{ vmdk_file_cygwin }}"
       register: vmdk_stat
 
+    - name: Display existing VMDK
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "VMDK STATUS"
+          - "============================================================"
+          - "Path   : {{ vmdk_file_windows }}"
+          - "Exists : {{ vmdk_stat.stat.exists }}"
+          - "============================================================"
+
     # ========================================================================
     # CREATE VMDK IF MISSING
+    #
+    # IMPORTANT:
+    # Windows executable receives WINDOWS PATH.
+    # Do NOT use vmdk_file_cygwin here.
     # ========================================================================
 
     - name: Create 2TB ESXi VMDK
@@ -470,10 +515,23 @@
           - "lsilogic"
           - "-t"
           - "0"
-          - "{{ vmdk_file_cygwin }}"
+          - "{{ vmdk_file_windows }}"
       register: vmdk_create
       changed_when: vmdk_create.rc == 0
       failed_when: vmdk_create.rc != 0
+      when: not vmdk_stat.stat.exists
+
+    - name: Display VMDK creation result
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "VMDK CREATION RESULT"
+          - "============================================================"
+          - "Path       : {{ vmdk_file_windows }}"
+          - "ReturnCode : {{ vmdk_create.rc | default('skipped') }}"
+          - "STDOUT     : {{ vmdk_create.stdout | default('Existing VMDK preserved.') }}"
+          - "STDERR     : {{ vmdk_create.stderr | default('') }}"
+          - "============================================================"
       when: not vmdk_stat.stat.exists
 
     - name: Verify VMDK exists
@@ -484,9 +542,19 @@
     - name: Fail if VMDK is missing
       ansible.builtin.fail:
         msg: |
-          VMDK not found:
+          ============================================================
+          VMDK NOT FOUND
+          ============================================================
+
+          Windows path:
 
           {{ vmdk_file_windows }}
+
+          Cygwin path:
+
+          {{ vmdk_file_cygwin }}
+
+          ============================================================
       when: not vmdk_after.stat.exists
 
     # ========================================================================
@@ -561,7 +629,7 @@
           scsi0:0.deviceType = "scsi-hardDisk"
 
           # ==========================================================
-          # ESXi INSTALLATION ISO
+          # ESXi AUTO ISO
           # ==========================================================
 
           ide1:0.present = "TRUE"
@@ -607,8 +675,6 @@
 
           # ==========================================================
           # INSTALLATION BOOT
-          # CD FIRST
-          # HDD SECOND
           # ==========================================================
 
           efi.bootOrder = "cdrom,hdd"
@@ -640,12 +706,7 @@
         install_vmx_text: "{{ install_vmx_slurp.content | b64decode }}"
 
     # ========================================================================
-    # VALIDATION FLAGS
-    #
-    # Using Jinja expressions inside set_fact avoids the YAML parser
-    # conflict that occurred with:
-    #
-    # - 'text' in install_vmx_text
+    # CALCULATE INSTALLATION VMX FLAGS
     # ========================================================================
 
     - name: Calculate installation VMX validation flags
@@ -698,44 +759,25 @@
           INSTALLATION VMX VALIDATION FAILED
           ============================================================
 
-          Hardware       : {{ install_vmx_hardware_ok }}
-          Firmware       : {{ install_vmx_firmware_ok }}
-          Nested VT      : {{ install_vmx_nested_ok }}
-          Disk            : {{ install_vmx_disk_ok }}
-          Disk Path       : {{ install_vmx_disk_path_ok }}
-          CD              : {{ install_vmx_cd_ok }}
-          ISO Path        : {{ install_vmx_iso_ok }}
-          CD Connected    : {{ install_vmx_cd_connected_ok }}
-          Network Type    : {{ install_vmx_network_type_ok }}
-          VMnet           : {{ install_vmx_network_name_ok }}
-          Network Online  : {{ install_vmx_network_connected_ok }}
-          Boot Order      : {{ install_vmx_boot_ok }}
-          HDD Order       : {{ install_vmx_hdd_order_ok }}
+          Hardware      : {{ install_vmx_hardware_ok }}
+          Firmware      : {{ install_vmx_firmware_ok }}
+          Nested VT     : {{ install_vmx_nested_ok }}
+          Disk          : {{ install_vmx_disk_ok }}
+          Disk Path     : {{ install_vmx_disk_path_ok }}
+          CD            : {{ install_vmx_cd_ok }}
+          ISO Path      : {{ install_vmx_iso_ok }}
+          CD Connected  : {{ install_vmx_cd_connected_ok }}
+          Network Type  : {{ install_vmx_network_type_ok }}
+          VMnet         : {{ install_vmx_network_name_ok }}
+          Network Up    : {{ install_vmx_network_connected_ok }}
+          Boot Order    : {{ install_vmx_boot_ok }}
+          HDD Order     : {{ install_vmx_hdd_order_ok }}
 
           ============================================================
         success_msg: "Installation VMX validated successfully."
 
     # ========================================================================
-    # DISPLAY INSTALLATION VMX
-    # ========================================================================
-
-    - name: Display installation VMX summary
-      ansible.builtin.debug:
-        msg:
-          - "============================================================"
-          - "INSTALLATION VMX"
-          - "============================================================"
-          - "ISO Connected : TRUE"
-          - "ISO           : {{ esxi_iso_windows }}"
-          - "Boot          : CDROM -> HDD"
-          - "HDD           : scsi0:0"
-          - "Network       : CUSTOM / VMnet0"
-          - "Firmware      : EFI"
-          - "Nested VT     : TRUE"
-          - "============================================================"
-
-    # ========================================================================
-    # START INSTALLATION VM WITH VMRUN
+    # START INSTALLATION VM
     # ========================================================================
 
     - name: Start ESXi installation VM
@@ -770,26 +812,22 @@
           ============================================================
 
           VMX:
-
           {{ vmx_file_windows }}
 
           Return code:
-
           {{ install_start.rc }}
 
           STDOUT:
-
           {{ install_start.stdout }}
 
           STDERR:
-
           {{ install_start.stderr }}
 
           ============================================================
       when: install_start.rc != 0
 
     # ========================================================================
-    # OPEN VM IN WORKSTATION
+    # OPEN VM IN WORKSTATION GUI
     # ========================================================================
 
     - name: Open ESXI-01 in VMware Workstation
@@ -807,32 +845,32 @@
       changed_when: true
       failed_when: false
 
-    - name: Wait for VMware Workstation
+    - name: Wait for Workstation GUI
       ansible.builtin.pause:
         seconds: 8
 
     # ========================================================================
-    # CHECK VM
+    # CHECK INSTALLATION VM
     # ========================================================================
 
-    - name: Check installation VM state
+    - name: Check installation VM running state
       ansible.builtin.command:
         argv:
           - "{{ vmrun_cygwin }}"
           - "-T"
           - "ws"
           - "list"
-      register: install_vm_list
+      register: installation_vm_list
       changed_when: false
       failed_when: false
 
-    - name: Determine installation VM running state
+    - name: Determine installation VM state
       ansible.builtin.set_fact:
         installation_vm_running: >-
           {{
             vmx_file_windows | lower
             in
-            (install_vm_list.stdout | default('') | lower)
+            (installation_vm_list.stdout | default('') | lower)
           }}
 
     - name: Display installation VM state
@@ -851,11 +889,11 @@
 
           vmrun output:
 
-          {{ install_vm_list.stdout }}
+          {{ installation_vm_list.stdout }}
       when: not installation_vm_running
 
     # ========================================================================
-    # WAIT FOR UNATTENDED INSTALLATION
+    # WAIT FOR INSTALLATION
     # ========================================================================
 
     - name: Wait for unattended ESXi installation
@@ -863,7 +901,7 @@
         seconds: "{{ installation_wait_seconds }}"
 
     # ========================================================================
-    # READ LOG FOR DIAGNOSTICS
+    # CHECK LOG
     # ========================================================================
 
     - name: Check VMware log
@@ -871,7 +909,7 @@
         path: "{{ vmware_log_cygwin }}"
       register: vmware_log_stat
 
-    - name: Read current VMware log
+    - name: Read VMware log
       ansible.builtin.shell: |
         tail -200 "{{ vmware_log_cygwin }}"
       args:
@@ -894,8 +932,8 @@
           - "stop"
           - "{{ vmx_file_windows }}"
           - "hard"
-      register: install_stop
-      changed_when: install_stop.rc == 0
+      register: installation_stop
+      changed_when: installation_stop.rc == 0
       failed_when: false
 
     - name: Display installation stop result
@@ -904,9 +942,9 @@
           - "============================================================"
           - "INSTALLATION VM STOP"
           - "============================================================"
-          - "Return Code : {{ install_stop.rc }}"
-          - "STDOUT      : {{ install_stop.stdout }}"
-          - "STDERR      : {{ install_stop.stderr }}"
+          - "Return Code : {{ installation_stop.rc }}"
+          - "STDOUT      : {{ installation_stop.stdout }}"
+          - "STDERR      : {{ installation_stop.stderr }}"
           - "============================================================"
 
     - name: Wait for installation VM shutdown
@@ -914,27 +952,27 @@
         seconds: "{{ shutdown_wait_seconds }}"
 
     # ========================================================================
-    # VERIFY VM STOPPED
+    # VERIFY STOPPED
     # ========================================================================
 
-    - name: Check VMware VMs after installation stop
+    - name: Check VMware VMs after installation
       ansible.builtin.command:
         argv:
           - "{{ vmrun_cygwin }}"
           - "-T"
           - "ws"
           - "list"
-      register: after_install_stop
+      register: after_install_list
       changed_when: false
       failed_when: false
 
-    - name: Determine whether installation VM is stopped
+    - name: Determine installation VM stopped state
       ansible.builtin.set_fact:
         installation_vm_stopped: >-
           {{
             vmx_file_windows | lower
             not in
-            (after_install_stop.stdout | default('') | lower)
+            (after_install_list.stdout | default('') | lower)
           }}
 
     - name: Fail if installation VM is still running
@@ -946,16 +984,16 @@
 
           vmrun list:
 
-          {{ after_install_stop.stdout }}
+          {{ after_install_list.stdout }}
 
           ============================================================
       when: not installation_vm_stopped
 
     # ========================================================================
-    # REMOVE LOCKS NOW THAT VM IS OFF
+    # REMOVE LOCKS
     # ========================================================================
 
-    - name: Remove VMware lock directories
+    - name: Remove VMware lock directories after installation
       ansible.builtin.shell: |
         find "{{ vm_dir_cygwin }}" \
           -maxdepth 2 \
@@ -978,7 +1016,7 @@
         mode: "0644"
 
     # ========================================================================
-    # FINAL VMX
+    # CREATE FINAL VMX
     # ========================================================================
 
     - name: Create final installed ESXi VMX
@@ -1032,8 +1070,7 @@
           scsi0:0.deviceType = "scsi-hardDisk"
 
           # ==========================================================
-          # CD/DVD
-          # Keep present, but disconnected.
+          # CD/DVD DISCONNECTED
           # ==========================================================
 
           ide1:0.present = "TRUE"
@@ -1078,7 +1115,7 @@
           svga.autodetect = "TRUE"
 
           # ==========================================================
-          # FINAL BOOT
+          # FINAL HDD BOOT
           # ==========================================================
 
           efi.bootOrder = "hdd"
@@ -1110,7 +1147,7 @@
         final_vmx_text: "{{ final_vmx_slurp.content | b64decode }}"
 
     # ========================================================================
-    # FINAL VMX VALIDATION FLAGS
+    # CALCULATE FINAL VMX VALIDATION FLAGS
     # ========================================================================
 
     - name: Calculate final VMX validation flags
@@ -1181,25 +1218,6 @@
         success_msg: "Final VMX validated successfully."
 
     # ========================================================================
-    # DISPLAY FINAL VMX
-    # ========================================================================
-
-    - name: Display final VMX summary
-      ansible.builtin.debug:
-        msg:
-          - "============================================================"
-          - "FINAL INSTALLED ESXi VMX"
-          - "============================================================"
-          - "Firmware      : EFI"
-          - "Nested VT     : ENABLED"
-          - "Disk          : scsi0:0"
-          - "ISO Connected : FALSE"
-          - "Boot          : HDD"
-          - "HDD           : scsi0:0"
-          - "Network       : CUSTOM / VMnet0"
-          - "============================================================"
-
-    # ========================================================================
     # START FINAL ESXi
     # ========================================================================
 
@@ -1216,7 +1234,7 @@
       changed_when: final_start.rc == 0
       failed_when: false
 
-    - name: Display final ESXi start result
+    - name: Display final start result
       ansible.builtin.debug:
         msg:
           - "============================================================"
@@ -1227,7 +1245,7 @@
           - "STDERR      : {{ final_start.stderr }}"
           - "============================================================"
 
-    - name: Fail if final ESXi did not start
+    - name: Fail if final ESXi failed to start
       ansible.builtin.fail:
         msg: |
           ============================================================
@@ -1269,7 +1287,7 @@
       failed_when: false
 
     # ========================================================================
-    # WAIT FOR FINAL ESXi
+    # WAIT FOR ESXi BOOT
     # ========================================================================
 
     - name: Wait for final ESXi boot
@@ -1304,14 +1322,14 @@
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "FINAL VM STATE"
+          - "FINAL ESXi VM STATE"
           - "============================================================"
-          - "VM Name : {{ vm_name }}"
-          - "Running : {{ final_vm_running }}"
-          - "Boot    : INSTALLED HDD"
-          - "Disk    : scsi0:0"
-          - "ISO     : DISCONNECTED"
-          - "Network : VMnet0"
+          - "VM Name       : {{ vm_name }}"
+          - "Running       : {{ final_vm_running }}"
+          - "Boot          : HDD / scsi0:0"
+          - "ISO Connected : FALSE"
+          - "Network       : CUSTOM / VMnet0"
+          - "IP            : {{ esxi_ip }}"
           - "============================================================"
 
     - name: Fail if final VM is not running
@@ -1329,17 +1347,17 @@
       when: not final_vm_running
 
     # ========================================================================
-    # WAIT FOR ESXi HTTPS
+    # WAIT FOR HTTPS
     # ========================================================================
 
-    - name: Wait for ESXi HTTPS management port
+    - name: Wait for ESXi HTTPS management interface
       ansible.builtin.wait_for:
         host: "{{ esxi_ip }}"
         port: 443
         state: started
         timeout: "{{ https_timeout_seconds }}"
         msg: |
-          ESXi HTTPS did not become available on:
+          ESXi management interface did not become available at:
 
           https://{{ esxi_ip }}
 
@@ -1347,7 +1365,7 @@
     # PING
     # ========================================================================
 
-    - name: Test ESXi management IP
+    - name: Ping ESXi management IP
       ansible.builtin.command:
         argv:
           - ping
@@ -1362,7 +1380,7 @@
     # SUCCESS
     # ========================================================================
 
-    - name: Display successful installation
+    - name: Display successful ESXi installation
       ansible.builtin.debug:
         msg:
           - "============================================================"
