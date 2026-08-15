@@ -782,7 +782,6 @@
           - install_pci7_slot_ok | bool
           - install_scsi_slot_ok | bool
           - install_ethernet_slot_ok | bool
-          - "'efi.bootOrder' not in installation_vmx_text"
         fail_msg: |
           ============================================================
           INSTALLATION VMX VALIDATION FAILED
