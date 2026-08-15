@@ -2070,7 +2070,7 @@ ansible-galaxy collection install \
 Run against the linux group
 
 ```bash
-ansible-playbook -i ~/inventory.ini ssh-admin/create_admin.yml -e "target_hosts=linux" --ask-pass
+ansible-playbook -i ~/inventory.ini ssh-admin/create_admin.yml -e "target_hosts=Linux" --ask-pass
 ```
 
 
