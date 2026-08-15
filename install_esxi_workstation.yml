@@ -131,7 +131,7 @@
   tasks:
 
     # ========================================================================
-    # DISPLAY
+    # DISPLAY CONFIGURATION
     # ========================================================================
 
     - name: Display configuration
@@ -150,6 +150,7 @@
           - "Disk          : {{ vm_disk_gb }} GB"
           - "Firmware      : EFI"
           - "Nested VT     : ENABLED"
+          - "SCSI          : PVSCSI"
           - "Network       : {{ vm_network_name }}"
           - "Adapter       : {{ vm_network_adapter }}"
           - "ESXi IP       : {{ esxi_ip }}"
@@ -158,11 +159,11 @@
           - "DNS           : {{ esxi_dns }}"
           - "Hostname      : {{ esxi_hostname }}"
           - "HTTP Server   : {{ http_server_ip }}"
-          - "Install Disk  : mpx.vmhba0:C0:T0:L0"
+          - "KS Disk       : --firstdisk"
           - "============================================================"
 
     # ========================================================================
-    # CHECK ISO
+    # ISO CHECK
     # ========================================================================
 
     - name: Check customized ESXi ISO
@@ -187,7 +188,7 @@
       when: not iso_stat.stat.exists
 
     # ========================================================================
-    # CHECK VMWARE TOOLS
+    # VMWARE TOOLS CHECK
     # ========================================================================
 
     - name: Check vmrun.exe
@@ -280,7 +281,7 @@
             in ks_http_result.stdout
           }}
 
-        ks_disk_ok: "{{ expected_install_disk in ks_http_result.stdout }}"
+        ks_disk_ok: "{{ 'install --firstdisk --overwritevmfs' in ks_http_result.stdout }}"
         ks_reboot_ok: "{{ 'reboot' in ks_http_result.stdout }}"
         ks_firstboot_ok: "{{ '%firstboot --interpreter=busybox' in ks_http_result.stdout }}"
         ks_hostname_ok: "{{ 'esxcli system hostname set --fqdn=esxi-host-01.vgs.com' in ks_http_result.stdout }}"
@@ -325,15 +326,11 @@
 
           {{ ks_http_result.stdout }}
 
-          Expected install directive:
-
-          {{ expected_install_disk }}
-
           ============================================================
         success_msg: "HTTP KS.CFG validated successfully."
 
     # ========================================================================
-    # VERIFY ACTUAL UEFI BOOT.CFG INSIDE ISO
+    # VERIFY UEFI BOOT.CFG
     # ========================================================================
 
     - name: Extract EFI BOOT.CFG
@@ -380,18 +377,16 @@
           ============================================================
 
           Expected:
-
           {{ expected_kernelopt }}
 
           Found:
-
           {{ actual_kernelopt }}
 
           ============================================================
         success_msg: "EFI/BOOT/BOOT.CFG validated successfully."
 
     # ========================================================================
-    # CREATE VM DIRECTORY
+    # VM DIRECTORY
     # ========================================================================
 
     - name: Create ESXi VM directory
@@ -491,8 +486,7 @@
         - esxi_running_after_stop
 
     # ========================================================================
-    # CLEAN STALE VM RUNTIME STATE
-    # NEVER DELETE VMDK
+    # CLEAN STALE RUNTIME STATE
     # ========================================================================
 
     - name: Remove stale VMware lock directories
@@ -571,7 +565,7 @@
       when: not vmdk_after.stat.exists
 
     # ========================================================================
-    # VMX BACKUP
+    # BACKUP EXISTING VMX
     # ========================================================================
 
     - name: Check existing VMX
@@ -589,10 +583,6 @@
 
     # ========================================================================
     # CREATE INSTALLATION VMX
-    #
-    # IMPORTANT:
-    # No efi.bootOrder line.
-    # This matches the VMX configuration that successfully booted ESXi.
     # ========================================================================
 
     - name: Create installation VMX
@@ -651,7 +641,7 @@
           pciBridge7.pciSlotNumber = "24"
 
           # ==========================================================
-          # SCSI DISK
+          # PVSCSI DISK
           # ==========================================================
 
           scsi0.present = "TRUE"
@@ -700,7 +690,7 @@
           svga.present = "TRUE"
           svga.autodetect = "TRUE"
 
-          # DO NOT use efi.bootOrder.
+          # Do NOT use efi.bootOrder.
           efi.hddOrder = "scsi0:0"
 
           powerType.powerOff = "soft"
@@ -835,7 +825,7 @@
         seconds: "{{ startup_wait_seconds }}"
 
     # ========================================================================
-    # VERIFY VM RUNNING
+    # VERIFY INSTALLATION VM RUNNING
     # ========================================================================
 
     - name: Check running VMware VMs
@@ -886,9 +876,7 @@
       when: not installation_vm_running
 
     # ========================================================================
-    # WAIT FOR ESXi INSTALLATION
-    #
-    # Port 443 becoming available is used as the completion signal.
+    # WAIT FOR ESXi INSTALLATION TO COMPLETE
     # ========================================================================
 
     - name: Wait for ESXi HTTPS
@@ -902,7 +890,7 @@
       failed_when: false
 
     # ========================================================================
-    # READ VMWARE LOG
+    # READ INSTALLATION LOG
     # ========================================================================
 
     - name: Read VMware installation log
@@ -1004,7 +992,7 @@
       failed_when: false
       when: installed_vm_still_running
 
-    - name: Wait after final VM stop
+    - name: Wait after VM stop
       ansible.builtin.pause:
         seconds: "{{ shutdown_wait_seconds }}"
 
@@ -1036,9 +1024,6 @@
 
     # ========================================================================
     # CREATE FINAL VMX
-    #
-    # ISO remains attached but disconnected.
-    # No invalid efi.bootOrder.
     # ========================================================================
 
     - name: Create final ESXi VMX
@@ -1097,11 +1082,11 @@
           pciBridge7.pciSlotNumber = "24"
 
           # ==========================================================
-          # SCSI / INSTALLED ESXi DISK
+          # PVSCSI / INSTALLED ESXi DISK
           # ==========================================================
 
           scsi0.present = "TRUE"
-          scsi0.virtualDev = "lsilogic"
+          scsi0.virtualDev = "pvscsi"
           scsi0.pciSlotNumber = "16"
 
           scsi0:0.present = "TRUE"
@@ -1190,10 +1175,23 @@
           - vmx_network_device_line in final_vmx_text
           - vmx_network_connected_line in final_vmx_text
 
+          - vmx_pci_bridge0_present in final_vmx_text
+          - vmx_pci_bridge4_present in final_vmx_text
+          - vmx_pci_bridge5_present in final_vmx_text
+          - vmx_pci_bridge6_present in final_vmx_text
+          - vmx_pci_bridge7_present in final_vmx_text
+
+          - vmx_scsi_slot in final_vmx_text
+          - vmx_ethernet_slot in final_vmx_text
           - vmx_hdd_order_line in final_vmx_text
+
+          - 'scsi0.virtualDev = "pvscsi"' in final_vmx_text
+
         fail_msg: |
           ============================================================
           FINAL VMX VALIDATION FAILED
+          ============================================================
+
           ============================================================
         success_msg: "Final VMX validated successfully."
 
@@ -1281,6 +1279,7 @@
           - "Running       : {{ final_vm_running }}"
           - "Boot          : HDD"
           - "ISO Connected : FALSE"
+          - "SCSI          : PVSCSI"
           - "Network       : VMnet0"
           - "Adapter       : vmxnet3"
           - "IP            : {{ esxi_ip }}"
@@ -1356,6 +1355,7 @@
           - "RAM           : {{ vm_memory_mb }} MB"
           - "CPU           : {{ vm_vcpu }}"
           - "Disk          : {{ vm_disk_gb }} GB"
+          - "SCSI          : PVSCSI"
           - "Network       : VMnet0"
           - "Adapter       : vmxnet3"
           - "IP            : {{ esxi_ip }}"
