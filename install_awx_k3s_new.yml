@@ -85,6 +85,18 @@
     reboot_connect_timeout: 30
     post_reboot_delay: 20
 
+  # ============================================================
+  # IMPORTANT:
+  # Ansible command/shell/make tasks do not necessarily inherit
+  # interactive shell PATH.
+  #
+  # Therefore make kubectl/kustomize/k3s available globally.
+  # ============================================================
+
+  environment:
+    PATH: "/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
+    KUBECONFIG: "/etc/rancher/k3s/k3s.yaml"
+
   tasks:
 
     # ============================================================
@@ -103,6 +115,9 @@
           - "VIP                  : {{ vip }}"
           - "Interface            : {{ ansible_default_ipv4.interface | default('UNKNOWN') }}"
           - "kube-rbac-proxy      : {{ kube_rbac_proxy_image }}"
+          - "K3s                  : {{ k3s_binary_path }}"
+          - "kubectl              : {{ kubectl_path }}"
+          - "Kubeconfig           : {{ kubeconfig_path }}"
           - "============================================================"
 
     # ============================================================
@@ -114,7 +129,7 @@
     #   continue
     #
     # If disabled:
-    #   grubby
+    #   update kernel arguments
     #   reboot
     #   check again
     #
@@ -289,7 +304,7 @@
       ansible.builtin.replace:
         path: /etc/selinux/config
         regexp: '^SELINUX=.*$'
-        replace: 'SELINUX=permissive'
+        replace: "SELINUX=permissive"
       failed_when: false
 
     - name: Stop firewalld
@@ -311,7 +326,7 @@
     # ============================================================
     # 4. VERIFY AWX HOST IP
     #
-    # 192.168.253.145 is the server IP, not a separate VIP.
+    # 192.168.253.145 is the server IP.
     # ============================================================
 
     - name: Display section 4
@@ -425,6 +440,10 @@
         state: started
         enabled: true
 
+    # ============================================================
+    # Verify K3s tools
+    # ============================================================
+
     - name: Verify K3s kubectl client
       ansible.builtin.command:
         argv:
@@ -436,6 +455,21 @@
         KUBECONFIG: "{{ kubeconfig_path }}"
       register: k3s_kubectl_client
       changed_when: false
+
+    - name: Verify standalone kubectl path
+      ansible.builtin.command:
+        argv:
+          - "{{ kubectl_path }}"
+          - version
+          - --client=true
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: kubectl_client
+      changed_when: false
+
+    # ============================================================
+    # Wait for K3s node
+    # ============================================================
 
     - name: Wait for K3s node to become Ready
       ansible.builtin.command:
@@ -539,10 +573,6 @@
       when:
         - "'registry' in podman_containers.stdout_lines"
 
-    # ============================================================
-    # PODMAN REGISTRY CONFIG
-    # ============================================================
-
     - name: Create Podman registry configuration directory
       ansible.builtin.file:
         path: /etc/containers/registries.conf.d
@@ -557,10 +587,6 @@
           [[registry]]
           location="localhost:5000"
           insecure=true
-
-    # ============================================================
-    # K3S REGISTRY CONFIG
-    # ============================================================
 
     - name: Create K3s configuration directory
       ansible.builtin.file:
@@ -873,7 +899,7 @@
         msg: "Old AWX resources cleaned."
 
     # ============================================================
-    # 9. VERIFY KUBE-RBAC-PROXY IMAGE
+    # 9. VERIFY KUBE-RBAC-PROXY
     # ============================================================
 
     - name: Display section 9
@@ -912,8 +938,8 @@
           - "============================================================"
           - "KUBE-RBAC-PROXY IMAGE READY"
           - "============================================================"
-          - "Image: {{ kube_rbac_proxy_image }}"
-          - "Pulled through: {{ k3s_binary_path }} crictl"
+          - "Image       : {{ kube_rbac_proxy_image }}"
+          - "CRI command : {{ k3s_binary_path }} crictl"
           - "{{ kube_rbac_proxy_pull.stdout }}"
           - "============================================================"
 
@@ -925,6 +951,7 @@
       ansible.builtin.debug:
         msg:
           - "# 10. Download AWX Operator source"
+          - "Downloading AWX Operator..."
 
     - name: Remove existing AWX Operator directory
       ansible.builtin.file:
@@ -943,7 +970,7 @@
         msg: "AWX Operator {{ operator_version }} downloaded."
 
     # ============================================================
-    # 11. FIX KUBE-RBAC-PROXY
+    # 11. FIX KUBE-RBAC-PROXY IMAGE
     # ============================================================
 
     - name: Display section 11
@@ -1083,7 +1110,11 @@
     - name: Fail if AWX Operator Makefile is missing
       ansible.builtin.fail:
         msg: |
-          ERROR: AWX Operator source directory not found.
+          ============================================================
+          AWX OPERATOR SOURCE NOT FOUND
+          ============================================================
+          {{ awx_operator_dir }}
+          ============================================================
       when:
         - not operator_makefile.stat.exists
 
@@ -1096,13 +1127,54 @@
         msg:
           - "# 13. Deploy AWX Operator"
           - "Deploying AWX Operator..."
+          - "PATH: /usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
+          - "KUBECONFIG: {{ kubeconfig_path }}"
+
+    # IMPORTANT:
+    # make deploy internally executes kubectl.
+    # Play-level PATH makes /usr/local/bin/kubectl available.
+    # Therefore this will no longer fail with:
+    # /bin/sh: kubectl: command not found
+
+    - name: Verify kubectl is visible to Ansible
+      ansible.builtin.command:
+        cmd: which kubectl
+      register: kubectl_location
+      changed_when: false
+
+    - name: Display kubectl location
+      ansible.builtin.debug:
+        msg:
+          - "kubectl found at:"
+          - "{{ kubectl_location.stdout }}"
+
+    - name: Verify kubectl can reach K3s
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - get
+          - nodes
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: kubectl_nodes_before_operator
+      changed_when: false
+
+    - name: Display kubectl connectivity
+      ansible.builtin.debug:
+        msg:
+          - "Kubernetes API is reachable."
+          - "{{ kubectl_nodes_before_operator.stdout }}"
 
     - name: Deploy AWX Operator
       ansible.builtin.command:
-        cmd: "make deploy NAMESPACE={{ awx_namespace }}"
+        argv:
+          - make
+          - deploy
+          - "NAMESPACE={{ awx_namespace }}"
       args:
         chdir: "{{ awx_operator_dir }}"
       environment:
+        PATH: "/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
         KUBECONFIG: "{{ kubeconfig_path }}"
 
     - name: Set kube-rbac-proxy image on Operator deployment
@@ -1117,6 +1189,7 @@
           - deployment/awx-operator-controller-manager
           - "kube-rbac-proxy={{ kube_rbac_proxy_image }}"
       environment:
+        PATH: "/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
         KUBECONFIG: "{{ kubeconfig_path }}"
       failed_when: false
 
@@ -1132,11 +1205,19 @@
           - "{{ awx_namespace }}"
           - --timeout=300s
       environment:
+        PATH: "/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
         KUBECONFIG: "{{ kubeconfig_path }}"
 
     - name: Display Operator result
       ansible.builtin.debug:
-        msg: "AWX Operator deployed successfully."
+        msg:
+          - "============================================================"
+          - "AWX OPERATOR READY"
+          - "============================================================"
+          - "Operator Version : {{ operator_version }}"
+          - "Namespace        : {{ awx_namespace }}"
+          - "kubectl          : {{ kubectl_location.stdout }}"
+          - "============================================================"
 
     # ============================================================
     # 14. CREATE AWX INSTANCE
@@ -1146,6 +1227,7 @@
       ansible.builtin.debug:
         msg:
           - "# 14. Create AWX instance"
+          - "Creating AWX instance..."
 
     - name: Create AWX instance manifest
       ansible.builtin.copy:
@@ -1243,7 +1325,9 @@
 
     - name: Display migration job
       ansible.builtin.debug:
-        msg: "Migration job found: {{ migration_job.stdout | trim }}"
+        msg:
+          - "Migration job found:"
+          - "{{ migration_job.stdout | trim }}"
 
     - name: Stream migration logs
       ansible.builtin.command:
