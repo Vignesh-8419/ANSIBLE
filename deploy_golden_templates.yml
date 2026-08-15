@@ -41,11 +41,14 @@
     # POWER
     # ========================================================================
 
+    # OVF is initially deployed powered off.
     power_on_after_deploy: false
+
+    # Power on after Hot Add has been configured and verified.
     power_on_after_hotadd: true
 
     # ========================================================================
-    # OVF
+    # OVF DEPLOYMENT
     # ========================================================================
 
     allow_duplicates: false
@@ -63,9 +66,14 @@
     #
     # Default = all three.
     #
-    # -e 'deploy_templates=["CENTOS_07"]'
-    # -e 'deploy_templates=["ROCKYOS_08"]'
-    # -e 'deploy_templates=["ROCKYOS_09"]'
+    # CentOS:
+    #   -e 'deploy_templates=["CENTOS_07"]'
+    #
+    # Rocky 8:
+    #   -e 'deploy_templates=["ROCKYOS_08"]'
+    #
+    # Rocky 9:
+    #   -e 'deploy_templates=["ROCKYOS_09"]'
     # ========================================================================
 
     deploy_templates:
@@ -74,7 +82,7 @@
       - "ROCKYOS_09"
 
     # ========================================================================
-    # TEMPLATE DEFINITIONS
+    # GOLDEN TEMPLATE DEFINITIONS
     # ========================================================================
 
     golden_templates:
@@ -149,7 +157,7 @@
           - "============================================================"
 
     # ========================================================================
-    # PASSWORD
+    # ESXi PASSWORD
     # ========================================================================
 
     - name: Fail if ESXi password is not supplied
@@ -171,7 +179,7 @@
       when: esxi_password | length == 0
 
     # ========================================================================
-    # CHECK COLLECTION
+    # COMMUNITY.VMWARE
     # ========================================================================
 
     - name: Check community.vmware collection
@@ -188,7 +196,7 @@
         msg: "{{ vmware_collection_list.stdout }}"
 
     # ========================================================================
-    # VALIDATE REQUESTED TEMPLATE IDS
+    # VALIDATE TEMPLATE IDS
     # ========================================================================
 
     - name: Validate requested template IDs
@@ -213,7 +221,7 @@
       loop: "{{ deploy_templates }}"
 
     # ========================================================================
-    # INITIALIZE SELECTED TEMPLATE LIST
+    # INITIALIZE SELECTED LIST
     # ========================================================================
 
     - name: Initialize selected template list
@@ -221,7 +229,7 @@
         selected_templates: []
 
     # ========================================================================
-    # ADD CENTOS 7
+    # SELECT CENTOS 7
     # ========================================================================
 
     - name: Select CentOS 7 template
@@ -235,7 +243,7 @@
         - item.id == "CENTOS_07"
 
     # ========================================================================
-    # ADD ROCKY 8
+    # SELECT ROCKY 8
     # ========================================================================
 
     - name: Select Rocky Linux 8 template
@@ -249,7 +257,7 @@
         - item.id == "ROCKYOS_08"
 
     # ========================================================================
-    # ADD ROCKY 9
+    # SELECT ROCKY 9
     # ========================================================================
 
     - name: Select Rocky Linux 9 template
@@ -263,7 +271,7 @@
         - item.id == "ROCKYOS_09"
 
     # ========================================================================
-    # DISPLAY SELECTED TEMPLATES
+    # DISPLAY SELECTED
     # ========================================================================
 
     - name: Display selected templates
@@ -274,10 +282,6 @@
           - "============================================================"
           - "{{ selected_templates | map(attribute='vm_name') | list }}"
           - "============================================================"
-
-    # ========================================================================
-    # FAIL IF NOTHING SELECTED
-    # ========================================================================
 
     - name: Fail if no templates were selected
       ansible.builtin.fail:
@@ -293,7 +297,7 @@
       when: selected_templates | length == 0
 
     # ========================================================================
-    # CHECK TEMPLATE DIRECTORIES
+    # TEMPLATE DIRECTORIES
     # ========================================================================
 
     - name: Check selected template directories
@@ -324,7 +328,7 @@
       when: not item.stat.exists
 
     # ========================================================================
-    # CHECK ALL OVF FILES
+    # OVF FILES
     # ========================================================================
 
     - name: Check selected OVF files
@@ -355,7 +359,7 @@
       when: not item.stat.exists
 
     # ========================================================================
-    # CHECK ALL PACKAGE FILES
+    # OVF PACKAGE FILES
     # ========================================================================
 
     - name: Check required template package files
@@ -389,7 +393,7 @@
       when: not item.stat.exists
 
     # ========================================================================
-    # QUERY ESXi DATASTORES
+    # DATASTORE
     # ========================================================================
 
     - name: Query ESXi datastores
@@ -448,7 +452,7 @@
           ============================================================
 
     # ========================================================================
-    # DEPLOY OVF TEMPLATES
+    # DEPLOY OVF
     # ========================================================================
 
     - name: Deploy selected golden template
@@ -458,7 +462,6 @@
         password: "{{ esxi_password }}"
 
         datacenter: "{{ esxi_datacenter }}"
-
         esxi_hostname: "{{ esxi_hostname }}"
 
         datastore: "{{ target_datastore }}"
@@ -475,7 +478,6 @@
         power_on: "{{ power_on_after_deploy }}"
 
         wait: "{{ deployment_wait }}"
-
         wait_for_ip_address: false
 
         allow_duplicates: "{{ allow_duplicates }}"
@@ -494,7 +496,7 @@
       register: deployment_results
 
     # ========================================================================
-    # DEPLOYMENT RESULT
+    # DEPLOYMENT RESULTS
     # ========================================================================
 
     - name: Display deployment results
@@ -546,7 +548,7 @@
       register: hotadd_results
 
     # ========================================================================
-    # HOT ADD RESULT
+    # HOT ADD RESULTS
     # ========================================================================
 
     - name: Display Hot Add results
@@ -566,6 +568,9 @@
 
     # ========================================================================
     # VERIFY HOT ADD
+    #
+    # IMPORTANT:
+    # cpuHotAddEnabled and memoryHotAddEnabled are directly under config.
     # ========================================================================
 
     - name: Gather hot add configuration
@@ -584,8 +589,8 @@
 
         properties:
           - config.name
-          - config.hardware.cpuHotAddEnabled
-          - config.hardware.memoryHotAddEnabled
+          - config.cpuHotAddEnabled
+          - config.memoryHotAddEnabled
           - config.hardware.numCPU
           - config.hardware.memoryMB
           - runtime.powerState
@@ -611,8 +616,8 @@
           - "============================================================"
           - "{{ item.item.vm_name }}"
           - "============================================================"
-          - "CPU Hot Add    : {{ item.instance.config.hardware.cpuHotAddEnabled | default('UNKNOWN') }}"
-          - "Memory Hot Add : {{ item.instance.config.hardware.memoryHotAddEnabled | default('UNKNOWN') }}"
+          - "CPU Hot Add    : {{ item.instance.config.cpuHotAddEnabled | default('UNKNOWN') }}"
+          - "Memory Hot Add : {{ item.instance.config.memoryHotAddEnabled | default('UNKNOWN') }}"
           - "vCPU           : {{ item.instance.config.hardware.numCPU | default('UNKNOWN') }}"
           - "Memory MB      : {{ item.instance.config.hardware.memoryMB | default('UNKNOWN') }}"
           - "Power State    : {{ item.instance.runtime.powerState | default('UNKNOWN') }}"
@@ -622,13 +627,13 @@
         label: "{{ item.item.vm_name }}"
 
     # ========================================================================
-    # ASSERT HOT ADD
+    # ASSERT CPU HOT ADD
     # ========================================================================
 
     - name: Assert CPU Hot Add
       ansible.builtin.assert:
         that:
-          - item.instance.config.hardware.cpuHotAddEnabled | default(false) | bool
+          - item.instance.config.cpuHotAddEnabled | default(false) | bool
         fail_msg: |
           ============================================================
           CPU HOT ADD VALIDATION FAILED
@@ -638,17 +643,21 @@
           {{ item.item.vm_name }}
 
           CPU Hot Add:
-          {{ item.instance.config.hardware.cpuHotAddEnabled | default('UNKNOWN') }}
+          {{ item.instance.config.cpuHotAddEnabled | default('UNKNOWN') }}
 
           ============================================================
       loop: "{{ hotadd_verification.results }}"
       loop_control:
         label: "{{ item.item.vm_name }}"
 
+    # ========================================================================
+    # ASSERT MEMORY HOT ADD
+    # ========================================================================
+
     - name: Assert Memory Hot Add
       ansible.builtin.assert:
         that:
-          - item.instance.config.hardware.memoryHotAddEnabled | default(false) | bool
+          - item.instance.config.memoryHotAddEnabled | default(false) | bool
         fail_msg: |
           ============================================================
           MEMORY HOT ADD VALIDATION FAILED
@@ -658,7 +667,7 @@
           {{ item.item.vm_name }}
 
           Memory Hot Add:
-          {{ item.instance.config.hardware.memoryHotAddEnabled | default('UNKNOWN') }}
+          {{ item.instance.config.memoryHotAddEnabled | default('UNKNOWN') }}
 
           ============================================================
       loop: "{{ hotadd_verification.results }}"
@@ -697,7 +706,7 @@
       register: poweron_results
 
     # ========================================================================
-    # FINAL VM INFO
+    # FINAL VM INFORMATION
     # ========================================================================
 
     - name: Gather final VM information
@@ -716,8 +725,8 @@
 
         properties:
           - config.name
-          - config.hardware.cpuHotAddEnabled
-          - config.hardware.memoryHotAddEnabled
+          - config.cpuHotAddEnabled
+          - config.memoryHotAddEnabled
           - config.hardware.numCPU
           - config.hardware.memoryMB
           - runtime.powerState
@@ -734,7 +743,7 @@
       register: final_vm_info
 
     # ========================================================================
-    # FINAL SUMMARY
+    # FINAL SUMMARY PER VM
     # ========================================================================
 
     - name: Display final golden template summary
@@ -744,8 +753,8 @@
           - "GOLDEN TEMPLATE"
           - "============================================================"
           - "VM              : {{ item.item.vm_name }}"
-          - "CPU Hot Add     : {{ item.instance.config.hardware.cpuHotAddEnabled | default('UNKNOWN') }}"
-          - "Memory Hot Add  : {{ item.instance.config.hardware.memoryHotAddEnabled | default('UNKNOWN') }}"
+          - "CPU Hot Add     : {{ item.instance.config.cpuHotAddEnabled | default('UNKNOWN') }}"
+          - "Memory Hot Add  : {{ item.instance.config.memoryHotAddEnabled | default('UNKNOWN') }}"
           - "vCPU            : {{ item.instance.config.hardware.numCPU | default('UNKNOWN') }}"
           - "Memory MB       : {{ item.instance.config.hardware.memoryMB | default('UNKNOWN') }}"
           - "Power State     : {{ item.instance.runtime.powerState | default('UNKNOWN') }}"
@@ -757,6 +766,10 @@
       loop: "{{ final_vm_info.results }}"
       loop_control:
         label: "{{ item.item.vm_name }}"
+
+    # ========================================================================
+    # OVERALL SUCCESS
+    # ========================================================================
 
     - name: Display overall success
       ansible.builtin.debug:
@@ -773,10 +786,5 @@
           - "Power On        : {{ power_on_after_hotadd }}"
           - "============================================================"
           - "Deployed VMs:"
-          - >-
-            {{
-              selected_templates
-              | map(attribute='vm_name')
-              | list
-            }}
+          - "{{ selected_templates | map(attribute='vm_name') | list }}"
           - "============================================================"
