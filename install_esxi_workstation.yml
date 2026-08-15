@@ -1,4 +1,3 @@
-cat > ~/ANSIBLE/install_esxi_workstation.yml <<'YAML'
 ---
 - name: Automated Nested ESXi 8.0U1 Installation - VMware Workstation
   hosts: localhost
@@ -1231,4 +1230,3 @@ cat > ~/ANSIBLE/install_esxi_workstation.yml <<'YAML'
           - "Hostname      : {{ esxi_hostname }}"
           - "ESXi URL      : https://{{ esxi_ip }}"
           - "============================================================"
-YAML
