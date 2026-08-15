@@ -1,4 +1,3 @@
-cat > ~/ANSIBLE/convert_golden_vms_to_templates.yml <<'YAML'
 ---
 - name: Convert deployed Golden VMs to vCenter Templates
   hosts: localhost
