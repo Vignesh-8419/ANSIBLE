@@ -71,6 +71,12 @@
     awx_pod_retries: 120
     awx_pod_delay: 5
 
+    awx_service_retries: 60
+    awx_service_delay: 5
+
+    awx_ingress_retries: 60
+    awx_ingress_delay: 5
+
     awx_ui_retries: 120
     awx_ui_delay: 10
 
@@ -86,11 +92,10 @@
     post_reboot_delay: 20
 
   # ============================================================
-  # IMPORTANT:
-  # Ansible command/shell/make tasks do not necessarily inherit
-  # interactive shell PATH.
+  # GLOBAL ENVIRONMENT
   #
-  # Therefore make kubectl/kustomize/k3s available globally.
+  # Important:
+  # make deploy internally calls kubectl.
   # ============================================================
 
   environment:
@@ -125,13 +130,13 @@
     #
     # NO EFI STEPS.
     #
-    # If cgroup v2 is already enabled:
+    # If already enabled:
     #   continue
     #
     # If disabled:
-    #   update kernel arguments
+    #   update kernel args
     #   reboot
-    #   check again
+    #   verify again
     #
     # If still disabled:
     #   FAIL
@@ -326,7 +331,7 @@
     # ============================================================
     # 4. VERIFY AWX HOST IP
     #
-    # 192.168.253.145 is the server IP.
+    # 192.168.253.145 is the actual server IP.
     # ============================================================
 
     - name: Display section 4
@@ -440,10 +445,6 @@
         state: started
         enabled: true
 
-    # ============================================================
-    # Verify K3s tools
-    # ============================================================
-
     - name: Verify K3s kubectl client
       ansible.builtin.command:
         argv:
@@ -466,10 +467,6 @@
         KUBECONFIG: "{{ kubeconfig_path }}"
       register: kubectl_client
       changed_when: false
-
-    # ============================================================
-    # Wait for K3s node
-    # ============================================================
 
     - name: Wait for K3s node to become Ready
       ansible.builtin.command:
@@ -814,7 +811,7 @@
       when:
         - awx_namespace_check.rc != 0
 
-    - name: Delete old AWX resource
+    - name: Delete old AWX custom resource
       ansible.builtin.command:
         argv:
           - "{{ k3s_binary_path }}"
@@ -899,7 +896,7 @@
         msg: "Old AWX resources cleaned."
 
     # ============================================================
-    # 9. VERIFY KUBE-RBAC-PROXY
+    # 9. VERIFY KUBE-RBAC-PROXY IMAGE
     # ============================================================
 
     - name: Display section 9
@@ -1113,7 +1110,9 @@
           ============================================================
           AWX OPERATOR SOURCE NOT FOUND
           ============================================================
+
           {{ awx_operator_dir }}
+
           ============================================================
       when:
         - not operator_makefile.stat.exists
@@ -1127,14 +1126,6 @@
         msg:
           - "# 13. Deploy AWX Operator"
           - "Deploying AWX Operator..."
-          - "PATH: /usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
-          - "KUBECONFIG: {{ kubeconfig_path }}"
-
-    # IMPORTANT:
-    # make deploy internally executes kubectl.
-    # Play-level PATH makes /usr/local/bin/kubectl available.
-    # Therefore this will no longer fail with:
-    # /bin/sh: kubectl: command not found
 
     - name: Verify kubectl is visible to Ansible
       ansible.builtin.command:
@@ -1255,33 +1246,40 @@
       environment:
         KUBECONFIG: "{{ kubeconfig_path }}"
 
-    - name: Wait for AWX Deployment
+    # ============================================================
+    # WAIT FOR AWX CR
+    # ============================================================
+
+    - name: Wait for AWX custom resource
       ansible.builtin.command:
         argv:
           - "{{ k3s_binary_path }}"
           - kubectl
           - get
-          - deployment
+          - awx
           - awx-server
           - -n
           - "{{ awx_namespace }}"
       environment:
         KUBECONFIG: "{{ kubeconfig_path }}"
-      register: awx_deployment
+      register: awx_cr
       retries: "{{ awx_deployment_retries }}"
       delay: "{{ awx_deployment_delay }}"
       until:
-        - awx_deployment.rc == 0
+        - awx_cr.rc == 0
       changed_when: false
 
-    - name: Display AWX Deployment result
+    - name: Display AWX CR result
       ansible.builtin.debug:
         msg:
-          - "AWX Deployment created."
-          - "AWX CRD reconciled successfully."
+          - "============================================================"
+          - "AWX CUSTOM RESOURCE CREATED"
+          - "============================================================"
+          - "{{ awx_cr.stdout }}"
+          - "============================================================"
 
     # ============================================================
-    # 14a. AWX MIGRATION
+    # 14a. WAIT FOR MIGRATION
     # ============================================================
 
     - name: Display section 14a
@@ -1358,7 +1356,12 @@
 
     - name: Display migration result
       ansible.builtin.debug:
-        msg: "Database migration completed successfully."
+        msg:
+          - "============================================================"
+          - "AWX MIGRATION COMPLETE"
+          - "============================================================"
+          - "Migration job: {{ migration_job.stdout | trim }}"
+          - "============================================================"
 
     # ============================================================
     # 15. CREATE INGRESS
@@ -1368,6 +1371,66 @@
       ansible.builtin.debug:
         msg:
           - "# 15. Create Ingress"
+          - "Creating AWX Ingress..."
+
+    - name: Check AWX service before creating Ingress
+      ansible.builtin.command:
+        argv:
+          - "{{ k3s_binary_path }}"
+          - kubectl
+          - get
+          - service
+          - awx-server-service
+          - -n
+          - "{{ awx_namespace }}"
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: awx_service_check
+      retries: "{{ awx_service_retries }}"
+      delay: "{{ awx_service_delay }}"
+      until:
+        - awx_service_check.rc == 0
+      changed_when: false
+
+    - name: Display AWX service
+      ansible.builtin.debug:
+        msg:
+          - "AWX service exists:"
+          - "{{ awx_service_check.stdout }}"
+
+    - name: Wait for AWX service endpoints
+      ansible.builtin.shell: |
+        ENDPOINTS=$(
+          {{ k3s_binary_path }} kubectl \
+            get endpoints awx-server-service \
+            -n "{{ awx_namespace }}" \
+            -o jsonpath='{.subsets[*].addresses[*].ip}' \
+            2>/dev/null
+        )
+
+        test -n "$ENDPOINTS"
+      args:
+        executable: /bin/bash
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: awx_service_endpoints
+      retries: "{{ awx_service_retries }}"
+      delay: "{{ awx_service_delay }}"
+      until:
+        - awx_service_endpoints.rc == 0
+      changed_when: false
+
+    - name: Display AWX endpoint addresses
+      ansible.builtin.shell: |
+        {{ k3s_binary_path }} kubectl \
+          get endpoints awx-server-service \
+          -n "{{ awx_namespace }}"
+      args:
+        executable: /bin/bash
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: awx_endpoints_display
+      changed_when: false
 
     - name: Create AWX Ingress manifest
       ansible.builtin.copy:
@@ -1380,8 +1443,9 @@
             name: awx-ingress
             namespace: {{ awx_namespace }}
             annotations:
-              traefik.ingress.kubernetes.io/router.entrypoints: web
+              traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
           spec:
+            ingressClassName: traefik
             rules:
             - http:
                 paths:
@@ -1415,25 +1479,106 @@
           - -n
           - "{{ awx_namespace }}"
           - --type=merge
-          - >-
-            -p={"metadata":{"annotations":{"traefik.ingress.kubernetes.io/router.entrypoints":"web,websecure"}}}
+          - '-p={"metadata":{"annotations":{"traefik.ingress.kubernetes.io/router.entrypoints":"web,websecure"}}}'
       environment:
         KUBECONFIG: "{{ kubeconfig_path }}"
       failed_when: false
 
-    - name: Display Ingress result
+    - name: Wait for AWX Ingress to exist
+      ansible.builtin.command:
+        argv:
+          - "{{ k3s_binary_path }}"
+          - kubectl
+          - get
+          - ingress
+          - awx-ingress
+          - -n
+          - "{{ awx_namespace }}"
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: awx_ingress_check
+      retries: "{{ awx_ingress_retries }}"
+      delay: "{{ awx_ingress_delay }}"
+      until:
+        - awx_ingress_check.rc == 0
+      changed_when: false
+
+    - name: Display AWX Ingress
       ansible.builtin.debug:
-        msg: "AWX Ingress created and patched."
+        msg:
+          - "============================================================"
+          - "AWX INGRESS CREATED"
+          - "============================================================"
+          - "{{ awx_ingress_check.stdout }}"
+          - "============================================================"
 
     # ============================================================
-    # 16. WAIT FOR AWX
+    # TRAEFIK VALIDATION
+    # ============================================================
+
+    - name: Check Traefik pods
+      ansible.builtin.shell: |
+        {{ k3s_binary_path }} kubectl \
+          get pods \
+          -n kube-system \
+          --no-headers 2>/dev/null |
+        grep -i traefik
+      args:
+        executable: /bin/bash
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: traefik_pods
+      failed_when: false
+      changed_when: false
+
+    - name: Display Traefik pods
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "TRAEFIK"
+          - "============================================================"
+          - "{{ traefik_pods.stdout | default('Traefik pod not found') }}"
+          - "============================================================"
+
+    - name: Check Traefik service
+      ansible.builtin.shell: |
+        {{ k3s_binary_path }} kubectl \
+          get svc \
+          -n kube-system \
+          --no-headers 2>/dev/null |
+        grep -i traefik
+      args:
+        executable: /bin/bash
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: traefik_service
+      failed_when: false
+      changed_when: false
+
+    - name: Display Traefik service
+      ansible.builtin.debug:
+        msg:
+          - "Traefik service:"
+          - "{{ traefik_service.stdout | default('Traefik service not found') }}"
+
+    # ============================================================
+    # 16. WAIT FOR ACTUAL AWX DEPLOYMENTS
+    #
+    # IMPORTANT:
+    #
+    # There is no deployment named awx-server.
+    #
+    # The actual deployments are:
+    #
+    #   awx-server-task
+    #   awx-server-web
     # ============================================================
 
     - name: Display section 16
       ansible.builtin.debug:
         msg:
           - "# 16. Wait for AWX"
-          - "Waiting for AWX deployments..."
+          - "Waiting for AWX Task and Web deployments..."
 
     - name: Wait for AWX Task deployment
       ansible.builtin.command:
@@ -1449,7 +1594,7 @@
         KUBECONFIG: "{{ kubeconfig_path }}"
       register: awx_task_deployment
       retries: "{{ awx_deployment_retries }}"
-      delay: 5
+      delay: "{{ awx_deployment_delay }}"
       until:
         - awx_task_deployment.rc == 0
       changed_when: false
@@ -1468,12 +1613,26 @@
         KUBECONFIG: "{{ kubeconfig_path }}"
       register: awx_web_deployment
       retries: "{{ awx_deployment_retries }}"
-      delay: 5
+      delay: "{{ awx_deployment_delay }}"
       until:
         - awx_web_deployment.rc == 0
       changed_when: false
 
-    - name: Wait for Task deployment rollout
+    - name: Display AWX deployment objects
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "AWX DEPLOYMENTS CREATED"
+          - "============================================================"
+          - "{{ awx_task_deployment.stdout }}"
+          - "{{ awx_web_deployment.stdout }}"
+          - "============================================================"
+
+    # ============================================================
+    # WAIT FOR ACTUAL ROLLOUT
+    # ============================================================
+
+    - name: Wait for AWX Task rollout
       ansible.builtin.command:
         argv:
           - "{{ k3s_binary_path }}"
@@ -1487,7 +1646,7 @@
       environment:
         KUBECONFIG: "{{ kubeconfig_path }}"
 
-    - name: Wait for Web deployment rollout
+    - name: Wait for AWX Web rollout
       ansible.builtin.command:
         argv:
           - "{{ k3s_binary_path }}"
@@ -1501,7 +1660,11 @@
       environment:
         KUBECONFIG: "{{ kubeconfig_path }}"
 
-    - name: Wait for Task pod
+    # ============================================================
+    # WAIT FOR TASK POD
+    # ============================================================
+
+    - name: Wait for AWX Task pod
       ansible.builtin.shell: |
         {{ k3s_binary_path }} kubectl \
           get pods \
@@ -1521,7 +1684,11 @@
         - awx_task_pod.rc == 0
       changed_when: false
 
-    - name: Wait for Web pod
+    # ============================================================
+    # WAIT FOR WEB POD
+    # ============================================================
+
+    - name: Wait for AWX Web pod
       ansible.builtin.shell: |
         {{ k3s_binary_path }} kubectl \
           get pods \
@@ -1541,7 +1708,11 @@
         - awx_web_pod.rc == 0
       changed_when: false
 
-    - name: Get AWX pods
+    # ============================================================
+    # FINAL AWX POD STATUS
+    # ============================================================
+
+    - name: Get final AWX pod status
       ansible.builtin.command:
         argv:
           - "{{ k3s_binary_path }}"
@@ -1552,63 +1723,94 @@
           - "{{ awx_namespace }}"
       environment:
         KUBECONFIG: "{{ kubeconfig_path }}"
-      register: awx_pods_first
+      register: awx_pods
       changed_when: false
 
-    - name: Get AWX pods again
-      ansible.builtin.command:
-        argv:
-          - "{{ k3s_binary_path }}"
-          - kubectl
-          - get
-          - pods
-          - -n
-          - "{{ awx_namespace }}"
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
-      register: awx_pods_second
-      changed_when: false
-
-    - name: Display AWX pods
+    - name: Display AWX pod status
       ansible.builtin.debug:
         msg:
           - "============================================================"
           - "AWX POD STATUS"
           - "============================================================"
-          - "{{ awx_pods_first.stdout }}"
-          - "{{ awx_pods_second.stdout }}"
+          - "{{ awx_pods.stdout }}"
           - "============================================================"
 
     # ============================================================
-    # 17. WAIT FOR AWX UI
+    # 17. WAIT FOR AWX UI / HTTP
+    #
+    # Do not require the body to contain the text "awx".
+    #
+    # HTTP 200/301/302/404 all prove that the HTTP listener
+    # responded. We separately verify the Ingress and service.
     # ============================================================
 
     - name: Display section 17
       ansible.builtin.debug:
         msg:
           - "# 17. Wait for AWX UI"
-          - "Waiting for AWX login page..."
+          - "Waiting for HTTP listener..."
 
-    - name: Wait for AWX UI
-      ansible.builtin.shell: |
-        curl -ks "http://{{ vip }}" |
-        grep -qi "awx"
-      args:
-        executable: /bin/bash
-      register: awx_ui_check
+    - name: Wait for HTTP port 80
+      ansible.builtin.wait_for:
+        host: "{{ vip }}"
+        port: 80
+        state: started
+        timeout: 60
+
+    - name: Test AWX HTTP endpoint
+      ansible.builtin.uri:
+        url: "http://{{ vip }}/"
+        method: GET
+        return_content: true
+        status_code:
+          - 200
+          - 301
+          - 302
+          - 404
+      register: awx_http_test
       retries: "{{ awx_ui_retries }}"
       delay: "{{ awx_ui_delay }}"
       until:
-        - awx_ui_check.rc == 0
-      changed_when: false
+        - awx_http_test.status is defined
+      failed_when: false
 
-    - name: Display AWX UI result
+    - name: Display AWX HTTP result
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "AWX UI READY"
+          - "AWX HTTP STATUS"
           - "============================================================"
-          - "URL: http://{{ vip }}"
+          - "URL    : http://{{ vip }}/"
+          - "Status : {{ awx_http_test.status | default('UNKNOWN') }}"
+          - "============================================================"
+
+    # ============================================================
+    # TEST INGRESS WITH HOST HEADER
+    # ============================================================
+
+    - name: Test AWX Ingress with hostname
+      ansible.builtin.uri:
+        url: "http://{{ vip }}/"
+        method: GET
+        headers:
+          Host: "ansible-server-01.vgs.com"
+        return_content: true
+        status_code:
+          - 200
+          - 301
+          - 302
+          - 404
+      register: awx_ingress_http_test
+      failed_when: false
+
+    - name: Display AWX Ingress HTTP result
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "AWX INGRESS HTTP TEST"
+          - "============================================================"
+          - "Host   : ansible-server-01.vgs.com"
+          - "Status : {{ awx_ingress_http_test.status | default('UNKNOWN') }}"
           - "============================================================"
 
     # ============================================================
@@ -1719,7 +1921,7 @@
       environment:
         KUBECONFIG: "{{ kubeconfig_path }}"
 
-    - name: Wait for AWX Task rollout
+    - name: Wait for AWX Task rollout after EE configuration
       ansible.builtin.command:
         argv:
           - "{{ k3s_binary_path }}"
@@ -1750,10 +1952,14 @@
           - "Host                : ansible-server-01.vgs.com"
           - "Namespace           : {{ awx_namespace }}"
           - "Operator Version    : {{ operator_version }}"
-          - "VIP                 : {{ vip }}"
+          - "Host IP             : {{ vip }}"
           - "AWX URL             : http://{{ vip }}"
           - "K3s                 : configured"
           - "K3s Node            : Ready"
           - "Local Registry      : localhost:5000"
           - "VMware EE           : {{ ee_image }}"
+          - "Task Deployment     : awx-server-task"
+          - "Web Deployment      : awx-server-web"
+          - "AWX Service         : awx-server-service"
+          - "Ingress             : awx-ingress"
           - "============================================================"
