@@ -13,9 +13,13 @@
     # ============================================================
 
     namespace: "awx"
+
     operator_version: "2.19.1"
+
     vip: "192.168.253.145"
+
     admin_password: "Root@123"
+
     kube_rbac_proxy_image: "quay.io/brancz/kube-rbac-proxy:v0.18.0"
 
     # ============================================================
@@ -23,9 +27,11 @@
     # ============================================================
 
     awx_operator_dir: "/root/awx-operator"
+
     awx_ee_dir: "/root/awx-ee-vmware"
 
     kubeconfig_path: "/etc/rancher/k3s/k3s.yaml"
+
     root_kubeconfig_path: "/root/.kube/config"
 
     registry_dir: "/opt/registry"
@@ -45,16 +51,46 @@
     ee_image: "localhost:5000/awx-ee-vmware:24.6.1"
 
     # ============================================================
-    # Delays
+    # Timeouts / delays
     # ============================================================
 
+    k3s_ready_retries: 60
+
     k3s_ready_delay: 5
-    metrics_server_delay: 5
+
+    metrics_ready_retries: 120
+
+    metrics_ready_delay: 5
+
+    awx_deployment_retries: 60
+
     awx_deployment_delay: 10
-    migration_job_delay: 5
+
+    migration_retries: 120
+
+    migration_delay: 5
+
+    awx_pod_retries: 120
+
     awx_pod_delay: 5
+
+    awx_ui_retries: 120
+
     awx_ui_delay: 10
+
+    task_pod_retries: 120
+
     task_pod_delay: 5
+
+    # ============================================================
+    # Reboot
+    # ============================================================
+
+    reboot_timeout: 1800
+
+    reboot_connect_timeout: 30
+
+    post_reboot_delay: 20
 
   tasks:
 
@@ -65,6 +101,7 @@
     - name: Display variables
       ansible.builtin.debug:
         msg:
+          - "============================================================"
           - "# 1. Variables"
           - "============================================================"
           - "🚀 Starting AWX installation on K3s"
@@ -77,154 +114,154 @@
           - "✅ Background: Defined variables for namespace, operator version, VIP, admin password, and proxy image."
 
     # ============================================================
-    # PRE-FLIGHT - CGROUP V2
+    # PRE-FLIGHT CHECK
+    #
+    # NO EFI STEPS.
+    #
+    # If cgroup v2 is already active:
+    #     continue.
+    #
+    # If cgroup v2 is NOT active:
+    #     update kernel arguments
+    #     reboot
+    #     wait for server to return
+    #     check cgroup v2 again
+    #
+    # If still not active after reboot:
+    #     FAIL and stop.
     # ============================================================
 
-    - name: Check cgroup filesystem
+    - name: Check current cgroup filesystem
       ansible.builtin.command:
         cmd: stat -fc %T /sys/fs/cgroup
-      register: cgroup_fs
+      register: cgroup_fs_before
       changed_when: false
 
-    - name: Display cgroup status
+    - name: Display initial cgroup status
       ansible.builtin.debug:
-        msg: >-
-          {{
-            '✓ cgroup v2 is already active.'
-            if (cgroup_fs.stdout | trim == 'cgroup2fs')
-            else
-            '⚠ cgroup v2 is not enabled.'
-          }}
+        msg:
+          - "============================================================"
+          - "CGROUP V2 PRE-FLIGHT"
+          - "============================================================"
+          - >-
+            {{
+              '✓ cgroup v2 is already active.'
+              if (cgroup_fs_before.stdout | trim == 'cgroup2fs')
+              else
+              '⚠ cgroup v2 is not enabled.'
+            }}
+          - "Filesystem Type: {{ cgroup_fs_before.stdout | trim }}"
+          - "============================================================"
 
     # ============================================================
-    # CGROUP V2 REMEDIATION
+    # Enable cgroup v2 kernel arguments
     # ============================================================
 
-    - name: Create EFI mount directory
-      ansible.builtin.file:
-        path: /boot/efi
-        state: directory
-        mode: "0755"
-      when: cgroup_fs.stdout | trim != "cgroup2fs"
-
-    - name: Check if EFI is already mounted
-      ansible.builtin.command:
-        cmd: mountpoint -q /boot/efi
-      register: efi_mountpoint
-      changed_when: false
-      failed_when: false
-      when: cgroup_fs.stdout | trim != "cgroup2fs"
-
-    - name: Mount Rocky EFI partition if required
-      ansible.builtin.shell: |
-        set -e
-
-        for dev in $(blkid -t TYPE=vfat -o device); do
-            if mount "$dev" /boot/efi 2>/dev/null; then
-                if [ -d /boot/efi/EFI/rocky ]; then
-                    echo "EFI mounted from $dev"
-                    exit 0
-                fi
-
-                umount /boot/efi
-            fi
-        done
-
-        echo "Unable to mount a Rocky EFI partition."
-        exit 1
-      args:
-        executable: /bin/bash
-      when:
-        - cgroup_fs.stdout | trim != "cgroup2fs"
-        - efi_mountpoint.rc != 0
-
-    - name: Verify Rocky EFI directory
-      ansible.builtin.stat:
-        path: /boot/efi/EFI/rocky
-      register: rocky_efi
-      when: cgroup_fs.stdout | trim != "cgroup2fs"
-
-    - name: Fail if Rocky EFI directory cannot be found
-      ansible.builtin.fail:
-        msg: |
-          ERROR: Unable to locate /boot/efi/EFI/rocky
-      when:
-        - cgroup_fs.stdout | trim != "cgroup2fs"
-        - not rocky_efi.stat.exists
-
-    - name: Update cgroup kernel arguments
+    - name: Update kernel arguments for cgroup v2
       ansible.builtin.command:
         cmd: >-
           grubby --update-kernel=ALL
           --args="systemd.unified_cgroup_hierarchy=1 systemd.legacy_systemd_cgroup_controller=false"
-      when: cgroup_fs.stdout | trim != "cgroup2fs"
+      when:
+        - cgroup_fs_before.stdout | trim != "cgroup2fs"
 
-    - name: Ensure EFI directories exist
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: directory
-        mode: "0755"
-      loop:
-        - /boot/efi
-        - /boot/efi2
-      when: cgroup_fs.stdout | trim != "cgroup2fs"
+    - name: Display kernel update result
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "CGROUP V2 KERNEL CONFIGURATION"
+          - "============================================================"
+          - "Updated kernel arguments for cgroup v2."
+          - "A reboot is required."
+          - "============================================================"
+      when:
+        - cgroup_fs_before.stdout | trim != "cgroup2fs"
 
-    - name: Mount primary EFI partition
-      ansible.posix.mount:
-        path: /boot/efi
-        src: /dev/sda1
-        fstype: vfat
-        state: ephemeral
-      when: cgroup_fs.stdout | trim != "cgroup2fs"
+    # ============================================================
+    # REBOOT
+    # ============================================================
 
-    - name: Mount secondary EFI partition
-      ansible.posix.mount:
-        path: /boot/efi2
-        src: /dev/sdb1
-        fstype: vfat
-        state: ephemeral
-      when: cgroup_fs.stdout | trim != "cgroup2fs"
+    - name: Reboot server to activate cgroup v2
+      ansible.builtin.reboot:
+        msg: "Rebooting ansible-server-01 to activate cgroup v2"
+        reboot_timeout: "{{ reboot_timeout }}"
+        connect_timeout: "{{ reboot_connect_timeout }}"
+        pre_reboot_delay: 5
+        post_reboot_delay: "{{ post_reboot_delay }}"
+        test_command: "stat -fc %T /sys/fs/cgroup"
+      when:
+        - cgroup_fs_before.stdout | trim != "cgroup2fs"
 
-    - name: Rebuild grub.cfg
+    # ============================================================
+    # POST-REBOOT CGROUP CHECK
+    # ============================================================
+
+    - name: Check cgroup filesystem after reboot
       ansible.builtin.command:
-        cmd: grub2-mkconfig -o /boot/grub2/grub.cfg
-      when: cgroup_fs.stdout | trim != "cgroup2fs"
+        cmd: stat -fc %T /sys/fs/cgroup
+      register: cgroup_fs_after
+      changed_when: false
+      when:
+        - cgroup_fs_before.stdout | trim != "cgroup2fs"
 
-    - name: Synchronize EFI partitions
-      ansible.builtin.command:
-        cmd: rsync -aH --delete /boot/efi/ /boot/efi2/
-      when: cgroup_fs.stdout | trim != "cgroup2fs"
+    - name: Display post-reboot cgroup status
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "CGROUP V2 POST-REBOOT CHECK"
+          - "============================================================"
+          - "Filesystem Type: {{ cgroup_fs_after.stdout | default('UNKNOWN') | trim }}"
+          - >-
+            {{
+              '✓ cgroup v2 is enabled.'
+              if (
+                cgroup_fs_after.stdout | default('')
+                | trim == 'cgroup2fs'
+              )
+              else
+              '✗ cgroup v2 is STILL NOT enabled.'
+            }}
+          - "============================================================"
+      when:
+        - cgroup_fs_before.stdout | trim != "cgroup2fs"
 
-    - name: Sync filesystem
-      ansible.builtin.command:
-        cmd: sync
-      when: cgroup_fs.stdout | trim != "cgroup2fs"
+    # ============================================================
+    # FAIL IF CGROUP V2 STILL NOT ENABLED
+    # ============================================================
 
-    - name: Unmount secondary EFI
-      ansible.posix.mount:
-        path: /boot/efi2
-        state: unmounted
-      when: cgroup_fs.stdout | trim != "cgroup2fs"
-
-    - name: Unmount primary EFI
-      ansible.posix.mount:
-        path: /boot/efi
-        state: unmounted
-      when: cgroup_fs.stdout | trim != "cgroup2fs"
-
-    - name: Stop because reboot is required for cgroup v2
+    - name: Stop if cgroup v2 is still disabled
       ansible.builtin.fail:
         msg: |
-          ==================================================
-          cgroup v2 has been enabled.
-          Please reboot the server.
-          After reboot rerun this installer.
-          ==================================================
-      when: cgroup_fs.stdout | trim != "cgroup2fs"
+          ============================================================
+          CGROUP V2 WAS NOT ENABLED AFTER REBOOT
+          ============================================================
 
-    - name: Confirm cgroup v2
+          The server was rebooted after updating the kernel
+          arguments, but /sys/fs/cgroup is still not cgroup2fs.
+
+          Current filesystem type:
+          {{ cgroup_fs_after.stdout | default('UNKNOWN') | trim }}
+
+          AWX/K3s installation will NOT continue.
+
+          ============================================================
+      when:
+        - cgroup_fs_before.stdout | trim != "cgroup2fs"
+        - cgroup_fs_after.stdout | default('') | trim != "cgroup2fs"
+
+    # ============================================================
+    # FINAL CGROUP CONFIRMATION
+    # ============================================================
+
+    - name: Confirm cgroup v2 is active
       ansible.builtin.debug:
-        msg: "✅ Background: Verified host is running cgroup v2."
+        msg:
+          - "============================================================"
+          - "CGROUP V2 READY"
+          - "============================================================"
+          - "cgroup v2 is active."
+          - "Continuing with AWX installation."
+          - "============================================================"
 
     # ============================================================
     # 2. Install prerequisites
@@ -232,9 +269,11 @@
 
     - name: Display section 2
       ansible.builtin.debug:
-        msg: "# 2. Install prerequisites"
+        msg:
+          - "# 2. Install prerequisites"
+          - "📦 Installing prerequisites..."
 
-    - name: Install AWX/K3s prerequisites
+    - name: Install prerequisites
       ansible.builtin.dnf:
         name:
           - git
@@ -254,9 +293,10 @@
         name: "https://rpm.rancher.io/k3s/stable/common/centos/8/noarch/k3s-selinux-1.5-1.el8.noarch.rpm"
         state: present
         disable_gpg_check: true
+      register: k3s_selinux_install
       failed_when: false
 
-    - name: Display prerequisite completion
+    - name: Display prerequisites result
       ansible.builtin.debug:
         msg: "✅ Background: Installed essential packages and SELinux policies for K3s and AWX."
 
@@ -266,11 +306,15 @@
 
     - name: Display section 3
       ansible.builtin.debug:
-        msg: "# 3. SELinux / Firewall"
+        msg:
+          - "# 3. SELinux / Firewall"
+          - "🔐 Setting SELinux to permissive..."
+          - "🔥 Disabling firewalld..."
 
-    - name: Set SELinux permissive
+    - name: Set SELinux permissive immediately
       ansible.builtin.command:
         cmd: setenforce 0
+      register: setenforce_result
       failed_when: false
       changed_when: false
 
@@ -285,15 +329,17 @@
       ansible.builtin.systemd:
         name: firewalld
         state: stopped
+      register: firewalld_stop
       failed_when: false
 
     - name: Disable firewalld
       ansible.builtin.systemd:
         name: firewalld
         enabled: false
+      register: firewalld_disable
       failed_when: false
 
-    - name: Display SELinux/firewall completion
+    - name: Display SELinux firewall result
       ansible.builtin.debug:
         msg: "✅ Background: Set SELinux to permissive and disabled firewalld to avoid conflicts."
 
@@ -303,29 +349,34 @@
 
     - name: Display section 4
       ansible.builtin.debug:
-        msg: "# 4. Assign VIP"
+        msg:
+          - "# 4. Assign VIP"
+          - "🌐 Assigning VIP {{ vip }} to interface {{ ansible_default_ipv4.interface }} ..."
 
-    - name: Remove VIP from loopback
+    - name: Remove VIP /32 from loopback
       ansible.builtin.command:
         cmd: "ip addr del {{ vip }}/32 dev lo"
+      register: remove_vip_loopback
       failed_when: false
       changed_when: false
 
-    - name: Check VIP on target interface
+    - name: Check whether VIP is already present
       ansible.builtin.shell: |
-        ip addr show "{{ ansible_default_ipv4.interface }}" | grep -q "{{ vip }}"
+        ip addr show "{{ ansible_default_ipv4.interface }}" |
+        grep -q "{{ vip }}"
       args:
         executable: /bin/bash
-      register: vip_check
+      register: vip_present
       failed_when: false
       changed_when: false
 
-    - name: Assign AWX VIP
+    - name: Add VIP to interface
       ansible.builtin.command:
         cmd: "ip addr add {{ vip }}/24 dev {{ ansible_default_ipv4.interface }}"
-      when: vip_check.rc != 0
+      when:
+        - vip_present.rc != 0
 
-    - name: Display VIP completion
+    - name: Display VIP result
       ansible.builtin.debug:
         msg: "✅ Background: Assigned the VIP to the correct interface for AWX access."
 
@@ -335,9 +386,11 @@
 
     - name: Display section 5
       ansible.builtin.debug:
-        msg: "# 5. Install K3s"
+        msg:
+          - "# 5. Install K3s"
+          - "☸️ Installing K3s..."
 
-    - name: Check K3s binary
+    - name: Check whether K3s is installed
       ansible.builtin.command:
         cmd: command -v k3s
       register: k3s_binary
@@ -349,16 +402,17 @@
         curl -sfL https://get.k3s.io | sh -s - --write-kubeconfig-mode 644
       args:
         executable: /bin/bash
-      when: k3s_binary.rc != 0
+      when:
+        - k3s_binary.rc != 0
 
-    - name: Link kubectl
+    - name: Link kubectl to K3s
       ansible.builtin.file:
         src: /usr/local/bin/k3s
         dest: /usr/local/bin/kubectl
         state: link
         force: true
 
-    - name: Install K3s environment configuration
+    - name: Configure K3s environment
       ansible.builtin.copy:
         dest: /etc/profile.d/k3s.sh
         mode: "0644"
@@ -373,9 +427,10 @@
       args:
         executable: /bin/bash
       register: k3s_ready
-      retries: 60
-      delay: 5
-      until: k3s_ready.rc == 0
+      retries: "{{ k3s_ready_retries }}"
+      delay: "{{ k3s_ready_delay }}"
+      until:
+        - k3s_ready.rc == 0
       changed_when: false
 
     - name: Create root kube directory
@@ -386,8 +441,8 @@
 
     - name: Copy K3s kubeconfig
       ansible.builtin.copy:
-        src: /etc/rancher/k3s/k3s.yaml
-        dest: /root/.kube/config
+        src: "{{ kubeconfig_path }}"
+        dest: "{{ root_kubeconfig_path }}"
         remote_src: true
         mode: "0600"
 
@@ -395,11 +450,11 @@
       ansible.builtin.command:
         cmd: kubectl get nodes
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
       register: k3s_nodes
       changed_when: false
 
-    - name: Display K3s state
+    - name: Display K3s nodes
       ansible.builtin.debug:
         msg:
           - "✅ K3s is ready."
@@ -412,24 +467,25 @@
 
     - name: Display section 5a
       ansible.builtin.debug:
-        msg: "# 5a. Create Local Container Registry"
+        msg:
+          - "# 5a. Create Local Container Registry"
 
-    - name: Create local registry directory
+    - name: Create registry directory
       ansible.builtin.file:
         path: "{{ registry_dir }}"
         state: directory
         mode: "0755"
 
-    - name: Check for registry container
+    - name: Get existing Podman containers
       ansible.builtin.shell: |
-        podman ps -a --format '{% raw %}{{.Names}}{% endraw %}'
+        podman ps -a --format '{{"{{"}}.Names{{"}}"}}'
       args:
         executable: /bin/bash
-      register: registry_container_list
-      changed_when: false
+      register: podman_containers
       failed_when: false
+      changed_when: false
 
-    - name: Create local registry container
+    - name: Create registry container
       ansible.builtin.command:
         argv:
           - podman
@@ -443,16 +499,29 @@
           - -v
           - "/opt/registry:/var/lib/registry:z"
           - docker.io/library/registry:2
-      when: "'registry' not in (registry_container_list.stdout_lines | default([]))"
+      when:
+        - "'registry' not in podman_containers.stdout_lines
 
-    - name: Start existing local registry
+    - name: Start existing registry container
       ansible.builtin.command:
         cmd: podman start registry
+      register: registry_start
       failed_when: false
       changed_when: false
-      when: "'registry' in (registry_container_list.stdout_lines | default([]))"
+      when:
+        - "'registry' in podman_containers.stdout_lines"
 
-    - name: Configure Podman local HTTP registry
+    # ============================================================
+    # Configure Podman to trust local HTTP registry
+    # ============================================================
+
+    - name: Create Podman registry configuration directory
+      ansible.builtin.file:
+        path: /etc/containers/registries.conf.d
+        state: directory
+        mode: "0755"
+
+    - name: Configure Podman localhost registry
       ansible.builtin.copy:
         dest: "{{ podman_registry_conf }}"
         mode: "0644"
@@ -461,7 +530,17 @@
           location="localhost:5000"
           insecure=true
 
-    - name: Configure K3s local registry
+    # ============================================================
+    # Configure K3s/containerd local registry
+    # ============================================================
+
+    - name: Create K3s configuration directory
+      ansible.builtin.file:
+        path: /etc/rancher/k3s
+        state: directory
+        mode: "0755"
+
+    - name: Configure K3s localhost registry
       ansible.builtin.copy:
         dest: "{{ k3s_registry_conf }}"
         mode: "0644"
@@ -476,16 +555,17 @@
         name: k3s
         state: restarted
 
-    - name: Wait for K3s after registry restart
+    - name: Wait for K3s node after registry restart
       ansible.builtin.shell: |
-        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        export KUBECONFIG={{ kubeconfig_path }}
         kubectl get nodes 2>/dev/null | grep -q " Ready "
       args:
         executable: /bin/bash
       register: k3s_ready_registry
-      retries: 60
-      delay: 5
-      until: k3s_ready_registry.rc == 0
+      retries: "{{ k3s_ready_retries }}"
+      delay: "{{ k3s_ready_delay }}"
+      until:
+        - k3s_ready_registry.rc == 0
       changed_when: false
 
     - name: Verify local registry
@@ -493,9 +573,9 @@
         url: http://localhost:5000/v2/
         method: GET
         status_code: 200
-      register: registry_response
+      register: registry_check
 
-    - name: Display local registry result
+    - name: Display registry result
       ansible.builtin.debug:
         msg:
           - "✅ Local registry is reachable."
@@ -507,7 +587,8 @@
 
     - name: Display section 6
       ansible.builtin.debug:
-        msg: "# 6. Install Kustomize"
+        msg:
+          - "# 6. Install Kustomize"
 
     - name: Check Kustomize
       ansible.builtin.command:
@@ -523,9 +604,10 @@
       args:
         executable: /bin/bash
         chdir: /tmp
-      when: kustomize_binary.rc != 0
+      when:
+        - kustomize_binary.rc != 0
 
-    - name: Display Kustomize completion
+    - name: Display Kustomize result
       ansible.builtin.debug:
         msg: "✅ Background: Installed Kustomize, used later for operator manifests."
 
@@ -535,28 +617,31 @@
 
     - name: Display section 7
       ansible.builtin.debug:
-        msg: "# 7. Patch Metrics Server"
+        msg:
+          - "# 7. Patch Metrics Server"
+          - "⏳ Waiting for metrics-server deployment..."
 
     - name: Wait for metrics-server deployment
       ansible.builtin.shell: |
-        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        export KUBECONFIG={{ kubeconfig_path }}
         kubectl get deployment metrics-server -n kube-system >/dev/null 2>&1
       args:
         executable: /bin/bash
-      register: metrics_server
-      retries: 120
-      delay: 5
-      until: metrics_server.rc == 0
+      register: metrics_server_deployment
+      retries: "{{ metrics_ready_retries }}"
+      delay: "{{ metrics_ready_delay }}"
+      until:
+        - metrics_server_deployment.rc == 0
       changed_when: false
 
-    - name: Check metrics-server insecure TLS option
+    - name: Check metrics-server kubelet TLS option
       ansible.builtin.shell: |
-        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        export KUBECONFIG={{ kubeconfig_path }}
         kubectl get deployment metrics-server -n kube-system -o yaml |
-          grep -q -- "--kubelet-insecure-tls"
+        grep -q -- "--kubelet-insecure-tls"
       args:
         executable: /bin/bash
-      register: metrics_insecure_tls
+      register: metrics_tls
       failed_when: false
       changed_when: false
 
@@ -568,10 +653,11 @@
           --type=json
           -p=[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      when: metrics_insecure_tls.rc != 0
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      when:
+        - metrics_tls.rc != 0
 
-    - name: Display metrics-server completion
+    - name: Display metrics-server result
       ansible.builtin.debug:
         msg: "✅ Background: Patched metrics-server to allow insecure TLS for kubelet metrics."
 
@@ -581,22 +667,24 @@
 
     - name: Display section 8
       ansible.builtin.debug:
-        msg: "# 8. Cleanup old AWX resources"
+        msg:
+          - "# 8. Cleanup old AWX resources"
+          - "🧹 Cleaning old AWX resources..."
 
     - name: Ensure AWX namespace exists
       ansible.builtin.shell: |
-        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        export KUBECONFIG={{ kubeconfig_path }}
         kubectl get ns "{{ namespace }}" >/dev/null 2>&1 ||
-          kubectl create ns "{{ namespace }}"
+        kubectl create ns "{{ namespace }}"
       args:
         executable: /bin/bash
       changed_when: false
 
-    - name: Delete old AWX CR
+    - name: Delete old AWX resource
       ansible.builtin.command:
         cmd: kubectl delete awx awx-server -n "{{ namespace }}" --ignore-not-found=true
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
       failed_when: false
       changed_when: false
 
@@ -604,7 +692,7 @@
       ansible.builtin.command:
         cmd: kubectl delete ingress awx-ingress -n "{{ namespace }}" --ignore-not-found=true
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
       failed_when: false
       changed_when: false
 
@@ -612,27 +700,27 @@
       ansible.builtin.command:
         cmd: kubectl delete deployment awx-operator-controller-manager -n "{{ namespace }}" --ignore-not-found=true
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
       failed_when: false
       changed_when: false
 
-    - name: Delete old replica sets
+    - name: Delete old ReplicaSets
       ansible.builtin.command:
         cmd: kubectl delete rs --all -n "{{ namespace }}" --ignore-not-found=true
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
       failed_when: false
       changed_when: false
 
-    - name: Delete old pods
+    - name: Delete old Pods
       ansible.builtin.command:
         cmd: kubectl delete pods --all -n "{{ namespace }}" --ignore-not-found=true
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
       failed_when: false
       changed_when: false
 
-    - name: Display AWX cleanup completion
+    - name: Display AWX cleanup result
       ansible.builtin.debug:
         msg: "✅ Background: Cleaned up any old AWX resources to ensure a fresh install."
 
@@ -642,13 +730,15 @@
 
     - name: Display section 9
       ansible.builtin.debug:
-        msg: "# 9. Verify kube-rbac-proxy image"
+        msg:
+          - "# 9. Verify kube-rbac-proxy image"
+          - "🧪 Verifying kube-rbac-proxy image..."
 
     - name: Pull kube-rbac-proxy image
       ansible.builtin.command:
         cmd: "crictl pull {{ kube_rbac_proxy_image }}"
 
-    - name: Display kube-rbac-proxy completion
+    - name: Display kube-rbac-proxy result
       ansible.builtin.debug:
         msg: "✅ Background: Verified kube-rbac-proxy image availability."
 
@@ -658,21 +748,23 @@
 
     - name: Display section 10
       ansible.builtin.debug:
-        msg: "# 10. Download AWX Operator source"
+        msg:
+          - "# 10. Download AWX Operator source"
+          - "📥 Downloading AWX Operator source..."
 
-    - name: Remove existing AWX Operator source
+    - name: Remove existing awx-operator directory
       ansible.builtin.file:
         path: "{{ awx_operator_dir }}"
         state: absent
 
     - name: Clone AWX Operator
       ansible.builtin.git:
-        repo: https://github.com/ansible/awx-operator.git
+        repo: "https://github.com/ansible/awx-operator.git"
         dest: "{{ awx_operator_dir }}"
         version: "{{ operator_version }}"
         force: true
 
-    - name: Display Operator download completion
+    - name: Display Operator source result
       ansible.builtin.debug:
         msg: "✅ Background: Downloaded AWX Operator source and checked out version {{ operator_version }}."
 
@@ -682,9 +774,11 @@
 
     - name: Display section 11
       ansible.builtin.debug:
-        msg: "# 11. Fix kube-rbac-proxy image"
+        msg:
+          - "# 11. Fix kube-rbac-proxy image"
+          - "🔧 Fixing AWX Operator kube-rbac-proxy image..."
 
-    - name: Fix kube-rbac-proxy image gcr.io
+    - name: Set kube-rbac-proxy image for gcr.io
       ansible.builtin.command:
         cmd: >-
           kustomize edit set image
@@ -693,7 +787,7 @@
         chdir: "{{ awx_operator_dir }}/config/default"
       failed_when: false
 
-    - name: Fix kube-rbac-proxy image registry.k8s.io
+    - name: Set kube-rbac-proxy image for registry.k8s.io
       ansible.builtin.command:
         cmd: >-
           kustomize edit set image
@@ -702,7 +796,7 @@
         chdir: "{{ awx_operator_dir }}/config/default"
       failed_when: false
 
-    - name: Display kube-rbac-proxy patch completion
+    - name: Display kube-rbac-proxy result
       ansible.builtin.debug:
         msg: "✅ Background: Updated the AWX Operator manifests to use the correct kube-rbac-proxy image version, ensuring compatibility with Operator {{ operator_version }}."
 
@@ -712,11 +806,13 @@
 
     - name: Display section 12
       ansible.builtin.debug:
-        msg: "# 12. Create AWX admin password secret"
+        msg:
+          - "# 12. Create AWX admin password secret"
+          - "🔐 Creating AWX admin password secret..."
 
     - name: Create AWX admin password secret
       ansible.builtin.shell: |
-        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        export KUBECONFIG={{ kubeconfig_path }}
 
         kubectl create secret generic awx-server-admin-password \
           --from-literal=password="{{ admin_password }}" \
@@ -726,7 +822,7 @@
       args:
         executable: /bin/bash
 
-    - name: Display admin password secret completion
+    - name: Display secret result
       ansible.builtin.debug:
         msg: "✅ Background: Created a Kubernetes secret storing the AWX admin password, referenced by the AWX CRD."
 
@@ -777,7 +873,7 @@
       ansible.builtin.command:
         cmd: podman push --tls-verify=false localhost:5000/awx-ee-vmware:24.6.1
 
-    - name: Pull VMware Execution Environment into K3s
+    - name: Pull VMware Execution Environment with K3s
       ansible.builtin.command:
         cmd: k3s crictl pull localhost:5000/awx-ee-vmware:24.6.1
 
@@ -792,8 +888,10 @@
 
     - name: Fail if AWX Operator Makefile is missing
       ansible.builtin.fail:
-        msg: "ERROR: AWX Operator source directory not found."
-      when: not operator_makefile.stat.exists
+        msg: |
+          ERROR: AWX Operator source directory not found.
+      when:
+        - not operator_makefile.stat.exists
 
     # ============================================================
     # 13. Deploy AWX Operator
@@ -801,7 +899,9 @@
 
     - name: Display section 13
       ansible.builtin.debug:
-        msg: "# 13. Deploy AWX Operator"
+        msg:
+          - "# 13. Deploy AWX Operator"
+          - "🏗️ Deploying AWX Operator..."
 
     - name: Deploy AWX Operator
       ansible.builtin.command:
@@ -809,16 +909,16 @@
       args:
         chdir: "{{ awx_operator_dir }}"
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
 
-    - name: Set operator kube-rbac-proxy image
+    - name: Set kube-rbac-proxy image on Operator
       ansible.builtin.command:
         cmd: >-
           kubectl -n "{{ namespace }}"
           set image deployment/awx-operator-controller-manager
           kube-rbac-proxy="{{ kube_rbac_proxy_image }}"
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
       failed_when: false
 
     - name: Wait for AWX Operator rollout
@@ -829,9 +929,9 @@
           -n "{{ namespace }}"
           --timeout=300s
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
 
-    - name: Display AWX Operator completion
+    - name: Display Operator result
       ansible.builtin.debug:
         msg: "✅ Background: Deployed the AWX Operator and confirmed its controller pod is running."
 
@@ -841,7 +941,9 @@
 
     - name: Display section 14
       ansible.builtin.debug:
-        msg: "# 14. Create AWX instance"
+        msg:
+          - "# 14. Create AWX instance"
+          - "🚀 Creating AWX instance..."
 
     - name: Create AWX instance manifest
       ansible.builtin.copy:
@@ -862,7 +964,11 @@
       ansible.builtin.command:
         cmd: kubectl apply -f "{{ awx_instance_manifest }}"
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    # ============================================================
+    # Wait for Deployment
+    # ============================================================
 
     - name: Wait for AWX Deployment to be created
       ansible.builtin.shell: |
@@ -870,16 +976,19 @@
       args:
         executable: /bin/bash
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
       register: awx_deployment
-      retries: 60
-      delay: 10
-      until: awx_deployment.rc == 0
+      retries: "{{ awx_deployment_retries }}"
+      delay: "{{ awx_deployment_delay }}"
+      until:
+        - awx_deployment.rc == 0
       changed_when: false
 
-    - name: Display AWX deployment completion
+    - name: Display AWX Deployment result
       ansible.builtin.debug:
-        msg: "✅ Background: Applied the AWX CRD and waited until the operator reconciled it into a Deployment."
+        msg:
+          - "✅ AWX Deployment created."
+          - "✅ Background: Applied the AWX CRD and waited until the operator reconciled it into a Deployment."
 
     # ============================================================
     # 14a. Wait for AWX Migration
@@ -887,56 +996,60 @@
 
     - name: Display section 14a
       ansible.builtin.debug:
-        msg: "# 14a. Wait for AWX Migration"
+        msg:
+          - "# 14a. Wait for AWX Migration"
+          - "⏳ Waiting for migration Job to be created..."
 
-    - name: Wait for AWX migration job
+    - name: Wait for migration job
       ansible.builtin.shell: |
         kubectl get jobs -n "{{ namespace }}" --no-headers 2>/dev/null |
-          grep -q "awx-server-migration"
+        grep -q "awx-server-migration"
       args:
         executable: /bin/bash
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      register: migration_job_exists
-      retries: 120
-      delay: 5
-      until: migration_job_exists.rc == 0
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: migration_job_check
+      retries: "{{ migration_retries }}"
+      delay: "{{ migration_delay }}"
+      until:
+        - migration_job_check.rc == 0
       changed_when: false
 
     - name: Get migration job
       ansible.builtin.shell: |
         kubectl get jobs -n "{{ namespace }}" -o name |
-          grep "awx-server-migration" |
-          head -1
+        grep "awx-server-migration" |
+        head -1
       args:
         executable: /bin/bash
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
       register: migration_job
       changed_when: false
 
     - name: Display migration job
       ansible.builtin.debug:
-        msg: "✅ Migration job found: {{ migration_job.stdout | trim }}"
+        msg:
+          - "✅ Migration job found: {{ migration_job.stdout | trim }}"
 
     - name: Stream migration logs
       ansible.builtin.command:
-        cmd: kubectl logs -f -n "{{ namespace }}" "{{ migration_job.stdout | trim }}"
+        cmd: "kubectl logs -f -n {{ namespace }} {{ migration_job.stdout | trim }}"
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
 
     - name: Wait for migration job completion
       ansible.builtin.command:
         cmd: >-
           kubectl wait
           --for=condition=complete
-          "{{ migration_job.stdout | trim }}"
-          -n "{{ namespace }}"
+          {{ migration_job.stdout | trim }}
+          -n {{ namespace }}
           --timeout=60m
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
 
-    - name: Display migration completion
+    - name: Display migration result
       ansible.builtin.debug:
         msg: "✅ Background: Database migration completed successfully."
 
@@ -946,7 +1059,9 @@
 
     - name: Display section 15
       ansible.builtin.debug:
-        msg: "# 15. Create Ingress"
+        msg:
+          - "# 15. Create Ingress"
+          - "🔗 Creating Ingress for AWX..."
 
     - name: Create AWX Ingress manifest
       ansible.builtin.copy:
@@ -976,7 +1091,7 @@
       ansible.builtin.command:
         cmd: kubectl apply -f "{{ awx_ingress_manifest }}"
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
 
     - name: Patch AWX Ingress entrypoints
       ansible.builtin.command:
@@ -986,10 +1101,10 @@
           --type=merge
           -p='{"metadata":{"annotations":{"traefik.ingress.kubernetes.io/router.entrypoints":"web,websecure"}}}'
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
       failed_when: false
 
-    - name: Display Ingress completion
+    - name: Display Ingress result
       ansible.builtin.debug:
         msg: "✅ Background: Created and patched the Ingress resource so AWX is accessible externally via Traefik at the VIP."
 
@@ -999,7 +1114,9 @@
 
     - name: Display section 16
       ansible.builtin.debug:
-        msg: "# 16. Wait for AWX"
+        msg:
+          - "# 16. Wait for AWX"
+          - "⏳ Waiting for AWX deployments to be created..."
 
     - name: Wait for AWX Task deployment
       ansible.builtin.shell: |
@@ -1007,11 +1124,12 @@
       args:
         executable: /bin/bash
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
       register: awx_task_deployment
-      retries: 120
+      retries: "{{ awx_deployment_retries }}"
       delay: 5
-      until: awx_task_deployment.rc == 0
+      until:
+        - awx_task_deployment.rc == 0
       changed_when: false
 
     - name: Wait for AWX Web deployment
@@ -1020,11 +1138,12 @@
       args:
         executable: /bin/bash
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
       register: awx_web_deployment
-      retries: 120
+      retries: "{{ awx_deployment_retries }}"
       delay: 5
-      until: awx_web_deployment.rc == 0
+      until:
+        - awx_web_deployment.rc == 0
       changed_when: false
 
     - name: Wait for Task deployment rollout
@@ -1032,76 +1151,78 @@
         cmd: >-
           kubectl rollout status
           deployment/awx-server-task
-          -n "{{ namespace }}"
+          -n {{ namespace }}
           --timeout=30m
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
 
     - name: Wait for Web deployment rollout
       ansible.builtin.command:
         cmd: >-
           kubectl rollout status
           deployment/awx-server-web
-          -n "{{ namespace }}"
+          -n {{ namespace }}
           --timeout=30m
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
 
-    - name: Wait for AWX Task pod
+    - name: Wait for Task pod
       ansible.builtin.shell: |
         kubectl get pods -n "{{ namespace }}" \
           -l app.kubernetes.io/name=awx-server-task \
           --field-selector=status.phase=Running \
           --no-headers 2>/dev/null |
-          grep -q awx-server-task
+        grep -q awx-server-task
       args:
         executable: /bin/bash
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
       register: awx_task_pod
-      retries: 120
-      delay: 5
-      until: awx_task_pod.rc == 0
+      retries: "{{ awx_pod_retries }}"
+      delay: "{{ awx_pod_delay }}"
+      until:
+        - awx_task_pod.rc == 0
       changed_when: false
 
-    - name: Wait for AWX Web pod
+    - name: Wait for Web pod
       ansible.builtin.shell: |
         kubectl get pods -n "{{ namespace }}" \
           -l app.kubernetes.io/name=awx-server-web \
           --field-selector=status.phase=Running \
           --no-headers 2>/dev/null |
-          grep -q awx-server-web
+        grep -q awx-server-web
       args:
         executable: /bin/bash
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
       register: awx_web_pod
-      retries: 120
-      delay: 5
-      until: awx_web_pod.rc == 0
+      retries: "{{ awx_pod_retries }}"
+      delay: "{{ awx_pod_delay }}"
+      until:
+        - awx_web_pod.rc == 0
+      changed_when: false
+
+    - name: Get AWX pods
+      ansible.builtin.command:
+        cmd: kubectl get pods -n "{{ namespace }}"
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: awx_pods_first
+      changed_when: false
+
+    - name: Get AWX pods again
+      ansible.builtin.command:
+        cmd: kubectl get pods -n "{{ namespace }}"
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: awx_pods_second
       changed_when: false
 
     - name: Display AWX pods
-      ansible.builtin.command:
-        cmd: kubectl get pods -n "{{ namespace }}"
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      register: awx_pods_1
-      changed_when: false
-
-    - name: Display AWX pods again
-      ansible.builtin.command:
-        cmd: kubectl get pods -n "{{ namespace }}"
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      register: awx_pods_2
-      changed_when: false
-
-    - name: Display AWX pod status
       ansible.builtin.debug:
         msg:
-          - "{{ awx_pods_1.stdout }}"
-          - "{{ awx_pods_2.stdout }}"
+          - "{{ awx_pods_first.stdout }}"
+          - "{{ awx_pods_second.stdout }}"
           - "✅ Background: AWX Task and Web pods are fully running."
 
     # ============================================================
@@ -1110,20 +1231,23 @@
 
     - name: Display section 17
       ansible.builtin.debug:
-        msg: "# 17. Wait for AWX UI"
+        msg:
+          - "# 17. Wait for AWX UI"
+          - "⏳ Waiting for AWX login page..."
 
-    - name: Wait for AWX login page
+    - name: Wait for AWX UI
       ansible.builtin.shell: |
         curl -ks "http://{{ vip }}" | grep -qi "awx"
       args:
         executable: /bin/bash
-      register: awx_ui
-      retries: 120
-      delay: 10
-      until: awx_ui.rc == 0
+      register: awx_ui_check
+      retries: "{{ awx_ui_retries }}"
+      delay: "{{ awx_ui_delay }}"
+      until:
+        - awx_ui_check.rc == 0
       changed_when: false
 
-    - name: Display AWX UI completion
+    - name: Display AWX UI result
       ansible.builtin.debug:
         msg: "✅ Background: AWX UI is responding."
 
@@ -1133,48 +1257,52 @@
 
     - name: Display section 18
       ansible.builtin.debug:
-        msg: "# 18. Configure VMware Execution Environment"
+        msg:
+          - "# 18. Configure VMware Execution Environment"
+          - "Locating AWX Task Pod..."
 
-    - name: Locate AWX Task pod
+    - name: Locate AWX Task Pod
       ansible.builtin.shell: |
         kubectl get pods -n "{{ namespace }}" --no-headers |
-          awk '/awx-server-task/ {print $1; exit}'
+        awk '/awx-server-task/ {print $1; exit}'
       args:
         executable: /bin/bash
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
       register: task_pod_lookup
-      retries: 120
-      delay: 5
-      until: task_pod_lookup.stdout | trim | length > 0
+      retries: "{{ task_pod_retries }}"
+      delay: "{{ task_pod_delay }}"
+      until:
+        - task_pod_lookup.stdout | trim | length > 0
       changed_when: false
 
-    - name: Save AWX Task pod
+    - name: Set AWX Task Pod
       ansible.builtin.set_fact:
         task_pod: "{{ task_pod_lookup.stdout | trim }}"
 
-    - name: Display AWX Task pod
+    - name: Display Task Pod
       ansible.builtin.debug:
         msg: "Using Task Pod: {{ task_pod }}"
 
-    - name: Wait for awx-manage container readiness
+    - name: Wait for awx-manage
       ansible.builtin.command:
         cmd: >-
           kubectl exec
-          -n "{{ namespace }}"
-          "{{ task_pod }}"
+          -n {{ namespace }}
+          {{ task_pod }}
           -c awx-server-task
           --
           true
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
       register: awx_manage_ready
-      retries: 120
-      delay: 5
-      until: awx_manage_ready.rc == 0
+      retries: "{{ task_pod_retries }}"
+      delay: "{{ task_pod_delay }}"
+      until:
+        - awx_manage_ready.rc == 0
       changed_when: false
 
-    - name: Configure VMware Execution Environment in AWX
+    - name: Configure VMware Execution Environment
       ansible.builtin.shell: |
         kubectl exec -i \
           -n "{{ namespace }}" \
@@ -1209,25 +1337,25 @@
       args:
         executable: /bin/bash
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
 
     - name: Restart AWX Task deployment
       ansible.builtin.command:
         cmd: kubectl rollout restart deployment/awx-server-task -n "{{ namespace }}"
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
 
     - name: Wait for AWX Task rollout
       ansible.builtin.command:
         cmd: >-
           kubectl rollout status
           deployment/awx-server-task
-          -n "{{ namespace }}"
+          -n {{ namespace }}
           --timeout=10m
       environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        KUBECONFIG: "{{ kubeconfig_path }}"
 
-    - name: Display VMware EE completion
+    - name: Display VMware Execution Environment result
       ansible.builtin.debug:
         msg: "VMware Execution Environment configured successfully."
 
