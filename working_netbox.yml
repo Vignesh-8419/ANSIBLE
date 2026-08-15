@@ -1022,3 +1022,51 @@
           - "Admin     : {{ admin_user }}"
           - "API Token : {{ api_token }}"
           - "================================================================="
+
+    # ============================================================
+    # FINAL SELINUX CONFIGURATION
+    # ============================================================
+
+    - name: Display final SELinux configuration
+      ansible.builtin.debug:
+        msg:
+          - "================================================================="
+          - "CONFIGURING SELINUX"
+          - "================================================================="
+          - "Current SELinux mode will be changed to permissive."
+          - "================================================================="
+
+    - name: Set SELinux to permissive immediately
+      ansible.builtin.command:
+        cmd: setenforce 0
+      register: selinux_setenforce
+      changed_when: false
+      failed_when: false
+
+    - name: Set SELinux permissive permanently
+      ansible.builtin.replace:
+        path: /etc/selinux/config
+        regexp: '^SELINUX=.*$'
+        replace: 'SELINUX=permissive'
+
+    - name: Verify SELinux mode
+      ansible.builtin.command:
+        cmd: getenforce
+      register: selinux_status
+      changed_when: false
+
+    - name: Display SELinux final status
+      ansible.builtin.debug:
+        msg:
+          - "================================================================="
+          - "SELINUX CONFIGURATION COMPLETE"
+          - "================================================================="
+          - "Current mode : {{ selinux_status.stdout | trim }}"
+          - "Persistent   : SELINUX=permissive"
+          - "================================================================="
+
+    - name: Fail if SELinux is not permissive
+      ansible.builtin.fail:
+        msg: "SELinux could not be set to permissive."
+      when:
+        - selinux_status.stdout | trim != "Permissive"
