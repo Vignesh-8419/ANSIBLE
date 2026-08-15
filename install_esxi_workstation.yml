@@ -661,7 +661,7 @@
           # ==========================================================
 
           scsi0.present = "TRUE"
-          scsi0.virtualDev = "lsilogic"
+          scsi0.virtualDev = "pvscsi"
           scsi0.pciSlotNumber = "16"
 
           scsi0:0.present = "TRUE"
