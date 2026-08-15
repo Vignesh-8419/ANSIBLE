@@ -2,6 +2,7 @@
 - name: Install AWX on Rocky/RHEL 8 + K3s
   hosts: Linux
   become: true
+  become: sudo
   gather_facts: true
 
   vars:
