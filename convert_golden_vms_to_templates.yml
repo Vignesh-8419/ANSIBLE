@@ -1,0 +1,423 @@
+cat > ~/ANSIBLE/convert_golden_vms_to_templates.yml <<'YAML'
+---
+- name: Convert Golden VMs to vCenter Templates
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  collections:
+    - community.vmware
+
+  vars:
+
+    # ========================================================================
+    # vCENTER
+    # ========================================================================
+
+    vcenter_hostname: "vcenter-01.vgs.com"
+    vcenter_username: "administrator@vsphere.local"
+
+    # Set this before running:
+    #
+    # export VCENTER_PASSWORD='YOUR_PASSWORD'
+    #
+    vcenter_password: "Vigneshv12$"
+
+    validate_certs: false
+
+    # ========================================================================
+    # vCENTER DATACENTER
+    #
+    # Change this if your actual vCenter datacenter has another name.
+    # ========================================================================
+
+    vcenter_datacenter: "Datacenter"
+
+    # ========================================================================
+    # TARGET VMs
+    # ========================================================================
+
+    golden_vms:
+
+      - "GOLDENTEMPLATE_CENTOS_07"
+      - "GOLDENTEMPLATE_ROCKYOS_08"
+      - "GOLDENTEMPLATE_ROCKYOS_09"
+
+    # ========================================================================
+    # TIMEOUTS
+    # ========================================================================
+
+    shutdown_timeout: 300
+    verify_delay: 5
+
+  tasks:
+
+    # ========================================================================
+    # DISPLAY
+    # ========================================================================
+
+    - name: Display configuration
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "CONVERT GOLDEN VMs TO vCENTER TEMPLATES"
+          - "============================================================"
+          - "vCenter       : {{ vcenter_hostname }}"
+          - "User          : {{ vcenter_username }}"
+          - "Datacenter    : {{ vcenter_datacenter }}"
+          - "Validate Cert : {{ validate_certs }}"
+          - "============================================================"
+          - "Target VMs:"
+          - "{{ golden_vms }}"
+          - "============================================================"
+
+    # ========================================================================
+    # PASSWORD CHECK
+    # ========================================================================
+
+    - name: Fail if vCenter password is not supplied
+      ansible.builtin.fail:
+        msg: |
+          ============================================================
+          VCENTER_PASSWORD IS NOT SET
+          ============================================================
+
+          Run:
+
+          export VCENTER_PASSWORD='Vigneshv12$'
+
+          Then run:
+
+          ansible-playbook convert_golden_vms_to_templates.yml
+
+          ============================================================
+      when: vcenter_password | length == 0
+
+    # ========================================================================
+    # CHECK COLLECTION
+    # ========================================================================
+
+    - name: Check VMware collection
+      ansible.builtin.command:
+        argv:
+          - ansible-galaxy
+          - collection
+          - list
+      register: vmware_collection
+      changed_when: false
+
+    - name: Display VMware collections
+      ansible.builtin.debug:
+        msg: "{{ vmware_collection.stdout }}"
+
+    # ========================================================================
+    # VALIDATE DATACENTER
+    # ========================================================================
+
+    - name: Query vCenter datacenters
+      community.vmware.vmware_datacenter_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ validate_certs }}"
+      delegate_to: localhost
+      register: datacenter_info
+
+    - name: Display vCenter datacenters
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "vCENTER DATACENTERS"
+          - "============================================================"
+          - >-
+            {{
+              datacenter_info.datacenter_info
+              | default([])
+              | map(attribute='name')
+              | list
+            }}
+          - "============================================================"
+
+    # ========================================================================
+    # FIND VM FOLDERS
+    # ========================================================================
+
+    - name: Find golden VM locations
+      community.vmware.vmware_guest_find:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        name: "{{ item }}"
+        validate_certs: "{{ validate_certs }}"
+      delegate_to: localhost
+      loop: "{{ golden_vms }}"
+      loop_control:
+        label: "{{ item }}"
+      register: golden_vm_locations
+
+    - name: Display golden VM locations
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "{{ item.item }}"
+          - "============================================================"
+          - "Found:"
+          - "{{ item }}"
+          - "============================================================"
+      loop: "{{ golden_vm_locations.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # ========================================================================
+    # CHECK CURRENT VM STATE
+    # ========================================================================
+
+    - name: Get golden VM information
+      community.vmware.vmware_guest_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        datacenter: "{{ vcenter_datacenter }}"
+        name: "{{ item }}"
+        schema: vsphere
+        properties:
+          - config.name
+          - config.template
+          - runtime.powerState
+          - config.cpuHotAddEnabled
+          - config.memoryHotAddEnabled
+          - config.hardware.numCPU
+          - config.hardware.memoryMB
+        validate_certs: "{{ validate_certs }}"
+      delegate_to: localhost
+      loop: "{{ golden_vms }}"
+      loop_control:
+        label: "{{ item }}"
+      register: golden_vm_info
+
+    - name: Display current golden VM state
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "{{ item.item }}"
+          - "============================================================"
+          - "Power State    : {{ item.instance.runtime.powerState | default('UNKNOWN') }}"
+          - "Already Template: {{ item.instance.config.template | default(false) }}"
+          - "CPU Hot Add    : {{ item.instance.config.cpuHotAddEnabled | default('UNKNOWN') }}"
+          - "Memory Hot Add : {{ item.instance.config.memoryHotAddEnabled | default('UNKNOWN') }}"
+          - "vCPU           : {{ item.instance.config.hardware.numCPU | default('UNKNOWN') }}"
+          - "Memory MB      : {{ item.instance.config.hardware.memoryMB | default('UNKNOWN') }}"
+          - "============================================================"
+      loop: "{{ golden_vm_info.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # ========================================================================
+    # POWER OFF
+    #
+    # Template conversion is performed separately after this task.
+    # ========================================================================
+
+    - name: Power off golden VMs
+      community.vmware.vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+
+        datacenter: "{{ vcenter_datacenter }}"
+
+        name: "{{ item }}"
+
+        state: poweredoff
+
+        state_change_timeout: "{{ shutdown_timeout }}"
+
+        validate_certs: "{{ validate_certs }}"
+
+      delegate_to: localhost
+
+      loop: "{{ golden_vms }}"
+
+      loop_control:
+        label: "{{ item }}"
+
+    # ========================================================================
+    # WAIT
+    # ========================================================================
+
+    - name: Wait for VM shutdown
+      ansible.builtin.pause:
+        seconds: "{{ verify_delay }}"
+
+    # ========================================================================
+    # VERIFY POWER OFF
+    # ========================================================================
+
+    - name: Verify golden VMs are powered off
+      community.vmware.vmware_guest_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+
+        datacenter: "{{ vcenter_datacenter }}"
+
+        name: "{{ item }}"
+
+        schema: vsphere
+
+        properties:
+          - config.name
+          - config.template
+          - runtime.powerState
+
+        validate_certs: "{{ validate_certs }}"
+
+      delegate_to: localhost
+
+      loop: "{{ golden_vms }}"
+
+      loop_control:
+        label: "{{ item }}"
+
+      register: powered_off_info
+
+    - name: Assert golden VMs are powered off
+      ansible.builtin.assert:
+        that:
+          - item.instance.runtime.powerState == "poweredOff"
+        fail_msg: |
+          ============================================================
+          VM IS NOT POWERED OFF
+          ============================================================
+
+          VM:
+          {{ item.item }}
+
+          Current state:
+          {{ item.instance.runtime.powerState }}
+
+          ============================================================
+      loop: "{{ powered_off_info.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # ========================================================================
+    # CONVERT TO TEMPLATE
+    #
+    # IMPORTANT:
+    # This is deliberately a separate VMware task from power-off.
+    # ========================================================================
+
+    - name: Convert golden VMs to templates
+      community.vmware.vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+
+        datacenter: "{{ vcenter_datacenter }}"
+
+        name: "{{ item }}"
+
+        state: present
+
+        is_template: true
+
+        validate_certs: "{{ validate_certs }}"
+
+      delegate_to: localhost
+
+      loop: "{{ golden_vms }}"
+
+      loop_control:
+        label: "{{ item }}"
+
+    # ========================================================================
+    # VERIFY TEMPLATE STATUS
+    # ========================================================================
+
+    - name: Verify template status
+      community.vmware.vmware_guest_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+
+        datacenter: "{{ vcenter_datacenter }}"
+
+        name: "{{ item }}"
+
+        schema: vsphere
+
+        properties:
+          - config.name
+          - config.template
+          - runtime.powerState
+
+        validate_certs: "{{ validate_certs }}"
+
+      delegate_to: localhost
+
+      loop: "{{ golden_vms }}"
+
+      loop_control:
+        label: "{{ item }}"
+
+      register: template_verification
+
+    - name: Display template verification
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "{{ item.item }}"
+          - "============================================================"
+          - "Template      : {{ item.instance.config.template | default(false) }}"
+          - "Power State   : {{ item.instance.runtime.powerState | default('UNKNOWN') }}"
+          - "============================================================"
+      loop: "{{ template_verification.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # ========================================================================
+    # ASSERT TEMPLATE STATUS
+    # ========================================================================
+
+    - name: Assert VM is now a template
+      ansible.builtin.assert:
+        that:
+          - item.instance.config.template | default(false) | bool
+        fail_msg: |
+          ============================================================
+          TEMPLATE CONVERSION FAILED
+          ============================================================
+
+          VM:
+          {{ item.item }}
+
+          Template status:
+          {{ item.instance.config.template | default('UNKNOWN') }}
+
+          ============================================================
+        success_msg: "Template conversion verified."
+      loop: "{{ template_verification.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # ========================================================================
+    # FINAL SUMMARY
+    # ========================================================================
+
+    - name: Display final template summary
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "SUCCESS - GOLDEN TEMPLATES CREATED"
+          - "============================================================"
+          - "vCenter       : {{ vcenter_hostname }}"
+          - "Datacenter    : {{ vcenter_datacenter }}"
+          - "============================================================"
+          - "CENTOS 7      : GOLDENTEMPLATE_CENTOS_07 -> TEMPLATE"
+          - "ROCKY LINUX 8 : GOLDENTEMPLATE_ROCKYOS_08 -> TEMPLATE"
+          - "ROCKY LINUX 9 : GOLDENTEMPLATE_ROCKYOS_09 -> TEMPLATE"
+          - "============================================================"
+          - "All templates are powered off."
+          - "============================================================"
+YAML
