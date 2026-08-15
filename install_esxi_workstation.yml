@@ -83,12 +83,6 @@
     expected_kernelopt: 'kernelopt=runweasel cdromBoot ip=192.168.253.128 netmask=255.255.255.0 gateway=192.168.253.2 nameserver=192.168.253.1 netdevice=vmnic0 ks=http://192.168.253.136/repo/ks.cfg'
 
     # ========================================================================
-    # EXPECTED KS DISK DIRECTIVE
-    # ========================================================================
-
-    expected_install_disk: 'install --disk=mpx.vmhba0:C0:T0:L0 --overwritevmfs'
-
-    # ========================================================================
     # EXPECTED VMX LINES
     # ========================================================================
 
