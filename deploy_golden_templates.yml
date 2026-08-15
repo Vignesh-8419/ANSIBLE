@@ -17,7 +17,7 @@
     esxi_hostname: "esxi-host-01.vgs.com"
 
     esxi_username: "root"
-    esxi_password: "{{ lookup('env', 'ESXI_PASSWORD') }}"
+    esxi_password: "Root@123"
 
     esxi_datacenter: "ha-datacenter"
 
