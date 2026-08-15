@@ -1,6 +1,6 @@
 ---
 - name: Install AWX on Rocky/RHEL 8 + K3s
-  hosts: ansible-server-01.vgs.com
+  hosts: Linux
   become: true
   gather_facts: true
 
