@@ -15,7 +15,7 @@
 
     esxi_hostname: "192.168.253.128"
     esxi_username: "root"
-    esxi_password: "{{ lookup('env', 'ESXI_PASSWORD') }}"
+    esxi_password: "Root@123"
 
     esxi_datacenter: "ha-datacenter"
 
@@ -185,7 +185,7 @@
 
           Run:
 
-          export ESXI_PASSWORD='YOUR_ESXI_ROOT_PASSWORD'
+          export ESXI_PASSWORD='Root@123'
 
           Then:
 
