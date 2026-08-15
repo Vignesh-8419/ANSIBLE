@@ -68,7 +68,7 @@
     metrics_ready_retries: 120
     metrics_ready_delay: 5
 
-    operator_ready_retries: 60
+    operator_ready_retries: 120
     operator_ready_delay: 10
 
     awx_cr_retries: 60
@@ -92,17 +92,14 @@
     awx_ui_retries: 60
     awx_ui_delay: 5
 
-    task_pod_retries: 120
+    task_pod_retries: 180
     task_pod_delay: 5
+
+    task_exec_retries: 180
+    task_exec_delay: 5
 
   # ============================================================
   # GLOBAL ENVIRONMENT
-  #
-  # Important for:
-  #   kubectl
-  #   kustomize
-  #   k3s
-  #   make deploy
   # ============================================================
 
   environment:
@@ -135,7 +132,7 @@
     # ============================================================
     # PRE-FLIGHT - CGROUP V2
     #
-    # NO EFI OPERATIONS.
+    # NO EFI STEPS.
     #
     # If cgroup v2 already exists:
     #   continue.
@@ -282,9 +279,6 @@
 
     # ============================================================
     # 3. SELINUX / FIREWALL
-    #
-    # Firewalld is intentionally disabled.
-    # Therefore firewall-cmd is not required.
     # ============================================================
 
     - name: Set SELinux permissive
@@ -799,8 +793,12 @@
       failed_when: false
       changed_when: false
 
+    - name: Display cleanup result
+      ansible.builtin.debug:
+        msg: "Old AWX resources cleaned."
+
     # ============================================================
-    # 9. VERIFY KUBE-RBAC-PROXY
+    # 9. KUBE-RBAC-PROXY IMAGE
     # ============================================================
 
     - name: Pull kube-rbac-proxy using K3s CRI
@@ -873,8 +871,12 @@
       environment:
         KUBECONFIG: "{{ kubeconfig_path }}"
 
+    - name: Display secret result
+      ansible.builtin.debug:
+        msg: "AWX admin password secret created."
+
     # ============================================================
-    # BUILD VMWARE EE
+    # BUILD VMWARE EXECUTION ENVIRONMENT
     # ============================================================
 
     - name: Create VMware EE directory
@@ -1017,7 +1019,7 @@
         KUBECONFIG: "{{ kubeconfig_path }}"
 
     # ============================================================
-    # OPERATOR READY CHECK
+    # OPERATOR HEALTH CHECK
     # ============================================================
 
     - name: Wait for AWX Operator containers Ready
@@ -1059,7 +1061,7 @@
     # 14. CREATE AWX
     # ============================================================
 
-    - name: Wait for Kubernetes API to be fully ready before AWX CR
+    - name: Wait for Kubernetes API before AWX CR
       ansible.builtin.command:
         argv:
           - "{{ k3s_binary_path }}"
@@ -1075,18 +1077,12 @@
         - api_ready_before_awx.rc == 0
       changed_when: false
 
-    # ============================================================
-    # API STABILITY CHECK
-    #
-    # Avoid starting AWX reconciliation during a transient
-    # Kubernetes API/storage failure.
-    # ============================================================
-
     - name: Verify Kubernetes API stability
       ansible.builtin.shell: |
         set -e
 
         for i in $(seq 1 {{ api_stable_checks }}); do
+          echo "API stability check $i/{{ api_stable_checks }}"
           {{ k3s_binary_path }} kubectl get --raw=/readyz >/dev/null
           sleep {{ api_stable_delay }}
         done
@@ -1147,8 +1143,7 @@
       changed_when: false
 
     # ============================================================
-    # OPERATOR CAN TEMPORARILY RESTART DURING RECONCILIATION.
-    # WAIT AGAIN AFTER AWX CR.
+    # OPERATOR HEALTH CHECK AFTER AWX CR
     # ============================================================
 
     - name: Wait for AWX Operator after AWX CR creation
@@ -1223,6 +1218,10 @@
       register: migration_job
       changed_when: false
 
+    - name: Display migration job
+      ansible.builtin.debug:
+        msg: "{{ migration_job.stdout | trim }}"
+
     - name: Wait for migration complete
       ansible.builtin.command:
         argv:
@@ -1238,7 +1237,7 @@
         KUBECONFIG: "{{ kubeconfig_path }}"
 
     # ============================================================
-    # 15. WAIT FOR ACTUAL AWX SERVICE
+    # 15. WAIT FOR AWX SERVICE
     # ============================================================
 
     - name: Wait for AWX service
@@ -1261,13 +1260,7 @@
       changed_when: false
 
     # ============================================================
-    # 16. WAIT FOR ACTUAL AWX DEPLOYMENTS
-    #
-    # There is no deployment named awx-server.
-    #
-    # Actual deployments:
-    #   awx-server-task
-    #   awx-server-web
+    # 16. AWX DEPLOYMENTS
     # ============================================================
 
     - name: Wait for AWX Task deployment
@@ -1338,6 +1331,18 @@
 
     # ============================================================
     # TASK POD
+    #
+    # IMPORTANT:
+    #
+    # Task pod can stay in:
+    #
+    #   Init:0/2
+    #   Init:1/2
+    #   ContainerCreating
+    #
+    # for several minutes.
+    #
+    # Therefore DO NOT attempt kubectl exec immediately.
     # ============================================================
 
     - name: Locate AWX Task pod
@@ -1362,8 +1367,24 @@
       ansible.builtin.set_fact:
         task_pod: "{{ task_pod_lookup.stdout | trim }}"
 
-    - name: Wait for AWX Task pod Ready condition
+    - name: Display AWX Task pod
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "AWX TASK POD"
+          - "============================================================"
+          - "Pod: {{ task_pod }}"
+          - "============================================================"
+
+    - name: Wait for AWX Task pod to be Running and Ready
       ansible.builtin.shell: |
+        POD_PHASE=$(
+          {{ k3s_binary_path }} kubectl \
+            get pod "{{ task_pod }}" \
+            -n "{{ awx_namespace }}" \
+            -o jsonpath='{.status.phase}'
+        )
+
         READY=$(
           {{ k3s_binary_path }} kubectl \
             get pod "{{ task_pod }}" \
@@ -1371,19 +1392,105 @@
             -o jsonpath='{range .status.conditions[?(@.type=="Ready")]}{.status}{end}'
         )
 
-        echo "Task pod Ready: $READY"
+        echo "Pod phase : $POD_PHASE"
+        echo "Ready     : $READY"
 
+        test "$POD_PHASE" = "Running"
         test "$READY" = "True"
       args:
         executable: /bin/bash
       environment:
         KUBECONFIG: "{{ kubeconfig_path }}"
-      register: task_ready
+      register: task_pod_ready
       retries: "{{ awx_pod_retries }}"
       delay: "{{ awx_pod_delay }}"
       until:
-        - task_ready.rc == 0
+        - task_pod_ready.rc == 0
       changed_when: false
+
+    - name: Display AWX Task pod final state
+      ansible.builtin.command:
+        argv:
+          - "{{ k3s_binary_path }}"
+          - kubectl
+          - get
+          - pod
+          - "{{ task_pod }}"
+          - -n
+          - "{{ awx_namespace }}"
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: task_pod_final_state
+      changed_when: false
+
+    - name: Display Task pod final state
+      ansible.builtin.debug:
+        msg: "{{ task_pod_final_state.stdout }}"
+
+    # ============================================================
+    # VERIFY CONTAINER EXEC
+    #
+    # 180 retries x 5 sec = 15 minutes
+    # ============================================================
+
+    - name: Verify awx-server-task container exec
+      ansible.builtin.command:
+        argv:
+          - "{{ k3s_binary_path }}"
+          - kubectl
+          - exec
+          - -n
+          - "{{ awx_namespace }}"
+          - "{{ task_pod }}"
+          - -c
+          - awx-server-task
+          - --
+          - true
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: task_exec
+      retries: "{{ task_exec_retries }}"
+      delay: "{{ task_exec_delay }}"
+      until:
+        - task_exec.rc == 0
+      changed_when: false
+
+    # ============================================================
+    # VERIFY AWX-MANAGE
+    # ============================================================
+
+    - name: Verify awx-manage exists
+      ansible.builtin.command:
+        argv:
+          - "{{ k3s_binary_path }}"
+          - kubectl
+          - exec
+          - -n
+          - "{{ awx_namespace }}"
+          - "{{ task_pod }}"
+          - -c
+          - awx-server-task
+          - --
+          - which
+          - awx-manage
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: awx_manage_path
+      retries: 60
+      delay: 5
+      until:
+        - awx_manage_path.rc == 0
+      changed_when: false
+
+    - name: Display awx-manage
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "AWX-MANAGE READY"
+          - "============================================================"
+          - "Task Pod   : {{ task_pod }}"
+          - "awx-manage : {{ awx_manage_path.stdout | trim }}"
+          - "============================================================"
 
     # ============================================================
     # WEB POD READY
@@ -1408,8 +1515,8 @@
             -o jsonpath='{range .status.conditions[?(@.type=="Ready")]}{.status}{end}'
         )
 
-        echo "Web pod: $POD"
-        echo "Web Ready: $READY"
+        echo "Web pod   : $POD"
+        echo "Web Ready : $READY"
 
         test "$READY" = "True"
       args:
@@ -1424,58 +1531,7 @@
       changed_when: false
 
     # ============================================================
-    # VERIFY AWX EXEC
-    # ============================================================
-
-    - name: Verify awx-server-task container exec
-      ansible.builtin.command:
-        argv:
-          - "{{ k3s_binary_path }}"
-          - kubectl
-          - exec
-          - -n
-          - "{{ awx_namespace }}"
-          - "{{ task_pod }}"
-          - -c
-          - awx-server-task
-          - --
-          - true
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
-      register: task_exec
-      retries: 60
-      delay: 5
-      until:
-        - task_exec.rc == 0
-      changed_when: false
-
-    - name: Verify awx-manage exists
-      ansible.builtin.command:
-        argv:
-          - "{{ k3s_binary_path }}"
-          - kubectl
-          - exec
-          - -n
-          - "{{ awx_namespace }}"
-          - "{{ task_pod }}"
-          - -c
-          - awx-server-task
-          - --
-          - which
-          - awx-manage
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
-      register: awx_manage_path
-      changed_when: false
-
-    - name: Display awx-manage
-      ansible.builtin.debug:
-        msg:
-          - "AWX Task pod : {{ task_pod }}"
-          - "awx-manage   : {{ awx_manage_path.stdout | trim }}"
-
-    # ============================================================
-    # WAIT FOR AWX SERVICE ENDPOINTS
+    # AWX SERVICE ENDPOINTS
     # ============================================================
 
     - name: Wait for AWX service endpoint
@@ -1487,6 +1543,8 @@
             -o jsonpath='{.subsets[*].addresses[*].ip}' \
             2>/dev/null
         )
+
+        echo "Endpoint IP: $IP"
 
         test -n "$IP"
       args:
@@ -1514,6 +1572,10 @@
         KUBECONFIG: "{{ kubeconfig_path }}"
       register: awx_endpoint_display
       changed_when: false
+
+    - name: Display AWX endpoint status
+      ansible.builtin.debug:
+        msg: "{{ awx_endpoint_display.stdout }}"
 
     # ============================================================
     # 17. CREATE INGRESS
@@ -1607,7 +1669,7 @@
       changed_when: false
 
     # ============================================================
-    # 18. HTTP
+    # 18. HTTP TEST
     # ============================================================
 
     - name: Wait for HTTP port 80
