@@ -1,0 +1,1024 @@
+---
+- name: Install NetBox v4.4.9 on Rocky/RHEL 8
+  hosts: Linux
+  become: true
+  become_method: sudo
+  become_user: root
+  gather_facts: true
+
+  vars:
+
+    # ============================================================
+    # CONFIGURATION
+    # ============================================================
+
+    fqdn: "netbox.vgs.com"
+    ipaddress: "192.168.253.143"
+    netbox_version: "v4.4.9"
+
+    db_name: "netbox"
+    db_user: "netbox"
+    db_pass: "Root@123"
+
+    admin_user: "netadmin"
+    admin_email: "admin@example.com"
+    admin_pass: "Netbox12345678"
+
+    netbox_root: "/opt/netbox"
+    python_bin: "/usr/bin/python3.12"
+
+    # ============================================================
+    # SSL DIRECTORY PATHS
+    # ============================================================
+
+    ssl_dir_cert: "/etc/pki/tls/certs"
+    ssl_dir_key: "/etc/pki/tls/private"
+
+    cert_file: "/etc/pki/tls/certs/netbox.crt"
+    key_file: "/etc/pki/tls/private/netbox.key"
+
+    # ============================================================
+    # NETBOX API TOKEN
+    # ============================================================
+
+    api_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
+
+    # ============================================================
+    # POSTGRESQL
+    # ============================================================
+
+    postgresql_service: "postgresql-15"
+    postgresql_setup: "/usr/pgsql-15/bin/postgresql-15-setup"
+    postgresql_bin: "/usr/pgsql-15/bin"
+
+    # ============================================================
+    # REPOSITORIES
+    # ============================================================
+
+    pgdg_repo_url: "https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x86_64/pgdg-redhat-repo-latest.noarch.rpm"
+
+    redis_repo_file: "/etc/yum.repos.d/remi-safe.repo"
+
+    # ============================================================
+    # SERVICE
+    # ============================================================
+
+    netbox_service: "netbox"
+    netbox_worker_service: "netbox-worker"
+    redis_service: "redis"
+    nginx_service: "nginx"
+
+    # ============================================================
+    # NETBOX GUNICORN
+    # ============================================================
+
+    gunicorn_bind: "127.0.0.1:8001"
+    gunicorn_workers: 5
+    gunicorn_threads: 3
+    gunicorn_timeout: 120
+    gunicorn_max_requests: 5000
+    gunicorn_max_requests_jitter: 1000
+
+  environment:
+    PATH: "/usr/pgsql-15/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+  tasks:
+
+    # ============================================================
+    # 1. DISPLAY CONFIGURATION
+    # ============================================================
+
+    - name: Display NetBox configuration
+      ansible.builtin.debug:
+        msg:
+          - "================================================================="
+          - "NETBOX INSTALLATION"
+          - "================================================================="
+          - "FQDN          : {{ fqdn }}"
+          - "IP Address    : {{ ipaddress }}"
+          - "NetBox        : {{ netbox_version }}"
+          - "Database      : {{ db_name }}"
+          - "DB User       : {{ db_user }}"
+          - "NetBox Root   : {{ netbox_root }}"
+          - "Python        : {{ python_bin }}"
+          - "Admin User    : {{ admin_user }}"
+          - "SSL Cert      : {{ cert_file }}"
+          - "SSL Key       : {{ key_file }}"
+          - "================================================================="
+
+    # ============================================================
+    # ROOT CHECK
+    # ============================================================
+
+    - name: Verify running as root
+      ansible.builtin.command:
+        cmd: id -u
+      register: root_uid
+      changed_when: false
+
+    - name: Fail if not root
+      ansible.builtin.fail:
+        msg: "This playbook must run with become/root privileges."
+      when:
+        - root_uid.stdout | trim != "0"
+
+    # ============================================================
+    # PYTHON CHECK
+    # ============================================================
+
+    - name: Check Python 3.12
+      ansible.builtin.stat:
+        path: "{{ python_bin }}"
+      register: python312_binary
+
+    - name: Display Python installation requirement
+      ansible.builtin.debug:
+        msg: "Python 3.12 not found. Installing..."
+      when:
+        - not python312_binary.stat.exists
+
+    - name: Install EPEL
+      ansible.builtin.dnf:
+        name: epel-release
+        state: present
+      when:
+        - not python312_binary.stat.exists
+
+    - name: Install Python 3.12 packages
+      ansible.builtin.dnf:
+        name:
+          - python3.12
+          - python3.12-devel
+          - python3.12-pip
+        state: present
+      when:
+        - not python312_binary.stat.exists
+
+    - name: Verify Python 3.12 installation
+      ansible.builtin.stat:
+        path: "{{ python_bin }}"
+      register: python312_binary_after
+
+    - name: Fail if Python 3.12 installation failed
+      ansible.builtin.fail:
+        msg: "Failed to install Python 3.12."
+      when:
+        - not python312_binary_after.stat.exists
+
+    - name: Get Python version
+      ansible.builtin.command:
+        cmd: "{{ python_bin }} --version"
+      register: python_version
+      changed_when: false
+
+    - name: Display Python version
+      ansible.builtin.debug:
+        msg: "{{ python_version.stdout }}"
+
+    # ============================================================
+    # STOP OLD SERVICES
+    # ============================================================
+
+    - name: Stop old NetBox service
+      ansible.builtin.systemd:
+        name: "{{ netbox_service }}"
+        state: stopped
+      failed_when: false
+
+    - name: Stop old NetBox worker
+      ansible.builtin.systemd:
+        name: "{{ netbox_worker_service }}"
+        state: stopped
+      failed_when: false
+
+    - name: Stop Nginx
+      ansible.builtin.systemd:
+        name: "{{ nginx_service }}"
+        state: stopped
+      failed_when: false
+
+    - name: Stop Redis
+      ansible.builtin.systemd:
+        name: "{{ redis_service }}"
+        state: stopped
+      failed_when: false
+
+    - name: Stop PostgreSQL 15
+      ansible.builtin.systemd:
+        name: "{{ postgresql_service }}"
+        state: stopped
+      failed_when: false
+
+    - name: Stop old Gunicorn processes
+      ansible.builtin.shell: |
+        pkill -9 gunicorn 2>/dev/null || true
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+
+    # ============================================================
+    # REPOSITORIES
+    # ============================================================
+
+    - name: Remove old Remi repository definitions
+      ansible.builtin.shell: |
+        rm -f /etc/yum.repos.d/remi*.repo
+      changed_when: false
+
+    # ============================================================
+    # ROCKY REPOSITORIES
+    # ============================================================
+
+    - name: Find old rocky-repos RPM files
+      ansible.builtin.find:
+        paths:
+          - /root
+          - /tmp
+        patterns:
+          - "rocky-repos-*.rpm"
+        file_type: file
+      register: rocky_repo_rpms
+
+    - name: Force reinstall Rocky repos RPMs
+      ansible.builtin.shell: |
+        set -e
+
+        found=0
+
+        for rpm_file in {{ rocky_repo_rpms.files | map(attribute='path') | map('quote') | join(' ') }}; do
+          if [ -f "$rpm_file" ]; then
+            found=1
+            rpm -ivh --force "$rpm_file" 2>/dev/null ||
+            rpm -Uvh --force "$rpm_file" 2>/dev/null ||
+            true
+          fi
+        done
+
+        exit 0
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+      when:
+        - rocky_repo_rpms.matched | int > 0
+
+    - name: Remove old Rocky repos RPM files
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ rocky_repo_rpms.files }}"
+      when:
+        - rocky_repo_rpms.matched | int > 0
+
+    - name: Install EPEL and DNF plugins
+      ansible.builtin.dnf:
+        name:
+          - epel-release
+          - dnf-plugins-core
+        state: present
+
+    - name: Enable PowerTools repository
+      ansible.builtin.shell: |
+        dnf config-manager --set-enabled powertools ||
+        dnf config-manager --set-enabled powertools ||
+        true
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+
+    - name: Remove PGDG repository package if already present
+      ansible.builtin.dnf:
+        name: pgdg-redhat-repo
+        state: absent
+
+    - name: Install sshpass and Python 3.12
+      ansible.builtin.dnf:
+        name:
+          - sshpass
+          - python3.12
+        state: present
+
+    - name: Install PostgreSQL PGDG repository
+      ansible.builtin.dnf:
+        name: "{{ pgdg_repo_url }}"
+        state: present
+        disable_gpg_check: true
+
+    - name: Disable PostgreSQL module
+      ansible.builtin.command:
+        cmd: dnf -qy module disable postgresql
+      changed_when: false
+
+    # ============================================================
+    # REDIS REPOSITORY
+    # ============================================================
+
+    - name: Create Remi Redis repository configuration
+      ansible.builtin.copy:
+        dest: "{{ redis_repo_file }}"
+        mode: "0644"
+        content: |
+          [remi-modular]
+          name=Remi's Modular repository for Enterprise Linux 8 - $basearch
+          baseurl=http://rpms.remirepo.net/enterprise/8/modular/$basearch/
+          enabled=1
+          gpgcheck=0
+
+          [remi-safe]
+          name=Safe Remi's RPM repository for Enterprise Linux 8 - $basearch
+          baseurl=http://rpms.remirepo.net/enterprise/8/safe/$basearch/
+          enabled=1
+          gpgcheck=0
+
+    - name: Reset Redis module
+      ansible.builtin.command:
+        cmd: dnf module reset redis -y
+
+    - name: Enable Redis 7.2 Remi module
+      ansible.builtin.command:
+        cmd: dnf module enable redis:remi-7.2 -y
+
+    # ============================================================
+    # INSTALL PACKAGES
+    # ============================================================
+
+    - name: Install required packages
+      ansible.builtin.dnf:
+        name:
+          - python3.12
+          - python3.12-devel
+          - python3.12-pip
+          - git
+          - gcc
+          - make
+          - redis
+          - nginx
+          - firewalld
+          - openssl
+          - openssl-devel
+          - libffi-devel
+          - libxml2-devel
+          - libxslt-devel
+          - libjpeg-turbo-devel
+          - zlib-devel
+          - postgresql15-server
+          - postgresql15-devel
+        state: present
+
+    # ============================================================
+    # FIREWALL
+    # ============================================================
+
+    - name: Check firewalld state
+      ansible.builtin.command:
+        cmd: systemctl is-active firewalld
+      register: firewalld_active
+      failed_when: false
+      changed_when: false
+
+    - name: Check firewalld enabled state
+      ansible.builtin.command:
+        cmd: systemctl is-enabled firewalld
+      register: firewalld_enabled
+      failed_when: false
+      changed_when: false
+
+    - name: Add HTTPS firewall rule
+      ansible.posix.firewalld:
+        service: https
+        permanent: true
+        state: enabled
+        immediate: true
+      when:
+        - firewalld_active.rc == 0 or firewalld_enabled.rc == 0
+
+    - name: Display firewall result
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            'HTTPS firewall rule configured.'
+            if (firewalld_active.rc == 0 or firewalld_enabled.rc == 0)
+            else
+            'Firewalld is not active. Skipping HTTPS rule.'
+          }}
+
+    # ============================================================
+    # POSTGRESQL
+    # ============================================================
+
+    - name: Check PostgreSQL data directory
+      ansible.builtin.stat:
+        path: /var/lib/pgsql/15/data/base
+      register: postgres_initialized
+
+    - name: Initialize PostgreSQL 15
+      ansible.builtin.command:
+        cmd: "{{ postgresql_setup }} initdb"
+      when:
+        - not postgres_initialized.stat.exists
+
+    - name: Enable and start PostgreSQL 15
+      ansible.builtin.systemd:
+        name: "{{ postgresql_service }}"
+        enabled: true
+        state: started
+
+    - name: Enable and start Redis
+      ansible.builtin.systemd:
+        name: "{{ redis_service }}"
+        enabled: true
+        state: started
+
+    # ============================================================
+    # WAIT FOR POSTGRESQL
+    # ============================================================
+
+    - name: Wait for PostgreSQL
+      ansible.builtin.command:
+        cmd: pg_isready -h 127.0.0.1 -p 5432
+      register: pg_ready
+      retries: 60
+      delay: 2
+      until:
+        - pg_ready.rc == 0
+      changed_when: false
+
+    - name: Display PostgreSQL status
+      ansible.builtin.debug:
+        msg: "PostgreSQL is ready."
+
+    # ============================================================
+    # POSTGRES ROLE
+    # ============================================================
+
+    - name: Create NetBox PostgreSQL role if missing
+      become_user: postgres
+      ansible.builtin.shell: |
+        psql <<'EOF'
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT FROM pg_roles
+                WHERE rolname='{{ db_user }}'
+            ) THEN
+                CREATE ROLE {{ db_user }}
+                LOGIN
+                PASSWORD '{{ db_pass }}';
+            END IF;
+        END
+        $$;
+        EOF
+      args:
+        executable: /bin/bash
+
+    # ============================================================
+    # DATABASE
+    # ============================================================
+
+    - name: Check whether NetBox database exists
+      become_user: postgres
+      ansible.builtin.command:
+        argv:
+          - psql
+          - -tAc
+          - "SELECT 1 FROM pg_database WHERE datname='{{ db_name }}'"
+      register: db_exists
+      changed_when: false
+
+    - name: Create NetBox database
+      become_user: postgres
+      ansible.builtin.command:
+        cmd: "createdb -O {{ db_user }} {{ db_name }}"
+      when:
+        - db_exists.stdout | trim != "1"
+
+    - name: Set NetBox database permissions
+      become_user: postgres
+      ansible.builtin.shell: |
+        psql -d "{{ db_name }}" <<'EOF'
+        ALTER SCHEMA public OWNER TO {{ db_user }};
+        GRANT ALL PRIVILEGES ON DATABASE {{ db_name }} TO {{ db_user }};
+        EOF
+      args:
+        executable: /bin/bash
+
+    # ============================================================
+    # DOWNLOAD NETBOX
+    # ============================================================
+
+    - name: Remove previous NetBox installation
+      ansible.builtin.file:
+        path: "{{ netbox_root }}"
+        state: absent
+
+    - name: Clone NetBox {{ netbox_version }}
+      ansible.builtin.git:
+        repo: "https://github.com/netbox-community/netbox.git"
+        dest: "{{ netbox_root }}"
+        version: "{{ netbox_version }}"
+        depth: 1
+        force: true
+
+    - name: Set NetBox ownership
+      ansible.builtin.file:
+        path: "{{ netbox_root }}"
+        owner: root
+        group: root
+        recurse: true
+
+    # ============================================================
+    # PYTHON VIRTUAL ENVIRONMENT
+    # ============================================================
+
+    - name: Remove old NetBox virtual environment
+      ansible.builtin.file:
+        path: "{{ netbox_root }}/venv"
+        state: absent
+
+    - name: Create NetBox Python virtual environment
+      ansible.builtin.command:
+        cmd: "{{ python_bin }} -m venv {{ netbox_root }}/venv"
+
+    - name: Upgrade pip setuptools wheel
+      ansible.builtin.pip:
+        name:
+          - pip
+          - setuptools
+          - wheel
+        state: latest
+        virtualenv: "{{ netbox_root }}/venv"
+        virtualenv_python: "{{ python_bin }}"
+
+    - name: Install Gunicorn and PostgreSQL bindings
+      ansible.builtin.pip:
+        name:
+          - gunicorn
+          - "psycopg[c,pool]"
+        state: present
+        virtualenv: "{{ netbox_root }}/venv"
+        virtualenv_python: "{{ python_bin }}"
+
+    - name: Install NetBox application requirements
+      ansible.builtin.pip:
+        requirements: "{{ netbox_root }}/requirements.txt"
+        virtualenv: "{{ netbox_root }}/venv"
+        virtualenv_python: "{{ python_bin }}"
+
+    # ============================================================
+    # GENERATE NETBOX SECRET KEY
+    # ============================================================
+
+    - name: Generate NetBox SECRET_KEY
+      ansible.builtin.command:
+        cmd: "{{ python_bin }} netbox/generate_secret_key.py"
+      args:
+        chdir: "{{ netbox_root }}"
+      register: generated_secret_key
+      changed_when: false
+
+    - name: Generate NetBox API token pepper
+      ansible.builtin.command:
+        cmd: "{{ python_bin }} netbox/generate_secret_key.py"
+      args:
+        chdir: "{{ netbox_root }}"
+      register: generated_pepper
+      changed_when: false
+
+    # ============================================================
+    # NETBOX CONFIGURATION
+    # ============================================================
+
+    - name: Create NetBox configuration
+      ansible.builtin.copy:
+        dest: "{{ netbox_root }}/netbox/netbox/configuration.py"
+        mode: "0644"
+        content: |
+          import os
+
+          ALLOWED_HOSTS = [
+              '{{ fqdn }}',
+              '{{ ipaddress }}',
+          ]
+
+          DEBUG = False
+
+          BASE_DIR = os.path.dirname(
+              os.path.dirname(
+                  os.path.abspath(__file__)
+              )
+          )
+
+          DATABASE = {
+              'NAME': '{{ db_name }}',
+              'USER': '{{ db_user }}',
+              'PASSWORD': '{{ db_pass }}',
+              'HOST': '127.0.0.1',
+              'PORT': '',
+          }
+
+          REDIS = {
+              'tasks': {
+                  'HOST': '127.0.0.1',
+                  'PORT': 6379,
+                  'DATABASE': 0,
+              },
+              'caching': {
+                  'HOST': '127.0.0.1',
+                  'PORT': 6379,
+                  'DATABASE': 1,
+              },
+          }
+
+          SECRET_KEY = '{{ generated_secret_key.stdout | trim }}'
+
+          API_TOKEN_PEPPERS = {
+              1: '{{ generated_pepper.stdout | trim }}',
+          }
+
+          CSRF_TRUSTED_ORIGINS = [
+              'https://{{ fqdn }}',
+              'http://{{ fqdn }}',
+          ]
+
+    - name: Display NetBox configuration result
+      ansible.builtin.debug:
+        msg: "NetBox configuration created."
+
+    # ============================================================
+    # GUNICORN CONFIGURATION
+    # ============================================================
+
+    - name: Create Gunicorn configuration
+      ansible.builtin.copy:
+        dest: "{{ netbox_root }}/gunicorn.py"
+        mode: "0644"
+        content: |
+          # /opt/netbox/gunicorn.py
+
+          bind = '{{ gunicorn_bind }}'
+          workers = {{ gunicorn_workers }}
+          threads = {{ gunicorn_threads }}
+          timeout = {{ gunicorn_timeout }}
+          max_requests = {{ gunicorn_max_requests }}
+          max_requests_jitter = {{ gunicorn_max_requests_jitter }}
+          user = 'root'
+
+    # ============================================================
+    # REDIS CLEANUP
+    # ============================================================
+
+    - name: Flush Redis database 0
+      ansible.builtin.command:
+        cmd: redis-cli -n 0 FLUSHDB
+      failed_when: false
+
+    - name: Flush Redis database 1
+      ansible.builtin.command:
+        cmd: redis-cli -n 1 FLUSHDB
+      failed_when: false
+
+    - name: Display Redis cleanup
+      ansible.builtin.debug:
+        msg: "Redis cleanup completed."
+
+    # ============================================================
+    # DJANGO ENVIRONMENT
+    # ============================================================
+
+    - name: Run NetBox migrations
+      ansible.builtin.command:
+        cmd: "{{ netbox_root }}/venv/bin/python netbox/manage.py migrate"
+      args:
+        chdir: "{{ netbox_root }}"
+
+    - name: Collect NetBox static files
+      ansible.builtin.command:
+        cmd: "{{ netbox_root }}/venv/bin/python netbox/manage.py collectstatic --noinput"
+      args:
+        chdir: "{{ netbox_root }}"
+
+    # ============================================================
+    # ADMIN USER
+    # ============================================================
+
+    - name: Check whether NetBox admin exists
+      ansible.builtin.shell: |
+        {{ netbox_root }}/venv/bin/python netbox/manage.py shell <<'PYEOF'
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        print("EXISTS" if User.objects.filter(username="{{ admin_user }}").exists() else "MISSING")
+        PYEOF
+      args:
+        chdir: "{{ netbox_root }}"
+        executable: /bin/bash
+      register: admin_check
+      changed_when: false
+
+    - name: Create NetBox admin user
+      ansible.builtin.shell: |
+        {{ netbox_root }}/venv/bin/python netbox/manage.py shell <<'PYEOF'
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+
+        User.objects.create_superuser(
+            "{{ admin_user }}",
+            "{{ admin_email }}",
+            "{{ admin_pass }}"
+        )
+
+        print("Superuser created")
+        PYEOF
+      args:
+        chdir: "{{ netbox_root }}"
+        executable: /bin/bash
+      when:
+        - "'MISSING' in admin_check.stdout"
+
+    - name: Display admin verification
+      ansible.builtin.debug:
+        msg: "NetBox admin account verified."
+
+    # ============================================================
+    # SYSTEMD SERVICES
+    # ============================================================
+
+    - name: Create NetBox systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/netbox.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=NetBox WSGI Service
+          Documentation=https://docs.netbox.dev/
+          After=network.target postgresql-15.service redis.service
+
+          [Service]
+          Type=simple
+          User=root
+          WorkingDirectory={{ netbox_root }}
+          ExecStart={{ netbox_root }}/venv/bin/gunicorn --pythonpath {{ netbox_root }}/netbox --config {{ netbox_root }}/gunicorn.py netbox.wsgi
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Create NetBox worker systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/netbox-worker.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=NetBox Request Queue Worker
+          Documentation=https://docs.netbox.dev/
+          After=network.target postgresql-15.service redis.service
+
+          [Service]
+          Type=simple
+          User=root
+          WorkingDirectory={{ netbox_root }}
+          ExecStart={{ netbox_root }}/venv/bin/python netbox/manage.py rqworker
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Enable and start NetBox
+      ansible.builtin.systemd:
+        name: "{{ netbox_service }}"
+        enabled: true
+        state: started
+
+    - name: Enable and start NetBox worker
+      ansible.builtin.systemd:
+        name: "{{ netbox_worker_service }}"
+        enabled: true
+        state: started
+
+    # ============================================================
+    # SSL CERTIFICATE
+    # ============================================================
+
+    - name: Create SSL certificate directory
+      ansible.builtin.file:
+        path: "{{ ssl_dir_cert }}"
+        state: directory
+        mode: "0755"
+
+    - name: Create SSL private key directory
+      ansible.builtin.file:
+        path: "{{ ssl_dir_key }}"
+        state: directory
+        mode: "0700"
+
+    - name: Check existing SSL certificate
+      ansible.builtin.stat:
+        path: "{{ cert_file }}"
+      register: cert_exists
+
+    - name: Generate self-signed NetBox certificate
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - req
+          - -x509
+          - -nodes
+          - -days
+          - "365"
+          - -newkey
+          - rsa:2048
+          - -keyout
+          - "{{ key_file }}"
+          - -out
+          - "{{ cert_file }}"
+          - -subj
+          - "/C=US/ST=State/L=City/O=VGS/OU=IT/CN={{ fqdn }}"
+      when:
+        - not cert_exists.stat.exists
+
+    - name: Set SSL private key permissions
+      ansible.builtin.file:
+        path: "{{ key_file }}"
+        mode: "0600"
+
+    # ============================================================
+    # NGINX CONFIGURATION
+    # ============================================================
+
+    - name: Create NetBox Nginx configuration
+      ansible.builtin.copy:
+        dest: /etc/nginx/conf.d/netbox.conf
+        mode: "0644"
+        content: |
+          server {
+              listen 80;
+              server_name {{ fqdn }} {{ ipaddress }};
+
+              return 301 https://$host$request_uri;
+          }
+
+          server {
+              listen 443 ssl;
+              server_name {{ fqdn }} {{ ipaddress }};
+
+              ssl_certificate {{ cert_file }};
+              ssl_certificate_key {{ key_file }};
+
+              client_max_body_size 25m;
+
+              location /static/ {
+                  alias {{ netbox_root }}/netbox/static/;
+              }
+
+              location / {
+                  proxy_pass http://127.0.0.1:8001;
+
+                  proxy_set_header X-Forwarded-Host $http_host;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              }
+          }
+
+    - name: Validate Nginx configuration
+      ansible.builtin.command:
+        cmd: nginx -t
+      changed_when: false
+
+    - name: Enable and start Nginx
+      ansible.builtin.systemd:
+        name: "{{ nginx_service }}"
+        enabled: true
+        state: started
+
+    # ============================================================
+    # NETBOX API TOKEN
+    # ============================================================
+
+    - name: Create NetBox API token
+      ansible.builtin.shell: |
+        {{ netbox_root }}/venv/bin/python netbox/manage.py shell <<'PYEOF'
+        from django.contrib.auth import get_user_model
+        from users.models import Token
+
+        User = get_user_model()
+        user = User.objects.get(username="{{ admin_user }}")
+
+        # Remove existing token with same key
+        Token.objects.filter(key="{{ api_token }}").delete()
+
+        # Remove any existing token for this user
+        Token.objects.filter(user=user).delete()
+
+        # Create desired token
+        Token.objects.create(
+            user=user,
+            key="{{ api_token }}",
+            write_enabled=True
+        )
+
+        print("======================================")
+        print("NetBox API Token Created Successfully")
+        print("User :", user.username)
+        print("Token:", "{{ api_token }}")
+        print("======================================")
+        PYEOF
+      args:
+        chdir: "{{ netbox_root }}"
+        executable: /bin/bash
+
+    - name: Display API token result
+      ansible.builtin.debug:
+        msg:
+          - "NetBox API token created successfully."
+          - "User  : {{ admin_user }}"
+          - "Token : {{ api_token }}"
+
+    # ============================================================
+    # FINAL VALIDATION
+    # ============================================================
+
+    - name: Check PostgreSQL service
+      ansible.builtin.command:
+        cmd: systemctl is-active "{{ postgresql_service }}"
+      register: postgres_status
+      changed_when: false
+      failed_when: false
+
+    - name: Check Redis service
+      ansible.builtin.command:
+        cmd: systemctl is-active "{{ redis_service }}"
+      register: redis_status
+      changed_when: false
+      failed_when: false
+
+    - name: Check NetBox service
+      ansible.builtin.command:
+        cmd: systemctl is-active "{{ netbox_service }}"
+      register: netbox_status
+      changed_when: false
+      failed_when: false
+
+    - name: Check NetBox worker service
+      ansible.builtin.command:
+        cmd: systemctl is-active "{{ netbox_worker_service }}"
+      register: netbox_worker_status
+      changed_when: false
+      failed_when: false
+
+    - name: Check Nginx service
+      ansible.builtin.command:
+        cmd: systemctl is-active "{{ nginx_service }}"
+      register: nginx_status
+      changed_when: false
+      failed_when: false
+
+    # ============================================================
+    # FINAL RESULT
+    # ============================================================
+
+    - name: Display final NetBox validation
+      ansible.builtin.debug:
+        msg:
+          - "================================================================="
+          - "NETBOX DEPLOYMENT VALIDATION"
+          - "================================================================="
+          - "PostgreSQL  : {{ postgres_status.stdout | trim }}"
+          - "Redis       : {{ redis_status.stdout | trim }}"
+          - "NetBox      : {{ netbox_status.stdout | trim }}"
+          - "Worker      : {{ netbox_worker_status.stdout | trim }}"
+          - "Nginx       : {{ nginx_status.stdout | trim }}"
+          - "================================================================="
+
+    - name: Fail if required service is not running
+      ansible.builtin.fail:
+        msg: |
+          NetBox deployment ended with one or more service failures.
+
+          PostgreSQL : {{ postgres_status.stdout | trim }}
+          Redis      : {{ redis_status.stdout | trim }}
+          NetBox     : {{ netbox_status.stdout | trim }}
+          Worker     : {{ netbox_worker_status.stdout | trim }}
+          Nginx      : {{ nginx_status.stdout | trim }}
+      when:
+        - postgres_status.stdout | trim != "active"
+          or redis_status.stdout | trim != "active"
+          or netbox_status.stdout | trim != "active"
+          or netbox_worker_status.stdout | trim != "active"
+          or nginx_status.stdout | trim != "active"
+
+    - name: Final success message
+      ansible.builtin.debug:
+        msg:
+          - "================================================================="
+          - "NETBOX DEPLOYMENT COMPLETE"
+          - "================================================================="
+          - "URL       : https://{{ ipaddress }}"
+          - "FQDN      : https://{{ fqdn }}"
+          - "Version   : {{ netbox_version }}"
+          - "Admin     : {{ admin_user }}"
+          - "API Token : {{ api_token }}"
+          - "================================================================="
