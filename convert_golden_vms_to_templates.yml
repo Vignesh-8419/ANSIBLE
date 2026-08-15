@@ -77,7 +77,7 @@
 
           export VCENTER_PASSWORD='YOUR_VCENTER_PASSWORD'
 
-          Then run:
+          Then:
 
           ansible-playbook convert_golden_vms_to_templates.yml
 
@@ -85,7 +85,7 @@
       when: vcenter_password | length == 0
 
     # ========================================================================
-    # CHECK COLLECTION
+    # COLLECTION
     # ========================================================================
 
     - name: Check community.vmware collection
@@ -102,183 +102,178 @@
         msg: "{{ vmware_collection.stdout }}"
 
     # ========================================================================
-    # CHECK EVERY VM
+    # VM DISCOVERY
     #
-    # vmware_guest_find returns an error when a VM does not exist.
-    # We deliberately don't fail here.
+    # vmware_guest_info gives a clean "non-existing VM" result, so use it
+    # directly for discovery rather than vmware_guest_find.
     # ========================================================================
 
-    - name: Check whether golden VM exists
-      community.vmware.vmware_guest_find:
+    - name: Check golden VM existence and state
+      community.vmware.vmware_guest_info:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
+        datacenter: "{{ vcenter_datacenter }}"
         name: "{{ item }}"
+        schema: vsphere
+        properties:
+          - config.name
+          - config.template
+          - runtime.powerState
         validate_certs: "{{ validate_certs }}"
       delegate_to: localhost
-
       loop: "{{ golden_vms }}"
-
       loop_control:
         label: "{{ item }}"
-
-      register: golden_vm_find
+      register: golden_vm_info
       failed_when: false
 
     # ========================================================================
-    # BUILD EXISTING VM LIST
+    # DISPLAY RAW DISCOVERY
+    # ========================================================================
+
+    - name: Display VM discovery results
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "{{ item.item }}"
+          - "============================================================"
+          - "Failed : {{ item.failed | default(false) }}"
+          - "Message: {{ item.msg | default('VM found') }}"
+          - >-
+            Template:
+            {{
+              item.instance.config.template
+              if (item.failed | default(false) | bool) == false
+              else 'NOT_FOUND'
+            }}
+          - >-
+            Power State:
+            {{
+              item.instance.runtime.powerState
+              if (item.failed | default(false) | bool) == false
+              else 'NOT_FOUND'
+            }}
+          - "============================================================"
+      loop: "{{ golden_vm_info.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # ========================================================================
+    # EXISTING VM LIST
     # ========================================================================
 
     - name: Initialize existing VM list
       ansible.builtin.set_fact:
         existing_golden_vms: []
 
-    - name: Add existing golden VM to list
+    - name: Add successfully discovered VMs
       ansible.builtin.set_fact:
         existing_golden_vms: "{{ existing_golden_vms + [item.item] }}"
-      loop: "{{ golden_vm_find.results }}"
+      loop: "{{ golden_vm_info.results }}"
       loop_control:
         label: "{{ item.item }}"
       when:
-        - item.failed is not defined or not item.failed
-        - item.item is defined
+        - not (item.failed | default(false) | bool)
+        - item.instance is defined
+        - item.instance.config is defined
 
     # ========================================================================
-    # DISPLAY DISCOVERY
+    # NON-EXISTING VM LIST
     # ========================================================================
 
-    - name: Display discovered golden VMs
+    - name: Initialize missing VM list
+      ansible.builtin.set_fact:
+        missing_golden_vms: []
+
+    - name: Add missing VMs
+      ansible.builtin.set_fact:
+        missing_golden_vms: "{{ missing_golden_vms + [item.item] }}"
+      loop: "{{ golden_vm_info.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when:
+        - (item.failed | default(false) | bool) or item.instance is not defined
+
+    # ========================================================================
+    # DISPLAY EXISTING / MISSING
+    # ========================================================================
+
+    - name: Display discovery summary
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "GOLDEN VM DISCOVERY"
+          - "GOLDEN VM DISCOVERY SUMMARY"
           - "============================================================"
-          - "Requested:"
-          - "{{ golden_vms }}"
-          - "Existing:"
+          - "Existing VMs:"
           - "{{ existing_golden_vms }}"
+          - "Missing VMs:"
+          - "{{ missing_golden_vms }}"
           - "============================================================"
 
     # ========================================================================
-    # DISPLAY SKIPPED NON-EXISTENT VMs
+    # SKIP MISSING VMs
     # ========================================================================
 
-    - name: Display non-existent golden VMs
+    - name: Skip golden VM because it does not exist
       ansible.builtin.debug:
-        msg: |
-          ============================================================
-          SKIPPING VM - NOT FOUND
-          ============================================================
-
-          VM:
-          {{ item }}
-
-          The VM has not been deployed yet.
-          Nothing will be converted.
-
-          ============================================================
-      loop: "{{ golden_vms }}"
-      when: item not in existing_golden_vms
-
-    # ========================================================================
-    # GET VM INFORMATION
-    #
-    # Only for VMs that actually exist.
-    # ========================================================================
-
-    - name: Get existing golden VM information
-      community.vmware.vmware_guest_info:
-        hostname: "{{ vcenter_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
-
-        datacenter: "{{ vcenter_datacenter }}"
-
-        name: "{{ item }}"
-
-        schema: vsphere
-
-        properties:
-          - config.name
-          - config.template
-          - runtime.powerState
-          - config.cpuHotAddEnabled
-          - config.memoryHotAddEnabled
-          - config.hardware.numCPU
-          - config.hardware.memoryMB
-
-        validate_certs: "{{ validate_certs }}"
-
-      delegate_to: localhost
-
-      loop: "{{ existing_golden_vms }}"
-
+        msg:
+          - "============================================================"
+          - "SKIP - VM NOT DEPLOYED"
+          - "============================================================"
+          - "VM:"
+          - "{{ item }}"
+          - "Reason:"
+          - "The VM does not exist in vCenter yet."
+          - "No conversion will be attempted."
+          - "============================================================"
+      loop: "{{ missing_golden_vms }}"
       loop_control:
         label: "{{ item }}"
 
-      register: golden_vm_info
-
     # ========================================================================
-    # DISPLAY CURRENT STATE
-    # ========================================================================
-
-    - name: Display current golden VM state
-      ansible.builtin.debug:
-        msg:
-          - "============================================================"
-          - "{{ item.item }}"
-          - "============================================================"
-          - "Power State    : {{ item.instance.runtime.powerState | default('UNKNOWN') }}"
-          - "Already Template: {{ item.instance.config.template | default(false) }}"
-          - "CPU Hot Add    : {{ item.instance.config.cpuHotAddEnabled | default('UNKNOWN') }}"
-          - "Memory Hot Add : {{ item.instance.config.memoryHotAddEnabled | default('UNKNOWN') }}"
-          - "vCPU           : {{ item.instance.config.hardware.numCPU | default('UNKNOWN') }}"
-          - "Memory MB      : {{ item.instance.config.hardware.memoryMB | default('UNKNOWN') }}"
-          - "============================================================"
-      loop: "{{ golden_vm_info.results }}"
-      loop_control:
-        label: "{{ item.item }}"
-
-    # ========================================================================
-    # DISPLAY ALREADY-CONVERTED VMs
-    # ========================================================================
-
-    - name: Display VMs already converted to templates
-      ansible.builtin.debug:
-        msg: |
-          ============================================================
-          SKIPPING - ALREADY A TEMPLATE
-          ============================================================
-
-          VM:
-          {{ item.item }}
-
-          Template:
-          {{ item.instance.config.template }}
-
-          ============================================================
-      loop: "{{ golden_vm_info.results }}"
-      loop_control:
-        label: "{{ item.item }}"
-      when:
-        - item.instance.config.template | default(false) | bool
-
-    # ========================================================================
-    # BUILD CONVERSION LIST
+    # BUILD VMs REQUIRING CONVERSION
     # ========================================================================
 
     - name: Initialize conversion list
       ansible.builtin.set_fact:
         vms_to_convert: []
 
-    - name: Add VM to conversion list
+    - name: Add non-template VMs to conversion list
       ansible.builtin.set_fact:
         vms_to_convert: "{{ vms_to_convert + [item.item] }}"
       loop: "{{ golden_vm_info.results }}"
       loop_control:
         label: "{{ item.item }}"
       when:
+        - not (item.failed | default(false) | bool)
+        - item.instance is defined
+        - item.instance.config is defined
         - not (item.instance.config.template | default(false) | bool)
+
+    # ========================================================================
+    # DISPLAY ALREADY-CONVERTED VMs
+    # ========================================================================
+
+    - name: Display already converted templates
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "SKIP - ALREADY TEMPLATE"
+          - "============================================================"
+          - "VM:"
+          - "{{ item.item }}"
+          - "Template:"
+          - "{{ item.instance.config.template }}"
+          - "============================================================"
+      loop: "{{ golden_vm_info.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when:
+        - not (item.failed | default(false) | bool)
+        - item.instance is defined
+        - item.instance.config is defined
+        - item.instance.config.template | default(false) | bool
 
     # ========================================================================
     # DISPLAY CONVERSION LIST
@@ -302,21 +297,13 @@
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
-
         datacenter: "{{ vcenter_datacenter }}"
-
         name: "{{ item }}"
-
         state: poweredoff
-
         state_change_timeout: "{{ shutdown_timeout }}"
-
         validate_certs: "{{ validate_certs }}"
-
       delegate_to: localhost
-
       loop: "{{ vms_to_convert }}"
-
       loop_control:
         label: "{{ item }}"
 
@@ -337,27 +324,18 @@
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
-
         datacenter: "{{ vcenter_datacenter }}"
-
         name: "{{ item }}"
-
         schema: vsphere
-
         properties:
           - config.name
           - config.template
           - runtime.powerState
-
         validate_certs: "{{ validate_certs }}"
-
       delegate_to: localhost
-
       loop: "{{ vms_to_convert }}"
-
       loop_control:
         label: "{{ item }}"
-
       register: powered_off_info
 
     - name: Assert VMs are powered off
@@ -386,11 +364,6 @@
 
     # ========================================================================
     # CONVERT TO TEMPLATE
-    #
-    # Only VMs that:
-    #   - exist
-    #   - are not already templates
-    #   - are powered off
     # ========================================================================
 
     - name: Convert golden VM to template
@@ -398,21 +371,13 @@
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
-
         datacenter: "{{ vcenter_datacenter }}"
-
         name: "{{ item }}"
-
         state: present
-
         is_template: true
-
         validate_certs: "{{ validate_certs }}"
-
       delegate_to: localhost
-
       loop: "{{ vms_to_convert }}"
-
       loop_control:
         label: "{{ item }}"
 
@@ -425,31 +390,22 @@
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
-
         datacenter: "{{ vcenter_datacenter }}"
-
         name: "{{ item }}"
-
         schema: vsphere
-
         properties:
           - config.name
           - config.template
           - runtime.powerState
-
         validate_certs: "{{ validate_certs }}"
-
       delegate_to: localhost
-
       loop: "{{ vms_to_convert }}"
-
       loop_control:
         label: "{{ item }}"
-
       register: template_verification
 
     # ========================================================================
-    # DISPLAY CONVERSION RESULTS
+    # DISPLAY RESULTS
     # ========================================================================
 
     - name: Display template conversion results
@@ -474,7 +430,6 @@
       ansible.builtin.assert:
         that:
           - item.instance.config.template | default(false) | bool
-
         fail_msg: |
           ============================================================
           TEMPLATE CONVERSION FAILED
@@ -487,11 +442,8 @@
           {{ item.instance.config.template | default('UNKNOWN') }}
 
           ============================================================
-
         success_msg: "Template conversion verified."
-
       loop: "{{ template_verification.results }}"
-
       loop_control:
         label: "{{ item.item }}"
 
@@ -509,17 +461,13 @@
           - "ROCKY LINUX 8 : GOLDENTEMPLATE_ROCKYOS_08"
           - "ROCKY LINUX 9 : GOLDENTEMPLATE_ROCKYOS_09"
           - "============================================================"
-          - "Existing VMs:"
+          - "Existing:"
           - "{{ existing_golden_vms }}"
           - "Converted:"
           - "{{ vms_to_convert }}"
-          - "Skipped:"
-          - >-
-            {{
-              golden_vms
-              | difference(existing_golden_vms)
-            }}
+          - "Skipped - Missing:"
+          - "{{ missing_golden_vms }}"
           - "============================================================"
-          - "Non-existent VMs are skipped."
-          - "Already-template VMs are skipped."
+          - "Missing VMs are skipped."
+          - "Existing templates are skipped."
           - "============================================================"
