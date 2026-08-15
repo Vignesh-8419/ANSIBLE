@@ -1,5 +1,5 @@
 ---
-- name: Deploy CentOS 7 Rocky 8 Rocky 9 Golden Templates
+- name: Deploy CentOS 7 Rocky Linux 8 Rocky Linux 9 Golden Templates
   hosts: localhost
   connection: local
   gather_facts: false
@@ -10,23 +10,28 @@
   vars:
 
     # ========================================================================
-    # ESXi
+    # ESXi CONNECTION
     # ========================================================================
 
-    esxi_hostname: "192.168.253.128"
-    esxi_username: "root"
-    esxi_password: "Root@123"
+    # IP/address used to connect to ESXi API
+    esxi_api_host: "192.168.253.128"
 
+    # Host object name reported by ESXi/vSphere
+    esxi_hostname: "esxi-host-01.vgs.com"
+
+    esxi_username: "root"
+    esxi_password: "{{ lookup('env', 'ESXI_PASSWORD') }}"
+
+    # Standalone ESXi datacenter
     esxi_datacenter: "ha-datacenter"
 
     validate_certs: false
 
     # ========================================================================
-    # ESXi STORAGE / NETWORK
+    # STORAGE / NETWORK
     # ========================================================================
 
     target_datastore: "datastore1"
-
     target_network: "VM Network"
 
     # ========================================================================
@@ -38,24 +43,20 @@
 
     # ========================================================================
     # POWER
-    #
-    # Deployment is intentionally done powered off.
-    # Hot-add settings are applied while powered off.
-    # Then VMs can optionally be powered on.
     # ========================================================================
 
+    # Deploy powered off so hot-add can be configured safely.
+    power_on_after_deploy: false
+
+    # Power on after CPU/memory hot-add has been enabled.
     power_on_after_hotadd: true
 
     # ========================================================================
     # OVF DEPLOYMENT
     # ========================================================================
 
-    power_on_after_deploy: false
-
     allow_duplicates: false
-
     fail_on_spec_warnings: false
-
     deployment_wait: true
 
     # ========================================================================
@@ -66,19 +67,6 @@
 
     # ========================================================================
     # SELECT TEMPLATES
-    #
-    # Default:
-    #   all three
-    #
-    # Examples:
-    #
-    #   -e 'deploy_templates=["CENTOS_07"]'
-    #
-    #   -e 'deploy_templates=["ROCKYOS_08"]'
-    #
-    #   -e 'deploy_templates=["ROCKYOS_09"]'
-    #
-    #   -e 'deploy_templates=["CENTOS_07","ROCKYOS_08"]'
     # ========================================================================
 
     deploy_templates:
@@ -153,7 +141,8 @@
           - "============================================================"
           - "GOLDEN TEMPLATE DEPLOYMENT"
           - "============================================================"
-          - "ESXi Host       : {{ esxi_hostname }}"
+          - "ESXi API Host   : {{ esxi_api_host }}"
+          - "ESXi Hostname   : {{ esxi_hostname }}"
           - "Datacenter      : {{ esxi_datacenter }}"
           - "Datastore       : {{ target_datastore }}"
           - "Network         : {{ target_network }}"
@@ -173,7 +162,7 @@
           - "============================================================"
 
     # ========================================================================
-    # CHECK ESXi PASSWORD
+    # CHECK PASSWORD
     # ========================================================================
 
     - name: Fail if ESXi password is not supplied
@@ -272,17 +261,13 @@
       when: not item.stat.exists
 
     # ========================================================================
-    # CHECK ALL TEMPLATE FILES
+    # CHECK TEMPLATE FILES
     # ========================================================================
 
     - name: Check required OVF template files
       ansible.builtin.stat:
         path: "{{ item.0.template_dir }}/{{ item.1 }}"
-      loop: >-
-        {{
-          selected_templates
-          | subelements('expected_files')
-        }}
+      loop: "{{ selected_templates | subelements('expected_files') }}"
       loop_control:
         label: "{{ item.0.vm_name }} -> {{ item.1 }}"
       register: template_file_results
@@ -310,12 +295,12 @@
       when: not item.stat.exists
 
     # ========================================================================
-    # CHECK DATASTORE
+    # CHECK ESXi CONNECTION / DATASTORE
     # ========================================================================
 
     - name: Query ESXi datastores
       community.vmware.vmware_datastore_info:
-        hostname: "{{ esxi_hostname }}"
+        hostname: "{{ esxi_api_host }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         datacenter_name: "{{ esxi_datacenter }}"
@@ -369,13 +354,12 @@
           ============================================================
 
     # ========================================================================
-    # DEPLOY OVF TEMPLATES
+    # DEPLOY OVF
     # ========================================================================
 
     - name: Deploy selected golden template
       community.vmware.vmware_deploy_ovf:
-
-        hostname: "{{ esxi_hostname }}"
+        hostname: "{{ esxi_api_host }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
 
@@ -425,10 +409,10 @@
           - "============================================================"
           - "OVF DEPLOYMENT RESULTS"
           - "============================================================"
-          - "VM              : {{ item.item.vm_name }}"
-          - "Changed         : {{ item.changed | default(false) }}"
-          - "Failed          : {{ item.failed | default(false) }}"
-          - "Result          : {{ item.msg | default('Deployment completed') }}"
+          - "VM       : {{ item.item.vm_name }}"
+          - "Changed  : {{ item.changed | default(false) }}"
+          - "Failed   : {{ item.failed | default(false) }}"
+          - "Message  : {{ item.msg | default('Deployment completed') }}"
           - "============================================================"
       loop: "{{ deployment_results.results }}"
       loop_control:
@@ -436,16 +420,11 @@
 
     # ========================================================================
     # ENABLE CPU + MEMORY HOT ADD
-    #
-    # VM is powered off at this point.
-    #
-    # community.vmware.vmware_guest supports hotadd_cpu and hotadd_memory.
     # ========================================================================
 
     - name: Enable CPU and Memory Hot Add
       community.vmware.vmware_guest:
-
-        hostname: "{{ esxi_hostname }}"
+        hostname: "{{ esxi_api_host }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
 
@@ -482,10 +461,10 @@
           - "============================================================"
           - "HOT ADD CONFIGURATION"
           - "============================================================"
-          - "VM              : {{ item.item.vm_name }}"
-          - "Changed         : {{ item.changed | default(false) }}"
-          - "Failed          : {{ item.failed | default(false) }}"
-          - "Message         : {{ item.msg | default('Hot Add configured') }}"
+          - "VM       : {{ item.item.vm_name }}"
+          - "Changed  : {{ item.changed | default(false) }}"
+          - "Failed   : {{ item.failed | default(false) }}"
+          - "Message  : {{ item.msg | default('Hot Add configured') }}"
           - "============================================================"
       loop: "{{ hotadd_results.results }}"
       loop_control:
@@ -497,8 +476,7 @@
 
     - name: Gather deployed VM information
       community.vmware.vmware_guest_info:
-
-        hostname: "{{ esxi_hostname }}"
+        hostname: "{{ esxi_api_host }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
 
@@ -583,8 +561,7 @@
 
     - name: Power on golden templates
       community.vmware.vmware_guest:
-
-        hostname: "{{ esxi_hostname }}"
+        hostname: "{{ esxi_api_host }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
 
@@ -610,13 +587,12 @@
       register: poweron_results
 
     # ========================================================================
-    # FINAL VM INFO
+    # FINAL VM INFORMATION
     # ========================================================================
 
     - name: Gather final VM information
       community.vmware.vmware_guest_info:
-
-        hostname: "{{ esxi_hostname }}"
+        hostname: "{{ esxi_api_host }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
 
@@ -635,7 +611,6 @@
           - config.hardware.numCPU
           - config.hardware.memoryMB
           - config.runtime.powerState
-          - runtime.powerState
 
         validate_certs: "{{ validate_certs }}"
 
@@ -664,7 +639,8 @@
           - "vCPU            : {{ item.instance.config.hardware.numCPU | default('UNKNOWN') }}"
           - "Memory MB       : {{ item.instance.config.hardware.memoryMB | default('UNKNOWN') }}"
           - "Power State     : {{ item.instance.runtime.powerState | default('UNKNOWN') }}"
-          - "ESXi            : {{ esxi_hostname }}"
+          - "ESXi API Host   : {{ esxi_api_host }}"
+          - "ESXi Hostname   : {{ esxi_hostname }}"
           - "Datastore       : {{ target_datastore }}"
           - "Network         : {{ target_network }}"
           - "============================================================"
@@ -678,13 +654,14 @@
           - "============================================================"
           - "SUCCESS"
           - "============================================================"
-          - "CentOS 7      : GOLDENTEMPLATE_CENTOS_07"
-          - "Rocky Linux 8 : GOLDENTEMPLATE_ROCKYOS_08"
-          - "Rocky Linux 9 : GOLDENTEMPLATE_ROCKYOS_09"
-          - "CPU Hot Add   : ENABLED"
-          - "Memory Hot Add: ENABLED"
-          - "ESXi          : {{ esxi_hostname }}"
-          - "Datastore     : {{ target_datastore }}"
-          - "Network       : {{ target_network }}"
-          - "Power On      : {{ power_on_after_hotadd }}"
+          - "CentOS 7       : GOLDENTEMPLATE_CENTOS_07"
+          - "Rocky Linux 8  : GOLDENTEMPLATE_ROCKYOS_08"
+          - "Rocky Linux 9  : GOLDENTEMPLATE_ROCKYOS_09"
+          - "CPU Hot Add    : ENABLED"
+          - "Memory Hot Add : ENABLED"
+          - "ESXi API       : {{ esxi_api_host }}"
+          - "ESXi Host      : {{ esxi_hostname }}"
+          - "Datastore      : {{ target_datastore }}"
+          - "Network        : {{ target_network }}"
+          - "Power On       : {{ power_on_after_hotadd }}"
           - "============================================================"
