@@ -1,0 +1,364 @@
+cat > ~/ANSIBLE/deploy_golden_templates.yml <<'YAML'
+---
+- name: Deploy CentOS 7 / Rocky Linux 8 / Rocky Linux 9 Golden Templates
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  collections:
+    - community.vmware
+
+  vars:
+
+    # ========================================================================
+    # TARGET ESXi
+    # ========================================================================
+
+    # Your nested ESXi host created by install_esxi_workstation.yml
+    esxi_hostname: "192.168.253.128"
+
+    # Standalone ESXi uses this datacenter name
+    esxi_datacenter: "ha-datacenter"
+
+    # Change this if your ESXi datastore has another name.
+    target_datastore: "datastore1"
+
+    # Standard VMware port group created by ESXi.
+    target_network: "VM Network"
+
+    # ========================================================================
+    # ESXi CREDENTIALS
+    #
+    # Prefer passing these through -e or environment variables.
+    # ========================================================================
+
+    esxi_username: "root"
+    esxi_password: "{{ lookup('env', 'ESXI_PASSWORD') }}"
+
+    validate_certs: false
+
+    # ========================================================================
+    # TEMPLATE ROOT
+    # ========================================================================
+
+    template_root: "/cygdrive/e/repo"
+
+    # ========================================================================
+    # POWER / DEPLOYMENT
+    # ========================================================================
+
+    power_on_after_deploy: false
+
+    allow_duplicates: false
+
+    fail_on_spec_warnings: false
+
+    # ========================================================================
+    # SELECT WHICH TEMPLATES TO DEPLOY
+    #
+    # Default = all three.
+    #
+    # Examples:
+    #
+    #   -e 'deploy_templates=["CENTOS_07"]'
+    #
+    #   -e 'deploy_templates=["ROCKYOS_08"]'
+    #
+    #   -e 'deploy_templates=["ROCKYOS_09"]'
+    #
+    #   -e 'deploy_templates=["CENTOS_07","ROCKYOS_08"]'
+    #
+    # ========================================================================
+
+    deploy_templates:
+      - "CENTOS_07"
+      - "ROCKYOS_08"
+      - "ROCKYOS_09"
+
+    # ========================================================================
+    # GOLDEN TEMPLATE DEFINITIONS
+    # ========================================================================
+
+    golden_templates:
+
+      - id: "CENTOS_07"
+        vm_name: "GOLDENTEMPLATE_CENTOS_07"
+        template_dir: "{{ template_root }}/GOLDENTEMPLATE_CENTOS_07"
+        ovf_file: "{{ template_root }}/GOLDENTEMPLATE_CENTOS_07/GOLDENTEMPLATE_CENTOS_07.ovf"
+
+      - id: "ROCKYOS_08"
+        vm_name: "GOLDENTEMPLATE_ROCKYOS_08"
+        template_dir: "{{ template_root }}/GOLDENTEMPLATE_ROCKYOS_08"
+        ovf_file: "{{ template_root }}/GOLDENTEMPLATE_ROCKYOS_08/GOLDENTEMPLATE_ROCKYOS_08.ovf"
+
+      - id: "ROCKYOS_09"
+        vm_name: "GOLDENTEMPLATE_ROCKYOS_09"
+        template_dir: "{{ template_root }}/GOLDENTEMPLATE_ROCKYOS_09"
+        ovf_file: "{{ template_root }}/GOLDENTEMPLATE_ROCKYOS_09/GOLDENTEMPLATE_ROCKYOS_09.ovf"
+
+  tasks:
+
+    # ========================================================================
+    # DISPLAY
+    # ========================================================================
+
+    - name: Display deployment configuration
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "GOLDEN TEMPLATE DEPLOYMENT"
+          - "============================================================"
+          - "ESXi Host      : {{ esxi_hostname }}"
+          - "Datacenter     : {{ esxi_datacenter }}"
+          - "Datastore      : {{ target_datastore }}"
+          - "Network        : {{ target_network }}"
+          - "Power On       : {{ power_on_after_deploy }}"
+          - "Validate Certs : {{ validate_certs }}"
+          - "============================================================"
+          - "Templates:"
+          - >-
+            {{
+              golden_templates
+              | selectattr('id', 'in', deploy_templates)
+              | map(attribute='vm_name')
+              | list
+            }}
+          - "============================================================"
+
+    # ========================================================================
+    # CHECK COMMUNITY.VMWARE COLLECTION
+    # ========================================================================
+
+    - name: Check community.vmware collection
+      ansible.builtin.command:
+        argv:
+          - ansible-galaxy
+          - collection
+          - list
+      register: vmware_collection_list
+      changed_when: false
+
+    - name: Display community.vmware collection
+      ansible.builtin.debug:
+        msg: "{{ vmware_collection_list.stdout }}"
+
+    # ========================================================================
+    # CHECK ESXi PASSWORD
+    # ========================================================================
+
+    - name: Fail if ESXi password is not supplied
+      ansible.builtin.fail:
+        msg: |
+          ESXI_PASSWORD is not set.
+
+          Run:
+
+          export ESXI_PASSWORD='YOUR_ESXI_ROOT_PASSWORD'
+
+          Then run:
+
+          ansible-playbook deploy_golden_templates.yml
+      when: esxi_password | length == 0
+
+    # ========================================================================
+    # VERIFY TEMPLATE FILES
+    # ========================================================================
+
+    - name: Build selected template list
+      ansible.builtin.set_fact:
+        selected_templates: >-
+          {{
+            golden_templates
+            | selectattr('id', 'in', deploy_templates)
+            | list
+          }}
+
+    - name: Fail if no templates were selected
+      ansible.builtin.fail:
+        msg: |
+          No valid templates selected.
+
+          Valid values:
+
+          CENTOS_07
+          ROCKYOS_08
+          ROCKYOS_09
+      when: selected_templates | length == 0
+
+    - name: Check selected OVF files
+      ansible.builtin.stat:
+        path: "{{ item.ovf_file }}"
+      loop: "{{ selected_templates }}"
+      loop_control:
+        label: "{{ item.vm_name }}"
+      register: selected_ovfs
+
+    - name: Fail if selected OVF is missing
+      ansible.builtin.fail:
+        msg: |
+          ============================================================
+          OVF FILE NOT FOUND
+          ============================================================
+
+          Template:
+          {{ item.item.vm_name }}
+
+          Expected:
+
+          {{ item.item.ovf_file }}
+
+          ============================================================
+      loop: "{{ selected_ovfs.results }}"
+      loop_control:
+        label: "{{ item.item.vm_name }}"
+      when: not item.stat.exists
+
+    # ========================================================================
+    # VERIFY PACKAGE FILES
+    # ========================================================================
+
+    - name: Check selected template directories
+      ansible.builtin.stat:
+        path: "{{ item.template_dir }}"
+      loop: "{{ selected_templates }}"
+      loop_control:
+        label: "{{ item.vm_name }}"
+      register: selected_template_dirs
+
+    - name: Fail if template directory is missing
+      ansible.builtin.fail:
+        msg: |
+          ============================================================
+          TEMPLATE DIRECTORY NOT FOUND
+          ============================================================
+
+          {{ item.item.template_dir }}
+
+          ============================================================
+      loop: "{{ selected_template_dirs.results }}"
+      loop_control:
+        label: "{{ item.item.vm_name }}"
+      when: not item.stat.exists
+
+    # ========================================================================
+    # TEST ESXi CONNECTION
+    # ========================================================================
+
+    - name: Query ESXi datastores
+      community.vmware.vmware_datastore_info:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        datacenter_name: "{{ esxi_datacenter }}"
+        validate_certs: "{{ validate_certs }}"
+      delegate_to: localhost
+      register: esxi_datastore_info
+
+    - name: Display available datastores
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "AVAILABLE ESXi DATASTORES"
+          - "============================================================"
+          - >-
+            {{
+              esxi_datastore_info.datastores
+              | default([])
+              | map(attribute='name')
+              | list
+            }}
+          - "============================================================"
+
+    - name: Validate target datastore
+      ansible.builtin.assert:
+        that:
+          - >-
+            target_datastore in
+            (
+              esxi_datastore_info.datastores
+              | default([])
+              | map(attribute='name')
+              | list
+            )
+        fail_msg: |
+          ============================================================
+          TARGET DATASTORE NOT FOUND
+          ============================================================
+
+          Requested:
+          {{ target_datastore }}
+
+          Available:
+
+          {{
+            esxi_datastore_info.datastores
+            | default([])
+            | map(attribute='name')
+            | list
+          }}
+
+          ============================================================
+
+    # ========================================================================
+    # DEPLOY TEMPLATES
+    #
+    # Do them one at a time so the console clearly shows which template
+    # succeeded or failed.
+    # ========================================================================
+
+    - name: Deploy selected golden template
+      community.vmware.vmware_deploy_ovf:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+
+        datacenter: "{{ esxi_datacenter }}"
+        datastore: "{{ target_datastore }}"
+
+        name: "{{ item.vm_name }}"
+
+        ovf: "{{ item.ovf_file }}"
+
+        networks:
+          "VM Network": "{{ target_network }}"
+
+        power_on: "{{ power_on_after_deploy }}"
+        wait: true
+        wait_for_ip_address: false
+
+        allow_duplicates: "{{ allow_duplicates }}"
+
+        fail_on_spec_warnings: "{{ fail_on_spec_warnings }}"
+
+        validate_certs: "{{ validate_certs }}"
+
+      delegate_to: localhost
+
+      loop: "{{ selected_templates }}"
+      loop_control:
+        label: "{{ item.vm_name }}"
+
+      register: deployment_results
+
+    # ========================================================================
+    # DEPLOYMENT SUMMARY
+    # ========================================================================
+
+    - name: Display deployment summary
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "GOLDEN TEMPLATE DEPLOYMENT COMPLETE"
+          - "============================================================"
+          - "CentOS 7     : GOLDENTEMPLATE_CENTOS_07"
+          - "Rocky Linux8 : GOLDENTEMPLATE_ROCKYOS_08"
+          - "Rocky Linux9 : GOLDENTEMPLATE_ROCKYOS_09"
+          - "ESXi Host    : {{ esxi_hostname }}"
+          - "Datastore    : {{ target_datastore }}"
+          - "Network      : {{ target_network }}"
+          - "Power On     : {{ power_on_after_deploy }}"
+          - "============================================================"
+          - "Deployment results:"
+          - "{{ deployment_results.results }}"
+          - "============================================================"
+YAML
