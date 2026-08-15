@@ -13,16 +13,12 @@
     # ESXi CONNECTION
     # ========================================================================
 
-    # IP/address used to connect to ESXi API
     esxi_api_host: "192.168.253.128"
-
-    # Host object name reported by ESXi/vSphere
     esxi_hostname: "esxi-host-01.vgs.com"
 
     esxi_username: "root"
-    esxi_password: "Root@123"
+    esxi_password: "{{ lookup('env', 'ESXI_PASSWORD') }}"
 
-    # Standalone ESXi datacenter
     esxi_datacenter: "ha-datacenter"
 
     validate_certs: false
@@ -45,14 +41,11 @@
     # POWER
     # ========================================================================
 
-    # Deploy powered off so hot-add can be configured safely.
     power_on_after_deploy: false
-
-    # Power on after CPU/memory hot-add has been enabled.
     power_on_after_hotadd: true
 
     # ========================================================================
-    # OVF DEPLOYMENT
+    # OVF
     # ========================================================================
 
     allow_duplicates: false
@@ -67,6 +60,12 @@
 
     # ========================================================================
     # SELECT TEMPLATES
+    #
+    # Default = all three.
+    #
+    # -e 'deploy_templates=["CENTOS_07"]'
+    # -e 'deploy_templates=["ROCKYOS_08"]'
+    # -e 'deploy_templates=["ROCKYOS_09"]'
     # ========================================================================
 
     deploy_templates:
@@ -75,7 +74,7 @@
       - "ROCKYOS_09"
 
     # ========================================================================
-    # GOLDEN TEMPLATE DEFINITIONS
+    # TEMPLATE DEFINITIONS
     # ========================================================================
 
     golden_templates:
@@ -84,11 +83,9 @@
 
         vm_name: "GOLDENTEMPLATE_CENTOS_07"
 
-        template_dir: >-
-          {{ template_root }}/GOLDENTEMPLATE_CENTOS_07
+        template_dir: "{{ template_root }}/GOLDENTEMPLATE_CENTOS_07"
 
-        ovf_file: >-
-          {{ template_root }}/GOLDENTEMPLATE_CENTOS_07/GOLDENTEMPLATE_CENTOS_07.ovf
+        ovf_file: "{{ template_root }}/GOLDENTEMPLATE_CENTOS_07/GOLDENTEMPLATE_CENTOS_07.ovf"
 
         expected_files:
           - "GOLDENTEMPLATE_CENTOS_07.ovf"
@@ -101,11 +98,9 @@
 
         vm_name: "GOLDENTEMPLATE_ROCKYOS_08"
 
-        template_dir: >-
-          {{ template_root }}/GOLDENTEMPLATE_ROCKYOS_08
+        template_dir: "{{ template_root }}/GOLDENTEMPLATE_ROCKYOS_08"
 
-        ovf_file: >-
-          {{ template_root }}/GOLDENTEMPLATE_ROCKYOS_08/GOLDENTEMPLATE_ROCKYOS_08.ovf
+        ovf_file: "{{ template_root }}/GOLDENTEMPLATE_ROCKYOS_08/GOLDENTEMPLATE_ROCKYOS_08.ovf"
 
         expected_files:
           - "GOLDENTEMPLATE_ROCKYOS_08.ovf"
@@ -117,11 +112,9 @@
 
         vm_name: "GOLDENTEMPLATE_ROCKYOS_09"
 
-        template_dir: >-
-          {{ template_root }}/GOLDENTEMPLATE_ROCKYOS_09
+        template_dir: "{{ template_root }}/GOLDENTEMPLATE_ROCKYOS_09"
 
-        ovf_file: >-
-          {{ template_root }}/GOLDENTEMPLATE_ROCKYOS_09/GOLDENTEMPLATE_ROCKYOS_09.ovf
+        ovf_file: "{{ template_root }}/GOLDENTEMPLATE_ROCKYOS_09/GOLDENTEMPLATE_ROCKYOS_09.ovf"
 
         expected_files:
           - "GOLDENTEMPLATE_ROCKYOS_09.ovf"
@@ -151,18 +144,12 @@
           - "Power On        : {{ power_on_after_hotadd }}"
           - "Validate Certs  : {{ validate_certs }}"
           - "============================================================"
-          - "Selected:"
-          - >-
-            {{
-              golden_templates
-              | selectattr('id', 'in', deploy_templates)
-              | map(attribute='vm_name')
-              | list
-            }}
+          - "Requested IDs:"
+          - "{{ deploy_templates }}"
           - "============================================================"
 
     # ========================================================================
-    # CHECK PASSWORD
+    # PASSWORD
     # ========================================================================
 
     - name: Fail if ESXi password is not supplied
@@ -184,7 +171,7 @@
       when: esxi_password | length == 0
 
     # ========================================================================
-    # CHECK COMMUNITY.VMWARE
+    # CHECK COLLECTION
     # ========================================================================
 
     - name: Check community.vmware collection
@@ -201,24 +188,20 @@
         msg: "{{ vmware_collection_list.stdout }}"
 
     # ========================================================================
-    # SELECT TEMPLATES
+    # VALIDATE REQUESTED TEMPLATE IDS
     # ========================================================================
 
-    - name: Build selected template list
-      ansible.builtin.set_fact:
-        selected_templates: >-
-          {{
-            golden_templates
-            | selectattr('id', 'in', deploy_templates)
-            | list
-          }}
+    - name: Validate requested template IDs
+      ansible.builtin.assert:
+        that:
+          - item in ['CENTOS_07', 'ROCKYOS_08', 'ROCKYOS_09']
+        fail_msg: |
+          ============================================================
+          INVALID TEMPLATE ID
+          ============================================================
 
-    - name: Fail if no templates were selected
-      ansible.builtin.fail:
-        msg: |
-          ============================================================
-          NO VALID TEMPLATES SELECTED
-          ============================================================
+          Invalid:
+          {{ item }}
 
           Valid IDs:
 
@@ -227,13 +210,93 @@
           ROCKYOS_09
 
           ============================================================
+      loop: "{{ deploy_templates }}"
+
+    # ========================================================================
+    # INITIALIZE SELECTED TEMPLATE LIST
+    # ========================================================================
+
+    - name: Initialize selected template list
+      ansible.builtin.set_fact:
+        selected_templates: []
+
+    # ========================================================================
+    # ADD CENTOS 7
+    # ========================================================================
+
+    - name: Select CentOS 7 template
+      ansible.builtin.set_fact:
+        selected_templates: "{{ selected_templates + [item] }}"
+      loop: "{{ golden_templates }}"
+      loop_control:
+        label: "{{ item.vm_name }}"
+      when:
+        - "'CENTOS_07' in deploy_templates"
+        - item.id == "CENTOS_07"
+
+    # ========================================================================
+    # ADD ROCKY 8
+    # ========================================================================
+
+    - name: Select Rocky Linux 8 template
+      ansible.builtin.set_fact:
+        selected_templates: "{{ selected_templates + [item] }}"
+      loop: "{{ golden_templates }}"
+      loop_control:
+        label: "{{ item.vm_name }}"
+      when:
+        - "'ROCKYOS_08' in deploy_templates"
+        - item.id == "ROCKYOS_08"
+
+    # ========================================================================
+    # ADD ROCKY 9
+    # ========================================================================
+
+    - name: Select Rocky Linux 9 template
+      ansible.builtin.set_fact:
+        selected_templates: "{{ selected_templates + [item] }}"
+      loop: "{{ golden_templates }}"
+      loop_control:
+        label: "{{ item.vm_name }}"
+      when:
+        - "'ROCKYOS_09' in deploy_templates"
+        - item.id == "ROCKYOS_09"
+
+    # ========================================================================
+    # DISPLAY SELECTED TEMPLATES
+    # ========================================================================
+
+    - name: Display selected templates
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "SELECTED TEMPLATES"
+          - "============================================================"
+          - "{{ selected_templates | map(attribute='vm_name') | list }}"
+          - "============================================================"
+
+    # ========================================================================
+    # FAIL IF NOTHING SELECTED
+    # ========================================================================
+
+    - name: Fail if no templates were selected
+      ansible.builtin.fail:
+        msg: |
+          ============================================================
+          NO VALID TEMPLATES SELECTED
+          ============================================================
+
+          Requested:
+          {{ deploy_templates }}
+
+          ============================================================
       when: selected_templates | length == 0
 
     # ========================================================================
     # CHECK TEMPLATE DIRECTORIES
     # ========================================================================
 
-    - name: Check template directories
+    - name: Check selected template directories
       ansible.builtin.stat:
         path: "{{ item.template_dir }}"
       loop: "{{ selected_templates }}"
@@ -261,22 +324,53 @@
       when: not item.stat.exists
 
     # ========================================================================
-    # CHECK TEMPLATE FILES
+    # CHECK ALL OVF FILES
     # ========================================================================
 
-    - name: Check required OVF template files
+    - name: Check selected OVF files
+      ansible.builtin.stat:
+        path: "{{ item.ovf_file }}"
+      loop: "{{ selected_templates }}"
+      loop_control:
+        label: "{{ item.vm_name }}"
+      register: ovf_file_results
+
+    - name: Fail if OVF file is missing
+      ansible.builtin.fail:
+        msg: |
+          ============================================================
+          OVF FILE NOT FOUND
+          ============================================================
+
+          VM:
+          {{ item.item.vm_name }}
+
+          OVF:
+          {{ item.item.ovf_file }}
+
+          ============================================================
+      loop: "{{ ovf_file_results.results }}"
+      loop_control:
+        label: "{{ item.item.vm_name }}"
+      when: not item.stat.exists
+
+    # ========================================================================
+    # CHECK ALL PACKAGE FILES
+    # ========================================================================
+
+    - name: Check required template package files
       ansible.builtin.stat:
         path: "{{ item.0.template_dir }}/{{ item.1 }}"
       loop: "{{ selected_templates | subelements('expected_files') }}"
       loop_control:
         label: "{{ item.0.vm_name }} -> {{ item.1 }}"
-      register: template_file_results
+      register: package_file_results
 
-    - name: Fail if a template file is missing
+    - name: Fail if package file is missing
       ansible.builtin.fail:
         msg: |
           ============================================================
-          TEMPLATE FILE NOT FOUND
+          TEMPLATE PACKAGE FILE NOT FOUND
           ============================================================
 
           VM:
@@ -289,13 +383,13 @@
           {{ item.item.0.template_dir }}/{{ item.item.1 }}
 
           ============================================================
-      loop: "{{ template_file_results.results }}"
+      loop: "{{ package_file_results.results }}"
       loop_control:
         label: "{{ item.item.0.vm_name }} -> {{ item.item.1 }}"
       when: not item.stat.exists
 
     # ========================================================================
-    # CHECK ESXi CONNECTION / DATASTORE
+    # QUERY ESXi DATASTORES
     # ========================================================================
 
     - name: Query ESXi datastores
@@ -354,7 +448,7 @@
           ============================================================
 
     # ========================================================================
-    # DEPLOY OVF
+    # DEPLOY OVF TEMPLATES
     # ========================================================================
 
     - name: Deploy selected golden template
@@ -400,14 +494,14 @@
       register: deployment_results
 
     # ========================================================================
-    # DISPLAY DEPLOYMENT RESULTS
+    # DEPLOYMENT RESULT
     # ========================================================================
 
     - name: Display deployment results
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "OVF DEPLOYMENT RESULTS"
+          - "OVF DEPLOYMENT RESULT"
           - "============================================================"
           - "VM       : {{ item.item.vm_name }}"
           - "Changed  : {{ item.changed | default(false) }}"
@@ -452,7 +546,7 @@
       register: hotadd_results
 
     # ========================================================================
-    # DISPLAY HOT ADD RESULTS
+    # HOT ADD RESULT
     # ========================================================================
 
     - name: Display Hot Add results
@@ -474,7 +568,7 @@
     # VERIFY HOT ADD
     # ========================================================================
 
-    - name: Gather deployed VM information
+    - name: Gather hot add configuration
       community.vmware.vmware_guest_info:
         hostname: "{{ esxi_api_host }}"
         username: "{{ esxi_username }}"
@@ -490,11 +584,11 @@
 
         properties:
           - config.name
-          - config.runtime.powerState
           - config.hardware.cpuHotAddEnabled
           - config.hardware.memoryHotAddEnabled
           - config.hardware.numCPU
           - config.hardware.memoryMB
+          - runtime.powerState
 
         validate_certs: "{{ validate_certs }}"
 
@@ -531,14 +625,13 @@
     # ASSERT HOT ADD
     # ========================================================================
 
-    - name: Assert CPU and Memory Hot Add
+    - name: Assert CPU Hot Add
       ansible.builtin.assert:
         that:
           - item.instance.config.hardware.cpuHotAddEnabled | default(false) | bool
-          - item.instance.config.hardware.memoryHotAddEnabled | default(false) | bool
         fail_msg: |
           ============================================================
-          HOT ADD VALIDATION FAILED
+          CPU HOT ADD VALIDATION FAILED
           ============================================================
 
           VM:
@@ -546,6 +639,23 @@
 
           CPU Hot Add:
           {{ item.instance.config.hardware.cpuHotAddEnabled | default('UNKNOWN') }}
+
+          ============================================================
+      loop: "{{ hotadd_verification.results }}"
+      loop_control:
+        label: "{{ item.item.vm_name }}"
+
+    - name: Assert Memory Hot Add
+      ansible.builtin.assert:
+        that:
+          - item.instance.config.hardware.memoryHotAddEnabled | default(false) | bool
+        fail_msg: |
+          ============================================================
+          MEMORY HOT ADD VALIDATION FAILED
+          ============================================================
+
+          VM:
+          {{ item.item.vm_name }}
 
           Memory Hot Add:
           {{ item.instance.config.hardware.memoryHotAddEnabled | default('UNKNOWN') }}
@@ -587,7 +697,7 @@
       register: poweron_results
 
     # ========================================================================
-    # FINAL VM INFORMATION
+    # FINAL VM INFO
     # ========================================================================
 
     - name: Gather final VM information
@@ -610,7 +720,7 @@
           - config.hardware.memoryHotAddEnabled
           - config.hardware.numCPU
           - config.hardware.memoryMB
-          - config.runtime.powerState
+          - runtime.powerState
 
         validate_certs: "{{ validate_certs }}"
 
@@ -631,7 +741,7 @@
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "GOLDEN TEMPLATE DEPLOYMENT COMPLETE"
+          - "GOLDEN TEMPLATE"
           - "============================================================"
           - "VM              : {{ item.item.vm_name }}"
           - "CPU Hot Add     : {{ item.instance.config.hardware.cpuHotAddEnabled | default('UNKNOWN') }}"
@@ -639,8 +749,8 @@
           - "vCPU            : {{ item.instance.config.hardware.numCPU | default('UNKNOWN') }}"
           - "Memory MB       : {{ item.instance.config.hardware.memoryMB | default('UNKNOWN') }}"
           - "Power State     : {{ item.instance.runtime.powerState | default('UNKNOWN') }}"
-          - "ESXi API Host   : {{ esxi_api_host }}"
-          - "ESXi Hostname   : {{ esxi_hostname }}"
+          - "ESXi API        : {{ esxi_api_host }}"
+          - "ESXi Host       : {{ esxi_hostname }}"
           - "Datastore       : {{ target_datastore }}"
           - "Network         : {{ target_network }}"
           - "============================================================"
@@ -652,16 +762,21 @@
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "SUCCESS"
+          - "SUCCESS - GOLDEN TEMPLATE DEPLOYMENT COMPLETE"
           - "============================================================"
-          - "CentOS 7       : GOLDENTEMPLATE_CENTOS_07"
-          - "Rocky Linux 8  : GOLDENTEMPLATE_ROCKYOS_08"
-          - "Rocky Linux 9  : GOLDENTEMPLATE_ROCKYOS_09"
-          - "CPU Hot Add    : ENABLED"
-          - "Memory Hot Add : ENABLED"
-          - "ESXi API       : {{ esxi_api_host }}"
-          - "ESXi Host      : {{ esxi_hostname }}"
-          - "Datastore      : {{ target_datastore }}"
-          - "Network        : {{ target_network }}"
-          - "Power On       : {{ power_on_after_hotadd }}"
+          - "ESXi API        : {{ esxi_api_host }}"
+          - "ESXi Host       : {{ esxi_hostname }}"
+          - "Datastore       : {{ target_datastore }}"
+          - "Network         : {{ target_network }}"
+          - "CPU Hot Add     : ENABLED"
+          - "Memory Hot Add  : ENABLED"
+          - "Power On        : {{ power_on_after_hotadd }}"
+          - "============================================================"
+          - "Deployed VMs:"
+          - >-
+            {{
+              selected_templates
+              | map(attribute='vm_name')
+              | list
+            }}
           - "============================================================"
