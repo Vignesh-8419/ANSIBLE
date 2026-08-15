@@ -2,7 +2,8 @@
 - name: Install AWX on Rocky/RHEL 8 + K3s
   hosts: Linux
   become: true
-  become: sudo
+  become_method: sudo
+  become_user: root
   gather_facts: true
 
   vars:
