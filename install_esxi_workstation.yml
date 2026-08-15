@@ -821,6 +821,19 @@
           ============================================================
         success_msg: "Installation VMX validated successfully."
 
+    - name: Verify invalid efi.bootOrder is absent
+      ansible.builtin.shell: |
+        if grep -q '^efi\.bootOrder[[:space:]]*=' "{{ vmx_file_cygwin }}"; then
+          echo "Invalid efi.bootOrder found:"
+          grep -n '^efi\.bootOrder[[:space:]]*=' "{{ vmx_file_cygwin }}"
+          exit 1
+        fi
+
+        echo "efi.bootOrder is not present."
+      args:
+        executable: /bin/bash
+      changed_when: false
+
     # ========================================================================
     # REMOVE OLD VMX GENERATED RUNTIME ARTIFACTS
     # ========================================================================
