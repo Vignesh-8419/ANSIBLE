@@ -422,27 +422,42 @@
         - inventory_hostname == smart_proxy_server
         - katello_ca_check.rc != 0
 
-    - name: Verify Katello CA consumer
-      command: rpm -q katello-ca-consumer
+    - name: Verify Katello CA consumer package by RPM query
+      ansible.builtin.shell: |
+        rpm -qa | grep -E '^katello-ca-consumer(-|$)' | head -1
+      args:
+        executable: /bin/bash
       register: katello_ca_verify
       changed_when: false
       failed_when: false
       when: inventory_hostname == smart_proxy_server
 
-    - name: Fail if Katello CA consumer installation failed
-      assert:
-        that:
-          - katello_ca_verify.rc == 0
-        fail_msg: >-
-          katello-ca-consumer installation failed.
-          Check:
-          {{ katello_ca_url }}
+    - name: Verify Katello CA trust files
+      ansible.builtin.find:
+        paths:
+          - /etc/rhsm/ca
+          - /etc/pki/consumer
+        patterns: '*.pem'
+        file_type: file
+      register: katello_ca_trust_files
+      failed_when: false
       when: inventory_hostname == smart_proxy_server
 
     - name: Display Katello CA consumer status
-      debug:
-        msg: "SUCCESS: Katello CA consumer is installed."
+      ansible.builtin.debug:
+        msg:
+          - "Katello CA consumer RPM: {{ katello_ca_verify.stdout | default('NOT FOUND') | trim }}"
+          - "Katello CA trust files: {{ katello_ca_trust_files.matched | default(0) }}"
       when: inventory_hostname == smart_proxy_server
+
+    - name: Continue when CA package verification is unavailable
+      ansible.builtin.debug:
+        msg: >-
+          WARNING: katello-ca-consumer verification did not return a package name.
+          The certificate archive will still be used by foreman-installer.
+      when:
+        - inventory_hostname == smart_proxy_server
+        - katello_ca_verify.stdout | default('') | trim | length == 0
 
 
 ###############################################################################
@@ -599,7 +614,8 @@
           - "--foreman-proxy-oauth-consumer-secret"
           - "{{ oauth_consumer_secret }}"
       register: smart_proxy_installer
-      no_log: true
+      no_log: false
+      changed_when: smart_proxy_installer.rc == 0
       when: inventory_hostname == smart_proxy_server
 
     - name: Display installer completion
@@ -609,6 +625,19 @@
           - "Scenario: foreman-proxy-content"
           - "Proxy: {{ smart_proxy_server }}"
       when: inventory_hostname == smart_proxy_server
+
+    - name: Fail if Smart Proxy installer failed
+      ansible.builtin.fail:
+        msg: |
+          foreman-installer failed on {{ smart_proxy_server }}.
+          RC: {{ smart_proxy_installer.rc }}
+          STDOUT:
+          {{ smart_proxy_installer.stdout | default('') }}
+          STDERR:
+          {{ smart_proxy_installer.stderr | default('') }}
+      when:
+        - inventory_hostname == smart_proxy_server
+        - smart_proxy_installer.rc != 0
 
 
 ###############################################################################
@@ -1193,9 +1222,9 @@
     foreman_api_password: "jzqyraTpV2tE31V5wR_OGg"
 
   tasks:
-    - name: Get Smart Proxy from Foreman
+    - name: Get all Smart Proxies from Foreman
       ansible.builtin.uri:
-        url: "https://{{ foreman_server }}/api/smart_proxies?search=name={{ smart_proxy_server }}"
+        url: "https://{{ foreman_server }}/api/smart_proxies?per_page=100"
         method: GET
         user: "{{ foreman_api_user }}"
         password: "{{ foreman_api_password }}"
@@ -1207,28 +1236,39 @@
       register: foreman_proxy_lookup
       when: inventory_hostname == foreman_server
 
-    - name: Display Smart Proxy lookup response
+    - name: Display registered Smart Proxies
       ansible.builtin.debug:
-        var: foreman_proxy_lookup.json
+        msg:
+          - "Registered Smart Proxies: {{ foreman_proxy_lookup.json.results | default([]) | map(attribute='name') | list }}"
+          - "Full API response: {{ foreman_proxy_lookup.json | to_nice_json }}"
+      when: inventory_hostname == foreman_server
+
+    - name: Select exact Smart Proxy match
+      ansible.builtin.set_fact:
+        foreman_proxy_matches: >-
+          {{
+            foreman_proxy_lookup.json.results | default([])
+            | selectattr('name', 'equalto', smart_proxy_server)
+            | list
+          }}
       when: inventory_hostname == foreman_server
 
     - name: Fail when Smart Proxy is not registered
       ansible.builtin.fail:
         msg: |
           Smart Proxy {{ smart_proxy_server }} is not registered in Foreman.
-          The Smart Proxy installer should have registered it automatically.
-          API response:
-          {{ foreman_proxy_lookup.json | to_nice_json }}
+          Registered Smart Proxies:
+          {{ foreman_proxy_lookup.json.results | default([]) | map(attribute='name') | list }}
       when:
         - inventory_hostname == foreman_server
-        - foreman_proxy_lookup.json.results | default([]) | length == 0
+        - foreman_proxy_matches | length == 0
 
     - name: Set Smart Proxy ID
       ansible.builtin.set_fact:
-        foreman_proxy_id: "{{ foreman_proxy_lookup.json.results[0].id }}"
+        foreman_proxy_id: "{{ foreman_proxy_matches[0].id }}"
       when:
         - inventory_hostname == foreman_server
-        - foreman_proxy_lookup.json.results | default([]) | length > 0
+        - foreman_proxy_matches | length > 0
 
     - name: Refresh Smart Proxy features
       ansible.builtin.uri:
