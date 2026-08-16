@@ -2,33 +2,38 @@
 set -euo pipefail
 
 ############################################################
-# NETBOX CLUSTER ID REMAPPING SCRIPT
+# NETBOX CLUSTER ID REMAPPING
 #
-# NetBox: v4.4.9
-# PostgreSQL: 15
+# centos-07-servers : 7 -> 1
+# rocky-8-servers   : 8 -> 2
+# rocky-9-servers   : 9 -> 3
 #
-# REQUIRED CLUSTER ID MAPPING
+# Cluster Group IDs are already:
+# centos-07-servers : 1
+# rocky-8-servers   : 2
+# rocky-9-servers   : 3
 #
-# centos-07-servers -> ID 1
-# rocky-8-servers   -> ID 2
-# rocky-9-servers   -> ID 3
-#
-# This script changes ONLY:
-#   virtualization_cluster.id
-#
-# It does NOT change:
-#   virtualization_clustergroup.id
+# This script also updates:
+# - dcim_device.cluster_id
+# - virtualization_virtualmachine.cluster_id
 ############################################################
 
 DB_NAME="netbox"
 PG_BIN="/usr/pgsql-15/bin"
 
+BACKUP_DIR="/root/netbox-backup"
+
 NETBOX_SERVICE="netbox"
 NETBOX_WORKER_SERVICE="netbox-worker"
 
-BACKUP_DIR="/root/netbox-backup"
+CENTOS_NAME="centos-07-servers"
+ROCKY8_NAME="rocky-8-servers"
+ROCKY9_NAME="rocky-9-servers"
 
-# Temporary IDs
+CENTOS_NEW_ID=1
+ROCKY8_NEW_ID=2
+ROCKY9_NEW_ID=3
+
 TEMP_CENTOS_ID=10001
 TEMP_ROCKY8_ID=10002
 TEMP_ROCKY9_ID=10003
@@ -45,7 +50,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 ############################################################
-# FUNCTIONS
+# DISPLAY FUNCTIONS
 ############################################################
 
 print_line() {
@@ -79,14 +84,14 @@ error() {
 header "NETBOX CLUSTER ID REMAPPING"
 
 if [[ "${EUID}" -ne 0 ]]; then
-    error "Run this script as root."
+    error "Run this script as root"
     exit 1
 fi
 
 info "Running as root"
 
 ############################################################
-# CHECK POSTGRESQL
+# POSTGRESQL CHECK
 ############################################################
 
 header "CHECKING POSTGRESQL"
@@ -102,48 +107,51 @@ if [[ ! -x "${PG_BIN}/pg_dump" ]]; then
 fi
 
 if ! systemctl is-active --quiet postgresql-15; then
-    error "PostgreSQL 15 is not running."
+    error "PostgreSQL 15 is not running"
     exit 1
 fi
 
 info "PostgreSQL 15 is running"
 
 ############################################################
-# CHECK NETBOX DATABASE
+# DATABASE CHECK
 ############################################################
 
 header "CHECKING NETBOX DATABASE"
 
 DB_EXISTS=$(
     su - postgres -c \
-    "${PG_BIN}/psql -tAc \"SELECT 1 FROM pg_database WHERE datname='${DB_NAME}';\""
+    "${PG_BIN}/psql -tAc \"SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'\""
 )
 
 if [[ "${DB_EXISTS}" != "1" ]]; then
-    error "Database '${DB_NAME}' does not exist."
+    error "Database '${DB_NAME}' not found"
     exit 1
 fi
 
 info "Database '${DB_NAME}' found"
 
 ############################################################
-# CHECK REQUIRED TABLES
+# TABLE CHECK
 ############################################################
 
 header "CHECKING NETBOX DATABASE TABLES"
 
-for TABLE in \
-    virtualization_cluster \
-    virtualization_clustertype \
-    virtualization_virtualmachine
-do
+REQUIRED_TABLES=(
+    "virtualization_cluster"
+    "virtualization_virtualmachine"
+    "dcim_device"
+)
+
+for TABLE in "${REQUIRED_TABLES[@]}"; do
+
     TABLE_EXISTS=$(
         su - postgres -c \
         "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
         SELECT COUNT(*)
         FROM information_schema.tables
         WHERE table_schema='public'
-          AND table_name='${TABLE}';
+          AND table_name='${TABLE}'
         \""
     )
 
@@ -153,10 +161,11 @@ do
     fi
 
     info "Found table: ${TABLE}"
+
 done
 
 ############################################################
-# CURRENT NETBOX CLUSTERS
+# CURRENT CLUSTERS
 ############################################################
 
 header "CURRENT NETBOX CLUSTERS"
@@ -184,149 +193,126 @@ ORDER BY c.id;
 
 header "VALIDATING REQUIRED CLUSTERS"
 
-CENTOS_COUNT=$(
-    su - postgres -c \
-    "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
-    SELECT COUNT(*)
-    FROM virtualization_cluster
-    WHERE name='centos-07-servers';
-    \""
-)
+for CLUSTER_NAME in \
+    "${CENTOS_NAME}" \
+    "${ROCKY8_NAME}" \
+    "${ROCKY9_NAME}"
+do
 
-ROCKY8_COUNT=$(
-    su - postgres -c \
-    "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
-    SELECT COUNT(*)
-    FROM virtualization_cluster
-    WHERE name='rocky-8-servers';
-    \""
-)
+    COUNT=$(
+        su - postgres -c \
+        "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
+        SELECT COUNT(*)
+        FROM virtualization_cluster
+        WHERE name='${CLUSTER_NAME}'
+        \""
+    )
 
-ROCKY9_COUNT=$(
-    su - postgres -c \
-    "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
-    SELECT COUNT(*)
-    FROM virtualization_cluster
-    WHERE name='rocky-9-servers';
-    \""
-)
+    if [[ "${COUNT}" != "1" ]]; then
+        error "Expected exactly one cluster named '${CLUSTER_NAME}'"
+        error "Found: ${COUNT}"
+        exit 1
+    fi
 
-if [[ "${CENTOS_COUNT}" != "1" ]]; then
-    error "Expected exactly one cluster: centos-07-servers"
-    error "Found: ${CENTOS_COUNT}"
-    exit 1
-fi
-
-if [[ "${ROCKY8_COUNT}" != "1" ]]; then
-    error "Expected exactly one cluster: rocky-8-servers"
-    error "Found: ${ROCKY8_COUNT}"
-    exit 1
-fi
-
-if [[ "${ROCKY9_COUNT}" != "1" ]]; then
-    error "Expected exactly one cluster: rocky-9-servers"
-    error "Found: ${ROCKY9_COUNT}"
-    exit 1
-fi
+done
 
 info "All required clusters found"
 
 ############################################################
-# GET CURRENT CLUSTER IDs
+# GET CURRENT IDS
 ############################################################
 
 header "CHECKING CURRENT CLUSTER IDS"
 
-CENTOS_ID=$(
+CENTOS_CURRENT_ID=$(
     su - postgres -c \
     "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
     SELECT id
     FROM virtualization_cluster
-    WHERE name='centos-07-servers';
+    WHERE name='${CENTOS_NAME}'
     \""
 )
 
-ROCKY8_ID=$(
+ROCKY8_CURRENT_ID=$(
     su - postgres -c \
     "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
     SELECT id
     FROM virtualization_cluster
-    WHERE name='rocky-8-servers';
+    WHERE name='${ROCKY8_NAME}'
     \""
 )
 
-ROCKY9_ID=$(
+ROCKY9_CURRENT_ID=$(
     su - postgres -c \
     "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
     SELECT id
     FROM virtualization_cluster
-    WHERE name='rocky-9-servers';
+    WHERE name='${ROCKY9_NAME}'
     \""
 )
 
-info "centos-07-servers current Cluster ID: ${CENTOS_ID}"
-info "rocky-8-servers current Cluster ID: ${ROCKY8_ID}"
-info "rocky-9-servers current Cluster ID: ${ROCKY9_ID}"
+info "${CENTOS_NAME} current Cluster ID: ${CENTOS_CURRENT_ID}"
+info "${ROCKY8_NAME} current Cluster ID: ${ROCKY8_CURRENT_ID}"
+info "${ROCKY9_NAME} current Cluster ID: ${ROCKY9_CURRENT_ID}"
 
 ############################################################
-# CHECK IF ALREADY CORRECT
+# ALREADY CORRECT CHECK
 ############################################################
 
-if [[ "${CENTOS_ID}" == "1" &&
-      "${ROCKY8_ID}" == "2" &&
-      "${ROCKY9_ID}" == "3" ]]; then
+if [[ "${CENTOS_CURRENT_ID}" == "1" &&
+      "${ROCKY8_CURRENT_ID}" == "2" &&
+      "${ROCKY9_CURRENT_ID}" == "3" ]]; then
 
     header "CLUSTER IDS ALREADY CORRECT"
 
-    info "centos-07-servers -> Cluster ID 1"
-    info "rocky-8-servers   -> Cluster ID 2"
-    info "rocky-9-servers   -> Cluster ID 3"
+    info "${CENTOS_NAME}: ID 1"
+    info "${ROCKY8_NAME}: ID 2"
+    info "${ROCKY9_NAME}: ID 3"
 
     exit 0
 fi
 
 ############################################################
-# CHECK TARGET IDs
+# CHECK TARGET IDS
 ############################################################
 
 header "CHECKING TARGET CLUSTER IDS"
 
 check_target_id() {
+
     local TARGET_ID="$1"
     local EXPECTED_NAME="$2"
-    local EXISTING_NAME
 
     EXISTING_NAME=$(
         su - postgres -c \
         "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
-        SELECT COALESCE(name, '')
+        SELECT COALESCE(name,'')
         FROM virtualization_cluster
-        WHERE id=${TARGET_ID};
+        WHERE id=${TARGET_ID}
         \""
     )
 
     if [[ -n "${EXISTING_NAME}" &&
           "${EXISTING_NAME}" != "${EXPECTED_NAME}" ]]; then
 
-        error "Target Cluster ID ${TARGET_ID} is already used by:"
-        error "${EXISTING_NAME}"
-        error "Cannot continue safely."
+        error "Target Cluster ID ${TARGET_ID} is already used by '${EXISTING_NAME}'"
         exit 1
+
     fi
 
     if [[ -z "${EXISTING_NAME}" ]]; then
         info "Target Cluster ID ${TARGET_ID} is available"
     else
-        info "Target Cluster ID ${TARGET_ID} already belongs to ${EXPECTED_NAME}"
+        info "Target Cluster ID ${TARGET_ID} already correctly assigned"
     fi
 }
 
-check_target_id 1 "centos-07-servers"
-check_target_id 2 "rocky-8-servers"
-check_target_id 3 "rocky-9-servers"
+check_target_id 1 "${CENTOS_NAME}"
+check_target_id 2 "${ROCKY8_NAME}"
+check_target_id 3 "${ROCKY9_NAME}"
 
 ############################################################
-# CHECK TEMPORARY IDs
+# CHECK TEMPORARY IDS
 ############################################################
 
 header "CHECKING TEMPORARY IDS"
@@ -337,62 +323,94 @@ for TEMP_ID in \
     "${TEMP_ROCKY9_ID}"
 do
 
-    TEMP_EXISTS=$(
+    COUNT=$(
         su - postgres -c \
         "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
         SELECT COUNT(*)
         FROM virtualization_cluster
-        WHERE id=${TEMP_ID};
+        WHERE id=${TEMP_ID}
         \""
     )
 
-    if [[ "${TEMP_EXISTS}" != "0" ]]; then
-        error "Temporary ID ${TEMP_ID} is already in use."
+    if [[ "${COUNT}" != "0" ]]; then
+        error "Temporary ID ${TEMP_ID} is already in use"
         exit 1
     fi
 
     info "Temporary Cluster ID ${TEMP_ID} is available"
+
 done
 
 ############################################################
-# CHECK VM DEPENDENCIES
+# CHECK DEPENDENCIES
 ############################################################
 
 header "CHECKING CLUSTER DEPENDENCIES"
 
-VM_COUNT_CENTOS=$(
+CENTOS_DEVICES=$(
+    su - postgres -c \
+    "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
+    SELECT COUNT(*)
+    FROM dcim_device
+    WHERE cluster_id=${CENTOS_CURRENT_ID}
+    \""
+)
+
+ROCKY8_DEVICES=$(
+    su - postgres -c \
+    "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
+    SELECT COUNT(*)
+    FROM dcim_device
+    WHERE cluster_id=${ROCKY8_CURRENT_ID}
+    \""
+)
+
+ROCKY9_DEVICES=$(
+    su - postgres -c \
+    "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
+    SELECT COUNT(*)
+    FROM dcim_device
+    WHERE cluster_id=${ROCKY9_CURRENT_ID}
+    \""
+)
+
+CENTOS_VMS=$(
     su - postgres -c \
     "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
     SELECT COUNT(*)
     FROM virtualization_virtualmachine
-    WHERE cluster_id=${CENTOS_ID};
+    WHERE cluster_id=${CENTOS_CURRENT_ID}
     \""
 )
 
-VM_COUNT_ROCKY8=$(
+ROCKY8_VMS=$(
     su - postgres -c \
     "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
     SELECT COUNT(*)
     FROM virtualization_virtualmachine
-    WHERE cluster_id=${ROCKY8_ID};
+    WHERE cluster_id=${ROCKY8_CURRENT_ID}
     \""
 )
 
-VM_COUNT_ROCKY9=$(
+ROCKY9_VMS=$(
     su - postgres -c \
     "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
     SELECT COUNT(*)
     FROM virtualization_virtualmachine
-    WHERE cluster_id=${ROCKY9_ID};
+    WHERE cluster_id=${ROCKY9_CURRENT_ID}
     \""
 )
 
-info "centos-07-servers Virtual Machines: ${VM_COUNT_CENTOS}"
-info "rocky-8-servers Virtual Machines: ${VM_COUNT_ROCKY8}"
-info "rocky-9-servers Virtual Machines: ${VM_COUNT_ROCKY9}"
+info "${CENTOS_NAME} Devices: ${CENTOS_DEVICES}"
+info "${ROCKY8_NAME} Devices: ${ROCKY8_DEVICES}"
+info "${ROCKY9_NAME} Devices: ${ROCKY9_DEVICES}"
+
+info "${CENTOS_NAME} Virtual Machines: ${CENTOS_VMS}"
+info "${ROCKY8_NAME} Virtual Machines: ${ROCKY8_VMS}"
+info "${ROCKY9_NAME} Virtual Machines: ${ROCKY9_VMS}"
 
 ############################################################
-# CREATE DATABASE BACKUP
+# DATABASE BACKUP
 ############################################################
 
 header "CREATING NETBOX DATABASE BACKUP"
@@ -400,6 +418,7 @@ header "CREATING NETBOX DATABASE BACKUP"
 mkdir -p "${BACKUP_DIR}"
 
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+
 BACKUP_FILE="${BACKUP_DIR}/netbox_before_cluster_id_change_${TIMESTAMP}.dump"
 
 su - postgres -c \
@@ -408,7 +427,7 @@ su - postgres -c \
 chmod 600 "${BACKUP_FILE}"
 
 if [[ ! -s "${BACKUP_FILE}" ]]; then
-    error "Database backup failed or is empty."
+    error "Database backup failed"
     exit 1
 fi
 
@@ -416,28 +435,34 @@ info "Database backup completed successfully"
 info "Backup file: ${BACKUP_FILE}"
 
 ############################################################
-# DISPLAY REMAPPING PLAN
+# REMAPPING PLAN
 ############################################################
 
 header "CLUSTER ID REMAPPING PLAN"
 
 echo
-printf "%-28s %-16s %-10s\n" "CLUSTER" "CURRENT ID" "NEW ID"
+printf "%-28s %-15s %-15s\n" "CLUSTER" "CURRENT ID" "NEW ID"
 echo "---------------------------------------------------------------"
 
-printf "%-28s %-16s %-10s\n" \
-    "centos-07-servers" "${CENTOS_ID}" "1"
+printf "%-28s %-15s %-15s\n" \
+    "${CENTOS_NAME}" \
+    "${CENTOS_CURRENT_ID}" \
+    "1"
 
-printf "%-28s %-16s %-10s\n" \
-    "rocky-8-servers" "${ROCKY8_ID}" "2"
+printf "%-28s %-15s %-15s\n" \
+    "${ROCKY8_NAME}" \
+    "${ROCKY8_CURRENT_ID}" \
+    "2"
 
-printf "%-28s %-16s %-10s\n" \
-    "rocky-9-servers" "${ROCKY9_ID}" "3"
+printf "%-28s %-15s %-15s\n" \
+    "${ROCKY9_NAME}" \
+    "${ROCKY9_CURRENT_ID}" \
+    "3"
 
 echo
 
-warn "Only Cluster IDs will be changed."
-warn "Cluster Group IDs will NOT be changed."
+warn "Cluster Group IDs remain unchanged."
+warn "Device and Virtual Machine cluster references will also be updated."
 
 ############################################################
 # CONFIRMATION
@@ -446,25 +471,26 @@ warn "Cluster Group IDs will NOT be changed."
 read -rp "Continue with Cluster ID remapping? Type YES: " CONFIRM
 
 if [[ "${CONFIRM}" != "YES" ]]; then
-    warn "Operation cancelled."
+    warn "Operation cancelled"
     exit 0
 fi
 
 ############################################################
-# STOP NETBOX SERVICES
+# STOP NETBOX
 ############################################################
 
 header "STOPPING NETBOX SERVICES"
 
-systemctl stop "${NETBOX_SERVICE}"
-systemctl stop "${NETBOX_WORKER_SERVICE}"
+systemctl stop "${NETBOX_SERVICE}" || true
+systemctl stop "${NETBOX_WORKER_SERVICE}" || true
 
 info "NetBox services stopped"
 
 ############################################################
-# REMAP CLUSTER IDs
+# REMAPPING
 #
-# Foreign keys are deferred inside one transaction.
+# Temporarily disable FK triggers in the database session.
+# All references are updated in the same transaction.
 ############################################################
 
 header "REMAPPING NETBOX CLUSTER IDS"
@@ -474,87 +500,129 @@ su - postgres -c \
 
 BEGIN;
 
-SET CONSTRAINTS ALL DEFERRED;
+------------------------------------------------------------
+-- Temporarily disable FK enforcement for this session.
+-- Required because dcim_device.cluster_id references
+-- virtualization_cluster.id without ON UPDATE CASCADE.
+------------------------------------------------------------
 
--- =========================================================
--- STEP 1: Move old IDs to temporary IDs
--- =========================================================
+SET session_replication_role = replica;
 
-UPDATE virtualization_cluster
-SET id = ${TEMP_CENTOS_ID}
-WHERE id = ${CENTOS_ID}
-  AND name = 'centos-07-servers';
+------------------------------------------------------------
+-- PHASE 1
+-- Move all child references to temporary IDs
+------------------------------------------------------------
 
-UPDATE virtualization_cluster
-SET id = ${TEMP_ROCKY8_ID}
-WHERE id = ${ROCKY8_ID}
-  AND name = 'rocky-8-servers';
+UPDATE dcim_device
+SET cluster_id=${TEMP_CENTOS_ID}
+WHERE cluster_id=${CENTOS_CURRENT_ID};
 
-UPDATE virtualization_cluster
-SET id = ${TEMP_ROCKY9_ID}
-WHERE id = ${ROCKY9_ID}
-  AND name = 'rocky-9-servers';
+UPDATE dcim_device
+SET cluster_id=${TEMP_ROCKY8_ID}
+WHERE cluster_id=${ROCKY8_CURRENT_ID};
 
--- =========================================================
--- STEP 2: Update VM references
--- =========================================================
-
-UPDATE virtualization_virtualmachine
-SET cluster_id = ${TEMP_CENTOS_ID}
-WHERE cluster_id = ${CENTOS_ID};
+UPDATE dcim_device
+SET cluster_id=${TEMP_ROCKY9_ID}
+WHERE cluster_id=${ROCKY9_CURRENT_ID};
 
 UPDATE virtualization_virtualmachine
-SET cluster_id = ${TEMP_ROCKY8_ID}
-WHERE cluster_id = ${ROCKY8_ID};
+SET cluster_id=${TEMP_CENTOS_ID}
+WHERE cluster_id=${CENTOS_CURRENT_ID};
 
 UPDATE virtualization_virtualmachine
-SET cluster_id = ${TEMP_ROCKY9_ID}
-WHERE cluster_id = ${ROCKY9_ID};
+SET cluster_id=${TEMP_ROCKY8_ID}
+WHERE cluster_id=${ROCKY8_CURRENT_ID};
 
--- =========================================================
--- STEP 3: Assign required final IDs
--- =========================================================
+UPDATE virtualization_virtualmachine
+SET cluster_id=${TEMP_ROCKY9_ID}
+WHERE cluster_id=${ROCKY9_CURRENT_ID};
+
+------------------------------------------------------------
+-- PHASE 2
+-- Move parent clusters to temporary IDs
+------------------------------------------------------------
 
 UPDATE virtualization_cluster
-SET id = 1
-WHERE id = ${TEMP_CENTOS_ID}
-  AND name = 'centos-07-servers';
+SET id=${TEMP_CENTOS_ID}
+WHERE id=${CENTOS_CURRENT_ID}
+  AND name='${CENTOS_NAME}';
 
 UPDATE virtualization_cluster
-SET id = 2
-WHERE id = ${TEMP_ROCKY8_ID}
-  AND name = 'rocky-8-servers';
+SET id=${TEMP_ROCKY8_ID}
+WHERE id=${ROCKY8_CURRENT_ID}
+  AND name='${ROCKY8_NAME}';
 
 UPDATE virtualization_cluster
-SET id = 3
-WHERE id = ${TEMP_ROCKY9_ID}
-  AND name = 'rocky-9-servers';
+SET id=${TEMP_ROCKY9_ID}
+WHERE id=${ROCKY9_CURRENT_ID}
+  AND name='${ROCKY9_NAME}';
 
--- =========================================================
--- STEP 4: Update VM references to final IDs
--- =========================================================
+------------------------------------------------------------
+-- PHASE 3
+-- Assign final Cluster IDs
+------------------------------------------------------------
+
+UPDATE virtualization_cluster
+SET id=1
+WHERE id=${TEMP_CENTOS_ID}
+  AND name='${CENTOS_NAME}';
+
+UPDATE virtualization_cluster
+SET id=2
+WHERE id=${TEMP_ROCKY8_ID}
+  AND name='${ROCKY8_NAME}';
+
+UPDATE virtualization_cluster
+SET id=3
+WHERE id=${TEMP_ROCKY9_ID}
+  AND name='${ROCKY9_NAME}';
+
+------------------------------------------------------------
+-- PHASE 4
+-- Update child references to final IDs
+------------------------------------------------------------
+
+UPDATE dcim_device
+SET cluster_id=1
+WHERE cluster_id=${TEMP_CENTOS_ID};
+
+UPDATE dcim_device
+SET cluster_id=2
+WHERE cluster_id=${TEMP_ROCKY8_ID};
+
+UPDATE dcim_device
+SET cluster_id=3
+WHERE cluster_id=${TEMP_ROCKY9_ID};
 
 UPDATE virtualization_virtualmachine
-SET cluster_id = 1
-WHERE cluster_id = ${TEMP_CENTOS_ID};
+SET cluster_id=1
+WHERE cluster_id=${TEMP_CENTOS_ID};
 
 UPDATE virtualization_virtualmachine
-SET cluster_id = 2
-WHERE cluster_id = ${TEMP_ROCKY8_ID};
+SET cluster_id=2
+WHERE cluster_id=${TEMP_ROCKY8_ID};
 
 UPDATE virtualization_virtualmachine
-SET cluster_id = 3
-WHERE cluster_id = ${TEMP_ROCKY9_ID};
+SET cluster_id=3
+WHERE cluster_id=${TEMP_ROCKY9_ID};
 
--- =========================================================
--- STEP 5: Reset PostgreSQL sequence
--- =========================================================
+------------------------------------------------------------
+-- PHASE 5
+-- Restore normal trigger / FK enforcement
+------------------------------------------------------------
+
+SET session_replication_role = origin;
+
+------------------------------------------------------------
+-- PHASE 6
+-- Reset Cluster ID sequence
+------------------------------------------------------------
 
 SELECT setval(
     pg_get_serial_sequence('virtualization_cluster', 'id'),
-    GREATEST(
-        COALESCE((SELECT MAX(id) FROM virtualization_cluster), 1),
-        3
+    COALESCE(
+        (SELECT MAX(id) FROM virtualization_cluster),
+        1
     ),
     true
 );
@@ -563,62 +631,44 @@ COMMIT;
 
 SQL
 
-info "Cluster ID remapping completed"
+info "Database Cluster ID remapping completed successfully"
 
 ############################################################
-# VERIFY FINAL CLUSTER IDs
+# VERIFY CLUSTERS
 ############################################################
 
-header "VERIFYING FINAL CLUSTER IDS"
+header "VERIFYING FINAL NETBOX CLUSTERS"
 
 su - postgres -c \
 "${PG_BIN}/psql -d ${DB_NAME} -c \"
 SELECT
     c.id,
     c.name,
-    ct.name AS cluster_type,
-    c.status,
     c.group_id,
-    g.name AS group_name
+    g.name AS group_name,
+    (
+        SELECT COUNT(*)
+        FROM dcim_device d
+        WHERE d.cluster_id=c.id
+    ) AS devices,
+    (
+        SELECT COUNT(*)
+        FROM virtualization_virtualmachine vm
+        WHERE vm.cluster_id=c.id
+    ) AS virtual_machines
 FROM virtualization_cluster c
-LEFT JOIN virtualization_clustertype ct
-    ON c.type_id = ct.id
 LEFT JOIN virtualization_clustergroup g
-    ON c.group_id = g.id
+    ON g.id=c.group_id
 WHERE c.name IN (
-    'centos-07-servers',
-    'rocky-8-servers',
-    'rocky-9-servers'
+    '${CENTOS_NAME}',
+    '${ROCKY8_NAME}',
+    '${ROCKY9_NAME}'
 )
 ORDER BY c.id;
 \""
 
 ############################################################
-# VERIFY VM REFERENCES
-############################################################
-
-header "VERIFYING VIRTUAL MACHINE REFERENCES"
-
-su - postgres -c \
-"${PG_BIN}/psql -d ${DB_NAME} -c \"
-SELECT
-    c.id AS cluster_id,
-    c.name AS cluster_name,
-    COUNT(vm.id) AS virtual_machine_count
-FROM virtualization_cluster c
-LEFT JOIN virtualization_virtualmachine vm
-    ON vm.cluster_id = c.id
-WHERE c.name IN (
-    'centos-07-servers',
-    'rocky-8-servers',
-    'rocky-9-servers'
-)
-GROUP BY c.id, c.name
-ORDER BY c.id;
-\""
-
-############################################################
-# FINAL VALIDATION
+# VERIFY FINAL IDS
 ############################################################
 
 header "FINAL VALIDATION"
@@ -626,27 +676,24 @@ header "FINAL VALIDATION"
 FINAL_CENTOS_ID=$(
     su - postgres -c \
     "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
-    SELECT id
-    FROM virtualization_cluster
-    WHERE name='centos-07-servers';
+    SELECT id FROM virtualization_cluster
+    WHERE name='${CENTOS_NAME}'
     \""
 )
 
 FINAL_ROCKY8_ID=$(
     su - postgres -c \
     "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
-    SELECT id
-    FROM virtualization_cluster
-    WHERE name='rocky-8-servers';
+    SELECT id FROM virtualization_cluster
+    WHERE name='${ROCKY8_NAME}'
     \""
 )
 
 FINAL_ROCKY9_ID=$(
     su - postgres -c \
     "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
-    SELECT id
-    FROM virtualization_cluster
-    WHERE name='rocky-9-servers';
+    SELECT id FROM virtualization_cluster
+    WHERE name='${ROCKY9_NAME}'
     \""
 )
 
@@ -654,14 +701,49 @@ if [[ "${FINAL_CENTOS_ID}" != "1" ||
       "${FINAL_ROCKY8_ID}" != "2" ||
       "${FINAL_ROCKY9_ID}" != "3" ]]; then
 
-    error "Cluster ID validation failed."
+    error "FINAL VALIDATION FAILED"
     exit 1
 fi
 
-info "Cluster ID validation successful"
+info "centos-07-servers Cluster ID verified: 1"
+info "rocky-8-servers Cluster ID verified: 2"
+info "rocky-9-servers Cluster ID verified: 3"
 
 ############################################################
-# START NETBOX SERVICES
+# VERIFY NO OLD REFERENCES
+############################################################
+
+OLD_REFERENCES=$(
+    su - postgres -c \
+    "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
+    SELECT
+        (SELECT COUNT(*)
+         FROM dcim_device
+         WHERE cluster_id IN (
+             ${CENTOS_CURRENT_ID},
+             ${ROCKY8_CURRENT_ID},
+             ${ROCKY9_CURRENT_ID}
+         ))
+        +
+        (SELECT COUNT(*)
+         FROM virtualization_virtualmachine
+         WHERE cluster_id IN (
+             ${CENTOS_CURRENT_ID},
+             ${ROCKY8_CURRENT_ID},
+             ${ROCKY9_CURRENT_ID}
+         ))
+    \""
+)
+
+if [[ "${OLD_REFERENCES}" != "0" ]]; then
+    error "Old Cluster ID references still exist: ${OLD_REFERENCES}"
+    exit 1
+fi
+
+info "No old Cluster ID references remain"
+
+############################################################
+# START NETBOX
 ############################################################
 
 header "STARTING NETBOX SERVICES"
@@ -691,15 +773,21 @@ info "netbox-worker service: RUNNING"
 header "NETBOX CLUSTER ID REMAPPING COMPLETE"
 
 printf "%b\n" "${GREEN}============================================================${NC}"
-printf "%b\n" "${GREEN} CLUSTER ID MAPPING${NC}"
+printf "%b\n" "${GREEN} CLUSTER                      FINAL ID${NC}"
 printf "%b\n" "${GREEN}============================================================${NC}"
-printf "%b\n" "${GREEN} centos-07-servers : Cluster ID 1${NC}"
-printf "%b\n" "${GREEN} rocky-8-servers   : Cluster ID 2${NC}"
-printf "%b\n" "${GREEN} rocky-9-servers   : Cluster ID 3${NC}"
+printf "%b\n" "${GREEN} centos-07-servers            1${NC}"
+printf "%b\n" "${GREEN} rocky-8-servers              2${NC}"
+printf "%b\n" "${GREEN} rocky-9-servers              3${NC}"
 printf "%b\n" "${GREEN}============================================================${NC}"
 
 echo
-info "Cluster Group IDs were NOT modified."
-info "Database backup: ${BACKUP_FILE}"
+info "Cluster Group IDs remain:"
+info "centos-07-servers -> 1"
+info "rocky-8-servers   -> 2"
+info "rocky-9-servers   -> 3"
+
+echo
+info "Backup retained at:"
+info "${BACKUP_FILE}"
 
 exit 0
