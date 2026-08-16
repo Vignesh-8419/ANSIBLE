@@ -1,33 +1,38 @@
 ---
 ###############################################################################
-# FOREMAN/KATELLO SMART PROXY INSTALLATION
+# FOREMAN / KATELLO SMART PROXY INSTALLATION
 #
-# This playbook is intended to be RUN FROM THE FOREMAN SERVER:
+# Run from:
 #   cent-07-01.vgs.com
 #
-# It follows the supplied working bash workflow:
-#   1. Generate Smart Proxy certificates on Foreman
-#   2. Extract OAuth credentials
-#   3. Prepare cent-07-02
-#   4. Replace old YUM repos
-#   5. Install Foreman/Katello Smart Proxy packages
-#   6. Copy/extract certificates
-#   7. Fix hostname + /etc/hosts
-#   8. Detect active network interface dynamically
-#   9. Temporarily mount EFI partitions
-#  10. Run foreman-installer foreman-proxy-content
-#  11. Configure DHCP
-#  12. Copy EFI / Rocky PXE files
-#  13. Verify foreman-proxy and registration
+# Controller:
+#   Windows / Cygwin
 #
-# Run from cent-07-01:
+# Inventory:
+#   FOREMAN      -> cent-07-01.vgs.com
+#   FOREMAN_PROXY -> cent-07-02.vgs.com
 #
-#   ansible-playbook -i ~/inventory.ini foreman_proxy_from_foreman.yml \
-#     --limit FOREMAN,FOREMAN_PROXY -u admin --ask-pass
-#
+# Workflow:
+#   1. Generate Smart Proxy certificate on Foreman
+#   2. Capture stdout + stderr from certificate generator
+#   3. Extract OAuth credentials
+#   4. Fetch certificate archive to controller
+#   5. Copy certificate archive to Smart Proxy
+#   6. Configure repositories
+#   7. Install Smart Proxy packages
+#   8. Run foreman-proxy-content installer
+#   9. Configure DHCP
+#  10. Configure DNS/TFTP
+#  11. Configure EFI/PXE files
+#  12. Start and verify services
+#  13. Refresh/verify Smart Proxy registration in Foreman
 ###############################################################################
 
-- name: "Generate Smart Proxy certificate on Foreman"
+###############################################################################
+# PLAY 1 - GENERATE SMART PROXY CERTIFICATE ON FOREMAN
+###############################################################################
+
+- name: Generate Smart Proxy certificate on Foreman
   hosts: FOREMAN
   become: true
   gather_facts: true
@@ -65,7 +70,9 @@
 
     - name: Fail if certificate generator is unavailable
       ansible.builtin.fail:
-        msg: "foreman-proxy-certs-generate was not found on {{ inventory_hostname }}"
+        msg: >
+          foreman-proxy-certs-generate was not found on
+          {{ inventory_hostname }}
       when: cert_generator_path | length == 0
 
     - name: Remove previous certificate archive
@@ -78,13 +85,19 @@
         path: "{{ cert_output }}"
         state: absent
 
-    - name: Generate Smart Proxy certificate archive
+    ###########################################################################
+    # IMPORTANT:
+    # Capture BOTH stdout and stderr.
+    # This fixes the OAuth extraction failure.
+    ###########################################################################
+
+    - name: Generate Smart Proxy certificate archive and capture all output
       ansible.builtin.shell: |
         set -o pipefail
         "{{ cert_generator_path }}" \
           --foreman-proxy-fqdn "{{ smart_proxy_server }}" \
           --certs-tar "{{ cert_tar }}" \
-          | tee "{{ cert_output }}"
+          2>&1 | tee "{{ cert_output }}"
       args:
         executable: /bin/bash
       register: cert_generation
@@ -100,53 +113,119 @@
         that:
           - cert_tar_stat.stat.exists
           - cert_tar_stat.stat.size | int > 0
-        fail_msg: "Certificate archive was not generated: {{ cert_tar }}"
+        fail_msg: >
+          Certificate archive was not generated:
+          {{ cert_tar }}
 
-    - name: Read certificate generator output
-      ansible.builtin.slurp:
-        src: "{{ cert_output }}"
-      register: cert_output_slurp
+    - name: Verify certificate generator output
+      ansible.builtin.stat:
+        path: "{{ cert_output }}"
+      register: cert_output_stat
 
-    - name: Store certificate output
-      ansible.builtin.set_fact:
-        cert_output_text: "{{ cert_output_slurp.content | b64decode }}"
-
-    - name: Extract OAuth consumer key
-      ansible.builtin.set_fact:
-        oauth_key: >-
-          {{
-            (
-              cert_output_text
-              | regex_findall('--foreman-proxy-oauth-consumer-key\\s+"([^"]+)"')
-            )[0] | default('')
-          }}
-
-    - name: Extract OAuth consumer secret
-      ansible.builtin.set_fact:
-        oauth_secret: >-
-          {{
-            (
-              cert_output_text
-              | regex_findall('--foreman-proxy-oauth-consumer-secret\\s+"([^"]+)"')
-            )[0] | default('')
-          }}
-      no_log: true
-
-    - name: Verify OAuth credentials
+    - name: Fail if certificate generator output is empty
       ansible.builtin.assert:
         that:
-          - oauth_key | length > 0
-          - oauth_secret | length > 0
-        fail_msg: "OAuth consumer key/secret could not be extracted from {{ cert_output }}"
+          - cert_output_stat.stat.exists
+          - cert_output_stat.stat.size | int > 0
+        fail_msg: >
+          Certificate generator output is missing or empty:
+          {{ cert_output }}
+
+    ###########################################################################
+    # SHOW ONLY THE RELEVANT OAUTH LINES
+    ###########################################################################
+
+    - name: Display OAuth lines generated by Foreman
+      ansible.builtin.shell: |
+        grep -nE -- \
+          '--foreman-proxy-oauth-consumer-(key|secret)' \
+          "{{ cert_output }}" || true
+      args:
+        executable: /bin/bash
+      register: oauth_debug_lines
+      changed_when: false
+
+    - name: Display OAuth generator output lines
+      ansible.builtin.debug:
+        var: oauth_debug_lines.stdout_lines
+
+    ###########################################################################
+    # EXTRACT OAUTH KEY
+    ###########################################################################
+
+    - name: Extract OAuth consumer key
+      ansible.builtin.shell: |
+        set -o pipefail
+        grep -- '--foreman-proxy-oauth-consumer-key' "{{ cert_output }}" \
+          | awk -F'"' '{print $2; exit}'
+      args:
+        executable: /bin/bash
+      register: oauth_key_result
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    ###########################################################################
+    # EXTRACT OAUTH SECRET
+    ###########################################################################
+
+    - name: Extract OAuth consumer secret
+      ansible.builtin.shell: |
+        set -o pipefail
+        grep -- '--foreman-proxy-oauth-consumer-secret' "{{ cert_output }}" \
+          | awk -F'"' '{print $2; exit}'
+      args:
+        executable: /bin/bash
+      register: oauth_secret_result
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Set OAuth credential facts
+      ansible.builtin.set_fact:
+        oauth_key: "{{ oauth_key_result.stdout | trim }}"
+        oauth_secret: "{{ oauth_secret_result.stdout | trim }}"
+      no_log: true
+
+    - name: Display OAuth extraction status
+      ansible.builtin.debug:
+        msg:
+          - "OAuth consumer key extracted    : {{ oauth_key | length > 0 }}"
+          - "OAuth consumer secret extracted : {{ oauth_secret | length > 0 }}"
+
+    - name: Fail when OAuth credentials could not be extracted
+      ansible.builtin.fail:
+        msg: |
+          OAuth consumer key/secret could not be extracted.
+
+          Certificate generator output file:
+          {{ cert_output }}
+
+          Run manually on Foreman:
+
+          grep -nE -- \
+          '--foreman-proxy-oauth-consumer-(key|secret)' \
+          {{ cert_output }}
+      when:
+        - oauth_key | length == 0 or oauth_secret | length == 0
 
     - name: Display certificate generation result
       ansible.builtin.debug:
         msg:
-          - "Certificate archive : {{ cert_tar }}"
-          - "OAuth credentials   : extracted successfully"
-          - "Target Smart Proxy  : {{ smart_proxy_server }}"
+          - "============================================================"
+          - "Smart Proxy certificate generated"
+          - "============================================================"
+          - "Foreman Server : {{ foreman_server }}"
+          - "Smart Proxy    : {{ smart_proxy_server }}"
+          - "Certificate    : {{ cert_tar }}"
+          - "OAuth Key      : extracted"
+          - "OAuth Secret   : extracted"
+          - "============================================================"
 
-    # Make values available to the next play on the Smart Proxy.
+    ###########################################################################
+    # PUBLISH VALUES FOR NEXT PLAY
+    ###########################################################################
+
     - name: Publish OAuth values for next play
       ansible.builtin.set_fact:
         proxy_oauth_key: "{{ oauth_key }}"
@@ -155,10 +234,10 @@
 
 
 ###############################################################################
-# PREPARE + INSTALL SMART PROXY
+# PLAY 2 - PREPARE AND INSTALL SMART PROXY
 ###############################################################################
 
-- name: "Prepare and install Smart Proxy"
+- name: Prepare and install Smart Proxy
   hosts: FOREMAN_PROXY
   become: true
   gather_facts: true
@@ -170,12 +249,9 @@
     cert_tar_foreman: "/root/cent-07-02.vgs.com-certs.tar"
     cert_tar_proxy: "/root/cent-07-02.vgs.com-certs.tar"
 
-    repo_server: "http-server-01.vgs.com"
-
     proxy_ip: "192.168.253.132"
     dhcp_gateway: "192.168.253.2"
 
-    # These are the same repository locations used by the working bash.
     local_patch_repo: "http://http-server-01.vgs.com/repo/installed_rhel7"
     mesa_repo: "http://http-server-01.vgs.com/repo/mesa"
     gtk_repo: "http://http-server-01.vgs.com/repo/gtk"
@@ -195,7 +271,11 @@
 
   tasks:
 
-    - name: Verify target hostname
+    ###########################################################################
+    # HOSTNAME
+    ###########################################################################
+
+    - name: Set Smart Proxy hostname
       ansible.builtin.hostname:
         name: "{{ smart_proxy_server }}"
 
@@ -204,6 +284,10 @@
         cmd: "getent hosts {{ foreman_server }}"
       changed_when: false
 
+    ###########################################################################
+    # REPOSITORIES
+    ###########################################################################
+
     - name: Remove old YUM repository files
       ansible.builtin.shell: |
         rm -f /etc/yum.repos.d/*.repo
@@ -211,7 +295,7 @@
         executable: /bin/bash
       changed_when: true
 
-    - name: Create local patch / Mesa / GTK repositories
+    - name: Create local patch repository
       ansible.builtin.copy:
         dest: /etc/yum.repos.d/patch.repo
         owner: root
@@ -236,7 +320,7 @@
           baseurl={{ gtk_repo }}
           enabled=1
           gpgcheck=0
-      register: patch_repo_file
+          priority=1
 
     - name: Create Puppet 7 repository
       ansible.builtin.copy:
@@ -301,36 +385,43 @@
       changed_when: false
       failed_when: false
 
-    - name: Install base packages from working bash workflow
+    ###########################################################################
+    # BASE PACKAGES
+    ###########################################################################
+
+    - name: Install base packages
       ansible.builtin.shell: |
-        yum install -y sshpass mesa-libEGL* gtk*
+        yum install -y sshpass mesa-libEGL\* gtk\*
       args:
         executable: /bin/bash
+      register: base_package_install
 
-    - name: Install Foreman, Proxy and Puppet packages
+    - name: Install Foreman Proxy packages
       ansible.builtin.shell: |
         yum install -y foreman foreman-proxy puppetserver --skip-broken
       args:
         executable: /bin/bash
+      register: proxy_package_install
 
     - name: Install Foreman installer packages
       ansible.builtin.shell: |
-        yum install -y foreman-installer*
+        yum install -y foreman-installer\*
       args:
         executable: /bin/bash
+      register: installer_package_install
 
-    - name: Verify Foreman installer exists
+    - name: Verify foreman-installer exists
       ansible.builtin.command:
         cmd: which foreman-installer
       changed_when: false
 
-    - name: Verify Foreman Proxy package
+    - name: Verify foreman-proxy package
       ansible.builtin.command:
         cmd: rpm -q foreman-proxy
       changed_when: false
 
     ###########################################################################
-    # CERTIFICATE INSTALL
+    # CERTIFICATE TRANSFER
     ###########################################################################
 
     - name: Create local certificate staging directory
@@ -341,14 +432,28 @@
       delegate_to: localhost
       become: false
 
-    - name: Fetch Smart Proxy certificate archive from Foreman to controller
+    - name: Fetch Smart Proxy certificate archive from Foreman
       ansible.builtin.fetch:
         src: "{{ cert_tar_foreman }}"
         dest: "{{ playbook_dir }}/.smart_proxy_cert/"
         flat: true
       delegate_to: "{{ groups['FOREMAN'][0] }}"
 
-    - name: Copy fetched certificate archive to Smart Proxy
+    - name: Verify certificate archive on controller
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/.smart_proxy_cert/cent-07-02.vgs.com-certs.tar"
+      register: controller_cert_stat
+      delegate_to: localhost
+      become: false
+
+    - name: Fail if certificate archive is missing on controller
+      ansible.builtin.assert:
+        that:
+          - controller_cert_stat.stat.exists
+          - controller_cert_stat.stat.size | int > 0
+        fail_msg: "Certificate archive was not fetched to controller."
+
+    - name: Copy certificate archive to Smart Proxy
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/.smart_proxy_cert/cent-07-02.vgs.com-certs.tar"
         dest: "{{ cert_tar_proxy }}"
@@ -378,10 +483,10 @@
         remote_src: true
 
     ###########################################################################
-    # HOSTNAME + HOSTS
+    # HOSTS
     ###########################################################################
 
-    - name: Write exact hostname mapping
+    - name: Configure /etc/hosts
       ansible.builtin.copy:
         dest: /etc/hosts
         owner: root
@@ -398,25 +503,24 @@
         cmd: hostname -f
       changed_when: false
 
-    - name: Verify forward lookup
+    - name: Verify Smart Proxy forward lookup
       ansible.builtin.command:
         cmd: "getent hosts {{ smart_proxy_server }}"
       changed_when: false
 
-    - name: Verify reverse lookup
+    - name: Verify Smart Proxy reverse lookup
       ansible.builtin.command:
         cmd: "getent hosts {{ proxy_ip }}"
       register: reverse_lookup
       changed_when: false
       failed_when: false
 
-    - name: Display DNS values
+    - name: Display DNS information
       ansible.builtin.debug:
         msg:
-          - "hostname -f should be {{ smart_proxy_server }}"
-          - "Forward lookup: {{ smart_proxy_server }}"
-          - "Reverse lookup: {{ reverse_lookup.stdout | default('') }}"
-          - "NOTE: the Foreman installer requires reverse DNS for {{ proxy_ip }} to resolve to {{ smart_proxy_server }}."
+          - "Expected hostname : {{ smart_proxy_server }}"
+          - "Proxy IP          : {{ proxy_ip }}"
+          - "Reverse lookup    : {{ reverse_lookup.stdout | default('FAILED') }}"
 
     ###########################################################################
     # NETWORK INTERFACE
@@ -482,13 +586,6 @@
         immediate: true
         state: enabled
 
-    - name: Open HTTPS firewall
-      ansible.posix.firewalld:
-        service: https
-        permanent: true
-        immediate: true
-        state: enabled
-
     - name: Open HTTP firewall
       ansible.posix.firewalld:
         service: http
@@ -496,7 +593,14 @@
         immediate: true
         state: enabled
 
-    - name: Open Smart Proxy 9090
+    - name: Open HTTPS firewall
+      ansible.posix.firewalld:
+        service: https
+        permanent: true
+        immediate: true
+        state: enabled
+
+    - name: Open Smart Proxy port 9090
       ansible.posix.firewalld:
         port: 9090/tcp
         permanent: true
@@ -504,7 +608,7 @@
         state: enabled
 
     ###########################################################################
-    # EFI MOUNTS
+    # EFI
     ###########################################################################
 
     - name: Create EFI mountpoints
@@ -546,22 +650,24 @@
       ansible.builtin.assert:
         that:
           - efi1_shim.stat.exists
-        fail_msg: "/boot/efi/EFI/centos/shimx64.efi not found"
+        fail_msg: "/boot/efi/EFI/centos/shimx64.efi not found."
 
     - name: Fail if second EFI shim is missing
       ansible.builtin.assert:
         that:
           - efi2_shim.stat.exists
-        fail_msg: "/boot/efi2/EFI/centos/shimx64.efi not found"
+        fail_msg: "/boot/efi2/EFI/centos/shimx64.efi not found."
 
     ###########################################################################
-    # FOREMAN PROXY INSTALLER
+    # OAUTH
     ###########################################################################
 
-    - name: Get OAuth key from Foreman host
+    - name: Get OAuth values from Foreman host
       ansible.builtin.set_fact:
-        proxy_oauth_key: "{{ hostvars[groups['FOREMAN'][0]].proxy_oauth_key | default('') }}"
-        proxy_oauth_secret: "{{ hostvars[groups['FOREMAN'][0]].proxy_oauth_secret | default('') }}"
+        proxy_oauth_key: >-
+          {{ hostvars[groups['FOREMAN'][0]].proxy_oauth_key | default('') }}
+        proxy_oauth_secret: >-
+          {{ hostvars[groups['FOREMAN'][0]].proxy_oauth_secret | default('') }}
       no_log: true
 
     - name: Fail if OAuth values are unavailable
@@ -569,8 +675,13 @@
         that:
           - proxy_oauth_key | length > 0
           - proxy_oauth_secret | length > 0
-        fail_msg: "OAuth values generated on Foreman were not available to the Smart Proxy play."
+        fail_msg: >
+          OAuth values generated on Foreman are unavailable.
       no_log: true
+
+    ###########################################################################
+    # FOREMAN PROXY INSTALLER
+    ###########################################################################
 
     - name: Run Foreman Smart Proxy content installer
       ansible.builtin.command:
@@ -606,7 +717,6 @@
           - --foreman-proxy-tftp-servername
           - "{{ smart_proxy_server }}"
       register: proxy_installer
-      no_log: false
 
     - name: Display Foreman installer stdout
       ansible.builtin.debug:
@@ -622,7 +732,8 @@
         msg: |
           Foreman Smart Proxy installer failed.
 
-          RC: {{ proxy_installer.rc }}
+          Return code:
+          {{ proxy_installer.rc }}
 
           STDERR:
           {{ proxy_installer.stderr | default('') }}
@@ -632,10 +743,10 @@
       when: proxy_installer.rc != 0
 
     ###########################################################################
-    # UNMOUNT TEMPORARY EFI
+    # UNMOUNT EFI
     ###########################################################################
 
-    - name: Flush filesystem buffers
+    - name: Sync filesystem
       ansible.builtin.command:
         cmd: sync
       changed_when: false
@@ -668,14 +779,12 @@
         insertafter: 'option subnet-mask'
         line: "  option routers {{ dhcp_gateway }};"
         state: present
-      when: ansible_facts.os_family == "RedHat"
 
     - name: Make DHCP authoritative
       ansible.builtin.replace:
         path: /etc/dhcp/dhcpd.conf
         regexp: '^not authoritative;$'
         replace: 'authoritative;'
-      when: ansible_facts.os_family == "RedHat"
 
     - name: Validate DHCP configuration
       ansible.builtin.command:
@@ -689,15 +798,15 @@
         state: restarted
 
     ###########################################################################
-    # COPY ROCKY EFI FILES FROM NETBOX
+    # NETBOX / EFI / ROCKY PXE
     ###########################################################################
 
-    - name: Verify NetBox host resolves
+    - name: Verify NetBox resolves
       ansible.builtin.command:
         cmd: "getent hosts {{ netbox_host }}"
       changed_when: false
 
-    - name: Install sshpass if missing
+    - name: Install sshpass
       ansible.builtin.yum:
         name: sshpass
         state: present
@@ -708,7 +817,10 @@
           -o StrictHostKeyChecking=no \
           -o UserKnownHostsFile=/dev/null \
           {{ netbox_user }}@{{ netbox_host }} \
-          "echo '{{ netbox_password }}' | sudo -S bash -c 'mkdir -p /boot/efi /boot/efi2; mountpoint -q /boot/efi || mount /dev/sda1 /boot/efi; mountpoint -q /boot/efi2 || mount /dev/sdb1 /boot/efi2'"
+          "echo '{{ netbox_password }}' | sudo -S bash -c \
+          'mkdir -p /boot/efi /boot/efi2; \
+           mountpoint -q /boot/efi || mount /dev/sda1 /boot/efi; \
+           mountpoint -q /boot/efi2 || mount /dev/sdb1 /boot/efi2'"
       args:
         executable: /bin/bash
       no_log: true
@@ -752,7 +864,12 @@
           -o StrictHostKeyChecking=no \
           -o UserKnownHostsFile=/dev/null \
           {{ netbox_user }}@{{ netbox_host }} \
-          "echo '{{ netbox_password }}' | sudo -S bash -c 'sync; mountpoint -q /boot/efi2 && umount /boot/efi2 || true; mountpoint -q /boot/efi && umount /boot/efi || true; rmdir /boot/efi2 2>/dev/null || true; rmdir /boot/efi 2>/dev/null || true'"
+          "echo '{{ netbox_password }}' | sudo -S bash -c \
+          'sync; \
+           mountpoint -q /boot/efi2 && umount /boot/efi2 || true; \
+           mountpoint -q /boot/efi && umount /boot/efi || true; \
+           rmdir /boot/efi2 2>/dev/null || true; \
+           rmdir /boot/efi 2>/dev/null || true'"
       args:
         executable: /bin/bash
       no_log: true
@@ -769,7 +886,7 @@
         - /var/lib/tftpboot/grub2/grub.cfg
 
     ###########################################################################
-    # PXE FILES
+    # ROCKY 8
     ###########################################################################
 
     - name: Create Rocky 8 TFTP directory
@@ -796,17 +913,13 @@
         group: root
         mode: "0644"
 
+    ###########################################################################
+    # ROCKY 9
+    ###########################################################################
+
     - name: Create Rocky 9 TFTP directory
       ansible.builtin.file:
         path: /var/lib/tftpboot/rocky9
-        state: directory
-        owner: foreman-proxy
-        group: root
-        mode: "0755"
-
-    - name: Create Rocky 9.2 TFTP directory
-      ansible.builtin.file:
-        path: /var/lib/tftpboot/rocky92
         state: directory
         owner: foreman-proxy
         group: root
@@ -828,6 +941,18 @@
         group: root
         mode: "0644"
 
+    ###########################################################################
+    # ROCKY 9.2
+    ###########################################################################
+
+    - name: Create Rocky 9.2 TFTP directory
+      ansible.builtin.file:
+        path: /var/lib/tftpboot/rocky92
+        state: directory
+        owner: foreman-proxy
+        group: root
+        mode: "0755"
+
     - name: Download Rocky 9.2 vmlinuz
       ansible.builtin.get_url:
         url: "{{ rocky92_vmlinuz }}"
@@ -845,7 +970,7 @@
         mode: "0644"
 
     ###########################################################################
-    # SERVICES + VERIFICATION
+    # SERVICES
     ###########################################################################
 
     - name: Enable and start Foreman Proxy
@@ -876,7 +1001,10 @@
     - name: Display installed PXE files
       ansible.builtin.shell: |
         find /var/lib/tftpboot -maxdepth 2 -type f \
-          \( -name 'vmlinuz' -o -name 'initrd.img' -o -name 'shimx64.efi' -o -name 'grub.cfg' \) \
+          \( -name 'vmlinuz' \
+          -o -name 'initrd.img' \
+          -o -name 'shimx64.efi' \
+          -o -name 'grub.cfg' \) \
           -printf '%p\n' | sort
       args:
         executable: /bin/bash
@@ -889,10 +1017,10 @@
 
 
 ###############################################################################
-# FINAL VERIFICATION FROM FOREMAN
+# PLAY 3 - VERIFY SMART PROXY FROM FOREMAN
 ###############################################################################
 
-- name: "Verify Smart Proxy registration from Foreman"
+- name: Verify Smart Proxy registration from Foreman
   hosts: FOREMAN
   become: true
   gather_facts: false
@@ -901,14 +1029,17 @@
     foreman_server: "cent-07-01.vgs.com"
     smart_proxy_server: "cent-07-02.vgs.com"
 
+    # Set this at runtime:
+    # -e "foreman_api_password=YOUR_PASSWORD"
+
   tasks:
 
-    - name: Get all Smart Proxies from Foreman API
+    - name: Get Smart Proxies from Foreman API
       ansible.builtin.uri:
         url: "https://{{ foreman_server }}/api/smart_proxies?per_page=100"
         method: GET
         user: "{{ foreman_api_user | default('admin') }}"
-        password: "{{ foreman_api_password | default(omit) }}"
+        password: "{{ foreman_api_password }}"
         force_basic_auth: true
         validate_certs: false
         return_content: true
@@ -917,37 +1048,49 @@
       register: smart_proxy_api
       when: foreman_api_password is defined
 
-    - name: Display all registered Smart Proxies
+    - name: Display registered Smart Proxies
       ansible.builtin.debug:
-        msg: "{{ smart_proxy_api.json.results | default([]) | map(attribute='name') | list }}"
+        msg: >-
+          {{
+            smart_proxy_api.json.results
+            | default([])
+            | map(attribute='name')
+            | list
+          }}
       when: foreman_api_password is defined
 
-    - name: Check Smart Proxy using hammer
-      ansible.builtin.shell: |
-        set -o pipefail
-        hammer proxy list --per-page 999 2>/dev/null | grep -F "{{ smart_proxy_server }}"
-      args:
-        executable: /bin/bash
-      register: hammer_proxy_check
-      changed_when: false
-      failed_when: false
+    - name: Get Smart Proxy by name from Foreman
+      ansible.builtin.uri:
+        url: >-
+          https://{{ foreman_server }}/api/smart_proxies
+          ?search=name={{ smart_proxy_server }}
+        method: GET
+        user: "{{ foreman_api_user | default('admin') }}"
+        password: "{{ foreman_api_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        return_content: true
+        headers:
+          Accept: "application/json"
+      register: smart_proxy_lookup
+      when: foreman_api_password is defined
 
-    - name: Fail if Smart Proxy was not registered
+    - name: Display Smart Proxy lookup
+      ansible.builtin.debug:
+        var: smart_proxy_lookup.json
+      when: foreman_api_password is defined
+
+    - name: Fail if Smart Proxy is not registered
       ansible.builtin.fail:
         msg: |
-          Smart Proxy {{ smart_proxy_server }} is not registered in Foreman.
+          Smart Proxy {{ smart_proxy_server }} is not registered.
 
-          hammer output:
-          {{ hammer_proxy_check.stdout | default('') }}
-
-          API output:
-          {{
-            smart_proxy_api.json | default({})
-            | to_nice_json
-            if foreman_api_password is defined
-            else 'API check skipped because foreman_api_password was not supplied.'
-          }}
-      when: hammer_proxy_check.rc != 0
+          Foreman API response:
+          {{ smart_proxy_lookup.json | to_nice_json }}
+      when:
+        - foreman_api_password is defined
+        - smart_proxy_lookup.json.total | int > 0
+        - smart_proxy_lookup.json.results | length == 0
 
     - name: Display final success
       ansible.builtin.debug:
@@ -963,7 +1106,4 @@
           - "DNS            : configured"
           - "TFTP           : configured"
           - "PXE            : Rocky 8 / Rocky 9 / Rocky 9.2"
-          - "Registration   : verified"
           - "============================================================"
-
-...
