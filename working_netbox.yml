@@ -1,6 +1,6 @@
 ---
 - name: Install NetBox v4.4.9 on Rocky/RHEL 8
-  hosts: netbox.vgs.com
+  hosts: NETBOX
   become: true
   become_method: sudo
   become_user: root
