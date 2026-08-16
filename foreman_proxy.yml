@@ -1,6 +1,6 @@
 ---
 - name: Configure Foreman Smart Proxy Features
-  hosts: all
+  hosts: cent-07-02.vgs.com
   become: true
   gather_facts: true
 
