@@ -99,7 +99,7 @@
           baseurl={{ repo_root }}/installed_rhel7
           enabled=1
           gpgcheck=0
-          exclude=*.i686
+          exclude=libX11* *.i686
 
     - name: STEP 2 - Create foreman.repo
       ansible.builtin.copy:
@@ -113,7 +113,7 @@
           baseurl={{ repo_root }}/installed_rhel7
           enabled=1
           gpgcheck=0
-          exclude=*.i686
+          exclude=libX11* *.i686
 
     - name: STEP 2 - Create puppet.repo
       ansible.builtin.copy:
@@ -127,7 +127,7 @@
           baseurl={{ repo_root }}/installed_rhel7
           enabled=1
           gpgcheck=0
-          exclude=*.i686
+          exclude=libX11* *.i686
 
     - name: STEP 2 - Clean yum metadata
       ansible.builtin.command:
