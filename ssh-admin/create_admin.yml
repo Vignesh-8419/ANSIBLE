@@ -41,8 +41,6 @@
 
     # ============================================================
     # CENTOS 7 ONLY
-    #
-    # These tasks are completely skipped on all other OS versions.
     # ============================================================
 
     - name: Create YUM repository backup directory
@@ -72,6 +70,10 @@
         - is_centos7
         - existing_yum_repo_files.matched | default(0) | int > 0
 
+    # ============================================================
+    # PATCH REPOSITORY
+    # ============================================================
+
     - name: Create patch repository
       copy:
         dest: /etc/yum.repos.d/patch.repo
@@ -86,6 +88,10 @@
           gpgcheck=0
       when:
         - is_centos7
+
+    # ============================================================
+    # BASE REPOSITORY
+    # ============================================================
 
     - name: Create base repository
       copy:
@@ -102,6 +108,10 @@
       when:
         - is_centos7
 
+    # ============================================================
+    # YUM CACHE
+    # ============================================================
+
     - name: Clean YUM metadata
       command:
         cmd: yum clean all
@@ -113,6 +123,10 @@
         cmd: yum makecache
       when:
         - is_centos7
+
+    # ============================================================
+    # PYTHON 3
+    # ============================================================
 
     - name: Install Python 3 on CentOS 7
       yum:
@@ -129,11 +143,27 @@
       when:
         - is_centos7
 
-    - name: Display Python 3 version
-      debug:
-        msg: "CentOS 7 Python 3: {{ python3_version.stdout }}"
+    # ============================================================
+    # IMPORTANT:
+    # Make all following Ansible modules use Python 3 on
+    # CentOS 7 instead of Python 2.7.
+    # ============================================================
+
+    - name: Set Ansible Python interpreter to Python 3 on CentOS 7
+      set_fact:
+        ansible_python_interpreter: /usr/bin/python3
       when:
         - is_centos7
+
+    - name: Display Python 3 and Ansible interpreter
+      debug:
+        msg:
+          - "===================================================="
+          - "PYTHON CONFIGURATION"
+          - "===================================================="
+          - "Python 3          : {{ python3_version.stdout | default('SKIPPED') }}"
+          - "Ansible interpreter: {{ ansible_python_interpreter | default('system default') }}"
+          - "===================================================="
 
     # ============================================================
     # NON-CENTOS 7
@@ -147,8 +177,9 @@
           - "===================================================="
           - "OS                 : {{ ansible_distribution }} {{ ansible_distribution_version }}"
           - "CentOS 7           : {{ is_centos7 }}"
-          - "Repository changes  : SKIPPED"
-          - "Python 3 install    : SKIPPED"
+          - "Repository changes : SKIPPED"
+          - "Python 3 install   : SKIPPED"
+          - "Interpreter change : SKIPPED"
           - "===================================================="
       when:
         - not is_centos7
@@ -268,14 +299,20 @@
       changed_when: false
       failed_when: false
 
+    # ============================================================
+    # FINAL SUMMARY
+    # ============================================================
+
     - name: Display Summary
       debug:
         msg:
           - "===================================================="
           - "Admin User Configuration Completed"
+          - "===================================================="
           - "Host              : {{ inventory_hostname }}"
           - "OS                : {{ ansible_distribution }} {{ ansible_distribution_version }}"
           - "CentOS 7          : {{ is_centos7 }}"
+          - "Ansible Python    : {{ ansible_python_interpreter | default('system default') }}"
           - "Admin User        : {{ admin_result.stdout }}"
           - "Sudo              : {{ sudo_result.stdout }}"
           - "Private Key       : {{ private_key.stat.exists }}"
