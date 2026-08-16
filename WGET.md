@@ -45,6 +45,12 @@ chmod +x Device_Creation_Netbox.sh
 ```
 
 ```text
+curl -L -o Create_Specific_NetBox_Devices.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Create_Specific_NetBox_Devices.sh?$(date +%s)" && \
+chmod +x Create_Specific_NetBox_Devices.sh
+```
+
+```text
 curl -L -o /root/netbox-kernel-compliance.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/netbox-kernel-compliance.sh?$(date +%s)" && \
 chmod +x /root/netbox-kernel-compliance.sh && \
