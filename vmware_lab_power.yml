@@ -6,19 +6,30 @@
 
   vars:
     # ============================================================
-    # VMware Workstation vmrun executable
+    # VMWARE WORKSTATION VMRUN
     # ============================================================
     vmrun_path: 'D:/VM workstation/vmrun.exe'
 
     # ============================================================
-    # VMX file paths
-    # Use FORWARD SLASHES consistently
+    # VMX PATHS
+    #
+    # Used for vmrun start/stop commands
     # ============================================================
     esxi_vmx: 'D:/ESXI/ESXI-01/ESXI-01.vmx'
     vcenter_vmx: 'D:/vCenter/vCenter.vmx'
 
     # ============================================================
-    # Variables passed from command line
+    # RUNNING VM PATHS
+    #
+    # These MUST match exactly what:
+    # vmrun -T ws list
+    # returns on your Windows system.
+    # ============================================================
+    esxi_vmx_running_path: 'D:\ESXI\ESXI-01\ESXI-01.vmx'
+    vcenter_vmx_running_path: 'D:\vCenter\vCenter.vmx'
+
+    # ============================================================
+    # COMMAND LINE VARIABLES
     # ============================================================
     target: "{{ target_vm | default('all') | lower }}"
     power_action: "{{ power | default('on') | lower }}"
@@ -36,6 +47,7 @@
         fail_msg: >-
           Invalid target '{{ target }}'.
           Use: esxi, vcenter, or all.
+        success_msg: "Target '{{ target }}' is valid."
 
     - name: Validate power action
       ansible.builtin.assert:
@@ -44,9 +56,10 @@
         fail_msg: >-
           Invalid power action '{{ power_action }}'.
           Use: on or off.
+        success_msg: "Power action '{{ power_action }}' is valid."
 
     # ============================================================
-    # CHECK CURRENTLY RUNNING VMS
+    # CHECK RUNNING VMS
     # ============================================================
 
     - name: Check currently running VMware Workstation VMs
@@ -64,46 +77,43 @@
         var: vmrun_list.stdout_lines
 
     # ============================================================
-    # NORMALIZE VM PATHS
-    #
-    # vmrun on Windows returns paths with \
-    # Convert our configured paths from / to \
+    # DETECT ESXI STATUS
     # ============================================================
-
-    - name: Normalize ESXi VMX path
-      ansible.builtin.set_fact:
-        esxi_vmx_normalized: "{{ esxi_vmx | replace('/', '\\') }}"
-
-    - name: Normalize vCenter VMX path
-      ansible.builtin.set_fact:
-        vcenter_vmx_normalized: "{{ vcenter_vmx | replace('/', '\\') }}"
 
     - name: Set ESXi running state
       ansible.builtin.set_fact:
-        esxi_running: "{{ esxi_vmx_normalized in vmrun_list.stdout }}"
+        esxi_running: "{{ esxi_vmx_running_path in vmrun_list.stdout }}"
+
+    # ============================================================
+    # DETECT VCENTER STATUS
+    # ============================================================
 
     - name: Set vCenter running state
       ansible.builtin.set_fact:
-        vcenter_running: "{{ vcenter_vmx_normalized in vmrun_list.stdout }}"
+        vcenter_running: "{{ vcenter_vmx_running_path in vmrun_list.stdout }}"
 
     - name: Display detected VM states
       ansible.builtin.debug:
         msg:
-          - "ESXi VMX configured: {{ esxi_vmx_normalized }}"
-          - "vCenter VMX configured: {{ vcenter_vmx_normalized }}"
-          - "ESXi running: {{ esxi_running }}"
-          - "vCenter running: {{ vcenter_running }}"
+          - "=============================================="
+          - "CURRENT VM STATUS"
+          - "=============================================="
+          - "ESXi VMX    : {{ esxi_vmx_running_path }}"
+          - "vCenter VMX : {{ vcenter_vmx_running_path }}"
+          - "----------------------------------------------"
+          - "ESXi running    : {{ esxi_running }}"
+          - "vCenter running : {{ vcenter_running }}"
+          - "=============================================="
 
     # ============================================================
-    # POWER ON / RESUME
-    #
-    # vmrun start:
-    #   Powered OFF -> starts VM
-    #   Suspended   -> resumes VM
+    # POWER ON
     #
     # Startup order:
-    #   ESXi first
-    #   vCenter second
+    #   1. ESXi
+    #   2. Wait
+    #   3. vCenter
+    #
+    # vmrun start can also resume a suspended VM.
     # ============================================================
 
     - name: Start or resume ESXi
@@ -122,9 +132,17 @@
         - target in ['esxi', 'all']
         - not esxi_running
 
-    - name: Wait after starting ESXi
+    - name: Display ESXi already running message
+      ansible.builtin.debug:
+        msg: "ESXi is already running. Skipping startup."
+      when:
+        - power_action == 'on'
+        - target in ['esxi', 'all']
+        - esxi_running
+
+    - name: Wait for ESXi VM startup
       ansible.builtin.pause:
-        seconds: 10
+        seconds: 15
       when:
         - power_action == 'on'
         - target == 'all'
@@ -146,12 +164,21 @@
         - target in ['vcenter', 'all']
         - not vcenter_running
 
+    - name: Display vCenter already running message
+      ansible.builtin.debug:
+        msg: "vCenter is already running. Skipping startup."
+      when:
+        - power_action == 'on'
+        - target in ['vcenter', 'all']
+        - vcenter_running
+
     # ============================================================
     # POWER OFF
     #
     # Shutdown order:
-    #   vCenter first
-    #   ESXi second
+    #   1. vCenter
+    #   2. Wait
+    #   3. ESXi
     # ============================================================
 
     - name: Power OFF vCenter gracefully
@@ -170,15 +197,23 @@
         - target in ['vcenter', 'all']
         - vcenter_running
 
-    - name: Wait for vCenter shutdown
+    - name: Display vCenter already stopped message
+      ansible.builtin.debug:
+        msg: "vCenter is already stopped. Skipping shutdown."
+      when:
+        - power_action == 'off'
+        - target in ['vcenter', 'all']
+        - not vcenter_running
+
+    - name: Wait for vCenter graceful shutdown
       ansible.builtin.pause:
-        seconds: 15
+        seconds: 20
       when:
         - power_action == 'off'
         - target == 'all'
         - vcenter_running
 
-    - name: Power OFF ESXi
+    - name: Power OFF ESXi gracefully
       ansible.builtin.command:
         argv:
           - "{{ vmrun_path }}"
@@ -194,8 +229,16 @@
         - target in ['esxi', 'all']
         - esxi_running
 
+    - name: Display ESXi already stopped message
+      ansible.builtin.debug:
+        msg: "ESXi is already stopped. Skipping shutdown."
+      when:
+        - power_action == 'off'
+        - target in ['esxi', 'all']
+        - not esxi_running
+
     # ============================================================
-    # COMPLETION
+    # FINAL STATUS
     # ============================================================
 
     - name: Show completion message
@@ -204,6 +247,6 @@
           - "=============================================="
           - "VMWARE LAB OPERATION COMPLETED"
           - "=============================================="
-          - "Target: {{ target | upper }}"
-          - "Action: {{ power_action | upper }}"
+          - "Target : {{ target | upper }}"
+          - "Action : {{ power_action | upper }}"
           - "=============================================="
