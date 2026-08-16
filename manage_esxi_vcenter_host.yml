@@ -10,7 +10,7 @@
   vars:
 
     # ========================================================================
-    # vCENTER CONFIGURATION
+    # VCENTER CONFIGURATION
     # ========================================================================
 
     vcenter_hostname: "vcenter-01.vgs.com"
@@ -20,10 +20,17 @@
     validate_certs: false
 
     # ========================================================================
-    # DATACENTER
+    # DATACENTER / HOST FOLDER
     # ========================================================================
 
     vcenter_datacenter: "Datacenter"
+
+    # ESXi is directly under:
+    # vcenter-01.vgs.com
+    #   └── Datacenter
+    #       └── ESXi Host
+    #
+    vcenter_host_folder: "/Datacenter/host"
 
     # ========================================================================
     # ESXi HOST
@@ -32,13 +39,6 @@
     esxi_hostname: "192.168.253.128"
     esxi_username: "root"
     esxi_password: "Root@123"
-
-    # ========================================================================
-    # OPTIONAL CLUSTER
-    # Empty = add directly to Datacenter
-    # ========================================================================
-
-    esxi_cluster: ""
 
     # ========================================================================
     # LICENSE 2
@@ -71,12 +71,11 @@
           - "============================================================"
           - "vCenter        : {{ vcenter_hostname }}"
           - "Datacenter     : {{ vcenter_datacenter }}"
+          - "Host Folder    : {{ vcenter_host_folder }}"
           - "ESXi Host      : {{ esxi_hostname }}"
           - "ESXi User      : {{ esxi_username }}"
-          - "Cluster        : {{ esxi_cluster }}"
           - "License Name   : {{ esxi_license_name }}"
           - "License Product: {{ esxi_license_product }}"
-          - "License Key    : {{ esxi_license_key }}"
           - "Validate Certs : {{ validate_certs }}"
           - "============================================================"
 
@@ -115,8 +114,8 @@
           ESXi HOST IS UNREACHABLE
           ============================================================
 
-          ESXi:
-          https://{{ esxi_hostname }}
+          Host:
+          {{ esxi_hostname }}
 
           ============================================================
       when: esxi_https.status is not defined
@@ -157,33 +156,23 @@
             | trim
           }}
 
-    - name: Display vCenter session status
+    - name: Display vCenter API session status
       ansible.builtin.debug:
         msg:
           - "============================================================"
           - "vCENTER API SESSION"
           - "============================================================"
-          - "HTTP Status : {{ vcenter_session.status | default('UNKNOWN') }}"
+          - "HTTP Status : {{ vcenter_session.status }}"
+          - "Session Created Successfully"
           - "============================================================"
 
     - name: Fail if vCenter API session was not created
       ansible.builtin.fail:
-        msg: |
-          ============================================================
-          vCENTER API SESSION FAILED
-          ============================================================
-
-          vCenter:
-          {{ vcenter_hostname }}
-
-          HTTP Status:
-          {{ vcenter_session.status | default('UNKNOWN') }}
-
-          ============================================================
-      when: vcenter_session_id | length == 0
+        msg: "Unable to create vCenter API session"
+      when: vcenter_session_id | default('') | length == 0
 
     # ========================================================================
-    # QUERY VCENTER ESXi HOST INVENTORY
+    # GET ESXi HOST INVENTORY
     # ========================================================================
 
     - name: Query vCenter ESXi host inventory
@@ -253,7 +242,7 @@
           - "============================================================"
 
     # ========================================================================
-    # CONNECTED -> SKIP REMOVE / RE-ADD
+    # CONNECTED
     # ========================================================================
 
     - name: Display connected host action
@@ -264,14 +253,14 @@
           - "============================================================"
           - "Host   : {{ esxi_hostname }}"
           - "Action : SKIP REMOVE / RE-ADD"
-          - "Next   : VERIFY LICENSE"
+          - "Next   : ASSIGN LICENSE"
           - "============================================================"
       when:
         - target_host_found
         - target_host_connection_state == "CONNECTED"
 
     # ========================================================================
-    # DISCONNECTED / NOT_RESPONDING -> REMOVE
+    # DISCONNECTED / NOT_RESPONDING
     # ========================================================================
 
     - name: Display ESXi host repair action
@@ -289,22 +278,37 @@
         - target_host_found
         - target_host_connection_state in ["DISCONNECTED", "NOT_RESPONDING"]
 
+    # ========================================================================
+    # REMOVE HOST
+    # IMPORTANT: folder IS REQUIRED BY vmware_host
+    # ========================================================================
+
     - name: Remove disconnected or not responding ESXi host from vCenter
       community.vmware.vmware_host:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
+
         datacenter: "{{ vcenter_datacenter }}"
+
+        # REQUIRED
+        folder: "{{ vcenter_host_folder }}"
+
         esxi_hostname: "{{ esxi_hostname }}"
+
         state: absent
+
         validate_certs: "{{ validate_certs }}"
+
       delegate_to: localhost
+
       register: remove_host_result
+
       when:
         - target_host_found
         - target_host_connection_state in ["DISCONNECTED", "NOT_RESPONDING"]
 
-    - name: Display host removal result
+    - name: Display ESXi host removal result
       ansible.builtin.debug:
         msg:
           - "============================================================"
@@ -331,7 +335,7 @@
         - target_host_connection_state in ["DISCONNECTED", "NOT_RESPONDING"]
 
     # ========================================================================
-    # DETERMINE WHETHER ESXi MUST BE ADDED
+    # DETERMINE WHETHER ADD IS REQUIRED
     # ========================================================================
 
     - name: Determine whether ESXi host must be added
@@ -369,7 +373,8 @@
         password: "{{ vcenter_password }}"
 
         datacenter: "{{ vcenter_datacenter }}"
-        folder: "/{{ vcenter_datacenter }}/host"
+
+        folder: "{{ vcenter_host_folder }}"
 
         esxi_hostname: "{{ esxi_hostname }}"
         esxi_username: "{{ esxi_username }}"
@@ -384,10 +389,12 @@
         validate_certs: "{{ validate_certs }}"
 
       delegate_to: localhost
+
       when: add_host_required
+
       register: add_host_result
 
-    - name: Display add result
+    - name: Display add or re-add result
       ansible.builtin.debug:
         msg:
           - "============================================================"
@@ -395,21 +402,21 @@
           - "============================================================"
           - "Host    : {{ esxi_hostname }}"
           - "Changed : {{ add_host_result.changed | default(false) }}"
-          - "Message : {{ add_host_result.msg | default('Host added successfully') }}"
+          - "Message : {{ add_host_result.msg | default('Host add task completed') }}"
           - "============================================================"
       when: add_host_required
 
     # ========================================================================
-    # WAIT BEFORE VERIFICATION
+    # WAIT BEFORE VERIFYING
     # ========================================================================
 
-    - name: Wait before final host verification
+    - name: Wait before final ESXi verification
       ansible.builtin.pause:
         seconds: "{{ verify_wait_seconds }}"
       when: add_host_required
 
     # ========================================================================
-    # CREATE NEW VCENTER API SESSION
+    # CREATE NEW VCENTER SESSION
     # ========================================================================
 
     - name: Create verification vCenter API session
@@ -447,7 +454,7 @@
       when: add_host_required
 
     # ========================================================================
-    # VERIFY ESXi CONNECTED
+    # VERIFY ESXi HOST CONNECTED
     # ========================================================================
 
     - name: Verify ESXi host is connected in vCenter
@@ -464,17 +471,16 @@
       retries: "{{ verify_retries }}"
       delay: "{{ verify_delay }}"
 
-      until:
-        - >-
-          (
-            final_hosts_response.json
-            | default([])
-            | selectattr('name', 'defined')
-            | selectattr('name', 'equalto', esxi_hostname)
-            | selectattr('connection_state', 'equalto', 'CONNECTED')
-            | list
-            | length
-          ) > 0
+      until: >-
+        (
+          final_hosts_response.json
+          | default([])
+          | selectattr('name', 'defined')
+          | selectattr('name', 'equalto', esxi_hostname)
+          | selectattr('connection_state', 'equalto', 'CONNECTED')
+          | list
+          | length
+        ) > 0
 
       when: add_host_required
 
@@ -499,13 +505,9 @@
             else target_host_connection_state
           }}
 
-    - name: Convert final state to uppercase
+    - name: Convert final ESXi state to uppercase
       ansible.builtin.set_fact:
         final_host_state: "{{ final_host_state | upper }}"
-
-    # ========================================================================
-    # DISPLAY FINAL HOST STATE
-    # ========================================================================
 
     - name: Display final ESXi host state
       ansible.builtin.debug:
@@ -516,10 +518,6 @@
           - "Host       : {{ esxi_hostname }}"
           - "Connection : {{ final_host_state }}"
           - "============================================================"
-
-    # ========================================================================
-    # ASSERT HOST CONNECTED
-    # ========================================================================
 
     - name: Assert ESXi host is connected
       ansible.builtin.assert:
@@ -539,7 +537,7 @@
 
           ============================================================
 
-        success_msg: "ESXi host is connected to vCenter."
+        success_msg: "ESXi host is successfully connected to vCenter."
 
     # ========================================================================
     # ASSIGN LICENSE 2
@@ -558,30 +556,22 @@
         validate_certs: "{{ validate_certs }}"
 
       delegate_to: localhost
+
       register: license_assignment
 
-    # ========================================================================
-    # DISPLAY LICENSE RESULT
-    # ========================================================================
-
-    - name: Display license assignment result
+    - name: Display ESXi license assignment result
       ansible.builtin.debug:
         msg:
           - "============================================================"
           - "ESXi LICENSE ASSIGNMENT"
           - "============================================================"
-          - "License Name    : {{ esxi_license_name }}"
-          - "Product         : {{ esxi_license_product }}"
-          - "ESXi Host       : {{ esxi_hostname }}"
-          - "Changed         : {{ license_assignment.changed | default(false) }}"
-          - "Registered Keys : {{ license_assignment.licenses | default([]) }}"
+          - "License Name : {{ esxi_license_name }}"
+          - "Product      : {{ esxi_license_product }}"
+          - "ESXi Host    : {{ esxi_hostname }}"
+          - "Changed      : {{ license_assignment.changed | default(false) }}"
           - "============================================================"
 
-    # ========================================================================
-    # VERIFY LICENSE TASK
-    # ========================================================================
-
-    - name: Assert license assignment completed successfully
+    - name: Verify license assignment task
       ansible.builtin.assert:
         that:
           - not (license_assignment.failed | default(false) | bool)
@@ -593,9 +583,6 @@
 
           Host:
           {{ esxi_hostname }}
-
-          License:
-          {{ esxi_license_name }}
 
           Message:
           {{ license_assignment.msg | default('Unknown error') }}
@@ -614,14 +601,10 @@
           - "============================================================"
           - "SUCCESS - ESXi HOST MANAGEMENT COMPLETE"
           - "============================================================"
-          - "vCenter        : {{ vcenter_hostname }}"
-          - "Datacenter     : {{ vcenter_datacenter }}"
-          - "ESXi Host      : {{ esxi_hostname }}"
-          - "Connection     : CONNECTED"
-          - "============================================================"
-          - "LICENSE"
-          - "============================================================"
-          - "Name           : {{ esxi_license_name }}"
-          - "Product        : {{ esxi_license_product }}"
-          - "Assigned       : YES"
+          - "vCenter    : {{ vcenter_hostname }}"
+          - "Datacenter : {{ vcenter_datacenter }}"
+          - "ESXi Host  : {{ esxi_hostname }}"
+          - "Connection : {{ final_host_state }}"
+          - "License    : {{ esxi_license_name }}"
+          - "Product    : {{ esxi_license_product }}"
           - "============================================================"
