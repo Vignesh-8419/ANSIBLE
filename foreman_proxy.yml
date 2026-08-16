@@ -28,7 +28,7 @@
 ###############################################################################
 
 - name: "Generate Smart Proxy certificate on Foreman"
-  hosts: FOREMAN
+  hosts: all
   become: true
   gather_facts: true
 
