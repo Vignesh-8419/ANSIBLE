@@ -58,6 +58,12 @@ chmod +x /root/netbox-kernel-compliance.sh && \
 ```
 
 ```text
+curl -L -o Change_NetBox_Cluster_Group_IDs.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Change_NetBox_Cluster_Group_IDs.sh?$(date +%s)" && \
+chmod +x Change_NetBox_Cluster_Group_IDs.sh
+```
+
+```text
 curl -L -o Offline_Patching_el8_cifs.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Offline_Patching_el8_cifs.sh?$(date +%s)" && \
 chmod +x Offline_Patching_el8_cifs.sh
