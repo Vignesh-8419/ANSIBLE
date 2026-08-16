@@ -58,9 +58,9 @@ chmod +x /root/netbox-kernel-compliance.sh && \
 ```
 
 ```text
-curl -L -o Change_NetBox_Cluster_Group_IDs.sh \
-"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Change_NetBox_Cluster_Group_IDs.sh?$(date +%s)" && \
-chmod +x Change_NetBox_Cluster_Group_IDs.sh
+curl -L -o Change_NetBox_Cluster_IDs.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Change_NetBox_Cluster_IDs.sh?$(date +%s)" && \
+chmod +x Change_NetBox_Cluster_IDs.sh
 ```
 
 ```text
