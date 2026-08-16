@@ -15,7 +15,7 @@
 
     vcenter_hostname: "vcenter-01.vgs.com"
     vcenter_username: "administrator@vsphere.local"
-    vcenter_password: "{{ lookup('env', 'VCENTER_PASSWORD') }}"
+    vcenter_password: "Vigneshv12$"
 
     validate_certs: false
 
@@ -31,7 +31,7 @@
 
     esxi_hostname: "192.168.253.128"
     esxi_username: "root"
-    esxi_password: "{{ lookup('env', 'ESXI_PASSWORD') }}"
+    esxi_password: "Root@123"
 
     # ========================================================================
     # OPTIONAL CLUSTER
@@ -93,7 +93,7 @@
 
           Run:
 
-          export VCENTER_PASSWORD='your_vcenter_password'
+          export VCENTER_PASSWORD='Vigneshv12$'
 
           ============================================================
       when: vcenter_password | default('') | length == 0
@@ -107,7 +107,7 @@
 
           Run:
 
-          export ESXI_PASSWORD='your_esxi_password'
+          export ESXI_PASSWORD='Root@123'
 
           ============================================================
       when: esxi_password | default('') | length == 0
