@@ -5,16 +5,23 @@
   gather_facts: false
 
   vars:
+    # ============================================================
     # VMware Workstation vmrun executable
+    # ============================================================
     vmrun_path: 'D:/VM workstation/vmrun.exe'
 
+    # ============================================================
     # VMX file paths
-    esxi_vmx: 'D:/ESXI/VMware ESXi 7 and later.vmx'
+    # Use FORWARD SLASHES consistently
+    # ============================================================
+    esxi_vmx: 'D:/ESXI/ESXI-01/ESXI-01.vmx'
     vcenter_vmx: 'D:/vCenter/vCenter.vmx'
 
+    # ============================================================
     # Variables passed from command line
-    target: "{{ target_vm | default('all') }}"
-    power_action: "{{ power | default('on') }}"
+    # ============================================================
+    target: "{{ target_vm | default('all') | lower }}"
+    power_action: "{{ power | default('on') | lower }}"
 
   tasks:
 
@@ -56,34 +63,47 @@
       ansible.builtin.debug:
         var: vmrun_list.stdout_lines
 
+    # ============================================================
+    # NORMALIZE VM PATHS
+    #
+    # vmrun on Windows returns paths with \
+    # Convert our configured paths from / to \
+    # ============================================================
+
+    - name: Normalize ESXi VMX path
+      ansible.builtin.set_fact:
+        esxi_vmx_normalized: "{{ esxi_vmx | replace('/', '\\') }}"
+
+    - name: Normalize vCenter VMX path
+      ansible.builtin.set_fact:
+        vcenter_vmx_normalized: "{{ vcenter_vmx | replace('/', '\\') }}"
+
     - name: Set ESXi running state
       ansible.builtin.set_fact:
-        esxi_running: >-
-          {{
-            'D:\\ESXI\\VMware ESXi 7 and later.vmx'
-            in vmrun_list.stdout
-          }}
+        esxi_running: "{{ esxi_vmx_normalized in vmrun_list.stdout }}"
 
     - name: Set vCenter running state
       ansible.builtin.set_fact:
-        vcenter_running: >-
-          {{
-            'D:\\vCenter\\vCenter.vmx'
-            in vmrun_list.stdout
-          }}
+        vcenter_running: "{{ vcenter_vmx_normalized in vmrun_list.stdout }}"
 
-    - name: Display VM states
+    - name: Display detected VM states
       ansible.builtin.debug:
         msg:
+          - "ESXi VMX configured: {{ esxi_vmx_normalized }}"
+          - "vCenter VMX configured: {{ vcenter_vmx_normalized }}"
           - "ESXi running: {{ esxi_running }}"
           - "vCenter running: {{ vcenter_running }}"
 
     # ============================================================
     # POWER ON / RESUME
     #
-    # vmrun start handles both:
-    #   - Powered OFF VM -> starts it
-    #   - Suspended VM    -> resumes it
+    # vmrun start:
+    #   Powered OFF -> starts VM
+    #   Suspended   -> resumes VM
+    #
+    # Startup order:
+    #   ESXi first
+    #   vCenter second
     # ============================================================
 
     - name: Start or resume ESXi
@@ -100,6 +120,14 @@
       when:
         - power_action == 'on'
         - target in ['esxi', 'all']
+        - not esxi_running
+
+    - name: Wait after starting ESXi
+      ansible.builtin.pause:
+        seconds: 10
+      when:
+        - power_action == 'on'
+        - target == 'all'
         - not esxi_running
 
     - name: Start or resume vCenter
@@ -121,9 +149,9 @@
     # ============================================================
     # POWER OFF
     #
-    # When target=all:
-    #   1. Power OFF vCenter
-    #   2. Power OFF ESXi
+    # Shutdown order:
+    #   vCenter first
+    #   ESXi second
     # ============================================================
 
     - name: Power OFF vCenter gracefully
@@ -142,6 +170,14 @@
         - target in ['vcenter', 'all']
         - vcenter_running
 
+    - name: Wait for vCenter shutdown
+      ansible.builtin.pause:
+        seconds: 15
+      when:
+        - power_action == 'off'
+        - target == 'all'
+        - vcenter_running
+
     - name: Power OFF ESXi
       ansible.builtin.command:
         argv:
@@ -150,7 +186,7 @@
           - "ws"
           - "stop"
           - "{{ esxi_vmx }}"
-          - "hard"
+          - "soft"
       register: esxi_stop
       changed_when: esxi_stop.rc == 0
       when:
@@ -164,6 +200,10 @@
 
     - name: Show completion message
       ansible.builtin.debug:
-        msg: >-
-          Requested {{ power_action | upper }} operation completed
-          for {{ target }}.
+        msg:
+          - "=============================================="
+          - "VMWARE LAB OPERATION COMPLETED"
+          - "=============================================="
+          - "Target: {{ target | upper }}"
+          - "Action: {{ power_action | upper }}"
+          - "=============================================="
