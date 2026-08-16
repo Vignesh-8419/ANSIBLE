@@ -16,7 +16,7 @@ set -euo pipefail
 # This script changes ONLY:
 #   virtualization_cluster.id
 #
-# It DOES NOT change:
+# It does NOT change:
 #   virtualization_clustergroup.id
 ############################################################
 
@@ -28,7 +28,7 @@ NETBOX_WORKER_SERVICE="netbox-worker"
 
 BACKUP_DIR="/root/netbox-backup"
 
-# Temporary IDs used during remapping
+# Temporary IDs
 TEMP_CENTOS_ID=10001
 TEMP_ROCKY8_ID=10002
 TEMP_ROCKY9_ID=10003
@@ -45,7 +45,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 ############################################################
-# DISPLAY FUNCTIONS
+# FUNCTIONS
 ############################################################
 
 print_line() {
@@ -92,12 +92,12 @@ info "Running as root"
 header "CHECKING POSTGRESQL"
 
 if [[ ! -x "${PG_BIN}/psql" ]]; then
-    error "psql not found at: ${PG_BIN}/psql"
+    error "psql not found: ${PG_BIN}/psql"
     exit 1
 fi
 
 if [[ ! -x "${PG_BIN}/pg_dump" ]]; then
-    error "pg_dump not found at: ${PG_BIN}/pg_dump"
+    error "pg_dump not found: ${PG_BIN}/pg_dump"
     exit 1
 fi
 
@@ -109,7 +109,7 @@ fi
 info "PostgreSQL 15 is running"
 
 ############################################################
-# CHECK DATABASE
+# CHECK NETBOX DATABASE
 ############################################################
 
 header "CHECKING NETBOX DATABASE"
@@ -127,11 +127,36 @@ fi
 info "Database '${DB_NAME}' found"
 
 ############################################################
+# CHECK REQUIRED TABLES
+############################################################
+
+header "CHECKING NETBOX DATABASE TABLES"
+
+for TABLE in \
+    virtualization_cluster \
+    virtualization_clustertype \
+    virtualization_virtualmachine
+do
+    TABLE_EXISTS=$(
+        su - postgres -c \
+        "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
+        SELECT COUNT(*)
+        FROM information_schema.tables
+        WHERE table_schema='public'
+          AND table_name='${TABLE}';
+        \""
+    )
+
+    if [[ "${TABLE_EXISTS}" != "1" ]]; then
+        error "Required table not found: ${TABLE}"
+        exit 1
+    fi
+
+    info "Found table: ${TABLE}"
+done
+
+############################################################
 # CURRENT NETBOX CLUSTERS
-#
-# NetBox 4.4.x:
-#   Cluster type is referenced by cluster_type_id
-#   Type name is in virtualization_clustertype
 ############################################################
 
 header "CURRENT NETBOX CLUSTERS"
@@ -147,7 +172,7 @@ SELECT
     g.name AS group_name
 FROM virtualization_cluster c
 LEFT JOIN virtualization_clustertype ct
-    ON c.cluster_type_id = ct.id
+    ON c.type_id = ct.id
 LEFT JOIN virtualization_clustergroup g
     ON c.group_id = g.id
 ORDER BY c.id;
@@ -207,7 +232,7 @@ fi
 info "All required clusters found"
 
 ############################################################
-# GET CURRENT CLUSTER IDS
+# GET CURRENT CLUSTER IDs
 ############################################################
 
 header "CHECKING CURRENT CLUSTER IDS"
@@ -247,8 +272,8 @@ info "rocky-9-servers current Cluster ID: ${ROCKY9_ID}"
 # CHECK IF ALREADY CORRECT
 ############################################################
 
-if [[ "${CENTOS_ID}" == "1" && \
-      "${ROCKY8_ID}" == "2" && \
+if [[ "${CENTOS_ID}" == "1" &&
+      "${ROCKY8_ID}" == "2" &&
       "${ROCKY9_ID}" == "3" ]]; then
 
     header "CLUSTER IDS ALREADY CORRECT"
@@ -261,13 +286,12 @@ if [[ "${CENTOS_ID}" == "1" && \
 fi
 
 ############################################################
-# CHECK TARGET IDS
+# CHECK TARGET IDs
 ############################################################
 
 header "CHECKING TARGET CLUSTER IDS"
 
 check_target_id() {
-
     local TARGET_ID="$1"
     local EXPECTED_NAME="$2"
     local EXISTING_NAME
@@ -281,7 +305,7 @@ check_target_id() {
         \""
     )
 
-    if [[ -n "${EXISTING_NAME}" && \
+    if [[ -n "${EXISTING_NAME}" &&
           "${EXISTING_NAME}" != "${EXPECTED_NAME}" ]]; then
 
         error "Target Cluster ID ${TARGET_ID} is already used by:"
@@ -302,7 +326,7 @@ check_target_id 2 "rocky-8-servers"
 check_target_id 3 "rocky-9-servers"
 
 ############################################################
-# CHECK TEMPORARY IDS
+# CHECK TEMPORARY IDs
 ############################################################
 
 header "CHECKING TEMPORARY IDS"
@@ -323,7 +347,7 @@ do
     )
 
     if [[ "${TEMP_EXISTS}" != "0" ]]; then
-        error "Temporary Cluster ID ${TEMP_ID} is already in use."
+        error "Temporary ID ${TEMP_ID} is already in use."
         exit 1
     fi
 
@@ -331,7 +355,7 @@ do
 done
 
 ############################################################
-# CHECK CLUSTER DEPENDENCIES
+# CHECK VM DEPENDENCIES
 ############################################################
 
 header "CHECKING CLUSTER DEPENDENCIES"
@@ -388,11 +412,11 @@ if [[ ! -s "${BACKUP_FILE}" ]]; then
     exit 1
 fi
 
-info "Database backup completed"
+info "Database backup completed successfully"
 info "Backup file: ${BACKUP_FILE}"
 
 ############################################################
-# REMAPPING PLAN
+# DISPLAY REMAPPING PLAN
 ############################################################
 
 header "CLUSTER ID REMAPPING PLAN"
@@ -400,6 +424,7 @@ header "CLUSTER ID REMAPPING PLAN"
 echo
 printf "%-28s %-16s %-10s\n" "CLUSTER" "CURRENT ID" "NEW ID"
 echo "---------------------------------------------------------------"
+
 printf "%-28s %-16s %-10s\n" \
     "centos-07-servers" "${CENTOS_ID}" "1"
 
@@ -410,8 +435,9 @@ printf "%-28s %-16s %-10s\n" \
     "rocky-9-servers" "${ROCKY9_ID}" "3"
 
 echo
+
 warn "Only Cluster IDs will be changed."
-warn "Cluster Group IDs will NOT be modified."
+warn "Cluster Group IDs will NOT be changed."
 
 ############################################################
 # CONFIRMATION
@@ -436,34 +462,9 @@ systemctl stop "${NETBOX_WORKER_SERVICE}"
 info "NetBox services stopped"
 
 ############################################################
-# REMAP CLUSTER IDS
+# REMAP CLUSTER IDs
 #
-# IMPORTANT:
-# PostgreSQL foreign keys may reference cluster IDs.
-#
-# First, inspect the foreign key relationships dynamically.
-############################################################
-
-header "CHECKING DATABASE REFERENCES"
-
-REFERENCE_COUNT=$(
-    su - postgres -c \
-    "${PG_BIN}/psql -d ${DB_NAME} -tAc \"
-    SELECT COUNT(*)
-    FROM information_schema.table_constraints tc
-    JOIN information_schema.constraint_column_usage ccu
-      ON tc.constraint_name = ccu.constraint_name
-    WHERE tc.constraint_type = 'FOREIGN KEY'
-      AND ccu.table_name = 'virtualization_cluster';
-    \""
-)
-
-info "Foreign key references to virtualization_cluster: ${REFERENCE_COUNT}"
-
-############################################################
-# REMAPPING TRANSACTION
-#
-# This script specifically updates known VM references.
+# Foreign keys are deferred inside one transaction.
 ############################################################
 
 header "REMAPPING NETBOX CLUSTER IDS"
@@ -473,8 +474,10 @@ su - postgres -c \
 
 BEGIN;
 
+SET CONSTRAINTS ALL DEFERRED;
+
 -- =========================================================
--- Temporarily move clusters to high IDs
+-- STEP 1: Move old IDs to temporary IDs
 -- =========================================================
 
 UPDATE virtualization_cluster
@@ -493,7 +496,7 @@ WHERE id = ${ROCKY9_ID}
   AND name = 'rocky-9-servers';
 
 -- =========================================================
--- Update Virtual Machine references
+-- STEP 2: Update VM references
 -- =========================================================
 
 UPDATE virtualization_virtualmachine
@@ -509,7 +512,7 @@ SET cluster_id = ${TEMP_ROCKY9_ID}
 WHERE cluster_id = ${ROCKY9_ID};
 
 -- =========================================================
--- Assign final required Cluster IDs
+-- STEP 3: Assign required final IDs
 -- =========================================================
 
 UPDATE virtualization_cluster
@@ -528,7 +531,7 @@ WHERE id = ${TEMP_ROCKY9_ID}
   AND name = 'rocky-9-servers';
 
 -- =========================================================
--- Update Virtual Machine references to final IDs
+-- STEP 4: Update VM references to final IDs
 -- =========================================================
 
 UPDATE virtualization_virtualmachine
@@ -544,16 +547,13 @@ SET cluster_id = 3
 WHERE cluster_id = ${TEMP_ROCKY9_ID};
 
 -- =========================================================
--- Reset Cluster ID sequence
+-- STEP 5: Reset PostgreSQL sequence
 -- =========================================================
 
 SELECT setval(
     pg_get_serial_sequence('virtualization_cluster', 'id'),
     GREATEST(
-        COALESCE(
-            (SELECT MAX(id) FROM virtualization_cluster),
-            1
-        ),
+        COALESCE((SELECT MAX(id) FROM virtualization_cluster), 1),
         3
     ),
     true
@@ -563,10 +563,10 @@ COMMIT;
 
 SQL
 
-info "Cluster ID remapping transaction completed"
+info "Cluster ID remapping completed"
 
 ############################################################
-# VERIFY FINAL CLUSTER IDS
+# VERIFY FINAL CLUSTER IDs
 ############################################################
 
 header "VERIFYING FINAL CLUSTER IDS"
@@ -582,7 +582,7 @@ SELECT
     g.name AS group_name
 FROM virtualization_cluster c
 LEFT JOIN virtualization_clustertype ct
-    ON c.cluster_type_id = ct.id
+    ON c.type_id = ct.id
 LEFT JOIN virtualization_clustergroup g
     ON c.group_id = g.id
 WHERE c.name IN (
@@ -594,10 +594,10 @@ ORDER BY c.id;
 \""
 
 ############################################################
-# VERIFY VIRTUAL MACHINE REFERENCES
+# VERIFY VM REFERENCES
 ############################################################
 
-header "VERIFYING VIRTUAL MACHINE CLUSTER REFERENCES"
+header "VERIFYING VIRTUAL MACHINE REFERENCES"
 
 su - postgres -c \
 "${PG_BIN}/psql -d ${DB_NAME} -c \"
@@ -655,10 +655,6 @@ if [[ "${FINAL_CENTOS_ID}" != "1" ||
       "${FINAL_ROCKY9_ID}" != "3" ]]; then
 
     error "Cluster ID validation failed."
-    error "Expected:"
-    error "centos-07-servers = 1"
-    error "rocky-8-servers   = 2"
-    error "rocky-9-servers   = 3"
     exit 1
 fi
 
@@ -675,29 +671,18 @@ systemctl start "${NETBOX_WORKER_SERVICE}"
 
 sleep 5
 
-NETBOX_STATUS="FAILED"
-WORKER_STATUS="FAILED"
-
-if systemctl is-active --quiet "${NETBOX_SERVICE}"; then
-    NETBOX_STATUS="RUNNING"
-    info "netbox service: RUNNING"
-else
-    error "netbox service: FAILED"
-fi
-
-if systemctl is-active --quiet "${NETBOX_WORKER_SERVICE}"; then
-    WORKER_STATUS="RUNNING"
-    info "netbox-worker service: RUNNING"
-else
-    error "netbox-worker service: FAILED"
-fi
-
-if [[ "${NETBOX_STATUS}" != "RUNNING" ||
-      "${WORKER_STATUS}" != "RUNNING" ]]; then
-
-    error "One or more NetBox services failed to start."
+if ! systemctl is-active --quiet "${NETBOX_SERVICE}"; then
+    error "netbox service failed to start"
     exit 1
 fi
+
+if ! systemctl is-active --quiet "${NETBOX_WORKER_SERVICE}"; then
+    error "netbox-worker service failed to start"
+    exit 1
+fi
+
+info "netbox service: RUNNING"
+info "netbox-worker service: RUNNING"
 
 ############################################################
 # FINAL SUMMARY
@@ -714,8 +699,7 @@ printf "%b\n" "${GREEN} rocky-9-servers   : Cluster ID 3${NC}"
 printf "%b\n" "${GREEN}============================================================${NC}"
 
 echo
-info "Cluster Group IDs were NOT changed."
-info "Database backup:"
-info "${BACKUP_FILE}"
+info "Cluster Group IDs were NOT modified."
+info "Database backup: ${BACKUP_FILE}"
 
 exit 0
