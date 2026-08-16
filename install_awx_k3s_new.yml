@@ -1566,33 +1566,61 @@
         - web_deployment.rc == 0
       changed_when: false
 
-    - name: Wait for AWX Task rollout
-      ansible.builtin.command:
-        argv:
-          - "{{ k3s_binary_path }}"
-          - kubectl
-          - rollout
-          - status
-          - deployment/awx-server-task
-          - -n
-          - "{{ awx_namespace }}"
-          - --timeout=30m
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
+    # ------------------------------------------------------------
+    # Avoid kubectl rollout status because long-lived Kubernetes
+    # watch streams can disconnect on this single-node K3s lab.
+    # Poll Deployment status with normal GET requests instead.
+    # ------------------------------------------------------------
 
-    - name: Wait for AWX Web rollout
-      ansible.builtin.command:
-        argv:
-          - "{{ k3s_binary_path }}"
-          - kubectl
-          - rollout
-          - status
-          - deployment/awx-server-web
-          - -n
-          - "{{ awx_namespace }}"
-          - --timeout=30m
+    - name: Wait for AWX Task deployment to become Ready
+      ansible.builtin.shell: |
+        DESIRED=$({{ k3s_binary_path }} kubectl get deployment awx-server-task -n "{{ awx_namespace }}" -o jsonpath='{.spec.replicas}')
+        UPDATED=$({{ k3s_binary_path }} kubectl get deployment awx-server-task -n "{{ awx_namespace }}" -o jsonpath='{.status.updatedReplicas}')
+        READY=$({{ k3s_binary_path }} kubectl get deployment awx-server-task -n "{{ awx_namespace }}" -o jsonpath='{.status.readyReplicas}')
+        AVAILABLE=$({{ k3s_binary_path }} kubectl get deployment awx-server-task -n "{{ awx_namespace }}" -o jsonpath='{.status.availableReplicas}')
+        UNAVAILABLE=$({{ k3s_binary_path }} kubectl get deployment awx-server-task -n "{{ awx_namespace }}" -o jsonpath='{.status.unavailableReplicas}')
+        DESIRED=${DESIRED:-0}; UPDATED=${UPDATED:-0}; READY=${READY:-0}; AVAILABLE=${AVAILABLE:-0}; UNAVAILABLE=${UNAVAILABLE:-0}
+        echo "Desired=$DESIRED Updated=$UPDATED Ready=$READY Available=$AVAILABLE Unavailable=$UNAVAILABLE"
+        test "$DESIRED" -ge 1
+        test "$UPDATED" = "$DESIRED"
+        test "$READY" = "$DESIRED"
+        test "$AVAILABLE" = "$DESIRED"
+        test "$UNAVAILABLE" = "0"
+      args:
+        executable: /bin/bash
       environment:
         KUBECONFIG: "{{ kubeconfig_path }}"
+      register: task_deployment_ready_status
+      retries: 180
+      delay: 10
+      until:
+        - task_deployment_ready_status.rc == 0
+      changed_when: false
+
+    - name: Wait for AWX Web deployment to become Ready
+      ansible.builtin.shell: |
+        DESIRED=$({{ k3s_binary_path }} kubectl get deployment awx-server-web -n "{{ awx_namespace }}" -o jsonpath='{.spec.replicas}')
+        UPDATED=$({{ k3s_binary_path }} kubectl get deployment awx-server-web -n "{{ awx_namespace }}" -o jsonpath='{.status.updatedReplicas}')
+        READY=$({{ k3s_binary_path }} kubectl get deployment awx-server-web -n "{{ awx_namespace }}" -o jsonpath='{.status.readyReplicas}')
+        AVAILABLE=$({{ k3s_binary_path }} kubectl get deployment awx-server-web -n "{{ awx_namespace }}" -o jsonpath='{.status.availableReplicas}')
+        UNAVAILABLE=$({{ k3s_binary_path }} kubectl get deployment awx-server-web -n "{{ awx_namespace }}" -o jsonpath='{.status.unavailableReplicas}')
+        DESIRED=${DESIRED:-0}; UPDATED=${UPDATED:-0}; READY=${READY:-0}; AVAILABLE=${AVAILABLE:-0}; UNAVAILABLE=${UNAVAILABLE:-0}
+        echo "Desired=$DESIRED Updated=$UPDATED Ready=$READY Available=$AVAILABLE Unavailable=$UNAVAILABLE"
+        test "$DESIRED" -ge 1
+        test "$UPDATED" = "$DESIRED"
+        test "$READY" = "$DESIRED"
+        test "$AVAILABLE" = "$DESIRED"
+        test "$UNAVAILABLE" = "0"
+      args:
+        executable: /bin/bash
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: web_deployment_ready_status
+      retries: 180
+      delay: 10
+      until:
+        - web_deployment_ready_status.rc == 0
+      changed_when: false
 
     # ============================================================
     # TASK POD
@@ -2008,19 +2036,108 @@
       environment:
         KUBECONFIG: "{{ kubeconfig_path }}"
 
-    - name: Wait for AWX Task rollout after EE configuration
+    # ------------------------------------------------------------
+    # Do NOT use kubectl rollout status here.
+    # The K3s API has previously dropped the HTTP/2 watch stream:
+    #   http2: client connection lost
+    # Poll the Deployment instead.
+    # ------------------------------------------------------------
+
+    - name: Wait for AWX Task deployment after EE configuration
+      ansible.builtin.shell: |
+        DESIRED=$({{ k3s_binary_path }} kubectl get deployment awx-server-task -n "{{ awx_namespace }}" -o jsonpath='{.spec.replicas}')
+        UPDATED=$({{ k3s_binary_path }} kubectl get deployment awx-server-task -n "{{ awx_namespace }}" -o jsonpath='{.status.updatedReplicas}')
+        READY=$({{ k3s_binary_path }} kubectl get deployment awx-server-task -n "{{ awx_namespace }}" -o jsonpath='{.status.readyReplicas}')
+        AVAILABLE=$({{ k3s_binary_path }} kubectl get deployment awx-server-task -n "{{ awx_namespace }}" -o jsonpath='{.status.availableReplicas}')
+        UNAVAILABLE=$({{ k3s_binary_path }} kubectl get deployment awx-server-task -n "{{ awx_namespace }}" -o jsonpath='{.status.unavailableReplicas}')
+        DESIRED=${DESIRED:-0}; UPDATED=${UPDATED:-0}; READY=${READY:-0}; AVAILABLE=${AVAILABLE:-0}; UNAVAILABLE=${UNAVAILABLE:-0}
+        echo "Desired=$DESIRED Updated=$UPDATED Ready=$READY Available=$AVAILABLE Unavailable=$UNAVAILABLE"
+        test "$DESIRED" -ge 1
+        test "$UPDATED" = "$DESIRED"
+        test "$READY" = "$DESIRED"
+        test "$AVAILABLE" = "$DESIRED"
+        test "$UNAVAILABLE" = "0"
+      args:
+        executable: /bin/bash
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: task_deployment_after_ee
+      retries: 180
+      delay: 10
+      until:
+        - task_deployment_after_ee.rc == 0
+      changed_when: false
+
+    - name: Locate latest AWX Task pod after EE configuration
+      ansible.builtin.shell: |
+        {{ k3s_binary_path }} kubectl get pods -n "{{ awx_namespace }}" --sort-by=.metadata.creationTimestamp --no-headers |
+        awk '/awx-server-task/ {pod=$1} END {print pod}'
+      args:
+        executable: /bin/bash
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: latest_task_pod_lookup
+      retries: 120
+      delay: 5
+      until:
+        - latest_task_pod_lookup.stdout | trim | length > 0
+      changed_when: false
+
+    - name: Set latest AWX Task pod after EE configuration
+      ansible.builtin.set_fact:
+        latest_task_pod: "{{ latest_task_pod_lookup.stdout | trim }}"
+
+    - name: Wait for latest AWX Task pod Running and Ready after EE configuration
+      ansible.builtin.shell: |
+        PHASE=$({{ k3s_binary_path }} kubectl get pod "{{ latest_task_pod }}" -n "{{ awx_namespace }}" -o jsonpath='{.status.phase}')
+        READY=$({{ k3s_binary_path }} kubectl get pod "{{ latest_task_pod }}" -n "{{ awx_namespace }}" -o jsonpath='{range .status.conditions[?(@.type=="Ready")]}{.status}{end}')
+        echo "Pod={{ latest_task_pod }} Phase=$PHASE Ready=$READY"
+        test "$PHASE" = "Running"
+        test "$READY" = "True"
+      args:
+        executable: /bin/bash
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: latest_task_pod_ready
+      retries: 180
+      delay: 10
+      until:
+        - latest_task_pod_ready.rc == 0
+      changed_when: false
+
+    - name: Verify awx-manage after EE configuration
       ansible.builtin.command:
         argv:
           - "{{ k3s_binary_path }}"
           - kubectl
-          - rollout
-          - status
-          - deployment/awx-server-task
+          - exec
           - -n
           - "{{ awx_namespace }}"
-          - --timeout=10m
+          - "{{ latest_task_pod }}"
+          - -c
+          - awx-server-task
+          - --
+          - which
+          - awx-manage
       environment:
         KUBECONFIG: "{{ kubeconfig_path }}"
+      register: awx_manage_after_ee
+      retries: 90
+      delay: 10
+      until:
+        - awx_manage_after_ee.rc == 0
+      changed_when: false
+
+    - name: Display AWX Task status after EE configuration
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "VMWARE EE TASK ROLLOUT COMPLETE"
+          - "============================================================"
+          - "Task Pod   : {{ latest_task_pod }}"
+          - "awx-manage : {{ awx_manage_after_ee.stdout | trim }}"
+          - "EE Image   : {{ ee_image }}"
+          - "============================================================"
 
     # ============================================================
     # FINAL VALIDATION
