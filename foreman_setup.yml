@@ -124,7 +124,7 @@
         content: |
           [puppet7]
           name=Puppet 7 Repository EL7
-          baseurl=https://yum.puppet.com/puppet7/el/7/x86_64/
+          baseurl=https://yum.puppet.com/puppet/el/7/x86_64/
           enabled=1
           gpgcheck=0
           exclude=libX11* *.i686
@@ -144,6 +144,30 @@
       ansible.builtin.command:
         cmd: yum makecache
       changed_when: false
+
+    - name: STEP 2 - Check Puppet Server package availability
+      ansible.builtin.shell: |
+        yum --disablerepo='*' --enablerepo=puppet7 --showduplicates list available puppetserver
+      args:
+        executable: /bin/bash
+      register: puppetserver_available
+      changed_when: false
+      failed_when: false
+
+    - name: STEP 2 - Display Puppet Server availability
+      ansible.builtin.debug:
+        var: puppetserver_available.stdout_lines
+
+    - name: STEP 2 - Fail if Puppet Server is unavailable
+      ansible.builtin.fail:
+        msg: |
+          Puppet Server is not available from the Puppet 7 EL7 repository.
+
+          Repository:
+          https://yum.puppet.com/puppet/el/7/x86_64/
+
+          Check network access and repository metadata.
+      when: puppetserver_available.rc != 0
 
     - name: STEP 2 - Display enabled repositories
       ansible.builtin.command:
@@ -249,39 +273,6 @@
           - bind-utils
         state: present
         disable_gpg_check: true
-
-    - name: STEP 3.5 - Refresh YUM metadata for Puppet
-      ansible.builtin.command:
-        cmd: yum clean all
-      changed_when: false
-
-    - name: STEP 3.5 - Rebuild YUM cache
-      ansible.builtin.command:
-        cmd: yum makecache
-      changed_when: false
-
-    - name: STEP 3.5 - Check Puppet Server package availability
-      ansible.builtin.shell: |
-        yum --disablerepo='*' --enablerepo=puppet7 list available puppetserver
-      args:
-        executable: /bin/bash
-      register: puppetserver_available
-      changed_when: false
-
-    - name: STEP 3.5 - Display Puppet Server availability
-      ansible.builtin.debug:
-        var: puppetserver_available.stdout_lines
-
-    - name: STEP 3.5 - Fail if Puppet Server is unavailable
-      ansible.builtin.fail:
-        msg: |
-          puppetserver is not available from the Puppet 7 repository.
-
-          Repository:
-          https://yum.puppet.com/puppet7/el/7/x86_64/
-
-          Check network access and repository availability.
-      when: puppetserver_available.rc != 0
 
     # ===============================================================
     # STEP 4: INSTALL JAVA AND FOREMAN STACK
