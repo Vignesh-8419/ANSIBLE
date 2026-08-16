@@ -71,6 +71,7 @@
           baseurl={{ repo_root }}/centos
           enabled=1
           gpgcheck=0
+          priority=1
 
           [mesa]
           name=Local Mesa Repository
@@ -98,6 +99,7 @@
           baseurl={{ repo_root }}/installed_rhel7
           enabled=1
           gpgcheck=0
+          exclude=*.i686
 
     - name: STEP 2 - Create foreman.repo
       ansible.builtin.copy:
@@ -111,6 +113,7 @@
           baseurl={{ repo_root }}/installed_rhel7
           enabled=1
           gpgcheck=0
+          exclude=*.i686
 
     - name: STEP 2 - Create puppet.repo
       ansible.builtin.copy:
@@ -124,6 +127,7 @@
           baseurl={{ repo_root }}/installed_rhel7
           enabled=1
           gpgcheck=0
+          exclude=*.i686
 
     - name: STEP 2 - Clean yum metadata
       ansible.builtin.command:
@@ -170,6 +174,16 @@
       register: yum_transaction
       changed_when: yum_transaction.rc == 0
       failed_when: false
+
+    - name: STEP 2 - Check available libX11 packages
+      ansible.builtin.shell: |
+        yum --showduplicates list available 'libX11*' 2>/dev/null || true
+      register: libx11_packages
+      changed_when: false
+
+    - name: STEP 2 - Display libX11 packages
+      ansible.builtin.debug:
+        var: libx11_packages.stdout_lines
 
     - name: STEP 2 - Install required packages
       ansible.builtin.yum:
