@@ -1,6 +1,6 @@
 ---
 - name: Configure Foreman Smart Proxy Features
-  hosts: FOREMAN_PROXY
+  hosts: all
   become: true
   gather_facts: true
 
