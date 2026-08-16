@@ -33,14 +33,14 @@
           - "===================================================="
           - "OS DETECTION"
           - "===================================================="
-          - "Distribution       : {{ ansible_distribution }}"
+          - "Distribution        : {{ ansible_distribution }}"
           - "Version             : {{ ansible_distribution_version }}"
-          - "Major Version      : {{ ansible_distribution_major_version }}"
+          - "Major Version       : {{ ansible_distribution_major_version }}"
           - "CentOS 7            : {{ is_centos7 }}"
           - "===================================================="
 
     # ============================================================
-    # CENTOS 7 ONLY
+    # CENTOS 7 ONLY - BACKUP OLD YUM REPOSITORIES
     # ============================================================
 
     - name: Create YUM repository backup directory
@@ -71,7 +71,7 @@
         - existing_yum_repo_files.matched | default(0) | int > 0
 
     # ============================================================
-    # PATCH REPOSITORY
+    # CENTOS 7 ONLY - PATCH REPOSITORY
     # ============================================================
 
     - name: Create patch repository
@@ -90,7 +90,7 @@
         - is_centos7
 
     # ============================================================
-    # BASE REPOSITORY
+    # CENTOS 7 ONLY - BASE REPOSITORY
     # ============================================================
 
     - name: Create base repository
@@ -109,7 +109,7 @@
         - is_centos7
 
     # ============================================================
-    # YUM CACHE
+    # CENTOS 7 ONLY - YUM CACHE
     # ============================================================
 
     - name: Clean YUM metadata
@@ -125,67 +125,82 @@
         - is_centos7
 
     # ============================================================
-    # PYTHON 3
+    # PYTHON 3 - MANDATORY FOR ALL OS
     # ============================================================
 
-    - name: Install Python 3 on CentOS 7
-      yum:
+    - name: Install Python 3
+      package:
         name: python3
         state: present
-      when:
-        - is_centos7
 
-    - name: Verify Python 3 on CentOS 7
+    - name: Verify Python 3 executable
       command:
         cmd: /usr/bin/python3 --version
       register: python3_version
       changed_when: false
+
+    - name: Verify Python 3 SELinux libraries when available
+      package:
+        name:
+          - python3-libselinux
+          - python3-policycoreutils
+        state: present
       when:
-        - is_centos7
+        - ansible_os_family == "RedHat"
 
     # ============================================================
-    # IMPORTANT:
-    # Make all following Ansible modules use Python 3 on
-    # CentOS 7 instead of Python 2.7.
+    # SWITCH ANSIBLE TO PYTHON 3
     # ============================================================
 
-    - name: Set Ansible Python interpreter to Python 3 on CentOS 7
+    - name: Set Ansible Python interpreter to Python 3
       set_fact:
         ansible_python_interpreter: /usr/bin/python3
-      when:
-        - is_centos7
 
-    - name: Display Python 3 and Ansible interpreter
+    - name: Display Python configuration
       debug:
         msg:
           - "===================================================="
           - "PYTHON CONFIGURATION"
           - "===================================================="
-          - "Python 3          : {{ python3_version.stdout | default('SKIPPED') }}"
-          - "Ansible interpreter: {{ ansible_python_interpreter | default('system default') }}"
+          - "Python 3 version      : {{ python3_version.stdout }}"
+          - "Ansible interpreter   : {{ ansible_python_interpreter }}"
           - "===================================================="
 
     # ============================================================
-    # NON-CENTOS 7
+    # VERIFY ANSIBLE PYTHON 3
     # ============================================================
 
-    - name: Display non-CentOS 7 message
+    - name: Verify Ansible interpreter is Python 3
+      command:
+        cmd: "{{ ansible_python_interpreter }} --version"
+      register: ansible_python_version
+      changed_when: false
+
+    - name: Display active Ansible Python
+      debug:
+        msg:
+          - "Ansible Python executable : {{ ansible_python_interpreter }}"
+          - "Ansible Python version    : {{ ansible_python_version.stdout }}"
+
+    # ============================================================
+    # NON-CENTOS 7 MESSAGE
+    # ============================================================
+
+    - name: Display non-CentOS 7 preparation status
       debug:
         msg:
           - "===================================================="
-          - "CENTOS 7 PREPARATION SKIPPED"
+          - "CENTOS 7 REPOSITORY PREPARATION"
           - "===================================================="
-          - "OS                 : {{ ansible_distribution }} {{ ansible_distribution_version }}"
-          - "CentOS 7           : {{ is_centos7 }}"
-          - "Repository changes : SKIPPED"
-          - "Python 3 install   : SKIPPED"
-          - "Interpreter change : SKIPPED"
+          - "OS                  : {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "CentOS 7            : {{ is_centos7 }}"
+          - "Repository changes  : {{ 'APPLIED' if is_centos7 else 'SKIPPED' }}"
+          - "Python 3            : INSTALLED"
+          - "Ansible interpreter : /usr/bin/python3"
           - "===================================================="
-      when:
-        - not is_centos7
 
     # ============================================================
-    # EXISTING PLAYBOOK TASKS
+    # ADMIN USER
     # ============================================================
 
     - name: Ensure wheel group exists
@@ -204,6 +219,10 @@
         password: "{{ admin_password }}"
         state: present
 
+    # ============================================================
+    # SSH DIRECTORY
+    # ============================================================
+
     - name: Create .ssh directory
       file:
         path: "/home/{{ admin_user }}/.ssh"
@@ -211,6 +230,10 @@
         owner: "{{ admin_user }}"
         group: "{{ admin_user }}"
         mode: "0700"
+
+    # ============================================================
+    # SSH PRIVATE KEY
+    # ============================================================
 
     - name: Copy shared private key
       copy:
@@ -220,6 +243,10 @@
         group: "{{ admin_user }}"
         mode: "0600"
 
+    # ============================================================
+    # SSH PUBLIC KEY
+    # ============================================================
+
     - name: Copy master public key
       copy:
         src: "{{ master_public_key }}"
@@ -228,11 +255,19 @@
         group: "{{ admin_user }}"
         mode: "0644"
 
+    # ============================================================
+    # AUTHORIZED KEY
+    # ============================================================
+
     - name: Install master public key
-      authorized_key:
+      ansible.posix.authorized_key:
         user: "{{ admin_user }}"
         state: present
         key: "{{ lookup('file', master_public_key) }}"
+
+    # ============================================================
+    # SSH CLIENT CONFIG
+    # ============================================================
 
     - name: Configure SSH client
       copy:
@@ -247,6 +282,10 @@
               UserKnownHostsFile /dev/null
               LogLevel ERROR
 
+    # ============================================================
+    # PASSWORDLESS SUDO
+    # ============================================================
+
     - name: Enable passwordless sudo
       copy:
         dest: /etc/sudoers.d/admin
@@ -257,10 +296,19 @@
           admin ALL=(ALL) NOPASSWD: ALL
         validate: "/usr/sbin/visudo -cf %s"
 
+    # ============================================================
+    # SELINUX
+    # ============================================================
+
     - name: Restore SELinux context
-      command: restorecon -Rv /home/{{ admin_user }}/.ssh
+      command:
+        cmd: "restorecon -Rv /home/{{ admin_user }}/.ssh"
       changed_when: false
       failed_when: false
+
+    # ============================================================
+    # SSH OWNERSHIP
+    # ============================================================
 
     - name: Ensure SSH ownership
       file:
@@ -269,32 +317,59 @@
         group: "{{ admin_user }}"
         recurse: yes
 
+    # ============================================================
+    # VERIFY ADMIN USER
+    # ============================================================
+
     - name: Verify admin user
-      command: id {{ admin_user }}
+      command:
+        cmd: "id {{ admin_user }}"
       register: admin_result
       changed_when: false
+
+    # ============================================================
+    # VERIFY PRIVATE KEY
+    # ============================================================
 
     - name: Verify SSH private key
       stat:
         path: "/home/{{ admin_user }}/.ssh/id_rsa"
       register: private_key
 
+    # ============================================================
+    # VERIFY AUTHORIZED KEYS
+    # ============================================================
+
     - name: Verify authorized_keys
       stat:
         path: "/home/{{ admin_user }}/.ssh/authorized_keys"
       register: auth
 
+    # ============================================================
+    # VERIFY SUDO
+    # ============================================================
+
     - name: Verify sudo
       become: yes
       become_user: "{{ admin_user }}"
-      command: sudo -n whoami
+      command:
+        cmd: sudo -n whoami
       register: sudo_result
       changed_when: false
+
+    # ============================================================
+    # TEST LOCAL SSH
+    # ============================================================
 
     - name: Test localhost SSH
       become: yes
       become_user: "{{ admin_user }}"
-      shell: ssh -o BatchMode=yes -o ConnectTimeout=5 localhost "hostname"
+      shell: >
+        ssh
+        -o BatchMode=yes
+        -o ConnectTimeout=5
+        localhost
+        "hostname"
       register: ssh_test
       changed_when: false
       failed_when: false
@@ -309,13 +384,14 @@
           - "===================================================="
           - "Admin User Configuration Completed"
           - "===================================================="
-          - "Host              : {{ inventory_hostname }}"
-          - "OS                : {{ ansible_distribution }} {{ ansible_distribution_version }}"
-          - "CentOS 7          : {{ is_centos7 }}"
-          - "Ansible Python    : {{ ansible_python_interpreter | default('system default') }}"
-          - "Admin User        : {{ admin_result.stdout }}"
-          - "Sudo              : {{ sudo_result.stdout }}"
-          - "Private Key       : {{ private_key.stat.exists }}"
-          - "authorized_keys   : {{ auth.stat.exists }}"
-          - "SSH Test          : {{ ssh_test.stdout | default('FAILED') }}"
+          - "Host               : {{ inventory_hostname }}"
+          - "OS                 : {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "CentOS 7           : {{ is_centos7 }}"
+          - "Python 3           : {{ python3_version.stdout }}"
+          - "Ansible Python     : {{ ansible_python_interpreter }}"
+          - "Admin User         : {{ admin_result.stdout }}"
+          - "Sudo               : {{ sudo_result.stdout }}"
+          - "Private Key        : {{ private_key.stat.exists }}"
+          - "authorized_keys    : {{ auth.stat.exists }}"
+          - "SSH Test           : {{ ssh_test.stdout | default('FAILED') }}"
           - "===================================================="
