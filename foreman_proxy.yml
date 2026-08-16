@@ -28,7 +28,7 @@
 ###############################################################################
 
 - name: "Generate Smart Proxy certificate on Foreman"
-  hosts: all
+  hosts: FOREMAN
   become: true
   gather_facts: true
 
@@ -333,17 +333,15 @@
     # CERTIFICATE INSTALL
     ###########################################################################
 
-    - name: Copy Smart Proxy certificate archive from Foreman
-      ansible.builtin.copy:
-        src: "{{ cert_tar_foreman }}"
-        dest: "{{ cert_tar_proxy }}"
-        owner: root
-        group: root
-        mode: "0600"
-      delegate_to: "{{ groups['FOREMAN'][0] }}"
-      remote_src: true
+    - name: Create local certificate staging directory
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/.smart_proxy_cert"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+      become: false
 
-    - name: Actually copy archive from Foreman to Smart Proxy
+    - name: Fetch Smart Proxy certificate archive from Foreman to controller
       ansible.builtin.fetch:
         src: "{{ cert_tar_foreman }}"
         dest: "{{ playbook_dir }}/.smart_proxy_cert/"
@@ -357,6 +355,13 @@
         owner: root
         group: root
         mode: "0600"
+
+    - name: Remove local certificate staging directory
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/.smart_proxy_cert"
+        state: absent
+      delegate_to: localhost
+      become: false
 
     - name: Create Foreman Proxy certificate directory
       ansible.builtin.file:
