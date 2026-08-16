@@ -15,6 +15,148 @@
 
   tasks:
 
+    # ============================================================
+    # OS DETECTION
+    # ============================================================
+
+    - name: Detect CentOS 7
+      set_fact:
+        is_centos7: >-
+          {{
+            ansible_distribution == 'CentOS'
+            and ansible_distribution_major_version == '7'
+          }}
+
+    - name: Display OS information
+      debug:
+        msg:
+          - "===================================================="
+          - "OS DETECTION"
+          - "===================================================="
+          - "Distribution       : {{ ansible_distribution }}"
+          - "Version             : {{ ansible_distribution_version }}"
+          - "Major Version      : {{ ansible_distribution_major_version }}"
+          - "CentOS 7            : {{ is_centos7 }}"
+          - "===================================================="
+
+    # ============================================================
+    # CENTOS 7 ONLY
+    #
+    # These tasks are completely skipped on all other OS versions.
+    # ============================================================
+
+    - name: Create YUM repository backup directory
+      file:
+        path: /etc/yum.repos.d/backup
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      when:
+        - is_centos7
+
+    - name: Find existing YUM repository files
+      find:
+        paths: /etc/yum.repos.d
+        patterns: "*.repo"
+        file_type: file
+      register: existing_yum_repo_files
+      when:
+        - is_centos7
+
+    - name: Move old YUM repository files to backup
+      command:
+        cmd: "mv {{ item.path }} /etc/yum.repos.d/backup/"
+      loop: "{{ existing_yum_repo_files.files | default([]) }}"
+      when:
+        - is_centos7
+        - existing_yum_repo_files.matched | default(0) | int > 0
+
+    - name: Create patch repository
+      copy:
+        dest: /etc/yum.repos.d/patch.repo
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [patch]
+          name=patch-repo
+          baseurl=http://http-server-01/repo/installed_rhel7
+          enabled=1
+          gpgcheck=0
+      when:
+        - is_centos7
+
+    - name: Create base repository
+      copy:
+        dest: /etc/yum.repos.d/base.repo
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [base]
+          name=base-repo
+          baseurl=http://http-server-01/repo/centos/
+          enabled=1
+          gpgcheck=0
+      when:
+        - is_centos7
+
+    - name: Clean YUM metadata
+      command:
+        cmd: yum clean all
+      when:
+        - is_centos7
+
+    - name: Rebuild YUM cache
+      command:
+        cmd: yum makecache
+      when:
+        - is_centos7
+
+    - name: Install Python 3 on CentOS 7
+      yum:
+        name: python3
+        state: present
+      when:
+        - is_centos7
+
+    - name: Verify Python 3 on CentOS 7
+      command:
+        cmd: /usr/bin/python3 --version
+      register: python3_version
+      changed_when: false
+      when:
+        - is_centos7
+
+    - name: Display Python 3 version
+      debug:
+        msg: "CentOS 7 Python 3: {{ python3_version.stdout }}"
+      when:
+        - is_centos7
+
+    # ============================================================
+    # NON-CENTOS 7
+    # ============================================================
+
+    - name: Display non-CentOS 7 message
+      debug:
+        msg:
+          - "===================================================="
+          - "CENTOS 7 PREPARATION SKIPPED"
+          - "===================================================="
+          - "OS                 : {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "CentOS 7           : {{ is_centos7 }}"
+          - "Repository changes  : SKIPPED"
+          - "Python 3 install    : SKIPPED"
+          - "===================================================="
+      when:
+        - not is_centos7
+
+    # ============================================================
+    # EXISTING PLAYBOOK TASKS
+    # ============================================================
+
     - name: Ensure wheel group exists
       group:
         name: wheel
@@ -132,6 +274,8 @@
           - "===================================================="
           - "Admin User Configuration Completed"
           - "Host              : {{ inventory_hostname }}"
+          - "OS                : {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "CentOS 7          : {{ is_centos7 }}"
           - "Admin User        : {{ admin_result.stdout }}"
           - "Sudo              : {{ sudo_result.stdout }}"
           - "Private Key       : {{ private_key.stat.exists }}"
