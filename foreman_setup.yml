@@ -1,6 +1,6 @@
 ---
 - name: Complete Foreman Katello Installation and Configuration
-  hosts: all
+  hosts: cent-07-01.vgs.com
   become: true
   become_method: sudo
   gather_facts: true
