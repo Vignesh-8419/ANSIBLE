@@ -1,18 +1,18 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# ==========================================================
-# NETBOX SPECIFIC DEVICE CREATION SCRIPT
+# ============================================================
+# NETBOX SPECIFIC DEVICE CREATION TOOL
 # Separate script - does NOT modify Device_Creation_Netbox.sh
-# ==========================================================
+# ============================================================
 
 # ---------------- CONFIG ----------------
 
 NETBOX_URL="https://192.168.253.143/api"
-NETBOX_TOKEN="83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
+NETBOX_TOKEN="PUT_YOUR_NETBOX_TOKEN_HERE"
 
 SSH_USER="admin"
-SSH_PASS="Vigneshv12$"
+SSH_PASS="PUT_YOUR_SSH_PASSWORD_HERE"
 
 SITE_ID=1
 DEVICETYPE_ID=1
@@ -20,9 +20,12 @@ DEVICEROLE_ID=1
 
 HDR="Content-Type: application/json"
 
-# ==========================================================
+SUCCESS_LIST=""
+FAILED_LIST=""
+
+# ============================================================
 # COLORS
-# ==========================================================
+# ============================================================
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -32,38 +35,69 @@ CYAN='\033[0;36m'
 WHITE='\033[1;37m'
 NC='\033[0m'
 
-SUCCESS_LIST=""
-FAILED_LIST=""
-
-START_TIME=$(date +%s)
-
-# ==========================================================
-# UI
-# ==========================================================
+# ============================================================
+# BANNER
+# ============================================================
 
 banner() {
     clear
-    echo -e "${CYAN}"
+    echo
     echo "============================================================"
     echo "        NETBOX SPECIFIC DEVICE CREATION TOOL"
     echo "============================================================"
-    echo -e "${NC}"
+    echo
 }
 
-# ==========================================================
-# HELPERS
-# ==========================================================
+banner
 
-slugify() {
-    echo "$1" |
-        tr '[:upper:]' '[:lower:]' |
-        tr ' ' '-' |
-        sed 's/[^a-z0-9-]//g'
-}
+# ============================================================
+# DEPENDENCY CHECK
+# ============================================================
 
-urlencode() {
-    jq -rn --arg v "$1" '$v|@uri'
-}
+echo "Checking dependencies..."
+
+for cmd in curl jq ssh sshpass ping
+do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo
+        echo -e "${RED}ERROR: Missing dependency: $cmd${NC}"
+
+        case "$cmd" in
+            jq)
+                echo "Install: yum install -y jq"
+                ;;
+            sshpass)
+                echo "Install: yum install -y sshpass"
+                ;;
+            *)
+                echo "Please install the package providing: $cmd"
+                ;;
+        esac
+
+        exit 1
+    fi
+done
+
+echo -e "${GREEN}Dependencies OK${NC}"
+echo
+
+# ============================================================
+# CONFIG VALIDATION
+# ============================================================
+
+if [ "$NETBOX_TOKEN" = "PUT_YOUR_NETBOX_TOKEN_HERE" ]; then
+    echo -e "${RED}ERROR: Update NETBOX_TOKEN in the script.${NC}"
+    exit 1
+fi
+
+if [ "$SSH_PASS" = "PUT_YOUR_SSH_PASSWORD_HERE" ]; then
+    echo -e "${RED}ERROR: Update SSH_PASS in the script.${NC}"
+    exit 1
+fi
+
+# ============================================================
+# API FUNCTIONS
+# ============================================================
 
 api_get() {
     curl -sk \
@@ -72,76 +106,145 @@ api_get() {
 }
 
 api_post() {
+    local URL="$1"
+    local DATA="$2"
+
     curl -sk -X POST \
+        "$URL" \
         -H "$HDR" \
         -H "Authorization: Token $NETBOX_TOKEN" \
-        -d "$2" \
-        "$1"
+        -d "$DATA"
 }
 
 api_patch() {
+    local URL="$1"
+    local DATA="$2"
+
     curl -sk -X PATCH \
+        "$URL" \
         -H "$HDR" \
         -H "Authorization: Token $NETBOX_TOKEN" \
-        -d "$2" \
-        "$1"
+        -d "$DATA"
 }
 
-# ==========================================================
-# GET OR CREATE RESOURCE
-# IMPORTANT:
-# Only the ID is printed to stdout.
-# ==========================================================
+urlencode() {
+    jq -rn --arg v "$1" '$v | @uri'
+}
 
-get_or_create() {
+slugify() {
+    echo "$1" |
+        tr '[:upper:]' '[:lower:]' |
+        tr ' ' '-' |
+        sed 's/[^a-z0-9-]//g'
+}
 
-    local ENDPOINT="$1"
-    local NAME="$2"
-    local EXTRA_JSON="$3"
+# ============================================================
+# NETBOX CONNECTIVITY CHECK
+# ============================================================
 
-    local EXISTING_ID
-    local SLUG
+echo "Checking NetBox API..."
+
+HTTP_CODE=$(curl -sk \
+    -o /dev/null \
+    -w "%{http_code}" \
+    -H "Authorization: Token $NETBOX_TOKEN" \
+    "$NETBOX_URL/status/")
+
+if [ "$HTTP_CODE" != "200" ]; then
+    echo -e "${RED}ERROR: NetBox API is not reachable${NC}"
+    echo "HTTP Code: $HTTP_CODE"
+    exit 1
+fi
+
+echo -e "${GREEN}NetBox API reachable${NC}"
+
+# ============================================================
+# JSON ESCAPE
+# ============================================================
+
+json_string() {
+    jq -Rn --arg value "$1" '$value'
+}
+
+# ============================================================
+# GET OR CREATE CLUSTER TYPE
+# ============================================================
+
+get_or_create_cluster_type() {
+
+    local TYPE_NAME="$1"
+    local TYPE_ID
     local RESPONSE
-    local CREATED_ID
+    local SLUG
 
-    SLUG=$(slugify "$NAME")
-
-    EXISTING_ID=$(api_get \
-        "$NETBOX_URL/$ENDPOINT/?name=$(urlencode "$NAME")" |
+    TYPE_ID=$(api_get \
+        "$NETBOX_URL/virtualization/cluster-types/?name=$(urlencode "$TYPE_NAME")" |
         jq -r '.results[0].id // empty')
 
-    if [ -n "$EXISTING_ID" ] &&
-       [ "$EXISTING_ID" != "null" ]; then
-
-        echo "$EXISTING_ID"
+    if [ -n "$TYPE_ID" ] && [ "$TYPE_ID" != "null" ]; then
+        echo "$TYPE_ID"
         return 0
     fi
 
+    SLUG=$(slugify "$TYPE_NAME")
+
     RESPONSE=$(api_post \
-        "$NETBOX_URL/$ENDPOINT/" \
-        "{\"name\":\"$NAME\",\"slug\":\"$SLUG\"$EXTRA_JSON}")
+        "$NETBOX_URL/virtualization/cluster-types/" \
+        "{\"name\":$(json_string "$TYPE_NAME"),\"slug\":$(json_string "$SLUG")}")
 
-    CREATED_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
+    TYPE_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
 
-    if [ -z "$CREATED_ID" ] ||
-       [ "$CREATED_ID" = "null" ]; then
-
-        echo -e "${RED}Failed creating resource: $NAME${NC}" >&2
+    if [ -z "$TYPE_ID" ] || [ "$TYPE_ID" = "null" ]; then
+        echo -e "${RED}ERROR: Failed to create cluster type${NC}" >&2
         echo "$RESPONSE" | jq . >&2
         return 1
     fi
 
-    echo "$CREATED_ID"
+    echo "$TYPE_ID"
 }
 
-# ==========================================================
-# GET OR CREATE CLUSTER
-# IMPORTANT:
-# Informational output goes to stderr.
-# Only Cluster ID goes to stdout.
-# ==========================================================
+# ============================================================
+# GET OR CREATE CLUSTER GROUP
+# ============================================================
 
-get_cluster_id() {
+get_or_create_cluster_group() {
+
+    local GROUP_NAME="$1"
+    local GROUP_ID
+    local RESPONSE
+    local SLUG
+
+    GROUP_ID=$(api_get \
+        "$NETBOX_URL/virtualization/cluster-groups/?name=$(urlencode "$GROUP_NAME")" |
+        jq -r '.results[0].id // empty')
+
+    if [ -n "$GROUP_ID" ] && [ "$GROUP_ID" != "null" ]; then
+        echo "$GROUP_ID"
+        return 0
+    fi
+
+    SLUG=$(slugify "$GROUP_NAME")
+
+    RESPONSE=$(api_post \
+        "$NETBOX_URL/virtualization/cluster-groups/" \
+        "{\"name\":$(json_string "$GROUP_NAME"),\"slug\":$(json_string "$SLUG")}")
+
+    GROUP_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
+
+    if [ -z "$GROUP_ID" ] || [ "$GROUP_ID" = "null" ]; then
+        echo -e "${RED}ERROR: Failed to create cluster group${NC}" >&2
+        echo "$RESPONSE" | jq . >&2
+        return 1
+    fi
+
+    echo "$GROUP_ID"
+}
+
+# ============================================================
+# GET OR CREATE CLUSTER
+# ============================================================
+
+get_or_create_cluster() {
 
     local TYPE_NAME="$1"
     local GROUP_NAME="$2"
@@ -152,71 +255,55 @@ get_cluster_id() {
     local CLUSTER_ID
     local RESPONSE
 
-    echo -e "${BLUE}Cluster Type : $TYPE_NAME${NC}" >&2
-    echo -e "${BLUE}Cluster Group: $GROUP_NAME${NC}" >&2
-    echo -e "${BLUE}Cluster Name : $CLUSTER_NAME${NC}" >&2
+    echo "Cluster Type : $TYPE_NAME" >&2
+    echo "Cluster Group: $GROUP_NAME" >&2
+    echo "Cluster Name : $CLUSTER_NAME" >&2
 
-    TYPE_ID=$(get_or_create \
-        "virtualization/cluster-types" \
-        "$TYPE_NAME" \
-        "")
-
-    if [ -z "$TYPE_ID" ] ||
-       [ "$TYPE_ID" = "null" ]; then
-
-        echo -e "${RED}Failed to get/create Cluster Type${NC}" >&2
-        return 1
-    fi
-
-    GROUP_ID=$(get_or_create \
-        "virtualization/cluster-groups" \
-        "$GROUP_NAME" \
-        "")
-
-    if [ -z "$GROUP_ID" ] ||
-       [ "$GROUP_ID" = "null" ]; then
-
-        echo -e "${RED}Failed to get/create Cluster Group${NC}" >&2
-        return 1
-    fi
+    TYPE_ID=$(get_or_create_cluster_type "$TYPE_NAME")
+    GROUP_ID=$(get_or_create_cluster_group "$GROUP_NAME")
 
     CLUSTER_ID=$(api_get \
         "$NETBOX_URL/virtualization/clusters/?name=$(urlencode "$CLUSTER_NAME")" |
         jq -r '.results[0].id // empty')
 
-    if [ -z "$CLUSTER_ID" ] ||
-       [ "$CLUSTER_ID" = "null" ]; then
+    if [ -n "$CLUSTER_ID" ] && [ "$CLUSTER_ID" != "null" ]; then
+        echo "Cluster already exists: $CLUSTER_NAME" >&2
 
-        echo -e "${YELLOW}Creating cluster: $CLUSTER_NAME${NC}" >&2
+        api_patch \
+            "$NETBOX_URL/virtualization/clusters/$CLUSTER_ID/" \
+            "{\"type\":$TYPE_ID,\"group\":$GROUP_ID,\"scope_type\":\"dcim.site\",\"scope_id\":$SITE_ID}" \
+            >/dev/null || true
 
-        RESPONSE=$(api_post \
-            "$NETBOX_URL/virtualization/clusters/" \
-            "{\"name\":\"$CLUSTER_NAME\",\"type\":$TYPE_ID,\"group\":$GROUP_ID,\"site\":$SITE_ID}")
-
-        CLUSTER_ID=$(echo "$RESPONSE" |
-            jq -r '.id // empty')
-
-        if [ -z "$CLUSTER_ID" ] ||
-           [ "$CLUSTER_ID" = "null" ]; then
-
-            echo -e "${RED}Failed creating cluster: $CLUSTER_NAME${NC}" >&2
-            echo "$RESPONSE" | jq . >&2
-            return 1
-        fi
-
-    else
-
-        echo -e "${GREEN}Cluster already exists: $CLUSTER_NAME${NC}" >&2
-
+        echo "$CLUSTER_ID"
+        return 0
     fi
 
-    # ONLY ID ON STDOUT
+    echo "Creating cluster: $CLUSTER_NAME" >&2
+
+    RESPONSE=$(api_post \
+        "$NETBOX_URL/virtualization/clusters/" \
+        "{
+            \"name\":$(json_string "$CLUSTER_NAME"),
+            \"type\":$TYPE_ID,
+            \"group\":$GROUP_ID,
+            \"scope_type\":\"dcim.site\",
+            \"scope_id\":$SITE_ID
+        }")
+
+    CLUSTER_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
+
+    if [ -z "$CLUSTER_ID" ] || [ "$CLUSTER_ID" = "null" ]; then
+        echo -e "${RED}ERROR: Failed to create cluster${NC}" >&2
+        echo "$RESPONSE" | jq . >&2
+        return 1
+    fi
+
     echo "$CLUSTER_ID"
 }
 
-# ==========================================================
+# ============================================================
 # GET TAG ID
-# ==========================================================
+# ============================================================
 
 get_tag_id() {
 
@@ -227,9 +314,9 @@ get_tag_id() {
         jq -r '.results[0].id // empty'
 }
 
-# ==========================================================
-# ASSIGN TAGS
-# ==========================================================
+# ============================================================
+# ASSIGN TAGS BASED ON CLUSTER
+# ============================================================
 
 assign_tags() {
 
@@ -238,16 +325,13 @@ assign_tags() {
 
     local TAGS=()
     local TAG_IDS=()
-    local TAG
     local TAG_ID
     local JSON_TAGS
-
-    echo -e "${CYAN}Assigning tags for: $CLUSTER_NAME${NC}"
+    local RESPONSE
 
     case "$CLUSTER_NAME" in
 
         centos-07-servers)
-
             TAGS=(
                 "centostorocky-context"
                 "patch-context"
@@ -259,7 +343,6 @@ assign_tags() {
             ;;
 
         rocky-8-servers)
-
             TAGS=(
                 "patch-el8-context"
                 "pxe-rockyos-context"
@@ -270,7 +353,6 @@ assign_tags() {
             ;;
 
         rocky-9-servers)
-
             TAGS=(
                 "patch-el9-context"
                 "pxe-rocky9-context"
@@ -281,33 +363,27 @@ assign_tags() {
             ;;
 
         *)
-
-            echo -e "${YELLOW}No predefined tags for: $CLUSTER_NAME${NC}"
+            echo -e "${YELLOW}No predefined tags for cluster: $CLUSTER_NAME${NC}"
             return 0
             ;;
     esac
 
+    echo "Assigning tags..."
+
     for TAG in "${TAGS[@]}"
     do
-
         TAG_ID=$(get_tag_id "$TAG")
 
-        if [ -n "$TAG_ID" ] &&
-           [ "$TAG_ID" != "null" ]; then
-
+        if [ -n "$TAG_ID" ] && [ "$TAG_ID" != "null" ]; then
+            echo "  Adding tag: $TAG"
             TAG_IDS+=("$TAG_ID")
-            echo -e "${GREEN}  + Adding Tag: $TAG${NC}"
-
         else
-
-            echo -e "${YELLOW}  ! Tag not found: $TAG${NC}"
-
+            echo -e "${YELLOW}  Tag not found: $TAG${NC}"
         fi
-
     done
 
-    if [ ${#TAG_IDS[@]} -eq 0 ]; then
-        echo -e "${YELLOW}No valid tags found${NC}"
+    if [ "${#TAG_IDS[@]}" -eq 0 ]; then
+        echo -e "${YELLOW}No tags found to assign${NC}"
         return 0
     fi
 
@@ -315,342 +391,366 @@ assign_tags() {
         jq -R . |
         jq -s .)
 
-    api_patch \
+    RESPONSE=$(api_patch \
         "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
-        "{\"tags\":$JSON_TAGS}" > /dev/null
+        "{\"tags\":$JSON_TAGS}")
 
-    echo -e "${GREEN}Tags assigned successfully${NC}"
+    if echo "$RESPONSE" | jq -e '.id' >/dev/null 2>&1; then
+        echo -e "${GREEN}Tags assigned successfully${NC}"
+    else
+        echo -e "${RED}Failed assigning tags${NC}"
+        echo "$RESPONSE" | jq . 2>/dev/null || echo "$RESPONSE"
+    fi
 }
 
-# ==========================================================
-# CREATE OR UPDATE DEVICE
-# ==========================================================
+# ============================================================
+# CREATE OR GET DEVICE
+# ============================================================
 
-sync_device() {
+create_or_update_device() {
 
     local HOSTNAME="$1"
-    local IPADDR="$2"
-    local CLUSTER_ID="$3"
-    local CLUSTER_NAME="$4"
-    local STATUS="$5"
-    local MODE="$6"
-    local IFACE="$7"
-    local MAC="$8"
-    local CPU_COUNT="$9"
-    local RAM_GB="${10}"
-    local DISK_GB="${11}"
-    local VM_TYPE="${12}"
-    local KERNEL="${13}"
-    local UPTIME="${14}"
+    local CLUSTER_ID="$2"
+    local STATUS="$3"
 
-    local EXISTING_DEVICE_ID
     local DEVICE_ID
     local RESPONSE
-    local IP_ID
-    local ALL_INTS
-    local INTERFACE_ID
-    local MAC_OBJ_ID
 
-    echo ""
-    echo "------------------------------------------------------------"
-    echo -e "${BLUE}Processing: $HOSTNAME${NC}"
-    echo "------------------------------------------------------------"
-
-    echo "IP       : $IPADDR"
-
-    if [ "$MODE" = "auto" ]; then
-        echo "Interface: $IFACE"
-        echo "MAC      : $MAC"
-        echo "CPU      : $CPU_COUNT"
-        echo "RAM      : $RAM_GB GB"
-        echo "Disk     : $DISK_GB"
-        echo "Type     : $VM_TYPE"
-        echo "Kernel   : $KERNEL"
-        echo "Uptime   : $UPTIME"
-    else
-        echo "Mode     : Manual"
-        echo "Rest data: Not required"
-    fi
-
-    # ------------------------------------------------------
-    # DEVICE CHECK
-    # ------------------------------------------------------
-
-    EXISTING_DEVICE_ID=$(api_get \
+    DEVICE_ID=$(api_get \
         "$NETBOX_URL/dcim/devices/?name=$(urlencode "$HOSTNAME")" |
         jq -r '.results[0].id // empty')
 
-    if [ -z "$EXISTING_DEVICE_ID" ] ||
-       [ "$EXISTING_DEVICE_ID" = "null" ]; then
-
-        echo "Creating device..."
-
-        RESPONSE=$(api_post \
-            "$NETBOX_URL/dcim/devices/" \
-            "{\"name\":\"$HOSTNAME\",\"device_type\":$DEVICETYPE_ID,\"role\":$DEVICEROLE_ID,\"site\":$SITE_ID,\"cluster\":$CLUSTER_ID,\"status\":\"$STATUS\"}")
-
-        DEVICE_ID=$(echo "$RESPONSE" |
-            jq -r '.id // empty')
-
-        if [ -z "$DEVICE_ID" ] ||
-           [ "$DEVICE_ID" = "null" ]; then
-
-            echo -e "${RED}Failed creating device: $HOSTNAME${NC}"
-            echo "$RESPONSE" | jq .
-            FAILED_LIST+="$HOSTNAME"$'\n'
-            return 1
-        fi
-
-    else
-
-        DEVICE_ID="$EXISTING_DEVICE_ID"
+    if [ -n "$DEVICE_ID" ] && [ "$DEVICE_ID" != "null" ]; then
 
         echo "Device already exists. Updating..."
 
         RESPONSE=$(api_patch \
             "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
-            "{\"cluster\":$CLUSTER_ID,\"status\":\"$STATUS\"}")
+            "{
+                \"cluster\":$CLUSTER_ID,
+                \"status\":$(json_string "$STATUS")
+            }")
 
         if ! echo "$RESPONSE" | jq -e '.id' >/dev/null 2>&1; then
-            echo -e "${YELLOW}Device update response:${NC}"
-            echo "$RESPONSE" | jq . 2>/dev/null || echo "$RESPONSE"
+            echo -e "${RED}Failed updating device${NC}" >&2
+            echo "$RESPONSE" | jq . >&2
+            return 1
         fi
 
+        echo "$DEVICE_ID"
+        return 0
     fi
+
+    echo "Creating device..."
+
+    RESPONSE=$(api_post \
+        "$NETBOX_URL/dcim/devices/" \
+        "{
+            \"name\":$(json_string "$HOSTNAME"),
+            \"device_type\":$DEVICETYPE_ID,
+            \"role\":$DEVICEROLE_ID,
+            \"site\":$SITE_ID,
+            \"cluster\":$CLUSTER_ID,
+            \"status\":$(json_string "$STATUS")
+        }")
+
+    DEVICE_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
+
+    if [ -z "$DEVICE_ID" ] || [ "$DEVICE_ID" = "null" ]; then
+        echo -e "${RED}Failed creating device${NC}" >&2
+        echo "$RESPONSE" | jq . >&2
+        return 1
+    fi
+
+    echo "$DEVICE_ID"
+}
+
+# ============================================================
+# CREATE OR GET INTERFACE
+# ============================================================
+
+get_or_create_interface() {
+
+    local DEVICE_ID="$1"
+    local IFACE="$2"
+
+    local INTERFACE_ID
+    local RESPONSE
+
+    INTERFACE_ID=$(api_get \
+        "$NETBOX_URL/dcim/interfaces/?device_id=$DEVICE_ID&name=$(urlencode "$IFACE")" |
+        jq -r '.results[0].id // empty')
+
+    if [ -n "$INTERFACE_ID" ] && [ "$INTERFACE_ID" != "null" ]; then
+        echo "$INTERFACE_ID"
+        return 0
+    fi
+
+    echo "Creating interface: $IFACE" >&2
+
+    RESPONSE=$(api_post \
+        "$NETBOX_URL/dcim/interfaces/" \
+        "{
+            \"device\":$DEVICE_ID,
+            \"name\":$(json_string "$IFACE"),
+            \"type\":\"1000base-t\"
+        }")
+
+    INTERFACE_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
+
+    if [ -z "$INTERFACE_ID" ] || [ "$INTERFACE_ID" = "null" ]; then
+        echo -e "${RED}Failed creating interface${NC}" >&2
+        echo "$RESPONSE" | jq . >&2
+        return 1
+    fi
+
+    echo "$INTERFACE_ID"
+}
+
+# ============================================================
+# CREATE OR ASSIGN IP
+# ============================================================
+
+create_or_assign_ip() {
+
+    local IPADDR="$1"
+    local INTERFACE_ID="$2"
+
+    local IP_ID
+    local RESPONSE
+
+    IP_ID=$(api_get \
+        "$NETBOX_URL/ipam/ip-addresses/?address=$(urlencode "$IPADDR")" |
+        jq -r '.results[0].id // empty')
+
+    if [ -n "$IP_ID" ] && [ "$IP_ID" != "null" ]; then
+
+        echo "IP already exists. Assigning to interface..." >&2
+
+        RESPONSE=$(api_patch \
+            "$NETBOX_URL/ipam/ip-addresses/$IP_ID/" \
+            "{
+                \"assigned_object_type\":\"dcim.interface\",
+                \"assigned_object_id\":$INTERFACE_ID
+            }")
+
+        if ! echo "$RESPONSE" | jq -e '.id' >/dev/null 2>&1; then
+            echo -e "${RED}Failed assigning existing IP${NC}" >&2
+            echo "$RESPONSE" | jq . >&2
+            return 1
+        fi
+
+        echo "$IP_ID"
+        return 0
+    fi
+
+    echo "Creating IP: $IPADDR" >&2
+
+    RESPONSE=$(api_post \
+        "$NETBOX_URL/ipam/ip-addresses/" \
+        "{
+            \"address\":$(json_string "$IPADDR"),
+            \"assigned_object_type\":\"dcim.interface\",
+            \"assigned_object_id\":$INTERFACE_ID,
+            \"status\":\"active\"
+        }")
+
+    IP_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
+
+    if [ -z "$IP_ID" ] || [ "$IP_ID" = "null" ]; then
+        echo -e "${RED}Failed creating IP${NC}" >&2
+        echo "$RESPONSE" | jq . >&2
+        return 1
+    fi
+
+    echo "$IP_ID"
+}
+
+# ============================================================
+# SET PRIMARY IP
+# ============================================================
+
+set_primary_ip() {
+
+    local DEVICE_ID="$1"
+    local IP_ID="$2"
+    local CLUSTER_ID="$3"
+    local STATUS="$4"
+
+    local RESPONSE
+
+    echo "Assigning Primary IP..."
+
+    RESPONSE=$(api_patch \
+        "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
+        "{
+            \"cluster\":$CLUSTER_ID,
+            \"status\":$(json_string "$STATUS"),
+            \"primary_ip4\":$IP_ID
+        }")
+
+    if ! echo "$RESPONSE" | jq -e '.id' >/dev/null 2>&1; then
+        echo -e "${RED}Failed assigning Primary IP${NC}"
+        echo "$RESPONSE" | jq . 2>/dev/null || echo "$RESPONSE"
+        return 1
+    fi
+
+    echo -e "${GREEN}Primary IP assigned successfully${NC}"
+}
+
+# ============================================================
+# ASSIGN MAC ADDRESS
+# ============================================================
+
+assign_mac() {
+
+    local INTERFACE_ID="$1"
+    local MAC="$2"
+
+    local MAC_OBJ_ID
+    local RESPONSE
+
+    [ -z "$MAC" ] && return 0
+
+    MAC=$(echo "$MAC" | tr '[:lower:]' '[:upper:]')
+
+    MAC_OBJ_ID=$(api_get \
+        "$NETBOX_URL/dcim/mac-addresses/?mac_address=$(urlencode "$MAC")" |
+        jq -r '.results[0].id // empty')
+
+    if [ -z "$MAC_OBJ_ID" ] || [ "$MAC_OBJ_ID" = "null" ]; then
+
+        RESPONSE=$(api_post \
+            "$NETBOX_URL/dcim/mac-addresses/" \
+            "{
+                \"mac_address\":$(json_string "$MAC"),
+                \"assigned_object_type\":\"dcim.interface\",
+                \"assigned_object_id\":$INTERFACE_ID
+            }")
+
+        MAC_OBJ_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
+
+        if [ -z "$MAC_OBJ_ID" ] || [ "$MAC_OBJ_ID" = "null" ]; then
+            echo -e "${YELLOW}Warning: Failed creating MAC object${NC}"
+            echo "$RESPONSE" | jq . 2>/dev/null || true
+            return 0
+        fi
+
+    else
+
+        api_patch \
+            "$NETBOX_URL/dcim/mac-addresses/$MAC_OBJ_ID/" \
+            "{
+                \"assigned_object_type\":\"dcim.interface\",
+                \"assigned_object_id\":$INTERFACE_ID
+            }" >/dev/null
+    fi
+
+    api_patch \
+        "$NETBOX_URL/dcim/interfaces/$INTERFACE_ID/" \
+        "{\"primary_mac_address\":$MAC_OBJ_ID}" >/dev/null
+}
+
+# ============================================================
+# UPDATE AUTO CUSTOM FIELDS
+# ============================================================
+
+update_auto_custom_fields() {
+
+    local DEVICE_ID="$1"
+    local CPU_COUNT="$2"
+    local RAM_GB="$3"
+    local DISK_GB="$4"
+    local VM_TYPE="$5"
+    local KERNEL="$6"
+
+    local RESPONSE
+
+    RESPONSE=$(api_patch \
+        "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
+        "{
+            \"custom_fields\": {
+                \"cpu_count\": $CPU_COUNT,
+                \"ram_gb\": $RAM_GB,
+                \"disk_gb\": $(json_string "$DISK_GB"),
+                \"vm_type\": $(json_string "$VM_TYPE"),
+                \"kernel\": $(json_string "$KERNEL")
+            }
+        }")
+
+    if ! echo "$RESPONSE" | jq -e '.id' >/dev/null 2>&1; then
+        echo -e "${YELLOW}Warning: Custom fields could not be updated${NC}"
+        echo "$RESPONSE" | jq . 2>/dev/null || true
+    fi
+}
+
+# ============================================================
+# MANUAL DEVICE
+# Only hostname + IP required
+# ============================================================
+
+sync_manual_device() {
+
+    local HOSTNAME="$1"
+    local IPADDR="$2"
+    local CLUSTER_ID="$3"
+    local CLUSTER_NAME="$4"
+
+    local DEVICE_ID
+    local INTERFACE_ID
+    local IP_ID
+
+    echo
+    echo "------------------------------------------------------------"
+    echo -e "${BLUE}Processing: $HOSTNAME${NC}"
+    echo "------------------------------------------------------------"
+
+    echo "IP       : $IPADDR"
+    echo "Mode     : Manual"
+    echo "Rest data: Not required"
+
+    DEVICE_ID=$(create_or_update_device \
+        "$HOSTNAME" \
+        "$CLUSTER_ID" \
+        "staged")
 
     echo "Device ID: $DEVICE_ID"
 
-    # ======================================================
-    # MANUAL MODE
-    # Only Hostname + IP
-    # ======================================================
-
-    if [ "$MODE" = "manual" ]; then
-
-        echo "Manual mode: creating/checking IP..."
-
-        IP_ID=$(api_get \
-            "$NETBOX_URL/ipam/ip-addresses/?address=$(urlencode "$IPADDR")" |
-            jq -r '.results[0].id // empty')
-
-        if [ -z "$IP_ID" ] ||
-           [ "$IP_ID" = "null" ]; then
-
-            RESPONSE=$(api_post \
-                "$NETBOX_URL/ipam/ip-addresses/" \
-                "{\"address\":\"$IPADDR\",\"status\":\"active\"}")
-
-            IP_ID=$(echo "$RESPONSE" |
-                jq -r '.id // empty')
-
-            if [ -z "$IP_ID" ] ||
-               [ "$IP_ID" = "null" ]; then
-
-                echo -e "${RED}Failed creating IP: $IPADDR${NC}"
-                echo "$RESPONSE" | jq .
-                FAILED_LIST+="$HOSTNAME"$'\n'
-                return 1
-            fi
-
-        fi
-
-        echo "IP ID: $IP_ID"
-        echo "Assigning Primary IP..."
-
-        RESPONSE=$(api_patch \
-            "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
-            "{\"cluster\":$CLUSTER_ID,\"status\":\"$STATUS\",\"primary_ip4\":$IP_ID}")
-
-        if ! echo "$RESPONSE" | jq -e '.id' >/dev/null 2>&1; then
-
-            echo -e "${RED}Failed assigning Primary IP${NC}"
-            echo "$RESPONSE" | jq . 2>/dev/null || echo "$RESPONSE"
-            FAILED_LIST+="$HOSTNAME"$'\n'
-            return 1
-
-        fi
-
-    fi
-
-    # ======================================================
-    # AUTO MODE
-    # ======================================================
-
-    if [ "$MODE" = "auto" ]; then
-
-        # --------------------------------------------------
-        # INTERFACE
-        # --------------------------------------------------
-
-        ALL_INTS=$(api_get \
-            "$NETBOX_URL/dcim/interfaces/?device_id=$DEVICE_ID")
-
-        INTERFACE_ID=$(echo "$ALL_INTS" |
-            jq -r --arg IFACE "$IFACE" \
-            '.results[] | select(.name == $IFACE) | .id // empty')
-
-        if [ -z "$INTERFACE_ID" ] ||
-           [ "$INTERFACE_ID" = "null" ]; then
-
-            echo "Creating interface: $IFACE"
-
-            RESPONSE=$(api_post \
-                "$NETBOX_URL/dcim/interfaces/" \
-                "{\"device\":$DEVICE_ID,\"name\":\"$IFACE\",\"type\":\"1000base-t\"}")
-
-            INTERFACE_ID=$(echo "$RESPONSE" |
-                jq -r '.id // empty')
-
-            if [ -z "$INTERFACE_ID" ] ||
-               [ "$INTERFACE_ID" = "null" ]; then
-
-                echo -e "${RED}Failed creating interface${NC}"
-                echo "$RESPONSE" | jq .
-                FAILED_LIST+="$HOSTNAME"$'\n'
-                return 1
-            fi
-
-        fi
-
-        echo "Interface ID: $INTERFACE_ID"
-
-        # --------------------------------------------------
-        # MAC ADDRESS
-        # --------------------------------------------------
-
-        if [ -n "$MAC" ]; then
-
-            MAC_OBJ_ID=$(api_get \
-                "$NETBOX_URL/dcim/mac-addresses/?mac_address=$(urlencode "$MAC")" |
-                jq -r '.results[0].id // empty')
-
-            if [ -z "$MAC_OBJ_ID" ] ||
-               [ "$MAC_OBJ_ID" = "null" ]; then
-
-                RESPONSE=$(api_post \
-                    "$NETBOX_URL/dcim/mac-addresses/" \
-                    "{\"mac_address\":\"$MAC\",\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID}")
-
-                MAC_OBJ_ID=$(echo "$RESPONSE" |
-                    jq -r '.id // empty')
-
-                if [ -z "$MAC_OBJ_ID" ] ||
-                   [ "$MAC_OBJ_ID" = "null" ]; then
-
-                    echo -e "${YELLOW}MAC object creation failed${NC}"
-                    echo "$RESPONSE" | jq . 2>/dev/null || true
-
-                fi
-
-            else
-
-                api_patch \
-                    "$NETBOX_URL/dcim/mac-addresses/$MAC_OBJ_ID/" \
-                    "{\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID}" \
-                    > /dev/null
-
-            fi
-
-            if [ -n "$MAC_OBJ_ID" ] &&
-               [ "$MAC_OBJ_ID" != "null" ]; then
-
-                api_patch \
-                    "$NETBOX_URL/dcim/interfaces/$INTERFACE_ID/" \
-                    "{\"primary_mac_address\":$MAC_OBJ_ID}" \
-                    > /dev/null
-
-            fi
-
-        fi
-
-        # --------------------------------------------------
-        # IP
-        # --------------------------------------------------
-
-        IP_ID=$(api_get \
-            "$NETBOX_URL/ipam/ip-addresses/?address=$(urlencode "$IPADDR")" |
-            jq -r '.results[0].id // empty')
-
-        if [ -z "$IP_ID" ] ||
-           [ "$IP_ID" = "null" ]; then
-
-            RESPONSE=$(api_post \
-                "$NETBOX_URL/ipam/ip-addresses/" \
-                "{\"address\":\"$IPADDR\",\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID,\"status\":\"active\"}")
-
-            IP_ID=$(echo "$RESPONSE" |
-                jq -r '.id // empty')
-
-            if [ -z "$IP_ID" ] ||
-               [ "$IP_ID" = "null" ]; then
-
-                echo -e "${RED}Failed creating IP${NC}"
-                echo "$RESPONSE" | jq .
-                FAILED_LIST+="$HOSTNAME"$'\n'
-                return 1
-            fi
-
-        else
-
-            api_patch \
-                "$NETBOX_URL/ipam/ip-addresses/$IP_ID/" \
-                "{\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID}" \
-                > /dev/null
-
-        fi
-
-        echo "IP ID: $IP_ID"
-
-        # --------------------------------------------------
-        # PRIMARY IP
-        # --------------------------------------------------
-
-        api_patch \
-            "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
-            "{\"cluster\":$CLUSTER_ID,\"status\":\"$STATUS\",\"primary_ip4\":$IP_ID}" \
-            > /dev/null
-
-        # --------------------------------------------------
-        # CUSTOM FIELDS
-        # --------------------------------------------------
-
-        echo "Updating custom fields..."
-
-        api_patch \
-            "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
-            "{
-                \"custom_fields\": {
-                    \"cpu_count\": $CPU_COUNT,
-                    \"ram_gb\": $RAM_GB,
-                    \"disk_gb\": \"$DISK_GB\",
-                    \"vm_type\": \"$VM_TYPE\",
-                    \"kernel\": \"$KERNEL\"
-                }
-            }" > /dev/null
-
-    fi
-
-    # ======================================================
-    # TAGS
-    # ======================================================
-
-    assign_tags "$DEVICE_ID" "$CLUSTER_NAME"
-
-    echo "------------------------------------------------------------"
-    echo -e "${GREEN}✓ Finished: $HOSTNAME${NC}"
-    echo "Cluster: $CLUSTER_NAME"
-    echo "------------------------------------------------------------"
+    # Automatic internal interface for manual devices
+    INTERFACE_ID=$(get_or_create_interface \
+        "$DEVICE_ID" \
+        "eth0")
+
+    echo "Interface ID: $INTERFACE_ID"
+
+    IP_ID=$(create_or_assign_ip \
+        "$IPADDR" \
+        "$INTERFACE_ID")
+
+    echo "IP ID: $IP_ID"
+
+    # IP is now assigned to the interface BEFORE becoming Primary IP
+    set_primary_ip \
+        "$DEVICE_ID" \
+        "$IP_ID" \
+        "$CLUSTER_ID" \
+        "staged"
+
+    assign_tags \
+        "$DEVICE_ID" \
+        "$CLUSTER_NAME"
 
     SUCCESS_LIST+="$HOSTNAME"$'\n'
 
-    return 0
+    echo
+    echo -e "${GREEN}✓ Finished: $HOSTNAME${NC}"
 }
 
-# ==========================================================
+# ============================================================
 # AUTOMATIC SSH DISCOVERY
-# ==========================================================
+# ============================================================
 
-discover_and_sync() {
+discover_and_sync_device() {
 
     local REMOTE_HOST="$1"
     local CLUSTER_ID="$2"
@@ -667,29 +767,22 @@ discover_and_sync() {
     local VM_TYPE
     local KERNEL
     local UPTIME
+    local DEVICE_ID
+    local INTERFACE_ID
+    local IP_ID
 
-    echo ""
-    echo "============================================================"
-    echo -e "${CYAN}AUTOMATIC DISCOVERY: $REMOTE_HOST${NC}"
-    echo "============================================================"
+    echo
+    echo "------------------------------------------------------------"
+    echo -e "${BLUE}Processing: $REMOTE_HOST${NC}"
+    echo "------------------------------------------------------------"
 
-    # ------------------------------------------------------
-    # PING
-    # ------------------------------------------------------
+    echo "Checking connectivity..."
 
     if ! ping -c1 -W2 "$REMOTE_HOST" >/dev/null 2>&1; then
-
         echo -e "${RED}Host unreachable: $REMOTE_HOST${NC}"
         FAILED_LIST+="$REMOTE_HOST"$'\n'
         return 1
-
     fi
-
-    echo -e "${GREEN}Host reachable${NC}"
-
-    # ------------------------------------------------------
-    # SSH
-    # ------------------------------------------------------
 
     if ! sshpass -p "$SSH_PASS" \
         ssh \
@@ -702,371 +795,258 @@ discover_and_sync() {
         echo -e "${RED}SSH failed: $REMOTE_HOST${NC}"
         FAILED_LIST+="$REMOTE_HOST"$'\n'
         return 1
-
     fi
 
-    echo -e "${GREEN}SSH connected successfully${NC}"
+    echo -e "${GREEN}Host reachable${NC}"
+    echo "Discovering system information..."
 
-    # ------------------------------------------------------
-    # HOSTNAME
-    # ------------------------------------------------------
-
-    HOSTNAME=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
+    HOSTNAME=$(sshpass -p "$SSH_PASS" \
+        ssh -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         "$SSH_USER@$REMOTE_HOST" \
-        "hostname -f" 2>/dev/null |
+        "hostname -f 2>/dev/null || hostname" |
         tr -d '\r' |
         xargs)
 
-    # ------------------------------------------------------
-    # INTERFACE + IP
-    # ------------------------------------------------------
-
-    IFACE_DATA=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
+    IFACE_DATA=$(sshpass -p "$SSH_PASS" \
+        ssh -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         "$SSH_USER@$REMOTE_HOST" \
-        "ip -o -4 addr show scope global | head -1" 2>/dev/null)
+        "ip -o -4 addr show scope global | head -1")
 
     IFACE=$(echo "$IFACE_DATA" | awk '{print $2}')
     IPADDR=$(echo "$IFACE_DATA" | awk '{print $4}')
 
-    # ------------------------------------------------------
-    # MAC
-    # ------------------------------------------------------
+    if [ -z "$HOSTNAME" ] ||
+       [ -z "$IFACE" ] ||
+       [ -z "$IPADDR" ]; then
 
-    MAC=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
+        echo -e "${RED}Failed discovering hostname/interface/IP${NC}"
+        FAILED_LIST+="$REMOTE_HOST"$'\n'
+        return 1
+    fi
+
+    MAC=$(sshpass -p "$SSH_PASS" \
+        ssh -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         "$SSH_USER@$REMOTE_HOST" \
-        "cat /sys/class/net/$IFACE/address" 2>/dev/null |
+        "cat /sys/class/net/$IFACE/address 2>/dev/null" |
         tr '[:lower:]' '[:upper:]' |
         tr -d '\r' |
         xargs)
 
-    # ------------------------------------------------------
-    # CPU
-    # ------------------------------------------------------
-
-    CPU_COUNT=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
+    CPU_COUNT=$(sshpass -p "$SSH_PASS" \
+        ssh -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         "$SSH_USER@$REMOTE_HOST" \
-        "nproc" 2>/dev/null |
-        xargs)
+        "nproc")
 
-    # ------------------------------------------------------
-    # RAM
-    # ------------------------------------------------------
-
-    RAM_GB=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
+    RAM_GB=$(sshpass -p "$SSH_PASS" \
+        ssh -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         "$SSH_USER@$REMOTE_HOST" \
-        "awk '/MemTotal/ {printf \"%d\", (\$2/1024/1024)+0.5}' /proc/meminfo" \
-        2>/dev/null |
-        xargs)
+        "awk '/MemTotal/ {printf \"%d\", (\$2/1024/1024)+0.5}' /proc/meminfo")
 
-    # ------------------------------------------------------
-    # DISK
-    # ------------------------------------------------------
-
-    DISK_GB=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
+    DISK_GB=$(sshpass -p "$SSH_PASS" \
+        ssh -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         "$SSH_USER@$REMOTE_HOST" \
-        "lsblk -bdno SIZE | awk '{s+=\$1} END {printf \"%.0f GB\",s/1024/1024/1024}'" \
-        2>/dev/null |
-        xargs)
+        "lsblk -bdno SIZE | awk '{s+=\$1} END {printf \"%.0f GB\",s/1024/1024/1024}'")
 
-    # ------------------------------------------------------
-    # VM TYPE
-    # ------------------------------------------------------
-
-    VM_TYPE=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
+    VM_TYPE=$(sshpass -p "$SSH_PASS" \
+        ssh -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         "$SSH_USER@$REMOTE_HOST" \
-        "systemd-detect-virt" 2>/dev/null |
+        "systemd-detect-virt 2>/dev/null || true" |
         tr -d '\r' |
         xargs)
 
     [ -z "$VM_TYPE" ] && VM_TYPE="Physical"
 
-    # ------------------------------------------------------
-    # KERNEL
-    # ------------------------------------------------------
-
-    KERNEL=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
+    KERNEL=$(sshpass -p "$SSH_PASS" \
+        ssh -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         "$SSH_USER@$REMOTE_HOST" \
-        "uname -r" 2>/dev/null |
-        tr -d '\r' |
-        xargs)
+        "uname -r")
 
-    # ------------------------------------------------------
-    # UPTIME
-    # ------------------------------------------------------
-
-    UPTIME=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
+    UPTIME=$(sshpass -p "$SSH_PASS" \
+        ssh -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         "$SSH_USER@$REMOTE_HOST" \
-        "uptime -p" 2>/dev/null |
-        tr -d '\r' |
-        xargs)
+        "uptime -p" 2>/dev/null || true)
 
-    # ------------------------------------------------------
-    # ENSURE CIDR
-    # ------------------------------------------------------
+    echo "Hostname : $HOSTNAME"
+    echo "IP       : $IPADDR"
+    echo "Interface: $IFACE"
+    echo "MAC      : ${MAC:-N/A}"
+    echo "CPU      : $CPU_COUNT"
+    echo "RAM      : $RAM_GB GB"
+    echo "Disk     : $DISK_GB"
+    echo "Type     : $VM_TYPE"
+    echo "Kernel   : $KERNEL"
+    echo "Uptime   : $UPTIME"
 
-    if [[ "$IPADDR" != */* ]]; then
-        IPADDR="$IPADDR/24"
-    fi
-
-    # ------------------------------------------------------
-    # SYNC
-    # ------------------------------------------------------
-
-    sync_device \
+    DEVICE_ID=$(create_or_update_device \
         "$HOSTNAME" \
-        "$IPADDR" \
         "$CLUSTER_ID" \
-        "$CLUSTER_NAME" \
-        "active" \
-        "auto" \
-        "$IFACE" \
-        "$MAC" \
+        "active")
+
+    echo "Device ID: $DEVICE_ID"
+
+    INTERFACE_ID=$(get_or_create_interface \
+        "$DEVICE_ID" \
+        "$IFACE")
+
+    echo "Interface ID: $INTERFACE_ID"
+
+    assign_mac \
+        "$INTERFACE_ID" \
+        "$MAC"
+
+    IP_ID=$(create_or_assign_ip \
+        "$IPADDR" \
+        "$INTERFACE_ID")
+
+    echo "IP ID: $IP_ID"
+
+    set_primary_ip \
+        "$DEVICE_ID" \
+        "$IP_ID" \
+        "$CLUSTER_ID" \
+        "active"
+
+    update_auto_custom_fields \
+        "$DEVICE_ID" \
         "$CPU_COUNT" \
         "$RAM_GB" \
         "$DISK_GB" \
         "$VM_TYPE" \
-        "$KERNEL" \
-        "$UPTIME"
+        "$KERNEL"
+
+    assign_tags \
+        "$DEVICE_ID" \
+        "$CLUSTER_NAME"
+
+    SUCCESS_LIST+="$HOSTNAME"$'\n'
+
+    echo
+    echo -e "${GREEN}✓ Finished: $HOSTNAME${NC}"
 }
 
-# ==========================================================
-# START
-# ==========================================================
+# ============================================================
+# STEP 1 - CENTOS 7
+# ============================================================
 
-banner
-
-# ==========================================================
-# DEPENDENCY CHECK
-# ==========================================================
-
-echo "Checking dependencies..."
-
-for CMD in curl jq ping ssh sshpass
-do
-    if ! command -v "$CMD" >/dev/null 2>&1; then
-
-        echo -e "${RED}Missing dependency: $CMD${NC}"
-        exit 1
-
-    fi
-done
-
-echo -e "${GREEN}Dependencies OK${NC}"
-
-# ==========================================================
-# NETBOX API CHECK
-# ==========================================================
-
-echo ""
-echo "Checking NetBox API..."
-
-HTTP_CODE=$(curl -sk \
-    -o /dev/null \
-    -w "%{http_code}" \
-    -H "Authorization: Token $NETBOX_TOKEN" \
-    "$NETBOX_URL/status/")
-
-if [ "$HTTP_CODE" != "200" ]; then
-
-    echo -e "${RED}NetBox API failed. HTTP Code: $HTTP_CODE${NC}"
-    exit 1
-
-fi
-
-echo -e "${GREEN}NetBox API reachable${NC}"
-
-# ==========================================================
-# STEP 1
-# CENTOS 7 MANUAL DEVICES
-# ==========================================================
-
-echo ""
+echo
 echo "============================================================"
-echo -e "${CYAN}STEP 1 - CENTOS 7 DEVICES${NC}"
+echo "STEP 1 - CENTOS 7 DEVICES"
 echo "============================================================"
 
-CENTOS_CLUSTER_ID=$(get_cluster_id \
+CENTOS_CLUSTER_ID=$(get_or_create_cluster \
     "Physical" \
     "centos-07-servers" \
     "centos-07-servers")
 
-if [ -z "$CENTOS_CLUSTER_ID" ] ||
-   [ "$CENTOS_CLUSTER_ID" = "null" ]; then
-
-    echo -e "${RED}Failed to get/create CentOS cluster${NC}"
-    exit 1
-
-fi
-
 echo "Cluster ID: $CENTOS_CLUSTER_ID"
 
-# cent-07-01
-sync_device \
+sync_manual_device \
     "cent-07-01.vgs.com" \
     "192.168.253.131/24" \
     "$CENTOS_CLUSTER_ID" \
-    "centos-07-servers" \
-    "staged" \
-    "manual" \
-    "" \
-    "" \
-    "null" \
-    "null" \
-    "" \
-    "" \
-    "" \
-    ""
+    "centos-07-servers" || true
 
-# cent-07-02
-sync_device \
+sync_manual_device \
     "cent-07-02.vgs.com" \
     "192.168.253.132/24" \
     "$CENTOS_CLUSTER_ID" \
-    "centos-07-servers" \
-    "staged" \
-    "manual" \
-    "" \
-    "" \
-    "null" \
-    "null" \
-    "" \
-    "" \
-    "" \
-    ""
+    "centos-07-servers" || true
 
-# ==========================================================
-# STEP 2
-# ROCKY 8 AUTOMATIC DEVICES
-# ==========================================================
+# ============================================================
+# STEP 2 - ROCKY 8 / AUTOMATIC DISCOVERY
+# ============================================================
 
-echo ""
+echo
 echo "============================================================"
-echo -e "${CYAN}STEP 2 - ROCKY 8 AUTOMATIC DISCOVERY${NC}"
+echo "STEP 2 - ROCKY 8 DEVICES - AUTOMATIC DISCOVERY"
 echo "============================================================"
 
-ROCKY8_CLUSTER_ID=$(get_cluster_id \
+ROCKY8_CLUSTER_ID=$(get_or_create_cluster \
     "Physical" \
     "rocky-8-servers" \
     "rocky-8-servers")
 
-if [ -z "$ROCKY8_CLUSTER_ID" ] ||
-   [ "$ROCKY8_CLUSTER_ID" = "null" ]; then
-
-    echo -e "${RED}Failed to get/create Rocky 8 cluster${NC}"
-    exit 1
-
-fi
-
 echo "Cluster ID: $ROCKY8_CLUSTER_ID"
 
-# netbox.vgs.com
-discover_and_sync \
-    "netbox.vgs.com" \
-    "$ROCKY8_CLUSTER_ID" \
-    "rocky-8-servers"
+AUTO_HOSTS=(
+    "netbox.vgs.com"
+    "ansible-server-01.vgs.com"
+)
 
-# ansible-server-01.vgs.com
-discover_and_sync \
-    "ansible-server-01.vgs.com" \
-    "$ROCKY8_CLUSTER_ID" \
-    "rocky-8-servers"
+for HOST in "${AUTO_HOSTS[@]}"
+do
+    discover_and_sync_device \
+        "$HOST" \
+        "$ROCKY8_CLUSTER_ID" \
+        "rocky-8-servers" || true
+done
 
-# ==========================================================
-# STEP 3
-# ROCKY 9 MANUAL DEVICE
-# ==========================================================
+# ============================================================
+# STEP 3 - ROCKY 9
+# ============================================================
 
-echo ""
+echo
 echo "============================================================"
-echo -e "${CYAN}STEP 3 - ROCKY 9 DEVICE${NC}"
+echo "STEP 3 - ROCKY 9 DEVICE"
 echo "============================================================"
 
-ROCKY9_CLUSTER_ID=$(get_cluster_id \
+ROCKY9_CLUSTER_ID=$(get_or_create_cluster \
     "Physical" \
     "rocky-9-servers" \
     "rocky-9-servers")
 
-if [ -z "$ROCKY9_CLUSTER_ID" ] ||
-   [ "$ROCKY9_CLUSTER_ID" = "null" ]; then
-
-    echo -e "${RED}Failed to get/create Rocky 9 cluster${NC}"
-    exit 1
-
-fi
-
 echo "Cluster ID: $ROCKY9_CLUSTER_ID"
 
-# rocky-09-01
-sync_device \
+sync_manual_device \
     "rocky-09-01.vgs.com" \
     "192.168.253.151/24" \
     "$ROCKY9_CLUSTER_ID" \
-    "rocky-9-servers" \
-    "staged" \
-    "manual" \
-    "" \
-    "" \
-    "null" \
-    "null" \
-    "" \
-    "" \
-    "" \
-    ""
+    "rocky-9-servers" || true
 
-# ==========================================================
+# ============================================================
 # SUMMARY
-# ==========================================================
+# ============================================================
 
-END_TIME=$(date +%s)
-RUNTIME=$((END_TIME - START_TIME))
-
-SUCCESS_COUNT=$(echo "$SUCCESS_LIST" | sed '/^$/d' | wc -l)
-FAILED_COUNT=$(echo "$FAILED_LIST" | sed '/^$/d' | wc -l)
-
-echo ""
+echo
 echo "============================================================"
-echo -e "${CYAN}                   EXECUTION SUMMARY${NC}"
+echo "                    FINAL SUMMARY"
 echo "============================================================"
 
-echo ""
+echo
 echo -e "${GREEN}SUCCESSFUL HOSTS${NC}"
 
-if [ "$SUCCESS_COUNT" -eq 0 ]; then
-    echo "None"
+if [ -n "$SUCCESS_LIST" ]; then
+    printf "%s" "$SUCCESS_LIST"
 else
-    echo "$SUCCESS_LIST"
+    echo "None"
 fi
 
-echo ""
+echo
 echo -e "${RED}FAILED HOSTS${NC}"
 
-if [ "$FAILED_COUNT" -eq 0 ]; then
-    echo "0"
+if [ -n "$FAILED_LIST" ]; then
+    printf "%s" "$FAILED_LIST"
 else
-    echo "$FAILED_LIST"
+    echo "0"
 fi
 
-echo ""
-echo "Success Count : $SUCCESS_COUNT"
-echo "Failed Count  : $FAILED_COUNT"
-echo -e "${CYAN}Execution Time: ${RUNTIME} seconds${NC}"
+SUCCESS_COUNT=$(printf "%s" "$SUCCESS_LIST" | sed '/^$/d' | wc -l)
+FAILED_COUNT=$(printf "%s" "$FAILED_LIST" | sed '/^$/d' | wc -l)
 
+echo
+echo "Success Count: $SUCCESS_COUNT"
+echo "Failed Count : $FAILED_COUNT"
+
+echo
+echo "============================================================"
+echo -e "${GREEN}NETBOX SPECIFIC DEVICE CREATION COMPLETED${NC}"
 echo "============================================================"
