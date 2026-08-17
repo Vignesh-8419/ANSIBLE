@@ -278,7 +278,7 @@
 
         folder: "{{ vm_folder }}"
 
-        name: "netbox.vgs.com"
+        name: "netbox"
 
         template: "{{ rocky8_template }}"
 
@@ -324,7 +324,7 @@
         - >-
           (
             destination_vm_info.results
-            | selectattr('item.vm_name', 'equalto', 'netbox.vgs.com')
+            | selectattr('item.vm_name', 'equalto', 'netbox')
             | list
             | first
             | default({})
@@ -344,7 +344,7 @@
 
         folder: "{{ vm_folder }}"
 
-        name: "ansible-server-01.vgs.com"
+        name: "ansible-server-01"
 
         template: "{{ rocky8_template }}"
 
@@ -390,7 +390,7 @@
         - >-
           (
             destination_vm_info.results
-            | selectattr('item.vm_name', 'equalto', 'ansible-server-01.vgs.com')
+            | selectattr('item.vm_name', 'equalto', 'ansible-server-01')
             | list
             | first
             | default({})
@@ -418,7 +418,7 @@
 
         folder: "{{ vm_folder }}"
 
-        name: "netbox.vgs.com"
+        name: "netbox"
 
         schema: vsphere
 
@@ -439,7 +439,7 @@
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "NETBOX.VGS.COM"
+          - "NETBOX"
           - "============================================================"
           - "Name          : {{ netbox_vm_info.instance.config.name }}"
           - "Power State   : {{ netbox_vm_info.instance.runtime.powerState }}"
@@ -465,7 +465,7 @@
 
         folder: "{{ vm_folder }}"
 
-        name: "ansible-server-01.vgs.com"
+        name: "ansible-server-01"
 
         schema: vsphere
 
@@ -486,7 +486,7 @@
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "ANSIBLE-SERVER-01.VGS.COM"
+          - "ANSIBLE-SERVER-01"
           - "============================================================"
           - "Name          : {{ ansible_vm_info.instance.config.name }}"
           - "Power State   : {{ ansible_vm_info.instance.runtime.powerState }}"
@@ -510,12 +510,12 @@
           - "============================================================"
           - "Template       : {{ rocky8_template }}"
           - "============================================================"
-          - "VM 1           : netbox.vgs.com"
+          - "VM 1           : netbox"
           - "IP             : 192.168.253.143/24"
           - "Gateway        : 192.168.253.2"
           - "DNS            : 192.168.253.1"
           - "============================================================"
-          - "VM 2           : ansible-server-01.vgs.com"
+          - "VM 2           : ansible-server-01"
           - "IP             : 192.168.253.145/24"
           - "Gateway        : 192.168.253.2"
           - "DNS            : 192.168.253.1"
