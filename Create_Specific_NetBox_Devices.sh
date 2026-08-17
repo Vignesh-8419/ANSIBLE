@@ -4,23 +4,6 @@ set -u
 set -o pipefail
 
 # ============================================================
-# NETBOX SPECIFIC DEVICE CREATION TOOL
-#
-# Features:
-# - Create or update clusters
-# - Create or update devices
-# - Supports short hostname -> FQDN migration
-# - Safe existing IP handling
-# - Prevents accidental IP reassignment
-# - Reuses existing interfaces
-# - Syncs MAC addresses
-# - Updates custom fields for auto-discovered hosts
-# - Assigns primary IPs
-# - Assigns tags
-# ============================================================
-
-
-# ============================================================
 # CONFIGURATION
 # ============================================================
 
@@ -35,7 +18,6 @@ SITE_ID=1
 DEVICETYPE_ID=1
 DEVICEROLE_ID=1
 
-
 # ============================================================
 # COLORS
 # ============================================================
@@ -48,14 +30,12 @@ CYAN='\033[0;36m'
 WHITE='\033[1;37m'
 NC='\033[0m'
 
-
 # ============================================================
 # RESULTS
 # ============================================================
 
 SUCCESS_LIST=""
 FAILED_LIST=""
-
 
 # ============================================================
 # DISPLAY FUNCTIONS
@@ -84,7 +64,6 @@ error() {
     echo -e "${RED}$1${NC}"
 }
 
-
 # ============================================================
 # DEPENDENCY CHECK
 # ============================================================
@@ -93,18 +72,17 @@ check_dependencies() {
 
     info "Checking dependencies..."
 
-    for cmd in curl jq ping ssh sshpass
+    for cmd in curl jq ssh sshpass getent
     do
         if ! command -v "$cmd" >/dev/null 2>&1; then
-
             error "Missing dependency: $cmd"
 
             case "$cmd" in
                 sshpass)
-                    echo "Install with: yum install -y sshpass"
+                    echo "Install with: dnf install -y sshpass"
                     ;;
                 jq)
-                    echo "Install with: yum install -y jq"
+                    echo "Install with: dnf install -y jq"
                     ;;
                 *)
                     echo "Install the package providing: $cmd"
@@ -117,7 +95,6 @@ check_dependencies() {
 
     success "Dependencies OK"
 }
-
 
 # ============================================================
 # NETBOX API CHECK
@@ -137,16 +114,13 @@ check_netbox() {
         "$NETBOX_URL/status/")
 
     if [ "$http_code" != "200" ]; then
-
         error "NetBox API check failed"
         error "HTTP Code: $http_code"
-
         exit 1
     fi
 
     success "NetBox API reachable"
 }
-
 
 # ============================================================
 # HELPERS
@@ -162,25 +136,6 @@ slugify() {
         tr ' ' '-' |
         sed 's/[^a-z0-9-]//g'
 }
-
-
-# ============================================================
-# GET DEVICE BY EXACT NAME
-# ============================================================
-
-get_device_id_by_name() {
-
-    local hostname="$1"
-    local encoded_name
-
-    encoded_name=$(urlencode "$hostname")
-
-    curl -sk \
-        -H "Authorization: Token $NETBOX_TOKEN" \
-        "$NETBOX_URL/dcim/devices/?name=$encoded_name" |
-        jq -r '.results[0].id // empty'
-}
-
 
 # ============================================================
 # GET OR CREATE CLUSTER TYPE
@@ -223,16 +178,13 @@ get_or_create_cluster_type() {
     id=$(echo "$response" | jq -r '.id // empty')
 
     if [ -z "$id" ]; then
-
         error "Failed creating Cluster Type: $name" >&2
         echo "$response" | jq . >&2
-
         return 1
     fi
 
     echo "$id"
 }
-
 
 # ============================================================
 # GET OR CREATE CLUSTER GROUP
@@ -275,16 +227,13 @@ get_or_create_cluster_group() {
     id=$(echo "$response" | jq -r '.id // empty')
 
     if [ -z "$id" ]; then
-
         error "Failed creating Cluster Group: $name" >&2
         echo "$response" | jq . >&2
-
         return 1
     fi
 
     echo "$id"
 }
-
 
 # ============================================================
 # GET OR CREATE CLUSTER
@@ -308,10 +257,8 @@ get_or_create_cluster() {
         jq -r '.results[0].id // empty')
 
     if [ -n "$id" ]; then
-
         echo "Cluster already exists: $cluster_name" >&2
         echo "$id"
-
         return 0
     fi
 
@@ -337,30 +284,16 @@ get_or_create_cluster() {
     id=$(echo "$response" | jq -r '.id // empty')
 
     if [ -z "$id" ]; then
-
         error "Failed creating cluster: $cluster_name" >&2
         echo "$response" | jq . >&2
-
         return 1
     fi
 
     echo "$id"
 }
 
-
 # ============================================================
 # CREATE OR UPDATE DEVICE
-#
-# Supports:
-#
-# Existing:
-#   cent-07-02
-#
-# Requested:
-#   cent-07-02.vgs.com
-#
-# Result:
-#   Existing device is renamed instead of creating a duplicate.
 # ============================================================
 
 create_or_update_device() {
@@ -369,36 +302,16 @@ create_or_update_device() {
     local cluster_id="$2"
     local device_status="$3"
 
-    local short_hostname
+    local encoded_name
     local device_id
     local response
 
-    # --------------------------------------------------------
-    # FIRST: Search exact hostname
-    # --------------------------------------------------------
+    encoded_name=$(urlencode "$hostname")
 
-    device_id=$(get_device_id_by_name "$hostname")
-
-    # --------------------------------------------------------
-    # SECOND: If FQDN does not exist, search short hostname
-    # --------------------------------------------------------
-
-    if [ -z "$device_id" ] && [[ "$hostname" == *.* ]]; then
-
-        short_hostname="${hostname%%.*}"
-
-        device_id=$(get_device_id_by_name "$short_hostname")
-
-        if [ -n "$device_id" ]; then
-
-            warn "Existing device found with short hostname: $short_hostname"
-            info "Migrating hostname: $short_hostname -> $hostname"
-        fi
-    fi
-
-    # --------------------------------------------------------
-    # UPDATE EXISTING DEVICE
-    # --------------------------------------------------------
+    device_id=$(curl -sk \
+        -H "Authorization: Token $NETBOX_TOKEN" \
+        "$NETBOX_URL/dcim/devices/?name=$encoded_name" |
+        jq -r '.results[0].id // empty')
 
     if [ -n "$device_id" ]; then
 
@@ -409,31 +322,22 @@ create_or_update_device() {
             -H "$HDR" \
             -H "Authorization: Token $NETBOX_TOKEN" \
             -d "$(jq -n \
-                --arg name "$hostname" \
                 --argjson cluster "$cluster_id" \
                 --arg status "$device_status" \
                 '{
-                    name: $name,
                     cluster: $cluster,
                     status: $status
                 }')")
 
         if [ "$(echo "$response" | jq -r '.id // empty')" != "$device_id" ]; then
-
             error "Failed updating device: $hostname" >&2
             echo "$response" | jq . >&2
-
             return 1
         fi
 
         echo "$device_id"
-
         return 0
     fi
-
-    # --------------------------------------------------------
-    # CREATE NEW DEVICE
-    # --------------------------------------------------------
 
     echo "Creating device..." >&2
 
@@ -460,16 +364,13 @@ create_or_update_device() {
     device_id=$(echo "$response" | jq -r '.id // empty')
 
     if [ -z "$device_id" ]; then
-
         error "Failed creating device: $hostname" >&2
         echo "$response" | jq . >&2
-
         return 1
     fi
 
     echo "$device_id"
 }
-
 
 # ============================================================
 # GET OR CREATE INTERFACE
@@ -491,10 +392,7 @@ get_or_create_interface() {
         head -1)
 
     if [ -n "$interface_id" ]; then
-
-        echo "Interface already exists: $interface_name" >&2
         echo "$interface_id"
-
         return 0
     fi
 
@@ -516,76 +414,120 @@ get_or_create_interface() {
     interface_id=$(echo "$response" | jq -r '.id // empty')
 
     if [ -z "$interface_id" ]; then
-
         error "Failed creating interface" >&2
         echo "$response" | jq . >&2
-
         return 1
     fi
 
     echo "$interface_id"
 }
 
-
 # ============================================================
-# GET OR CREATE MAC
+# CLEAR PRIMARY IP FROM OLD DEVICE
 # ============================================================
 
-sync_mac_address() {
+clear_old_primary_ip() {
 
-    local mac="$1"
-    local interface_id="$2"
+    local ip_id="$1"
 
-    [ -z "$mac" ] && return 0
-
-    local encoded_mac
-    local mac_id
+    local device_id
     local response
 
-    encoded_mac=$(urlencode "$mac")
-
-    mac_id=$(curl -sk \
+    device_id=$(curl -sk \
         -H "Authorization: Token $NETBOX_TOKEN" \
-        "$NETBOX_URL/dcim/mac-addresses/?mac_address=$encoded_mac" |
+        "$NETBOX_URL/dcim/devices/?primary_ip4_id=$ip_id" |
         jq -r '.results[0].id // empty')
 
-    # --------------------------------------------------------
-    # CREATE MAC
-    # --------------------------------------------------------
+    if [ -z "$device_id" ]; then
+        return 0
+    fi
 
-    if [ -z "$mac_id" ]; then
+    warn "IP is primary IP on old Device ID: $device_id"
+    warn "Clearing old primary IP assignment..."
 
-        response=$(curl -sk -X POST \
-            "$NETBOX_URL/dcim/mac-addresses/" \
-            -H "$HDR" \
-            -H "Authorization: Token $NETBOX_TOKEN" \
-            -d "$(jq -n \
-                --arg mac "$mac" \
-                --argjson interface "$interface_id" \
-                '{
-                    mac_address: $mac,
-                    assigned_object_type: "dcim.interface",
-                    assigned_object_id: $interface
-                }')")
+    response=$(curl -sk -X PATCH \
+        "$NETBOX_URL/dcim/devices/$device_id/" \
+        -H "$HDR" \
+        -H "Authorization: Token $NETBOX_TOKEN" \
+        -d '{
+            "primary_ip4": null
+        }')
 
-        mac_id=$(echo "$response" | jq -r '.id // empty')
+    if [ -z "$(echo "$response" | jq -r '.id // empty')" ]; then
+        error "Failed clearing old primary IP"
+        echo "$response" | jq . >&2
+        return 1
+    fi
 
-        if [ -z "$mac_id" ]; then
+    success "Old primary IP cleared"
 
-            warn "Warning: Failed creating MAC object"
-            echo "$response" | jq .
+    return 0
+}
 
+# ============================================================
+# GET OR CREATE / ASSIGN IP
+# ============================================================
+
+sync_ip_address() {
+
+    local ip_address="$1"
+    local interface_id="$2"
+
+    local encoded_ip
+    local ip_id
+    local assigned_type
+    local assigned_id
+    local response
+
+    encoded_ip=$(urlencode "$ip_address")
+
+    response=$(curl -sk \
+        -H "Authorization: Token $NETBOX_TOKEN" \
+        "$NETBOX_URL/ipam/ip-addresses/?address=$encoded_ip")
+
+    ip_id=$(echo "$response" | jq -r '.results[0].id // empty')
+
+    if [ -n "$ip_id" ]; then
+
+        echo "IP already exists. Checking assignment..." >&2
+
+        assigned_type=$(echo "$response" |
+            jq -r '.results[0].assigned_object_type // empty')
+
+        assigned_id=$(echo "$response" |
+            jq -r '.results[0].assigned_object_id // empty')
+
+        # ----------------------------------------------------
+        # Already assigned to correct interface
+        # ----------------------------------------------------
+
+        if [ "$assigned_type" = "dcim.interface" ] &&
+           [ "$assigned_id" = "$interface_id" ]; then
+
+            echo "IP already assigned to correct interface" >&2
+            echo "$ip_id"
             return 0
         fi
 
-    # --------------------------------------------------------
-    # UPDATE MAC
-    # --------------------------------------------------------
+        # ----------------------------------------------------
+        # Assigned somewhere else
+        # Clear old primary assignment first
+        # ----------------------------------------------------
 
-    else
+        if [ -n "$assigned_id" ]; then
+
+            warn "IP is currently assigned to another interface"
+            warn "Preparing IP reassignment..."
+
+            if ! clear_old_primary_ip "$ip_id"; then
+                return 1
+            fi
+        fi
+
+        echo "Assigning existing IP to interface..." >&2
 
         response=$(curl -sk -X PATCH \
-            "$NETBOX_URL/dcim/mac-addresses/$mac_id/" \
+            "$NETBOX_URL/ipam/ip-addresses/$ip_id/" \
             -H "$HDR" \
             -H "Authorization: Token $NETBOX_TOKEN" \
             -d "$(jq -n \
@@ -596,139 +538,13 @@ sync_mac_address() {
                 }')")
 
         if [ -z "$(echo "$response" | jq -r '.id // empty')" ]; then
-
-            warn "Warning: Failed updating MAC object"
-            echo "$response" | jq .
-
-            return 0
-        fi
-    fi
-
-    # --------------------------------------------------------
-    # SET PRIMARY MAC
-    # --------------------------------------------------------
-
-    response=$(curl -sk -X PATCH \
-        "$NETBOX_URL/dcim/interfaces/$interface_id/" \
-        -H "$HDR" \
-        -H "Authorization: Token $NETBOX_TOKEN" \
-        -d "$(jq -n \
-            --argjson mac_id "$mac_id" \
-            '{
-                primary_mac_address: $mac_id
-            }')")
-
-    if [ -z "$(echo "$response" | jq -r '.id // empty')" ]; then
-        warn "Warning: Failed assigning primary MAC"
-    fi
-}
-
-
-# ============================================================
-# GET OR CREATE / ASSIGN IP
-#
-# SAFE VERSION:
-#
-# Existing IP + same interface:
-#   Do nothing
-#
-# Existing IP + unassigned:
-#   Assign safely
-#
-# Existing IP + different interface:
-#   STOP - do not steal the IP
-# ============================================================
-
-sync_ip_address() {
-
-    local ip_address="$1"
-    local interface_id="$2"
-
-    local encoded_ip
-    local response
-    local ip_id
-    local assigned_object_type
-    local assigned_object_id
-
-    encoded_ip=$(urlencode "$ip_address")
-
-    response=$(curl -sk \
-        -H "Authorization: Token $NETBOX_TOKEN" \
-        "$NETBOX_URL/ipam/ip-addresses/?address=$encoded_ip")
-
-    ip_id=$(echo "$response" |
-        jq -r '.results[0].id // empty')
-
-    # --------------------------------------------------------
-    # IP ALREADY EXISTS
-    # --------------------------------------------------------
-
-    if [ -n "$ip_id" ]; then
-
-        assigned_object_type=$(echo "$response" |
-            jq -r '.results[0].assigned_object_type // empty')
-
-        assigned_object_id=$(echo "$response" |
-            jq -r '.results[0].assigned_object_id // empty')
-
-        echo "IP already exists." >&2
-        echo "IP ID: $ip_id" >&2
-
-        # ----------------------------------------------------
-        # IP ALREADY BELONGS TO THIS INTERFACE
-        # ----------------------------------------------------
-
-        if [ "$assigned_object_type" = "dcim.interface" ] &&
-           [ "$assigned_object_id" = "$interface_id" ]; then
-
-            echo "IP is already assigned to this interface." >&2
-
-            echo "$ip_id"
-            return 0
+            error "Failed assigning existing IP" >&2
+            echo "$response" | jq . >&2
+            return 1
         fi
 
-        # ----------------------------------------------------
-        # IP EXISTS BUT IS UNASSIGNED
-        # ----------------------------------------------------
-
-        if [ -z "$assigned_object_id" ] ||
-           [ "$assigned_object_id" = "null" ]; then
-
-            echo "IP is unassigned. Assigning to interface..." >&2
-
-            response=$(curl -sk -X PATCH \
-                "$NETBOX_URL/ipam/ip-addresses/$ip_id/" \
-                -H "$HDR" \
-                -H "Authorization: Token $NETBOX_TOKEN" \
-                -d "$(jq -n \
-                    --argjson interface "$interface_id" \
-                    '{
-                        assigned_object_type: "dcim.interface",
-                        assigned_object_id: $interface
-                    }')")
-
-            if [ -z "$(echo "$response" | jq -r '.id // empty')" ]; then
-
-                error "Failed assigning existing IP" >&2
-                echo "$response" | jq . >&2
-
-                return 1
-            fi
-
-            echo "$ip_id"
-            return 0
-        fi
-
-        # ----------------------------------------------------
-        # IP BELONGS TO ANOTHER INTERFACE
-        # ----------------------------------------------------
-
-        error "IP $ip_address is already assigned to another interface." >&2
-        error "Current Interface ID : $assigned_object_id" >&2
-        error "Requested Interface ID: $interface_id" >&2
-        error "Automatic reassignment blocked." >&2
-
-        return 1
+        echo "$ip_id"
+        return 0
     fi
 
     # --------------------------------------------------------
@@ -754,16 +570,13 @@ sync_ip_address() {
     ip_id=$(echo "$response" | jq -r '.id // empty')
 
     if [ -z "$ip_id" ]; then
-
         error "Failed creating IP" >&2
         echo "$response" | jq . >&2
-
         return 1
     fi
 
     echo "$ip_id"
 }
-
 
 # ============================================================
 # ASSIGN PRIMARY IP
@@ -789,16 +602,13 @@ assign_primary_ip() {
             }')")
 
     if [ -z "$(echo "$response" | jq -r '.id // empty')" ]; then
-
         error "Failed assigning Primary IP"
         echo "$response" | jq .
-
         return 1
     fi
 
     success "Primary IP assigned successfully"
 }
-
 
 # ============================================================
 # GET TAG ID
@@ -816,7 +626,6 @@ get_tag_id() {
         "$NETBOX_URL/extras/tags/?name=$encoded_name" |
         jq -r '.results[0].id // empty'
 }
-
 
 # ============================================================
 # ASSIGN TAGS
@@ -871,9 +680,7 @@ assign_tags() {
     esac
 
     if [ "${#tags[@]}" -eq 0 ]; then
-
         warn "No predefined tags for cluster: $cluster_name"
-
         return 0
     fi
 
@@ -887,20 +694,15 @@ assign_tags() {
         tag_id=$(get_tag_id "$tag")
 
         if [ -n "$tag_id" ]; then
-
             echo "  Adding tag: $tag"
             tag_ids+=("$tag_id")
-
         else
-
             warn "  Tag not found: $tag"
         fi
     done
 
     if [ "${#tag_ids[@]}" -eq 0 ]; then
-
         warn "No tags found to assign"
-
         return 0
     fi
 
@@ -922,16 +724,13 @@ assign_tags() {
             }')")
 
     if [ -z "$(echo "$response" | jq -r '.id // empty')" ]; then
-
         warn "Failed assigning tags"
         echo "$response" | jq .
-
         return 0
     fi
 
     success "Tags assigned successfully"
 }
-
 
 # ============================================================
 # UPDATE CUSTOM FIELDS - AUTO ONLY
@@ -955,7 +754,7 @@ update_custom_fields() {
         -d "$(jq -n \
             --argjson cpu "$cpu" \
             --argjson ram "$ram" \
-            --argjson disk "$disk" \
+            --arg disk "$disk" \
             --arg vm_type "$vm_type" \
             --arg kernel "$kernel" \
             '{
@@ -969,12 +768,10 @@ update_custom_fields() {
             }')")
 
     if [ -z "$(echo "$response" | jq -r '.id // empty')" ]; then
-
         warn "Failed updating custom fields"
         echo "$response" | jq .
     fi
 }
-
 
 # ============================================================
 # SSH COMMAND
@@ -994,7 +791,6 @@ remote_cmd() {
         "$command"
 }
 
-
 # ============================================================
 # AUTOMATIC DISCOVERY
 # ============================================================
@@ -1002,94 +798,142 @@ remote_cmd() {
 discover_host() {
 
     local host="$1"
+    local fallback_ip="${2:-}"
+    local connect_host=""
+    local iface_data
 
     echo "Checking connectivity..."
 
-    if ! ping -c1 -W2 "$host" >/dev/null 2>&1; then
+    # --------------------------------------------------------
+    # Try DNS resolution
+    # --------------------------------------------------------
 
-        error "Host unreachable"
+    connect_host=$(getent ahostsv4 "$host" 2>/dev/null |
+        awk 'NR==1 {print $1}')
 
+    # --------------------------------------------------------
+    # DNS failed -> use configured fallback IP
+    # --------------------------------------------------------
+
+    if [ -z "$connect_host" ] && [ -n "$fallback_ip" ]; then
+        connect_host="${fallback_ip%%/*}"
+        warn "DNS resolution failed for $host"
+        warn "Using configured IP: $connect_host"
+    fi
+
+    if [ -z "$connect_host" ]; then
+        error "Unable to resolve host: $host"
         return 1
     fi
 
-    if ! remote_cmd "$host" "echo ok" >/dev/null 2>&1; then
+    echo "Connecting to: $connect_host"
 
-        error "SSH connection failed"
+    # --------------------------------------------------------
+    # TEST ACTUAL SSH CONNECTIVITY
+    # NO PING DEPENDENCY
+    # --------------------------------------------------------
 
+    if ! remote_cmd "$connect_host" "echo ok" >/dev/null 2>&1; then
+        error "SSH connection failed: $host ($connect_host)"
         return 1
     fi
 
     success "Host reachable"
     echo "Discovering system information..."
 
-    DISCOVER_HOSTNAME=$(remote_cmd "$host" \
+    # --------------------------------------------------------
+    # HOSTNAME
+    # --------------------------------------------------------
+
+    DISCOVER_HOSTNAME=$(remote_cmd "$connect_host" \
         "hostname -f 2>/dev/null || hostname" |
         tr -d '\r' |
         xargs)
 
-    local iface_data
+    # --------------------------------------------------------
+    # INTERFACE + IP
+    # --------------------------------------------------------
 
-    iface_data=$(remote_cmd "$host" \
+    iface_data=$(remote_cmd "$connect_host" \
         "ip -o -4 addr show scope global | head -1")
 
     DISCOVER_IFACE=$(echo "$iface_data" | awk '{print $2}')
     DISCOVER_IP=$(echo "$iface_data" | awk '{print $4}')
 
     if [ -z "$DISCOVER_IP" ]; then
-
         error "Unable to determine IP address"
-
         return 1
     fi
 
-    DISCOVER_MAC=$(remote_cmd "$host" \
+    # --------------------------------------------------------
+    # MAC
+    # --------------------------------------------------------
+
+    DISCOVER_MAC=$(remote_cmd "$connect_host" \
         "cat /sys/class/net/$DISCOVER_IFACE/address 2>/dev/null" |
         tr '[:lower:]' '[:upper:]' |
         tr -d '\r' |
         xargs)
 
-    DISCOVER_CPU=$(remote_cmd "$host" \
+    # --------------------------------------------------------
+    # CPU
+    # --------------------------------------------------------
+
+    DISCOVER_CPU=$(remote_cmd "$connect_host" \
         "nproc" |
         xargs)
 
-    DISCOVER_RAM=$(remote_cmd "$host" \
+    # --------------------------------------------------------
+    # RAM
+    # --------------------------------------------------------
+
+    DISCOVER_RAM=$(remote_cmd "$connect_host" \
         "awk '/MemTotal/ {printf \"%d\", (\$2/1024/1024)+0.5}' /proc/meminfo" |
         xargs)
 
-    # Integer GB for NetBox custom field
-    DISCOVER_DISK=$(remote_cmd "$host" \
-        "lsblk -bdno SIZE | awk '{s+=\$1} END {printf \"%d\", s/1024/1024/1024}'" |
+    # --------------------------------------------------------
+    # DISK
+    # --------------------------------------------------------
+
+    DISCOVER_DISK=$(remote_cmd "$connect_host" \
+        "lsblk -bdno SIZE | awk '{s+=\$1} END {printf \"%.0f GB\", s/1024/1024/1024}'" |
         xargs)
 
-    DISCOVER_VMTYPE=$(remote_cmd "$host" \
+    # --------------------------------------------------------
+    # VIRTUALIZATION TYPE
+    # --------------------------------------------------------
+
+    DISCOVER_VMTYPE=$(remote_cmd "$connect_host" \
         "systemd-detect-virt 2>/dev/null || true" |
         tr -d '\r' |
         xargs)
 
     [ -z "$DISCOVER_VMTYPE" ] && DISCOVER_VMTYPE="Physical"
 
-    DISCOVER_KERNEL=$(remote_cmd "$host" \
+    # --------------------------------------------------------
+    # KERNEL
+    # --------------------------------------------------------
+
+    DISCOVER_KERNEL=$(remote_cmd "$connect_host" \
         "uname -r" |
         xargs)
 
-    DISCOVER_UPTIME=$(remote_cmd "$host" \
+    # --------------------------------------------------------
+    # UPTIME
+    # --------------------------------------------------------
+
+    DISCOVER_UPTIME=$(remote_cmd "$connect_host" \
         "uptime -p" |
         xargs)
 
     return 0
 }
 
-
 # ============================================================
 # PROCESS DEVICE
 #
-# mode=auto
-#   - Discover information using SSH
-#   - Status ACTIVE
-#
-# mode=manual
-#   - Use supplied hostname/IP
-#   - Status STAGED
+# mode=auto   -> ACTIVE
+# mode=manual -> STAGED
 # ============================================================
 
 process_device() {
@@ -1117,16 +961,14 @@ process_device() {
     echo "Processing: $input_hostname"
     echo "------------------------------------------------------------"
 
-    # --------------------------------------------------------
+    # ========================================================
     # AUTO MODE
-    # --------------------------------------------------------
+    # ========================================================
 
     if [ "$mode" = "auto" ]; then
 
-        if ! discover_host "$input_hostname"; then
-
+        if ! discover_host "$input_hostname" "$input_ip"; then
             FAILED_LIST+="$input_hostname"$'\n'
-
             return
         fi
 
@@ -1149,15 +991,15 @@ process_device() {
         echo "MAC      : ${mac:-N/A}"
         echo "CPU      : $cpu"
         echo "RAM      : $ram GB"
-        echo "Disk     : $disk GB"
+        echo "Disk     : $disk"
         echo "Type     : $vm_type"
         echo "Kernel   : $kernel"
         echo "Uptime   : $uptime"
         echo "Status   : $device_status"
 
-    # --------------------------------------------------------
+    # ========================================================
     # MANUAL MODE
-    # --------------------------------------------------------
+    # ========================================================
 
     else
 
@@ -1181,10 +1023,9 @@ process_device() {
         echo "Status   : $device_status"
     fi
 
-
-    # --------------------------------------------------------
-    # CREATE / UPDATE DEVICE
-    # --------------------------------------------------------
+    # ========================================================
+    # DEVICE
+    # ========================================================
 
     local device_id
 
@@ -1194,18 +1035,15 @@ process_device() {
         "$device_status"); then
 
         error "Failed to create/update device: $hostname"
-
         FAILED_LIST+="$hostname"$'\n'
-
         return
     fi
 
     echo "Device ID: $device_id"
 
-
-    # --------------------------------------------------------
+    # ========================================================
     # INTERFACE
-    # --------------------------------------------------------
+    # ========================================================
 
     local interface_id
 
@@ -1214,28 +1052,23 @@ process_device() {
         "$interface"); then
 
         error "Failed processing interface for: $hostname"
-
         FAILED_LIST+="$hostname"$'\n'
-
         return
     fi
 
     echo "Interface ID: $interface_id"
 
-
-    # --------------------------------------------------------
+    # ========================================================
     # MAC - AUTO ONLY
-    # --------------------------------------------------------
+    # ========================================================
 
     if [ "$mode" = "auto" ] && [ -n "$mac" ]; then
-
         sync_mac_address "$mac" "$interface_id"
     fi
 
-
-    # --------------------------------------------------------
+    # ========================================================
     # IP
-    # --------------------------------------------------------
+    # ========================================================
 
     local ip_id
 
@@ -1244,30 +1077,24 @@ process_device() {
         "$interface_id"); then
 
         error "Failed processing IP: $ip_address"
-
         FAILED_LIST+="$hostname"$'\n'
-
         return
     fi
 
     echo "IP ID: $ip_id"
 
-
-    # --------------------------------------------------------
+    # ========================================================
     # PRIMARY IP
-    # --------------------------------------------------------
+    # ========================================================
 
     if ! assign_primary_ip "$device_id" "$ip_id"; then
-
         FAILED_LIST+="$hostname"$'\n'
-
         return
     fi
 
-
-    # --------------------------------------------------------
+    # ========================================================
     # CUSTOM FIELDS - AUTO ONLY
-    # --------------------------------------------------------
+    # ========================================================
 
     if [ "$mode" = "auto" ]; then
 
@@ -1280,20 +1107,17 @@ process_device() {
             "$kernel"
     fi
 
-
-    # --------------------------------------------------------
+    # ========================================================
     # TAGS
-    # --------------------------------------------------------
+    # ========================================================
 
     assign_tags "$device_id" "$cluster_name"
-
 
     echo
     success "✓ Finished: $hostname"
 
     SUCCESS_LIST+="$hostname"$'\n'
 }
-
 
 # ============================================================
 # MAIN
@@ -1309,10 +1133,8 @@ echo "============================================================"
 check_dependencies
 check_netbox
 
-
 # ============================================================
 # STEP 1 - CENTOS 7 MANUAL DEVICES
-# STATUS = STAGED
 # ============================================================
 
 header "STEP 1 - CENTOS 7 DEVICES"
@@ -1326,7 +1148,6 @@ echo "Cluster Group: $CLUSTER_GROUP_NAME"
 echo "Cluster Name : $CLUSTER_NAME"
 
 TYPE_ID=$(get_or_create_cluster_type "$CLUSTER_TYPE_NAME") || exit 1
-
 GROUP_ID=$(get_or_create_cluster_group "$CLUSTER_GROUP_NAME") || exit 1
 
 CLUSTER_ID=$(get_or_create_cluster \
@@ -1336,14 +1157,12 @@ CLUSTER_ID=$(get_or_create_cluster \
 
 echo "Cluster ID: $CLUSTER_ID"
 
-
 process_device \
     "cent-07-01.vgs.com" \
     "192.168.253.131/24" \
     "manual" \
     "$CLUSTER_ID" \
     "$CLUSTER_NAME"
-
 
 process_device \
     "cent-07-02.vgs.com" \
@@ -1352,10 +1171,8 @@ process_device \
     "$CLUSTER_ID" \
     "$CLUSTER_NAME"
 
-
 # ============================================================
 # STEP 2 - ROCKY 8 AUTO DISCOVERY
-# STATUS = ACTIVE
 # ============================================================
 
 header "STEP 2 - ROCKY 8 DEVICES - AUTOMATIC DISCOVERY"
@@ -1369,7 +1186,6 @@ echo "Cluster Group: $CLUSTER_GROUP_NAME"
 echo "Cluster Name : $CLUSTER_NAME"
 
 TYPE_ID=$(get_or_create_cluster_type "$CLUSTER_TYPE_NAME") || exit 1
-
 GROUP_ID=$(get_or_create_cluster_group "$CLUSTER_GROUP_NAME") || exit 1
 
 CLUSTER_ID=$(get_or_create_cluster \
@@ -1379,14 +1195,12 @@ CLUSTER_ID=$(get_or_create_cluster \
 
 echo "Cluster ID: $CLUSTER_ID"
 
-
 process_device \
     "netbox.vgs.com" \
     "192.168.253.143/24" \
     "auto" \
     "$CLUSTER_ID" \
     "$CLUSTER_NAME"
-
 
 process_device \
     "ansible-server-01.vgs.com" \
@@ -1395,10 +1209,8 @@ process_device \
     "$CLUSTER_ID" \
     "$CLUSTER_NAME"
 
-
 # ============================================================
 # STEP 3 - ROCKY 9 MANUAL DEVICE
-# STATUS = STAGED
 # ============================================================
 
 header "STEP 3 - ROCKY 9 DEVICE"
@@ -1412,7 +1224,6 @@ echo "Cluster Group: $CLUSTER_GROUP_NAME"
 echo "Cluster Name : $CLUSTER_NAME"
 
 TYPE_ID=$(get_or_create_cluster_type "$CLUSTER_TYPE_NAME") || exit 1
-
 GROUP_ID=$(get_or_create_cluster_group "$CLUSTER_GROUP_NAME") || exit 1
 
 CLUSTER_ID=$(get_or_create_cluster \
@@ -1422,14 +1233,12 @@ CLUSTER_ID=$(get_or_create_cluster \
 
 echo "Cluster ID: $CLUSTER_ID"
 
-
 process_device \
     "rocky-09-01.vgs.com" \
     "192.168.253.151/24" \
     "manual" \
     "$CLUSTER_ID" \
     "$CLUSTER_NAME"
-
 
 # ============================================================
 # FINAL SUMMARY
