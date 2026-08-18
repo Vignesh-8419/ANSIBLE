@@ -672,6 +672,67 @@
         group: foreman-proxy
         mode: "0755"
 
+
+    # ===============================================================
+    # CENTOS 7 VAULT REPOSITORY - REQUIRED FOR EFI MODULES
+    # ===============================================================
+
+    - name: STEP 7 - Configure CentOS 7 Vault repository
+      ansible.builtin.copy:
+        dest: /etc/yum.repos.d/vault.repo
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [vault-base]
+          name=CentOS 7.9.2009 - Base
+          baseurl=https://vault.centos.org/centos/7.9.2009/os/x86_64/
+          enabled=1
+          gpgcheck=0
+
+          [vault-updates]
+          name=CentOS 7.9.2009 - Updates
+          baseurl=https://vault.centos.org/centos/7.9.2009/updates/x86_64/
+          enabled=1
+          gpgcheck=0
+
+          [vault-extras]
+          name=CentOS 7.9.2009 - Extras
+          baseurl=https://vault.centos.org/centos/7.9.2009/extras/x86_64/
+          enabled=1
+          gpgcheck=0
+
+
+    - name: STEP 7 - Clean YUM metadata before EFI package check
+      ansible.builtin.command: yum clean all
+      changed_when: false
+
+
+    - name: STEP 7 - Rebuild YUM metadata
+      ansible.builtin.command: yum makecache
+      changed_when: false
+
+
+    - name: STEP 7 - Check grub2 EFI modules package availability
+      ansible.builtin.command:
+        cmd: yum list available grub2-efi-x64-modules
+      register: grub_efi_package_check
+      changed_when: false
+      failed_when: false
+
+
+    - name: STEP 7 - Display grub2 EFI modules package check
+      ansible.builtin.debug:
+        var: grub_efi_package_check.stdout_lines
+
+
+    - name: STEP 7 - Install grub2 EFI modules required by Foreman TFTP
+      ansible.builtin.yum:
+        name: grub2-efi-x64-modules
+        state: present
+        disable_gpg_check: true
+
+
     - name: STEP 7 - Configure and enable Foreman TFTP proxy
       ansible.builtin.command:
         argv:
