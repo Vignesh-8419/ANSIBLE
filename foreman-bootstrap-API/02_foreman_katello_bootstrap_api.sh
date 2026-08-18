@@ -822,12 +822,6 @@ wait_for_foreman_task()
 
             ###########################################################################
             # Normalize progress
-            #
-            # Foreman/Dynflow may return progress as:
-            #   0.39 = 39%
-            #   1    = 100%
-            #
-            # Convert fractional progress (0 to 1) into percentage (0 to 100).
             ###########################################################################
             
             if ! echo "${TASK_PROGRESS}" | grep -qE '^[0-9]+([.][0-9]+)?$'
@@ -837,39 +831,50 @@ wait_for_foreman_task()
                 TASK_PROGRESS="$(
                     awk -v progress="${TASK_PROGRESS}" '
                     BEGIN {
+                        # Foreman/Dynflow normally returns progress as a fraction:
+                        # 0.00 = 0%
+                        # 0.39 = 39%
+                        # 1.00 = 100%
+            
                         if (progress >= 0 && progress <= 1) {
                             progress = progress * 100
                         }
             
+                        # Never display more than 100%
                         if (progress > 100) {
                             progress = 100
                         }
             
-                        printf "%.2f", progress
+                        # Never display less than 0%
+                        if (progress < 0) {
+                            progress = 0
+                        }
+            
+                        printf "%.0f", progress
                     }'
                 )"
-            
-                # Remove unnecessary trailing zeros:
-                # 39.00 -> 39
-                # 39.50 -> 39.5
-                TASK_PROGRESS="$(
-                    echo "${TASK_PROGRESS}" |
-                    sed 's/\.00$//; s/\([0-9]\)0$/\1/'
-                )"
             fi
-
-            ###################################################################
+            
+            ###########################################################################
+            # IMPORTANT:
+            # If the task completed successfully, progress must be displayed as 100%.
+            ###########################################################################
+            
+            if echo "${TASK_STATE}" | grep -qiE '^stopped$' &&
+               echo "${TASK_RESULT}" | grep -qiE '^success$'
+            then
+                TASK_PROGRESS="100"
+            fi
+            
+            ###########################################################################
             # LIVE STATUS
-            #
-            # \r keeps updating the same terminal line.
-            ###################################################################
-
+            ###########################################################################
+            
             printf "\r${CYAN}[LIVE]${NC} %-32s | State: %-10s | Result: %-10s | Progress: %6s%%" \
                 "${TASK_NAME}" \
                 "${TASK_STATE:-unknown}" \
                 "${TASK_RESULT:-unknown}" \
                 "${TASK_PROGRESS}"
-
             ###################################################################
             # SUCCESS
             ###################################################################
