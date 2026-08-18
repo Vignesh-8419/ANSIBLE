@@ -672,15 +672,52 @@
         group: foreman-proxy
         mode: "0755"
 
-    - name: STEP 7 - Configure Foreman TFTP proxy
-      ansible.builtin.lineinfile:
-        path: /etc/foreman-proxy/settings.d/tftp.yml
-        regexp: '^:tftproot:'
-        line: ":tftproot: {{ tftp_root }}"
-        create: true
-        owner: root
-        group: root
-        mode: "0644"
+    - name: STEP 7 - Configure and enable Foreman TFTP proxy
+      ansible.builtin.command:
+        argv:
+          - foreman-installer
+          - --scenario
+          - katello
+          - --foreman-proxy-tftp
+          - "true"
+          - --foreman-proxy-tftp-managed
+          - "true"
+          - --foreman-proxy-tftp-root
+          - "{{ tftp_root }}"
+          - --foreman-proxy-tftp-servername
+          - "{{ foreman_server_name }}"
+      environment:
+        PATH: "{{ java_environment_path }}"
+      notify: Restart Foreman Proxy
+
+    # ===============================================================
+    # DHCP CONFIGURATION
+    # ===============================================================
+
+    - name: STEP 7 - Configure and enable Foreman DHCP proxy
+      ansible.builtin.command:
+        argv:
+          - foreman-installer
+          - --scenario
+          - katello
+          - --foreman-proxy-dhcp
+          - "true"
+          - --foreman-proxy-dhcp-managed
+          - "true"
+          - --foreman-proxy-dhcp-server
+          - "{{ foreman_server_name }}"
+          - --foreman-proxy-dhcp-range
+          - ""
+          - --foreman-proxy-dhcp-gateway
+          - "{{ dhcp_gateway }}"
+          - --foreman-proxy-dhcp-nameservers
+          - "{{ dns_server }}"
+          - --foreman-proxy-dhcp-config
+          - /etc/dhcp/dhcpd.conf
+          - --foreman-proxy-dhcp-leases
+          - /var/lib/dhcpd/dhcpd.leases
+      environment:
+        PATH: "{{ java_environment_path }}"
       notify: Restart Foreman Proxy
 
     # ===============================================================
