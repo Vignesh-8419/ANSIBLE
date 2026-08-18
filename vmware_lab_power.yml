@@ -9,14 +9,16 @@
     # ============================================================
     # VMWARE WORKSTATION GUI
     #
-    # Git Bash / Windows path
+    # Actual location from your system:
+    # D:\VM workstation\vmware.exe
     # ============================================================
-    vmware_workstation_path: '/c/Program Files/VMware/VMware Workstation/vmware.exe'
+    vmware_workstation_path: 'D:/VM workstation/vmware.exe'
 
     # ============================================================
     # VMWARE WORKSTATION VMRUN
     #
-    # Used for VM power operations
+    # Actual location from your system:
+    # D:\VM workstation\vmrun.exe
     # ============================================================
     vmrun_path: 'D:/VM workstation/vmrun.exe'
 
@@ -31,12 +33,9 @@
     # ============================================================
     # RUNNING VM PATHS
     #
-    # These MUST exactly match:
+    # These MUST exactly match the output from:
     #
-    # vmrun -T ws list
-    #
-    # Example:
-    # D:\ESXI\ESXI-01\ESXI-01.vmx
+    # "D:/VM workstation/vmrun.exe" -T ws list
     # ============================================================
     esxi_vmx_running_path: 'D:\ESXI\ESXI-01\ESXI-01.vmx'
     vcenter_vmx_running_path: 'D:\vCenter\vCenter.vmx'
@@ -44,48 +43,27 @@
     # ============================================================
     # COMMAND LINE VARIABLES
     #
-    # Examples:
+    # Supports both:
     #
+    # target_hosts=esxi
     # target_vm=esxi
-    # target_vm=vcenter
-    # target_vm=all
     #
-    # power=on
-    # power=off
+    # Valid values:
+    # esxi
+    # vcenter
+    # all
     # ============================================================
-    target: "{{ target_vm | default('all') | lower }}"
+    target: "{{ target_hosts | default(target_vm | default('all')) | lower }}"
+
+    # Valid values:
+    # on
+    # off
     power_action: "{{ power | default('on') | lower }}"
 
   tasks:
 
     # ============================================================
-    # OPEN VMWARE WORKSTATION FIRST
-    # ============================================================
-
-    - name: Open VMware Workstation
-      ansible.builtin.shell: |
-        "{{ vmware_workstation_path }}" >/dev/null 2>&1 &
-      args:
-        executable: /bin/bash
-      register: vmware_workstation_start
-      changed_when: true
-
-    - name: Display VMware Workstation startup message
-      ansible.builtin.debug:
-        msg:
-          - "=============================================="
-          - "OPENING VMWARE WORKSTATION"
-          - "=============================================="
-          - "VMware Workstation is starting..."
-          - "Path: {{ vmware_workstation_path }}"
-          - "=============================================="
-
-    - name: Wait for VMware Workstation to initialize
-      ansible.builtin.pause:
-        seconds: 10
-
-    # ============================================================
-    # VALIDATION
+    # STEP 1 - VALIDATE INPUT FIRST
     # ============================================================
 
     - name: Validate target
@@ -107,22 +85,56 @@
         success_msg: "Power action '{{ power_action }}' is valid."
 
     # ============================================================
-    # CHECK VMRUN
+    # STEP 2 - OPEN VMWARE WORKSTATION
+    #
+    # cmd.exe /c start is used because Ansible is being run
+    # from Git Bash on Windows.
     # ============================================================
 
-    - name: Check vmrun executable
+    - name: Display VMware Workstation path
+      ansible.builtin.debug:
+        msg:
+          - "=============================================="
+          - "OPENING VMWARE WORKSTATION"
+          - "=============================================="
+          - "VMware GUI : {{ vmware_workstation_path }}"
+          - "vmrun      : {{ vmrun_path }}"
+          - "=============================================="
+
+    - name: Open VMware Workstation GUI
+      ansible.builtin.command:
+        argv:
+          - cmd.exe
+          - /c
+          - start
+          - ""
+          - "{{ vmware_workstation_path }}"
+      register: vmware_workstation_start
+      changed_when: vmware_workstation_start.rc == 0
+
+    - name: Display VMware Workstation launch status
+      ansible.builtin.debug:
+        msg:
+          - "VMware Workstation launch command completed."
+          - "Return Code: {{ vmware_workstation_start.rc }}"
+
+    - name: Wait for VMware Workstation to initialize
+      ansible.builtin.pause:
+        seconds: 10
+
+    # ============================================================
+    # STEP 3 - CHECK CURRENTLY RUNNING VMS
+    # ============================================================
+
+    - name: Check currently running VMware Workstation VMs
       ansible.builtin.command:
         argv:
           - "{{ vmrun_path }}"
           - "-T"
-          - "ws"
-          - "list"
+          - ws
+          - list
       register: vmrun_list
       changed_when: false
-
-    # ============================================================
-    # DISPLAY CURRENTLY RUNNING VMS
-    # ============================================================
 
     - name: Display running VMware Workstation VMs
       ansible.builtin.debug:
@@ -134,7 +146,7 @@
           - "=============================================="
 
     # ============================================================
-    # DETECT ESXI STATUS
+    # STEP 4 - DETECT ESXI STATUS
     # ============================================================
 
     - name: Set ESXi running state
@@ -142,16 +154,12 @@
         esxi_running: "{{ esxi_vmx_running_path in vmrun_list.stdout }}"
 
     # ============================================================
-    # DETECT VCENTER STATUS
+    # STEP 5 - DETECT VCENTER STATUS
     # ============================================================
 
     - name: Set vCenter running state
       ansible.builtin.set_fact:
         vcenter_running: "{{ vcenter_vmx_running_path in vmrun_list.stdout }}"
-
-    # ============================================================
-    # DISPLAY DETECTED STATUS
-    # ============================================================
 
     - name: Display detected VM states
       ansible.builtin.debug:
@@ -171,7 +179,7 @@
     #
     # Startup order:
     #
-    # 1. VMware Workstation
+    # 1. VMware Workstation GUI
     # 2. ESXi
     # 3. Wait 15 seconds
     # 4. vCenter
@@ -182,10 +190,10 @@
         argv:
           - "{{ vmrun_path }}"
           - "-T"
-          - "ws"
-          - "start"
+          - ws
+          - start
           - "{{ esxi_vmx }}"
-          - "nogui"
+          - nogui
       register: esxi_start
       changed_when: esxi_start.rc == 0
       when:
@@ -229,10 +237,10 @@
         argv:
           - "{{ vmrun_path }}"
           - "-T"
-          - "ws"
-          - "start"
+          - ws
+          - start
           - "{{ vcenter_vmx }}"
-          - "nogui"
+          - nogui
       register: vcenter_start
       changed_when: vcenter_start.rc == 0
       when:
@@ -278,10 +286,10 @@
         argv:
           - "{{ vmrun_path }}"
           - "-T"
-          - "ws"
-          - "stop"
+          - ws
+          - stop
           - "{{ vcenter_vmx }}"
-          - "soft"
+          - soft
       register: vcenter_stop
       changed_when: vcenter_stop.rc == 0
       when:
@@ -289,15 +297,11 @@
         - target in ['vcenter', 'all']
         - vcenter_running
 
-    - name: Display vCenter shutdown initiated message
+    - name: Display vCenter shutdown message
       ansible.builtin.debug:
         msg:
-          - "=============================================="
-          - "VCENTER SHUTDOWN INITIATED"
-          - "=============================================="
-          - "VMX : {{ vcenter_vmx }}"
-          - "Mode: Graceful shutdown"
-          - "=============================================="
+          - "vCenter graceful shutdown initiated."
+          - "VMX: {{ vcenter_vmx }}"
       when:
         - power_action == 'off'
         - target in ['vcenter', 'all']
@@ -326,10 +330,10 @@
         argv:
           - "{{ vmrun_path }}"
           - "-T"
-          - "ws"
-          - "stop"
+          - ws
+          - stop
           - "{{ esxi_vmx }}"
-          - "soft"
+          - soft
       register: esxi_stop
       changed_when: esxi_stop.rc == 0
       when:
@@ -337,15 +341,11 @@
         - target in ['esxi', 'all']
         - esxi_running
 
-    - name: Display ESXi shutdown initiated message
+    - name: Display ESXi shutdown message
       ansible.builtin.debug:
         msg:
-          - "=============================================="
-          - "ESXI SHUTDOWN INITIATED"
-          - "=============================================="
-          - "VMX : {{ esxi_vmx }}"
-          - "Mode: Graceful shutdown"
-          - "=============================================="
+          - "ESXi graceful shutdown initiated."
+          - "VMX: {{ esxi_vmx }}"
       when:
         - power_action == 'off'
         - target in ['esxi', 'all']
