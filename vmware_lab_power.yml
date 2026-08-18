@@ -7,39 +7,51 @@
   vars:
 
     # ============================================================
-    # VMWARE WORKSTATION GUI
+    # VMWARE WORKSTATION
     # ============================================================
+
     vmware_workstation_path: 'D:/VM workstation/vmware.exe'
 
-    # ============================================================
-    # VMWARE WORKSTATION VMRUN
-    # ============================================================
     vmrun_path: 'D:/VM workstation/vmrun.exe'
 
     # ============================================================
     # VMX PATHS
     # ============================================================
+
     esxi_vmx: 'D:/ESXI/ESXI-01/ESXI-01.vmx'
+
     vcenter_vmx: 'D:/vCenter/vCenter.vmx'
+
+    # ============================================================
+    # SUSPENDED VM STATE FILES
+    #
+    # VMware Workstation normally creates .vmss when suspended.
+    # ============================================================
+
+    esxi_vmss: 'D:/ESXI/ESXI-01/ESXI-01.vmss'
+
+    vcenter_vmss: 'D:/vCenter/vCenter.vmss'
 
     # ============================================================
     # RUNNING VM PATHS
     #
-    # These must match vmrun -T ws list output.
+    # Must match:
+    #
+    # vmrun -T ws list
     # ============================================================
+
     esxi_vmx_running_path: 'D:\ESXI\ESXI-01\ESXI-01.vmx'
+
     vcenter_vmx_running_path: 'D:\vCenter\vCenter.vmx'
 
     # ============================================================
     # COMMAND LINE VARIABLES
     #
-    # Supports:
+    # Supported:
     #
     # target_hosts=esxi
     # target_hosts=vcenter
     # target_hosts=all
-    #
-    # OR:
     #
     # target_vm=esxi
     # target_vm=vcenter
@@ -48,13 +60,15 @@
     # power=on
     # power=off
     # ============================================================
+
     target: "{{ target_hosts | default(target_vm | default('all')) | lower }}"
+
     power_action: "{{ power | default('on') | lower }}"
 
   tasks:
 
     # ============================================================
-    # STEP 1 - VALIDATE INPUT
+    # STEP 1 - VALIDATION
     # ============================================================
 
     - name: Validate target
@@ -112,9 +126,6 @@
 
     # ============================================================
     # STEP 3 - CHECK RUNNING VMS
-    #
-    # vmrun list detects powered-on/running VMs.
-    # Suspended/paused VMs may not appear here.
     # ============================================================
 
     - name: Check currently running VMware Workstation VMs
@@ -137,23 +148,47 @@
           - "=============================================="
 
     # ============================================================
-    # STEP 4 - DETECT ESXI STATUS
+    # STEP 4 - DETECT RUNNING STATE
     # ============================================================
 
     - name: Set ESXi running state
       ansible.builtin.set_fact:
         esxi_running: "{{ esxi_vmx_running_path in vmrun_list.stdout }}"
 
-    # ============================================================
-    # STEP 5 - DETECT VCENTER STATUS
-    # ============================================================
-
     - name: Set vCenter running state
       ansible.builtin.set_fact:
         vcenter_running: "{{ vcenter_vmx_running_path in vmrun_list.stdout }}"
 
     # ============================================================
-    # STEP 6 - DISPLAY DETECTED STATUS
+    # STEP 5 - CHECK SUSPENDED STATE FILES
+    #
+    # IMPORTANT:
+    #
+    # vmrun list does NOT show suspended VMs.
+    #
+    # VMware Workstation normally creates .vmss when suspended.
+    # ============================================================
+
+    - name: Check ESXi suspended state file
+      ansible.builtin.stat:
+        path: "{{ esxi_vmss }}"
+      register: esxi_vmss_stat
+
+    - name: Check vCenter suspended state file
+      ansible.builtin.stat:
+        path: "{{ vcenter_vmss }}"
+      register: vcenter_vmss_stat
+
+    - name: Set ESXi suspended state
+      ansible.builtin.set_fact:
+        esxi_suspended: "{{ esxi_vmss_stat.stat.exists }}"
+
+    - name: Set vCenter suspended state
+      ansible.builtin.set_fact:
+        vcenter_suspended: "{{ vcenter_vmss_stat.stat.exists }}"
+
+    # ============================================================
+    # STEP 6 - DISPLAY COMPLETE VM STATE
     # ============================================================
 
     - name: Display detected VM states
@@ -162,24 +197,26 @@
           - "=============================================="
           - "CURRENT VM STATUS"
           - "=============================================="
-          - "ESXi VMX    : {{ esxi_vmx_running_path }}"
-          - "vCenter VMX : {{ vcenter_vmx_running_path }}"
+          - "ESXi VMX          : {{ esxi_vmx_running_path }}"
+          - "vCenter VMX       : {{ vcenter_vmx_running_path }}"
           - "----------------------------------------------"
-          - "ESXi running    : {{ esxi_running }}"
-          - "vCenter running : {{ vcenter_running }}"
+          - "ESXi running      : {{ esxi_running }}"
+          - "ESXi suspended    : {{ esxi_suspended }}"
+          - "vCenter running   : {{ vcenter_running }}"
+          - "vCenter suspended : {{ vcenter_suspended }}"
           - "=============================================="
 
     # ============================================================
     # POWER ON
     #
-    # Startup order:
+    # vmrun start:
     #
-    # 1. VMware Workstation
-    # 2. ESXi
-    # 3. Wait 15 seconds
-    # 4. vCenter
-    #
-    # vmrun start also resumes suspended VMs.
+    # - Starts stopped VM
+    # - Resumes suspended VM
+    # ============================================================
+
+    # ============================================================
+    # START / RESUME ESXI
     # ============================================================
 
     - name: Start or resume ESXi
@@ -202,7 +239,7 @@
       ansible.builtin.debug:
         msg:
           - "=============================================="
-          - "ESXI STARTED OR RESUMED SUCCESSFULLY"
+          - "ESXI STARTED / RESUMED"
           - "=============================================="
           - "VMX: {{ esxi_vmx }}"
           - "=============================================="
@@ -221,13 +258,21 @@
         - target in ['esxi', 'all']
         - esxi_running
 
-    - name: Wait for ESXi startup before starting vCenter
+    # ============================================================
+    # WAIT BEFORE VCENTER
+    # ============================================================
+
+    - name: Wait for ESXi startup
       ansible.builtin.pause:
         seconds: 15
       when:
         - power_action == 'on'
         - target == 'all'
         - not esxi_running
+
+    # ============================================================
+    # START / RESUME VCENTER
+    # ============================================================
 
     - name: Start or resume vCenter
       ansible.builtin.command:
@@ -249,7 +294,7 @@
       ansible.builtin.debug:
         msg:
           - "=============================================="
-          - "VCENTER STARTED OR RESUMED SUCCESSFULLY"
+          - "VCENTER STARTED / RESUMED"
           - "=============================================="
           - "VMX: {{ vcenter_vmx }}"
           - "=============================================="
@@ -269,20 +314,17 @@
         - vcenter_running
 
     # ============================================================
-    # POWER OFF - VCENTER
+    # POWER OFF VCENTER
     #
-    # If running:
-    #   Try graceful shutdown.
+    # PRIORITY:
     #
-    # If not listed:
-    #   It may be paused/suspended or already stopped.
-    #   Try hard power off.
-    #
-    # If hard power off succeeds:
-    #   VM was paused/suspended and is now powered off.
-    #
-    # If it fails:
-    #   VM is treated as already stopped.
+    # 1. Running      -> soft stop
+    # 2. Suspended    -> resume then hard stop
+    # 3. Stopped      -> skip
+    # ============================================================
+
+    # ============================================================
+    # RUNNING VCENTER
     # ============================================================
 
     - name: Gracefully power OFF running vCenter
@@ -296,35 +338,92 @@
           - soft
       register: vcenter_soft_stop
       changed_when: vcenter_soft_stop.rc == 0
-      failed_when: false
       when:
         - power_action == 'off'
         - target in ['vcenter', 'all']
         - vcenter_running
 
-    - name: Display vCenter graceful shutdown result
+    - name: Display vCenter graceful shutdown message
       ansible.builtin.debug:
         msg:
-          - "vCenter graceful shutdown initiated successfully."
+          - "=============================================="
+          - "VCENTER GRACEFUL SHUTDOWN INITIATED"
+          - "=============================================="
           - "VMX: {{ vcenter_vmx }}"
+          - "=============================================="
       when:
         - power_action == 'off'
         - target in ['vcenter', 'all']
         - vcenter_running
-        - vcenter_soft_stop is defined
         - vcenter_soft_stop.rc == 0
 
-    - name: Wait for vCenter graceful shutdown
+    - name: Wait for vCenter shutdown
       ansible.builtin.pause:
         seconds: 20
       when:
         - power_action == 'off'
         - target == 'all'
         - vcenter_running
-        - vcenter_soft_stop is defined
         - vcenter_soft_stop.rc == 0
 
-    - name: Hard power OFF vCenter if paused or suspended
+    # ============================================================
+    # SUSPENDED VCENTER
+    #
+    # THIS IS THE IMPORTANT FIX.
+    #
+    # vmrun stop does not reliably power off a suspended VM.
+    #
+    # Instead:
+    #
+    # 1. Resume it
+    # 2. Wait a few seconds
+    # 3. Hard power it off
+    # ============================================================
+
+    - name: Resume suspended vCenter before power off
+      ansible.builtin.command:
+        argv:
+          - "{{ vmrun_path }}"
+          - "-T"
+          - ws
+          - start
+          - "{{ vcenter_vmx }}"
+          - nogui
+      register: vcenter_resume
+      changed_when: vcenter_resume.rc == 0
+      when:
+        - power_action == 'off'
+        - target in ['vcenter', 'all']
+        - not vcenter_running
+        - vcenter_suspended
+
+    - name: Display vCenter resume message
+      ansible.builtin.debug:
+        msg:
+          - "=============================================="
+          - "VCENTER WAS SUSPENDED"
+          - "=============================================="
+          - "Suspended VM detected."
+          - "Resuming VM before hard power OFF."
+          - "=============================================="
+      when:
+        - power_action == 'off'
+        - target in ['vcenter', 'all']
+        - vcenter_suspended
+        - vcenter_resume is defined
+        - vcenter_resume.rc == 0
+
+    - name: Wait for suspended vCenter to resume
+      ansible.builtin.pause:
+        seconds: 5
+      when:
+        - power_action == 'off'
+        - target in ['vcenter', 'all']
+        - vcenter_suspended
+        - vcenter_resume is defined
+        - vcenter_resume.rc == 0
+
+    - name: Hard power OFF previously suspended vCenter
       ansible.builtin.command:
         argv:
           - "{{ vmrun_path }}"
@@ -333,50 +432,56 @@
           - stop
           - "{{ vcenter_vmx }}"
           - hard
-      register: vcenter_hard_stop
-      changed_when: vcenter_hard_stop.rc == 0
-      failed_when: false
+      register: vcenter_suspended_stop
+      changed_when: vcenter_suspended_stop.rc == 0
       when:
         - power_action == 'off'
         - target in ['vcenter', 'all']
-        - not vcenter_running
+        - vcenter_suspended
+        - vcenter_resume is defined
+        - vcenter_resume.rc == 0
 
-    - name: Display vCenter paused or suspended power off message
+    - name: Display suspended vCenter power OFF result
       ansible.builtin.debug:
         msg:
           - "=============================================="
-          - "VCENTER PAUSED OR SUSPENDED VM POWERED OFF"
+          - "SUSPENDED VCENTER POWERED OFF"
           - "=============================================="
           - "VMX: {{ vcenter_vmx }}"
-          - "Mode: HARD POWER OFF"
+          - "Method: RESUME -> HARD POWER OFF"
           - "=============================================="
       when:
         - power_action == 'off'
         - target in ['vcenter', 'all']
-        - not vcenter_running
-        - vcenter_hard_stop is defined
-        - vcenter_hard_stop.rc == 0
+        - vcenter_suspended
+        - vcenter_suspended_stop is defined
+        - vcenter_suspended_stop.rc == 0
+
+    # ============================================================
+    # STOPPED VCENTER
+    # ============================================================
 
     - name: Display vCenter already stopped message
       ansible.builtin.debug:
         msg:
-          - "vCenter is not running."
-          - "Hard power-off was not required or VM is already stopped."
+          - "vCenter is already powered OFF."
+          - "No shutdown action required."
       when:
         - power_action == 'off'
         - target in ['vcenter', 'all']
         - not vcenter_running
-        - vcenter_hard_stop is defined
-        - vcenter_hard_stop.rc != 0
+        - not vcenter_suspended
 
     # ============================================================
-    # POWER OFF - ESXI
+    # POWER OFF ESXI
     #
-    # Same logic:
-    #
-    # Running          -> Graceful shutdown
-    # Paused/Suspended -> Hard power off attempt
-    # Stopped          -> Skip
+    # Running   -> graceful shutdown
+    # Suspended -> resume then hard shutdown
+    # Stopped   -> skip
+    # ============================================================
+
+    # ============================================================
+    # RUNNING ESXI
     # ============================================================
 
     - name: Gracefully power OFF running ESXi
@@ -390,25 +495,72 @@
           - soft
       register: esxi_soft_stop
       changed_when: esxi_soft_stop.rc == 0
-      failed_when: false
       when:
         - power_action == 'off'
         - target in ['esxi', 'all']
         - esxi_running
 
-    - name: Display ESXi graceful shutdown result
+    - name: Display ESXi graceful shutdown message
       ansible.builtin.debug:
         msg:
-          - "ESXi graceful shutdown initiated successfully."
+          - "=============================================="
+          - "ESXI GRACEFUL SHUTDOWN INITIATED"
+          - "=============================================="
           - "VMX: {{ esxi_vmx }}"
+          - "=============================================="
       when:
         - power_action == 'off'
         - target in ['esxi', 'all']
         - esxi_running
-        - esxi_soft_stop is defined
         - esxi_soft_stop.rc == 0
 
-    - name: Hard power OFF ESXi if paused or suspended
+    # ============================================================
+    # SUSPENDED ESXI
+    # ============================================================
+
+    - name: Resume suspended ESXi before power off
+      ansible.builtin.command:
+        argv:
+          - "{{ vmrun_path }}"
+          - "-T"
+          - ws
+          - start
+          - "{{ esxi_vmx }}"
+          - nogui
+      register: esxi_resume
+      changed_when: esxi_resume.rc == 0
+      when:
+        - power_action == 'off'
+        - target in ['esxi', 'all']
+        - not esxi_running
+        - esxi_suspended
+
+    - name: Display ESXi resume message
+      ansible.builtin.debug:
+        msg:
+          - "=============================================="
+          - "ESXI WAS SUSPENDED"
+          - "=============================================="
+          - "Resuming VM before hard power OFF."
+          - "=============================================="
+      when:
+        - power_action == 'off'
+        - target in ['esxi', 'all']
+        - esxi_suspended
+        - esxi_resume is defined
+        - esxi_resume.rc == 0
+
+    - name: Wait for suspended ESXi to resume
+      ansible.builtin.pause:
+        seconds: 5
+      when:
+        - power_action == 'off'
+        - target in ['esxi', 'all']
+        - esxi_suspended
+        - esxi_resume is defined
+        - esxi_resume.rc == 0
+
+    - name: Hard power OFF previously suspended ESXi
       ansible.builtin.command:
         argv:
           - "{{ vmrun_path }}"
@@ -417,41 +569,45 @@
           - stop
           - "{{ esxi_vmx }}"
           - hard
-      register: esxi_hard_stop
-      changed_when: esxi_hard_stop.rc == 0
-      failed_when: false
+      register: esxi_suspended_stop
+      changed_when: esxi_suspended_stop.rc == 0
       when:
         - power_action == 'off'
         - target in ['esxi', 'all']
-        - not esxi_running
+        - esxi_suspended
+        - esxi_resume is defined
+        - esxi_resume.rc == 0
 
-    - name: Display ESXi paused or suspended power off message
+    - name: Display suspended ESXi power OFF result
       ansible.builtin.debug:
         msg:
           - "=============================================="
-          - "ESXI PAUSED OR SUSPENDED VM POWERED OFF"
+          - "SUSPENDED ESXI POWERED OFF"
           - "=============================================="
           - "VMX: {{ esxi_vmx }}"
-          - "Mode: HARD POWER OFF"
+          - "Method: RESUME -> HARD POWER OFF"
           - "=============================================="
       when:
         - power_action == 'off'
         - target in ['esxi', 'all']
-        - not esxi_running
-        - esxi_hard_stop is defined
-        - esxi_hard_stop.rc == 0
+        - esxi_suspended
+        - esxi_suspended_stop is defined
+        - esxi_suspended_stop.rc == 0
+
+    # ============================================================
+    # STOPPED ESXI
+    # ============================================================
 
     - name: Display ESXi already stopped message
       ansible.builtin.debug:
         msg:
-          - "ESXi is not running."
-          - "Hard power-off was not required or VM is already stopped."
+          - "ESXi is already powered OFF."
+          - "No shutdown action required."
       when:
         - power_action == 'off'
         - target in ['esxi', 'all']
         - not esxi_running
-        - esxi_hard_stop is defined
-        - esxi_hard_stop.rc != 0
+        - not esxi_suspended
 
     # ============================================================
     # FINAL STATUS
