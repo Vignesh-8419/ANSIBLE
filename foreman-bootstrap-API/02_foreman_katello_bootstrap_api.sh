@@ -820,13 +820,42 @@ wait_for_foreman_task()
                 head -n 1
             )"
 
-            ###################################################################
+            ###########################################################################
             # Normalize progress
-            ###################################################################
-
+            #
+            # Foreman/Dynflow may return progress as:
+            #   0.39 = 39%
+            #   1    = 100%
+            #
+            # Convert fractional progress (0 to 1) into percentage (0 to 100).
+            ###########################################################################
+            
             if ! echo "${TASK_PROGRESS}" | grep -qE '^[0-9]+([.][0-9]+)?$'
             then
                 TASK_PROGRESS="0"
+            else
+                TASK_PROGRESS="$(
+                    awk -v progress="${TASK_PROGRESS}" '
+                    BEGIN {
+                        if (progress >= 0 && progress <= 1) {
+                            progress = progress * 100
+                        }
+            
+                        if (progress > 100) {
+                            progress = 100
+                        }
+            
+                        printf "%.2f", progress
+                    }'
+                )"
+            
+                # Remove unnecessary trailing zeros:
+                # 39.00 -> 39
+                # 39.50 -> 39.5
+                TASK_PROGRESS="$(
+                    echo "${TASK_PROGRESS}" |
+                    sed 's/\.00$//; s/\([0-9]\)0$/\1/'
+                )"
             fi
 
             ###################################################################
