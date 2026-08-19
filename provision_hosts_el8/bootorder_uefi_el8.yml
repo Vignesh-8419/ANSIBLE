@@ -1,12 +1,12 @@
 ---
 # ============================================================
-#  PLAY 1: Load selected VMs from NetBox (Cluster + Host Filter)
+# PLAY 1: Load selected VMs from NetBox
 # ============================================================
 
 - name: Load selected VMs from NetBox
   hosts: localhost
   connection: local
-  gather_facts: no
+  gather_facts: false
 
   vars:
     netbox_url: "https://192.168.253.143"
@@ -14,9 +14,17 @@
 
     # From AWX Survey
     cluster_name: "rocky-8-servers"
-    target_hosts: "{{ target_hosts }}"   # comma-separated list
 
   tasks:
+
+    ###########################################################################
+    # Validate Survey Input
+    ###########################################################################
+
+    - name: Fail if target_hosts is not provided
+      fail:
+        msg: "Please provide target_hosts in the AWX Survey."
+      when: target_hosts is not defined or target_hosts | trim == ""
 
     ###########################################################################
     # Get Cluster ID
@@ -28,19 +36,24 @@
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
-        return_content: yes
-        validate_certs: no
+        return_content: true
+        validate_certs: false
       register: cluster_lookup
 
     - name: Fail if cluster not found
       fail:
-        msg: "Cluster '{{ cluster_name }}' not found!"
+        msg: "Cluster '{{ cluster_name }}' not found in NetBox."
       when: cluster_lookup.json.results | length == 0
 
-    - name: Set cluster_id
+    - name: Set cluster ID
       set_fact:
         cluster_id: "{{ (cluster_lookup.json.results | first).id }}"
 
+    - name: Show cluster information
+      debug:
+        msg:
+          - "Cluster Name : {{ cluster_name }}"
+          - "Cluster ID   : {{ cluster_id }}"
 
     ###########################################################################
     # Get Devices
@@ -48,13 +61,17 @@
 
     - name: Get devices from NetBox cluster
       uri:
-        url: "{{ netbox_url }}/api/dcim/devices/?cluster_id={{ cluster_id }}"
+        url: "{{ netbox_url }}/api/dcim/devices/?cluster_id={{ cluster_id }}&limit=100"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
-        return_content: yes
-        validate_certs: no
+        return_content: true
+        validate_certs: false
       register: netbox_devices
+
+    - name: Show all devices in cluster
+      debug:
+        msg: "{{ netbox_devices.json.results | map(attribute='name') | list }}"
 
     ###########################################################################
     # Convert Survey Input
@@ -62,30 +79,37 @@
 
     - name: Convert target_hosts string to list
       set_fact:
-        target_hosts_list: "{{ target_hosts.split(',') | map('trim') | list }}"
+        target_hosts_list: "{{ target_hosts.split(',') | map('trim') | reject('equalto', '') | list }}"
+
+    - name: Show requested hosts
+      debug:
+        var: target_hosts_list
 
     ###########################################################################
     # Filter Devices
     ###########################################################################
 
-    - name: Initialize filtered_devices
+    - name: Initialize filtered devices
       set_fact:
         filtered_devices: []
-    
-    - name: Filter devices
+
+    - name: Filter selected devices
       set_fact:
         filtered_devices: "{{ filtered_devices + [item] }}"
       loop: "{{ netbox_devices.json.results }}"
-      when:
-        - item.name.split('.')[0] in target_hosts_list
-    
-    - debug:
-        var: filtered_devices
+      when: item.name.split('.')[0] in target_hosts_list
 
     - name: Fail if no matching hosts found
       fail:
-        msg: "No matching hosts found in NetBox."
+        msg: >-
+          No matching hosts found in NetBox.
+          Requested: {{ target_hosts_list }}
       when: filtered_devices | length == 0
+
+    - name: Show selected devices
+      debug:
+        msg: "{{ filtered_devices | map(attribute='name') | list }}"
+
 
 # ============================================================
 # PLAY 2: Configure ESXi Boot
@@ -94,46 +118,61 @@
 - name: Configure VM Boot
   hosts: localhost
   connection: local
-  gather_facts: no
+  gather_facts: false
 
   collections:
     - community.vmware
 
   vars:
 
-    exsi_hostname: "192.168.253.128"
-    exsi_username: "root"
-    exsi_password: "Root@123"
+    esxi_hostname: "192.168.253.128"
+    esxi_username: "root"
+    esxi_password: "Root@123"
 
     validate_certs: false
 
   tasks:
 
+    ###########################################################################
+    # Power OFF
+    ###########################################################################
+
     - name: Power OFF VM
       community.vmware.vmware_guest_powerstate:
-        hostname: "{{ exsi_hostname }}"
-        username: "{{ exsi_username }}"
-        password: "{{ exsi_password }}"
-        validate_certs: false
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: "{{ validate_certs }}"
         name: "{{ item.name.split('.')[0] }}"
         state: powered-off
       loop: "{{ filtered_devices }}"
+      register: poweroff_result
 
-    - name: Set EFI Firmware
-      vmware_guest_boot_manager:
-        hostname: "{{ exsi_hostname }}"
-        username: "{{ exsi_username }}"
-        password: "{{ exsi_password }}"
+    ###########################################################################
+    # Configure EFI
+    ###########################################################################
+
+    - name: Set EFI firmware
+      community.vmware.vmware_guest:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
         validate_certs: "{{ validate_certs }}"
         name: "{{ item.name.split('.')[0] }}"
-        boot_firmware: efi
+        state: present
+        hardware:
+          boot_firmware: efi
       loop: "{{ filtered_devices }}"
 
-    - name: PXE First
-      vmware_guest_boot_manager:
-        hostname: "{{ exsi_hostname }}"
-        username: "{{ exsi_username }}"
-        password: "{{ exsi_password }}"
+    ###########################################################################
+    # Configure PXE Boot First
+    ###########################################################################
+
+    - name: Set PXE first boot
+      community.vmware.vmware_guest_boot_manager:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
         validate_certs: "{{ validate_certs }}"
         name: "{{ item.name.split('.')[0] }}"
         boot_order:
@@ -141,21 +180,31 @@
           - disk
       loop: "{{ filtered_devices }}"
 
+    ###########################################################################
+    # Power ON
+    ###########################################################################
+
     - name: Power ON VM
       community.vmware.vmware_guest_powerstate:
-        hostname: "{{ exsi_hostname }}"
-        username: "{{ exsi_username }}"
-        password: "{{ exsi_password }}"
-        validate_certs: false
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: "{{ validate_certs }}"
         name: "{{ item.name.split('.')[0] }}"
         state: powered-on
       loop: "{{ filtered_devices }}"
 
-    - name: Restore Disk First
-      vmware_guest_boot_manager:
-        hostname: "{{ exsi_hostname }}"
-        username: "{{ exsi_username }}"
-        password: "{{ exsi_password }}"
+    ###########################################################################
+    # Restore Disk First
+    #
+    # This only sets the normal boot order after PXE configuration.
+    ###########################################################################
+
+    - name: Restore disk first boot order
+      community.vmware.vmware_guest_boot_manager:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
         validate_certs: "{{ validate_certs }}"
         name: "{{ item.name.split('.')[0] }}"
         boot_order:
@@ -163,182 +212,242 @@
           - ethernet
       loop: "{{ filtered_devices }}"
 
+
 # ============================================================
-# PLAY 3: Wait for SSH
+# PLAY 3: Get NetBox IPs and Wait for SSH
 # ============================================================
 
-- name: Wait for SSH
+- name: Wait for VMs and build dynamic inventory
   hosts: localhost
-  gather_facts: no
+  connection: local
+  gather_facts: false
 
   vars:
     netbox_url: "https://192.168.253.143"
     netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
 
+    # Default credentials
+    default_ssh_user: "root"
+    default_ssh_password: "Root@123"
+
   tasks:
 
-    - name: Get all IP addresses
+    ###########################################################################
+    # Get IP Addresses
+    ###########################################################################
+
+    - name: Get all IP addresses from NetBox
       uri:
-        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/?limit=100"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
-        return_content: yes
-        validate_certs: no
+        return_content: true
+        validate_certs: false
       register: netbox_ips
 
-    - name: Wait for SSH
-      wait_for:
-        host: >-
+    ###########################################################################
+    # Initialize VM Connection List
+    ###########################################################################
+
+    - name: Initialize selected VM connection information
+      set_fact:
+        selected_vm_connections: []
+
+    ###########################################################################
+    # Build Hostname and IP Mapping
+    ###########################################################################
+
+    - name: Build selected VM connection information
+      set_fact:
+        selected_vm_connections: >-
           {{
-            netbox_ips.json.results
-            | selectattr('assigned_object.device.name','equalto',item.name)
-            | map(attribute='address')
-            | map('regex_replace','/.*$','')
-            | first
+            selected_vm_connections
+            +
+            [
+              {
+                'name': item.name,
+                'short_name': item.name.split('.')[0],
+                'ip': (
+                  netbox_ips.json.results
+                  | selectattr(
+                      'assigned_object.device.name',
+                      'defined'
+                    )
+                  | selectattr(
+                      'assigned_object.device.name',
+                      'equalto',
+                      item.name
+                    )
+                  | map(attribute='address')
+                  | map('regex_replace', '/.*$', '')
+                  | first
+                  | default(item.primary_ip4.address | default('') | regex_replace('/.*$', ''))
+                ),
+                'ssh_user': (
+                  item.config_context.vm_root_user
+                  | default(default_ssh_user)
+                ),
+                'ssh_password': (
+                  item.config_context.vm_root_password
+                  | default(default_ssh_password)
+                )
+              }
+            ]
           }}
+      loop: "{{ filtered_devices }}"
+
+    - name: Show selected VM IP mapping
+      debug:
+        msg:
+          - "VM       : {{ item.name }}"
+          - "IP       : {{ item.ip }}"
+          - "SSH User : {{ item.ssh_user }}"
+      loop: "{{ selected_vm_connections }}"
+      no_log: false
+
+    - name: Fail if any selected VM has no IP address
+      fail:
+        msg: "No IP address found in NetBox for VM {{ item.name }}"
+      when: item.ip | length == 0
+      loop: "{{ selected_vm_connections }}"
+
+    ###########################################################################
+    # Wait for Port 22
+    ###########################################################################
+
+    - name: Wait for SSH port 22
+      wait_for:
+        host: "{{ item.ip }}"
         port: 22
         delay: 10
         timeout: 3600
         state: started
-      loop: "{{ filtered_devices }}"
+      loop: "{{ selected_vm_connections }}"
 
-    - name: Remove old SSH key
-      shell: |
-        ssh-keygen -R {{
-          netbox_ips.json.results
-          | selectattr('assigned_object.device.name','equalto',item.name)
-          | map(attribute='address')
-          | map('regex_replace','/.*$','')
-          | first
-        }} || true
-      loop: "{{ filtered_devices }}"
+    ###########################################################################
+    # Add VMs to Dynamic Inventory
+    ###########################################################################
 
-    - name: Accept SSH key
-      shell: |
-        ssh-keyscan -H {{
-          netbox_ips.json.results
-          | selectattr('assigned_object.device.name','equalto',item.name)
-          | map(attribute='address')
-          | map('regex_replace','/.*$','')
-          | first
-        }} >> /tmp/known_hosts
-      args:
-        executable: /bin/bash
-      loop: "{{ filtered_devices }}"
+    - name: Add selected VMs to dynamic inventory
+      add_host:
+        name: "{{ item.short_name }}"
+        groups: verification_vms
+        ansible_host: "{{ item.ip }}"
+        ansible_user: "{{ item.ssh_user }}"
+        ansible_password: "{{ item.ssh_password }}"
+        ansible_ssh_pass: "{{ item.ssh_password }}"
+        ansible_connection: ssh
+        ansible_become: false
+        ansible_ssh_common_args: >-
+          -o StrictHostKeyChecking=no
+          -o UserKnownHostsFile=/dev/null
+      loop: "{{ selected_vm_connections }}"
+
+    - name: Show dynamic inventory hosts
+      debug:
+        msg:
+          - "Host: {{ item.short_name }}"
+          - "IP: {{ item.ip }}"
+      loop: "{{ selected_vm_connections }}"
+
 
 # ============================================================
 # PLAY 4: Final System Verification
+#
+# IMPORTANT:
+# This play runs DIRECTLY against the dynamically added VMs.
+# No delegate_to is used.
 # ============================================================
 
 - name: Final System Verification
-  hosts: localhost
-  gather_facts: no
-
-  vars:
-    ansible_ssh_common_args: "-o UserKnownHostsFile=/tmp/known_hosts -o StrictHostKeyChecking=no"
-
-    netbox_url: "https://192.168.253.143"
-    netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
+  hosts: verification_vms
+  gather_facts: false
 
   tasks:
 
-    # ============================================================
-    # Get all IP addresses from NetBox
-    # ============================================================
+    ###########################################################################
+    # Wait until Ansible SSH authentication succeeds
+    ###########################################################################
 
-    - name: Get all IP addresses
-      uri:
-        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
-        method: GET
-        headers:
-          Authorization: "Token {{ netbox_token }}"
-        return_content: yes
-        validate_certs: no
-      register: netbox_ips
+    - name: Wait for SSH authentication
+      wait_for_connection:
+        delay: 5
+        timeout: 600
 
-    # ============================================================
+    ###########################################################################
     # Check Hostname
-    # ============================================================
+    ###########################################################################
 
     - name: Check hostname
       raw: hostname
       register: hostname_result
-      delegate_to: >-
-        {{
-          netbox_ips.json.results
-          | selectattr('assigned_object.device.name','equalto',item.name)
-          | map(attribute='address')
-          | map('regex_replace','/.*$','')
-          | first
-        }}
-      loop: "{{ filtered_devices }}"
+      changed_when: false
 
-    # ============================================================
+    ###########################################################################
     # Check Uptime
-    # ============================================================
+    ###########################################################################
 
     - name: Check uptime
       raw: uptime -p
       register: uptime_result
-      delegate_to: >-
-        {{
-          netbox_ips.json.results
-          | selectattr('assigned_object.device.name','equalto',item.name)
-          | map(attribute='address')
-          | map('regex_replace','/.*$','')
-          | first
-        }}
-      loop: "{{ filtered_devices }}"
+      changed_when: false
 
-    # ============================================================
+    ###########################################################################
     # Check Kernel
-    # ============================================================
+    ###########################################################################
 
     - name: Check kernel
       raw: uname -r
       register: kernel_result
-      delegate_to: >-
-        {{
-          netbox_ips.json.results
-          | selectattr('assigned_object.device.name','equalto',item.name)
-          | map(attribute='address')
-          | map('regex_replace','/.*$','')
-          | first
-        }}
-      loop: "{{ filtered_devices }}"
+      changed_when: false
 
-    # ============================================================
+    ###########################################################################
     # Check Operating System
-    # ============================================================
+    ###########################################################################
 
     - name: Check operating system
       raw: cat /etc/os-release
       register: os_result
-      delegate_to: >-
-        {{
-          netbox_ips.json.results
-          | selectattr('assigned_object.device.name','equalto',item.name)
-          | map(attribute='address')
-          | map('regex_replace','/.*$','')
-          | first
-        }}
-      loop: "{{ filtered_devices }}"
+      changed_when: false
 
-    # ============================================================
+    ###########################################################################
+    # Get Disk Information
+    ###########################################################################
+
+    - name: Check block devices
+      raw: lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
+      register: disk_result
+      changed_when: false
+
+    ###########################################################################
+    # Check RAID
+    ###########################################################################
+
+    - name: Check RAID status
+      raw: cat /proc/mdstat
+      register: raid_result
+      changed_when: false
+      failed_when: false
+
+    ###########################################################################
     # Display Final Verification
-    # ============================================================
+    ###########################################################################
 
     - name: Display final system information
       debug:
         msg:
           - "============================================================"
-          - "Host      : {{ filtered_devices[idx].name }}"
-          - "Hostname  : {{ hostname_result.results[idx].stdout | trim }}"
-          - "Uptime    : {{ uptime_result.results[idx].stdout | trim }}"
-          - "Kernel    : {{ kernel_result.results[idx].stdout | trim }}"
-          - "OS        : {{ os_result.results[idx].stdout_lines | select('match','^PRETTY_NAME=') | first | default('OS information unavailable') | regex_replace('^PRETTY_NAME=', '') | trim }}"
+          - "Host      : {{ inventory_hostname }}"
+          - "IP        : {{ ansible_host }}"
+          - "Hostname  : {{ hostname_result.stdout | trim }}"
+          - "Uptime    : {{ uptime_result.stdout | trim }}"
+          - "Kernel    : {{ kernel_result.stdout | trim }}"
+          - "OS        : {{ os_result.stdout_lines | select('match', '^PRETTY_NAME=') | first | default('OS information unavailable') | regex_replace('^PRETTY_NAME=', '') | regex_replace('^\"|\"$', '') }}"
+          - "------------------------------------------------------------"
+          - "DISKS:"
+          - "{{ disk_result.stdout_lines }}"
+          - "------------------------------------------------------------"
+          - "RAID:"
+          - "{{ raid_result.stdout_lines | default(['No software RAID detected']) }}"
           - "============================================================"
-      loop: "{{ filtered_devices }}"
-      loop_control:
-        index_var: idx
