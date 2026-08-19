@@ -53,6 +53,7 @@
     # rocky-08-01,rocky-08-02
     #
     # Leave empty to process all hosts.
+
     target_hosts: "{{ target_hosts | default('', true) }}"
 
     target_servers: >-
@@ -304,7 +305,7 @@
 
     - name: Get Foreman subnet
       uri:
-        url: "{{ foreman_url }}/api/subnets?search={{ ('name=\"' ~ subnet_name ~ '\"') | urlencode }}"
+        url: "{{ foreman_url }}/api/subnets?search={{ ('name=' ~ subnet_name) | urlencode }}&per_page=1000"
         method: GET
         user: "{{ foreman_user }}"
         password: "{{ foreman_api_token }}"
@@ -343,20 +344,17 @@
 
 
     ###########################################################################
-    # SEARCH EXISTING FOREMAN HOSTS
+    # GET ALL FOREMAN HOSTS
     #
-    # IMPORTANT:
+    # This is the important fix.
     #
-    # Use an exact Foreman search:
-    #
-    # name="hostname"
-    #
-    # Then collect ALL returned matching IDs.
+    # We retrieve all hosts visible to this Foreman API account and then
+    # compare names locally. This avoids depending on Foreman search syntax.
     ###########################################################################
 
-    - name: Search existing Foreman hosts using exact hostname
+    - name: Get all Foreman hosts
       uri:
-        url: "{{ foreman_url }}/api/hosts?search={{ ('name=\"' ~ item.name ~ '\"') | urlencode }}&per_page=1000"
+        url: "{{ foreman_url }}/api/hosts?per_page=1000"
         method: GET
         user: "{{ foreman_user }}"
         password: "{{ foreman_api_token }}"
@@ -366,56 +364,84 @@
         timeout: 120
         status_code: 200
         return_content: true
-      loop: "{{ host_info }}"
-      loop_control:
-        label: "{{ item.name }}"
-      register: foreman_host_search
+      register: all_foreman_hosts
 
 
-    - name: Initialize existing Foreman host deletion list
+    - name: Show Foreman host count
+      debug:
+        msg: "Total Foreman hosts returned: {{ all_foreman_hosts.json.total | default(all_foreman_hosts.json.results | length) }}"
+
+
+    ###########################################################################
+    # BUILD COMPLETE MATCHING HOST LIST
+    #
+    # Match:
+    #
+    # short hostname:
+    #   rocky-08-01
+    #
+    # FQDN:
+    #   rocky-08-01.vgs.com
+    #
+    # Also compare short component of every returned Foreman hostname.
+    ###########################################################################
+
+    - name: Initialize Foreman hosts to delete
       set_fact:
         foreman_hosts_to_delete: []
 
 
-    - name: Build complete Foreman host deletion list
+    - name: Find all matching Foreman hosts locally
       set_fact:
         foreman_hosts_to_delete: >-
           {{
             foreman_hosts_to_delete +
-            (
-              item.json.results
-              | selectattr('name', 'equalto', item.item.name)
-              | map(attribute='id')
-              | map('string')
-              | map('regex_replace', '^(.*)$', item.item.name ~ '|\\1')
-              | list
-            )
+            [
+              {
+                'target_name': target.name,
+                'found_name': foreman_host.name,
+                'id': foreman_host.id
+              }
+            ]
           }}
-      loop: "{{ foreman_host_search.results }}"
+      vars:
+        target: "{{ item.0 }}"
+        foreman_host: "{{ item.1 }}"
+      loop: "{{ host_info | product(all_foreman_hosts.json.results) | list }}"
       loop_control:
-        label: "{{ item.item.name }}"
+        label: "{{ item.0.name }} -> {{ item.1.name }}"
+      when: >-
+        item.1.name == item.0.name
+        or
+        item.1.name == item.0.netbox_name
+        or
+        (
+          item.1.name.split('.')[0] == item.0.name
+        )
+
+
+    - name: Remove duplicate Foreman deletion records
+      set_fact:
+        foreman_hosts_to_delete: >-
+          {{
+            foreman_hosts_to_delete
+            | unique(attribute='id')
+            | list
+          }}
 
 
     - name: Show all matching existing Foreman hosts
       debug:
-        msg:
-          - "Existing Foreman hosts matching selected names:"
-          - "{{ foreman_hosts_to_delete }}"
+        msg: "{{ foreman_hosts_to_delete }}"
 
 
     ###########################################################################
-    # DELETE EVERY MATCHING FOREMAN HOST
-    #
-    # The list format is:
-    #
-    # hostname|numeric_id
-    #
-    # This avoids deleting by hostname and ensures Foreman's numeric ID is used.
+    # DELETE EVERY MATCHING HOST BY NUMERIC ID
     ###########################################################################
 
     - name: Delete every matching existing Foreman host by numeric ID
       uri:
-        url: "{{ foreman_url }}/api/hosts/{{ item.split('|')[-1] }}"
+        url: "{{ foreman_url }}/api/hosts/{{ item.id }}"
         method: DELETE
         user: "{{ foreman_user }}"
         password: "{{ foreman_api_token }}"
@@ -427,29 +453,42 @@
           - 200
           - 202
           - 204
+        return_content: true
       loop: "{{ foreman_hosts_to_delete }}"
       loop_control:
-        label: "{{ item }}"
+        label: "{{ item.found_name }} (ID={{ item.id }})"
       register: foreman_delete
+      when: foreman_hosts_to_delete | length > 0
 
 
     - name: Show deleted Foreman hosts
       debug:
-        msg: "Deleted Foreman host {{ item.item.split('|')[0] }} with ID {{ item.item.split('|')[-1] }}"
+        msg: "Deleted Foreman host {{ item.item.found_name }} with ID {{ item.item.id }}"
       loop: "{{ foreman_delete.results | default([]) }}"
       loop_control:
-        label: "{{ item.item }}"
+        label: "{{ item.item.found_name | default('unknown') }}"
       when:
+        - item.item is defined
         - item.status is defined
 
 
     ###########################################################################
-    # WAIT UNTIL EACH TARGET NAME IS COMPLETELY GONE
+    # WAIT FOR DELETION
     ###########################################################################
 
-    - name: Wait until all existing Foreman hosts are deleted
+    - name: Wait after Foreman host deletion
+      pause:
+        seconds: 5
+      when: foreman_hosts_to_delete | length > 0
+
+
+    ###########################################################################
+    # GET ALL HOSTS AGAIN AFTER DELETION
+    ###########################################################################
+
+    - name: Refresh complete Foreman host list after deletion
       uri:
-        url: "{{ foreman_url }}/api/hosts?search={{ ('name=\"' ~ item.name ~ '\"') | urlencode }}&per_page=1000"
+        url: "{{ foreman_url }}/api/hosts?per_page=1000"
         method: GET
         user: "{{ foreman_user }}"
         password: "{{ foreman_api_token }}"
@@ -459,77 +498,93 @@
         timeout: 120
         status_code: 200
         return_content: true
-      register: deletion_check
-      until: >-
-        (
-          deletion_check.json.results
-          | selectattr('name', 'equalto', item.name)
-          | list
-          | length
-        ) == 0
-      retries: 60
-      delay: 2
+      register: all_foreman_hosts_after_delete
+
+
+    ###########################################################################
+    # FINAL LOCAL SAFETY CHECK
+    ###########################################################################
+
+    - name: Check whether any selected hostname still exists
+      set_fact:
+        remaining_foreman_hosts: >-
+          {{
+            remaining_foreman_hosts | default([]) +
+            [
+              {
+                'target_name': item.name,
+                'matches': (
+                  all_foreman_hosts_after_delete.json.results
+                  | selectattr('name', 'defined')
+                  | selectattr('name', 'equalto', item.name)
+                  | list
+                )
+              }
+            ]
+          }}
       loop: "{{ host_info }}"
       loop_control:
         label: "{{ item.name }}"
 
 
-    ###########################################################################
-    # FINAL SAFETY CHECK
-    #
-    # If anything with the same name still exists, STOP.
-    ###########################################################################
-
-    - name: Perform final exact Foreman hostname availability check
-      uri:
-        url: "{{ foreman_url }}/api/hosts?search={{ ('name=\"' ~ item.name ~ '\"') | urlencode }}&per_page=1000"
-        method: GET
-        user: "{{ foreman_user }}"
-        password: "{{ foreman_api_token }}"
-        force_basic_auth: true
-        validate_certs: false
-        use_proxy: false
-        timeout: 120
-        status_code: 200
-        return_content: true
-      loop: "{{ host_info }}"
-      loop_control:
-        label: "{{ item.name }}"
-      register: final_name_check
-
-
-    - name: Show final hostname check results
+    - name: Show remaining exact Foreman hosts
       debug:
-        msg:
-          - "Host     : {{ item.item.name }}"
-          - "Remaining: {{ item.json.results | map(attribute='name') | list }}"
-      loop: "{{ final_name_check.results }}"
-      loop_control:
-        label: "{{ item.item.name }}"
+        var: remaining_foreman_hosts
 
 
-    - name: Fail if Foreman hostname still exists
+    - name: Fail if exact Foreman hostname still exists
       fail:
         msg: >-
           Foreman hostname still exists and cannot be recreated:
-          {{ item.item.name }}
-          Existing IDs:
-          {{
-            item.json.results
-            | selectattr('name', 'equalto', item.item.name)
-            | map(attribute='id')
-            | list
-          }}
-      when: >-
-        (
-          item.json.results
-          | selectattr('name', 'equalto', item.item.name)
-          | list
-          | length
-        ) > 0
-      loop: "{{ final_name_check.results }}"
+          {{ item.target_name }}
+          Matching IDs:
+          {{ item.matches | map(attribute='id') | list }}
+      loop: "{{ remaining_foreman_hosts }}"
       loop_control:
-        label: "{{ item.item.name }}"
+        label: "{{ item.target_name }}"
+      when: item.matches | length > 0
+
+
+    ###########################################################################
+    # ADDITIONAL FQDN / SHORT NAME SAFETY CHECK
+    ###########################################################################
+
+    - name: Build final conflicting Foreman hostname list
+      set_fact:
+        final_name_conflicts: >-
+          {{
+            final_name_conflicts | default([]) +
+            (
+              all_foreman_hosts_after_delete.json.results
+              | selectattr('name', 'defined')
+              | selectattr(
+                  'name',
+                  'in',
+                  [
+                    item.name,
+                    item.netbox_name
+                  ]
+                )
+              | map(attribute='name')
+              | list
+            )
+          }}
+      loop: "{{ host_info }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+
+    - name: Show final conflicting names
+      debug:
+        msg: "{{ final_name_conflicts | default([]) | unique }}"
+
+
+    - name: Fail if short hostname or FQDN conflict remains
+      fail:
+        msg: >-
+          A conflicting Foreman hostname still exists:
+          {{ final_name_conflicts | unique }}
+      when: final_name_conflicts | default([]) | length > 0
 
 
     ###########################################################################
@@ -558,7 +613,6 @@
 
         body:
           host:
-
             name: "{{ item.name }}"
 
             organization_id: "{{ org_id }}"
