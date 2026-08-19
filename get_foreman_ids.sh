@@ -3,19 +3,21 @@
 ###############################################################################
 # FOREMAN DYNAMIC ID LOOKUP
 #
-# Dynamically looks up:
+# This script dynamically looks up:
 #
-# - RAID Hostgroup ID
-# - SingleDisk Hostgroup ID
-# - Operating System ID
-# - Installation Medium ID
+#   - RAID Hostgroup ID
+#   - SingleDisk Hostgroup ID
+#   - RAID Operating System ID
+#   - SingleDisk Operating System ID
+#   - Installation Medium ID
+#   - Subnet Name
 #
-# Generates separate YAML blocks for:
+# Then generates separate AWX / Ansible variable blocks for:
 #
-# 1. CentOS Linux 7
-# 2. Rocky Linux 8.10
-# 3. Rocky Linux 9.2
-# 4. Rocky Linux 9.8
+#   1. CentOS Linux 7
+#   2. Rocky Linux 8.10
+#   3. Rocky Linux 9.2
+#   4. Rocky Linux 9.8
 #
 ###############################################################################
 
@@ -29,6 +31,28 @@ FOREMAN_SERVER="https://cent-07-01.vgs.com"
 FOREMAN_USER="admin"
 FOREMAN_PASS="zqs977dXzqfEvTML"
 
+
+###############################################################################
+# STATIC SETTINGS
+#
+# Update Content View IDs here if they change in Foreman.
+###############################################################################
+
+PTABLE_ID=126
+LIFECYCLE_ENVIRONMENT_ID=1
+
+
+###############################################################################
+# COLORS
+###############################################################################
+
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+
 ###############################################################################
 # FUNCTIONS
 ###############################################################################
@@ -36,9 +60,10 @@ FOREMAN_PASS="zqs977dXzqfEvTML"
 header() {
     echo
     echo "============================================================"
-    echo "$1"
+    echo -e "${CYAN}$1${NC}"
     echo "============================================================"
 }
+
 
 section() {
     echo
@@ -47,13 +72,35 @@ section() {
     echo "------------------------------------------------------------"
 }
 
+
 ok() {
-    echo "[OK] $1"
+    echo -e "${GREEN}[OK]${NC} $1"
 }
 
+
 error() {
-    echo "[ERROR] $1"
+    echo -e "${RED}[ERROR]${NC} $1"
 }
+
+
+warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+
+###############################################################################
+# HAMMER COMMAND
+###############################################################################
+
+hammer_cmd() {
+
+    hammer \
+        --server "$FOREMAN_SERVER" \
+        --username "$FOREMAN_USER" \
+        --password "$FOREMAN_PASS" \
+        "$@"
+}
+
 
 ###############################################################################
 # CHECK FOREMAN CONNECTION
@@ -61,51 +108,61 @@ error() {
 
 header "        FOREMAN DYNAMIC ID LOOKUP"
 
-if ! hammer \
-    --server "$FOREMAN_SERVER" \
-    --username "$FOREMAN_USER" \
-    --password "$FOREMAN_PASS" \
-    organization list >/dev/null 2>&1
-then
+if ! hammer_cmd hostgroup list >/dev/null 2>&1; then
     error "Unable to connect to Foreman"
+    error "Check FOREMAN_SERVER, username and password"
     exit 1
 fi
 
 ok "Foreman connection successful"
 
+
 ###############################################################################
 # HOSTGROUP DEFINITIONS
 ###############################################################################
 
-declare -A RAID_HOSTGROUP
-declare -A SINGLE_HOSTGROUP
-declare -A OS_LABEL
-declare -A SUBNET_NAME
+declare -A OS_DISPLAY_NAME
+
+declare -A RAID_HOSTGROUP_NAME
+declare -A SINGLE_HOSTGROUP_NAME
+
 declare -A CONTENT_VIEW_ID
 
-RAID_HOSTGROUP["1"]="CentOSLinux7-RAID"
-SINGLE_HOSTGROUP["1"]="CentOSLinux7-SingleDisk"
-OS_LABEL["1"]="CentOS Linux 7"
-SUBNET_NAME["1"]="vgs-subnet-centos"
-CONTENT_VIEW_ID["1"]="1"
 
-RAID_HOSTGROUP["2"]="RockyLinux8.10-RAID"
-SINGLE_HOSTGROUP["2"]="RockyLinux8.10-SingleDisk"
-OS_LABEL["2"]="Rocky Linux 8.10"
-SUBNET_NAME["2"]="vgs-subnet-rockyos"
-CONTENT_VIEW_ID["2"]="3"
+OS_DISPLAY_NAME["1"]="CentOS Linux 7"
+OS_DISPLAY_NAME["2"]="Rocky Linux 8.10"
+OS_DISPLAY_NAME["3"]="Rocky Linux 9.2"
+OS_DISPLAY_NAME["4"]="Rocky Linux 9.8"
 
-RAID_HOSTGROUP["3"]="RockyLinux9.2-RAID"
-SINGLE_HOSTGROUP["3"]="RockyLinux9.2-SingleDisk"
-OS_LABEL["3"]="Rocky Linux 9.2"
-SUBNET_NAME["3"]="vgs-subnet-rockyos"
-CONTENT_VIEW_ID["3"]="4"
 
-RAID_HOSTGROUP["4"]="RockyLinux9.8-RAID"
-SINGLE_HOSTGROUP["4"]="RockyLinux9.8-SingleDisk"
-OS_LABEL["4"]="Rocky Linux 9.8"
-SUBNET_NAME["4"]="vgs-subnet-rockyos"
-CONTENT_VIEW_ID["4"]="5"
+###############################################################################
+# HOSTGROUP NAMES
+###############################################################################
+
+RAID_HOSTGROUP_NAME["1"]="CentOSLinux7-RAID"
+SINGLE_HOSTGROUP_NAME["1"]="CentOSLinux7-SingleDisk"
+
+RAID_HOSTGROUP_NAME["2"]="RockyLinux8.10-RAID"
+SINGLE_HOSTGROUP_NAME["2"]="RockyLinux8.10-SingleDisk"
+
+RAID_HOSTGROUP_NAME["3"]="RockyLinux9.2-RAID"
+SINGLE_HOSTGROUP_NAME["3"]="RockyLinux9.2-SingleDisk"
+
+RAID_HOSTGROUP_NAME["4"]="RockyLinux9.8-RAID"
+SINGLE_HOSTGROUP_NAME["4"]="RockyLinux9.8-SingleDisk"
+
+
+###############################################################################
+# KATELLO CONTENT VIEW IDS
+#
+# Existing values based on your current configuration.
+###############################################################################
+
+CONTENT_VIEW_ID["1"]=1
+CONTENT_VIEW_ID["2"]=3
+CONTENT_VIEW_ID["3"]=4
+CONTENT_VIEW_ID["4"]=5
+
 
 ###############################################################################
 # RESULT ARRAYS
@@ -113,10 +170,32 @@ CONTENT_VIEW_ID["4"]="5"
 
 declare -A RAID_HOSTGROUP_ID
 declare -A SINGLE_HOSTGROUP_ID
-declare -A OPERATINGSYSTEM_ID
-declare -A MEDIUM_ID
-declare -A OS_NAME
+
+declare -A RAID_OS_NAME
+declare -A SINGLE_OS_NAME
+
+declare -A RAID_OS_ID
+declare -A SINGLE_OS_ID
+
 declare -A MEDIUM_NAME
+declare -A MEDIUM_ID
+
+declare -A SUBNET_NAME
+
+
+###############################################################################
+# GET HOSTGROUP INFORMATION
+###############################################################################
+
+get_hostgroup_info() {
+
+    local HOSTGROUP="$1"
+
+    hammer_cmd \
+        hostgroup info \
+        --name "$HOSTGROUP" 2>/dev/null
+}
+
 
 ###############################################################################
 # GET HOSTGROUP ID
@@ -124,51 +203,101 @@ declare -A MEDIUM_NAME
 
 get_hostgroup_id() {
 
-    local HG_NAME="$1"
+    local HOSTGROUP="$1"
 
-    hammer \
-        --server "$FOREMAN_SERVER" \
-        --username "$FOREMAN_USER" \
-        --password "$FOREMAN_PASS" \
-        hostgroup list |
-    awk -F'|' -v hg="$HG_NAME" '
-    NR > 2 {
-        for (i=1; i<=NF; i++) {
-            gsub(/^ +| +$/, "", $i)
-        }
-
-        if ($2 == hg) {
-            print $1
+    hammer_cmd \
+        hostgroup info \
+        --name "$HOSTGROUP" 2>/dev/null |
+    awk -F': *' '
+        /^Id:/ {
+            print $2
             exit
         }
-    }'
+    '
 }
 
+
 ###############################################################################
-# GET OS ID
+# GET OS NAME FROM HOSTGROUP
+###############################################################################
+
+get_os_name() {
+
+    local HOSTGROUP="$1"
+
+    get_hostgroup_info "$HOSTGROUP" |
+    awk -F': *' '
+        /^[[:space:]]*Operating System:/ {
+            print $2
+            exit
+        }
+    '
+}
+
+
+###############################################################################
+# GET MEDIUM NAME FROM HOSTGROUP
+###############################################################################
+
+get_medium_name() {
+
+    local HOSTGROUP="$1"
+
+    get_hostgroup_info "$HOSTGROUP" |
+    awk -F': *' '
+        /^[[:space:]]*Medium:/ {
+            print $2
+            exit
+        }
+    '
+}
+
+
+###############################################################################
+# GET SUBNET NAME FROM HOSTGROUP
+###############################################################################
+
+get_subnet_name() {
+
+    local HOSTGROUP="$1"
+
+    get_hostgroup_info "$HOSTGROUP" |
+    awk -F': *' '
+        /^[[:space:]]*Subnet ipv4:/ {
+            print $2
+            exit
+        }
+    '
+}
+
+
+###############################################################################
+# GET OPERATING SYSTEM ID
 ###############################################################################
 
 get_os_id() {
 
-    local SEARCH_OS="$1"
+    local OS_NAME="$1"
 
-    hammer \
-        --server "$FOREMAN_SERVER" \
-        --username "$FOREMAN_USER" \
-        --password "$FOREMAN_PASS" \
-        os list |
-    awk -F'|' -v os="$SEARCH_OS" '
-    NR > 2 {
-        for (i=1; i<=NF; i++) {
-            gsub(/^ +| +$/, "", $i)
-        }
+    hammer_cmd os list |
+    awk -F'|' -v wanted="$OS_NAME" '
 
-        if ($2 == os) {
-            print $1
-            exit
+        NR > 2 {
+
+            id=$1
+            title=$2
+
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", title)
+
+            if (title == wanted) {
+                print id
+                exit
+            }
         }
-    }'
+    '
 }
+
 
 ###############################################################################
 # GET MEDIUM ID
@@ -176,152 +305,215 @@ get_os_id() {
 
 get_medium_id() {
 
-    local SEARCH_MEDIUM="$1"
+    local TARGET_MEDIUM="$1"
 
-    hammer \
-        --server "$FOREMAN_SERVER" \
-        --username "$FOREMAN_USER" \
-        --password "$FOREMAN_PASS" \
-        medium list |
-    awk -F'|' -v medium="$SEARCH_MEDIUM" '
-    NR > 2 {
-        for (i=1; i<=NF; i++) {
-            gsub(/^ +| +$/, "", $i)
-        }
+    hammer_cmd medium list |
+    awk -F'|' -v wanted="$TARGET_MEDIUM" '
 
-        if ($2 == medium) {
-            print $1
-            exit
+        NR > 2 {
+
+            id=$1
+            name=$2
+
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+
+            if (name == wanted) {
+                print id
+                exit
+            }
         }
-    }'
+    '
 }
 
+
 ###############################################################################
-# LOOK UP ALL IDs
+# LOOK UP ALL FOREMAN IDS
 ###############################################################################
 
 header "        LOOKING UP FOREMAN IDS"
 
+
 for IDX in 1 2 3 4
 do
 
-    section "Checking ${OS_LABEL[$IDX]}"
+    OS_LABEL="${OS_DISPLAY_NAME[$IDX]}"
+
+    RAID_HG="${RAID_HOSTGROUP_NAME[$IDX]}"
+    SINGLE_HG="${SINGLE_HOSTGROUP_NAME[$IDX]}"
+
+
+    section "Checking ${OS_LABEL}"
+
 
     ###########################################################################
     # RAID HOSTGROUP
     ###########################################################################
 
-    RAID_HOSTGROUP_ID[$IDX]=$(get_hostgroup_id "${RAID_HOSTGROUP[$IDX]}")
+    RAID_HOSTGROUP_ID[$IDX]=$(
+        get_hostgroup_id "$RAID_HG"
+    )
 
-    if [ -z "${RAID_HOSTGROUP_ID[$IDX]}" ]; then
-        error "RAID Hostgroup not found: ${RAID_HOSTGROUP[$IDX]}"
+
+    if [[ -z "${RAID_HOSTGROUP_ID[$IDX]}" ]]; then
+        error "RAID Hostgroup not found: $RAID_HG"
         exit 1
     fi
 
+
     ok "RAID Hostgroup"
-    echo "     Name : ${RAID_HOSTGROUP[$IDX]}"
+    echo "     Name : $RAID_HG"
     echo "     ID   : ${RAID_HOSTGROUP_ID[$IDX]}"
+
 
     ###########################################################################
     # SINGLE DISK HOSTGROUP
     ###########################################################################
 
-    SINGLE_HOSTGROUP_ID[$IDX]=$(get_hostgroup_id "${SINGLE_HOSTGROUP[$IDX]}")
+    SINGLE_HOSTGROUP_ID[$IDX]=$(
+        get_hostgroup_id "$SINGLE_HG"
+    )
 
-    if [ -z "${SINGLE_HOSTGROUP_ID[$IDX]}" ]; then
-        error "SingleDisk Hostgroup not found: ${SINGLE_HOSTGROUP[$IDX]}"
+
+    if [[ -z "${SINGLE_HOSTGROUP_ID[$IDX]}" ]]; then
+        error "SingleDisk Hostgroup not found: $SINGLE_HG"
         exit 1
     fi
+
 
     ok "SingleDisk Hostgroup"
-    echo "     Name : ${SINGLE_HOSTGROUP[$IDX]}"
+    echo "     Name : $SINGLE_HG"
     echo "     ID   : ${SINGLE_HOSTGROUP_ID[$IDX]}"
 
+
     ###########################################################################
-    # GET OS AND MEDIUM FROM RAID HOSTGROUP
+    # RAID OPERATING SYSTEM
     ###########################################################################
 
-    HG_INFO=$(
-        hammer \
-            --server "$FOREMAN_SERVER" \
-            --username "$FOREMAN_USER" \
-            --password "$FOREMAN_PASS" \
-            hostgroup info \
-            --name "${RAID_HOSTGROUP[$IDX]}" 2>/dev/null
+    RAID_OS_NAME[$IDX]=$(
+        get_os_name "$RAID_HG"
     )
 
-    OS_NAME[$IDX]=$(
-        echo "$HG_INFO" |
-        awk -F': *' '
-            /^[[:space:]]*Operating System:/ {
-                sub(/^[[:space:]]*/, "", $2)
-                print $2
-                exit
-            }
-        '
+
+    if [[ -z "${RAID_OS_NAME[$IDX]}" ]]; then
+        error "Operating System is empty for RAID Hostgroup: $RAID_HG"
+        exit 1
+    fi
+
+
+    RAID_OS_ID[$IDX]=$(
+        get_os_id "${RAID_OS_NAME[$IDX]}"
     )
+
+
+    if [[ -z "${RAID_OS_ID[$IDX]}" ]]; then
+        error "Operating System ID not found: ${RAID_OS_NAME[$IDX]}"
+        exit 1
+    fi
+
+
+    ###########################################################################
+    # SINGLE DISK OPERATING SYSTEM
+    ###########################################################################
+
+    SINGLE_OS_NAME[$IDX]=$(
+        get_os_name "$SINGLE_HG"
+    )
+
+
+    if [[ -z "${SINGLE_OS_NAME[$IDX]}" ]]; then
+        error "Operating System is empty for SingleDisk Hostgroup: $SINGLE_HG"
+        exit 1
+    fi
+
+
+    SINGLE_OS_ID[$IDX]=$(
+        get_os_id "${SINGLE_OS_NAME[$IDX]}"
+    )
+
+
+    if [[ -z "${SINGLE_OS_ID[$IDX]}" ]]; then
+        error "Operating System ID not found: ${SINGLE_OS_NAME[$IDX]}"
+        exit 1
+    fi
+
+
+    ###########################################################################
+    # MEDIUM
+    ###########################################################################
 
     MEDIUM_NAME[$IDX]=$(
-        echo "$HG_INFO" |
-        awk -F': *' '
-            /^[[:space:]]*Medium:/ {
-                sub(/^[[:space:]]*/, "", $2)
-                print $2
-                exit
-            }
-        '
+        get_medium_name "$RAID_HG"
     )
 
-    if [ -z "${OS_NAME[$IDX]}" ]; then
-        error "Operating System is empty for: ${RAID_HOSTGROUP[$IDX]}"
+
+    if [[ -z "${MEDIUM_NAME[$IDX]}" ]]; then
+        error "Installation Medium is empty for Hostgroup: $RAID_HG"
         exit 1
     fi
 
-    if [ -z "${MEDIUM_NAME[$IDX]}" ]; then
-        error "Installation Medium is empty for: ${RAID_HOSTGROUP[$IDX]}"
-        exit 1
-    fi
 
-    echo
-    echo "     Operating System : ${OS_NAME[$IDX]}"
-    echo "     Medium           : ${MEDIUM_NAME[$IDX]}"
+    MEDIUM_ID[$IDX]=$(
+        get_medium_id "${MEDIUM_NAME[$IDX]}"
+    )
 
-    ###########################################################################
-    # OS ID
-    ###########################################################################
 
-    OPERATINGSYSTEM_ID[$IDX]=$(get_os_id "${OS_NAME[$IDX]}")
-
-    if [ -z "${OPERATINGSYSTEM_ID[$IDX]}" ]; then
-        error "Operating System ID not found: ${OS_NAME[$IDX]}"
-        exit 1
-    fi
-
-    ok "Operating System ID : ${OPERATINGSYSTEM_ID[$IDX]}"
-
-    ###########################################################################
-    # MEDIUM ID
-    ###########################################################################
-
-    MEDIUM_ID[$IDX]=$(get_medium_id "${MEDIUM_NAME[$IDX]}")
-
-    if [ -z "${MEDIUM_ID[$IDX]}" ]; then
+    if [[ -z "${MEDIUM_ID[$IDX]}" ]]; then
         error "Medium ID not found: ${MEDIUM_NAME[$IDX]}"
         exit 1
     fi
 
-    ok "Medium ID : ${MEDIUM_ID[$IDX]}"
+
+    ###########################################################################
+    # SUBNET
+    ###########################################################################
+
+    SUBNET_NAME[$IDX]=$(
+        get_subnet_name "$RAID_HG"
+    )
+
+
+    if [[ -z "${SUBNET_NAME[$IDX]}" ]]; then
+        error "Subnet is empty for Hostgroup: $RAID_HG"
+        exit 1
+    fi
+
+
+    ###########################################################################
+    # DISPLAY OS / MEDIUM DETAILS
+    ###########################################################################
+
+    echo
+    echo "     RAID Operating System"
+    echo "       Name : ${RAID_OS_NAME[$IDX]}"
+    echo "       ID   : ${RAID_OS_ID[$IDX]}"
+
+    echo
+    echo "     SingleDisk Operating System"
+    echo "       Name : ${SINGLE_OS_NAME[$IDX]}"
+    echo "       ID   : ${SINGLE_OS_ID[$IDX]}"
+
+    echo
+    echo "     Installation Medium"
+    echo "       Name : ${MEDIUM_NAME[$IDX]}"
+    echo "       ID   : ${MEDIUM_ID[$IDX]}"
+
+    echo
+    echo "     Subnet"
+    echo "       Name : ${SUBNET_NAME[$IDX]}"
 
 done
 
+
 ###############################################################################
-# GENERATE SEPARATE YAML OUTPUT
+# GENERATE AWX / ANSIBLE VARIABLES
 ###############################################################################
 
 header "        GENERATED AWX / ANSIBLE VARIABLES"
 
+
 ###############################################################################
-# CENTOS 7
+# CENTOS LINUX 7
 ###############################################################################
 
 cat <<EOF
@@ -331,8 +523,8 @@ cat <<EOF
     #
     # AWX Survey:
     #
-    # 1 = ${SINGLE_HOSTGROUP[1]}
-    # 2 = ${RAID_HOSTGROUP[1]}
+    # 1 = ${SINGLE_HOSTGROUP_NAME[1]}
+    # 2 = ${RAID_HOSTGROUP_NAME[1]}
     #
     # ==============================================================================
 
@@ -340,28 +532,35 @@ cat <<EOF
 
     hostgroup_id: >-
       {{
-        {
+        {{
           '1': ${SINGLE_HOSTGROUP_ID[1]},
           '2': ${RAID_HOSTGROUP_ID[1]}
-        }[hostgroup | string]
+        }}[hostgroup | string]
       }}
 
-    operatingsystem_id: ${OPERATINGSYSTEM_ID[1]}
+    operatingsystem_id: >-
+      {{
+        {{
+          '1': ${SINGLE_OS_ID[1]},
+          '2': ${RAID_OS_ID[1]}
+        }}[hostgroup | string]
+      }}
 
     # ${MEDIUM_NAME[1]}
     medium_id: ${MEDIUM_ID[1]}
 
     # Kickstart default
-    ptable_id: 126
+    ptable_id: ${PTABLE_ID}
 
     # CentOS 7 subnet
     subnet_name: "${SUBNET_NAME[1]}"
 
     # Katello Content
     content_view_id: ${CONTENT_VIEW_ID[1]}
-    lifecycle_environment_id: 1
+    lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
 
 EOF
+
 
 ###############################################################################
 # ROCKY LINUX 8.10
@@ -374,8 +573,8 @@ cat <<EOF
     #
     # AWX Survey:
     #
-    # 1 = ${SINGLE_HOSTGROUP[2]}
-    # 2 = ${RAID_HOSTGROUP[2]}
+    # 1 = ${SINGLE_HOSTGROUP_NAME[2]}
+    # 2 = ${RAID_HOSTGROUP_NAME[2]}
     #
     # ==============================================================================
 
@@ -383,28 +582,35 @@ cat <<EOF
 
     hostgroup_id: >-
       {{
-        {
+        {{
           '1': ${SINGLE_HOSTGROUP_ID[2]},
           '2': ${RAID_HOSTGROUP_ID[2]}
-        }[hostgroup | string]
+        }}[hostgroup | string]
       }}
 
-    operatingsystem_id: ${OPERATINGSYSTEM_ID[2]}
+    operatingsystem_id: >-
+      {{
+        {{
+          '1': ${SINGLE_OS_ID[2]},
+          '2': ${RAID_OS_ID[2]}
+        }}[hostgroup | string]
+      }}
 
     # ${MEDIUM_NAME[2]}
     medium_id: ${MEDIUM_ID[2]}
 
     # Kickstart default
-    ptable_id: 126
+    ptable_id: ${PTABLE_ID}
 
     # Rocky Linux 8 subnet
     subnet_name: "${SUBNET_NAME[2]}"
 
     # Katello Content
     content_view_id: ${CONTENT_VIEW_ID[2]}
-    lifecycle_environment_id: 1
+    lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
 
 EOF
+
 
 ###############################################################################
 # ROCKY LINUX 9.2
@@ -417,8 +623,8 @@ cat <<EOF
     #
     # AWX Survey:
     #
-    # 1 = ${SINGLE_HOSTGROUP[3]}
-    # 2 = ${RAID_HOSTGROUP[3]}
+    # 1 = ${SINGLE_HOSTGROUP_NAME[3]}
+    # 2 = ${RAID_HOSTGROUP_NAME[3]}
     #
     # ==============================================================================
 
@@ -426,28 +632,35 @@ cat <<EOF
 
     hostgroup_id: >-
       {{
-        {
+        {{
           '1': ${SINGLE_HOSTGROUP_ID[3]},
           '2': ${RAID_HOSTGROUP_ID[3]}
-        }[hostgroup | string]
+        }}[hostgroup | string]
       }}
 
-    operatingsystem_id: ${OPERATINGSYSTEM_ID[3]}
+    operatingsystem_id: >-
+      {{
+        {{
+          '1': ${SINGLE_OS_ID[3]},
+          '2': ${RAID_OS_ID[3]}
+        }}[hostgroup | string]
+      }}
 
     # ${MEDIUM_NAME[3]}
     medium_id: ${MEDIUM_ID[3]}
 
     # Kickstart default
-    ptable_id: 126
+    ptable_id: ${PTABLE_ID}
 
     # Rocky Linux 9 subnet
     subnet_name: "${SUBNET_NAME[3]}"
 
     # Katello Content
     content_view_id: ${CONTENT_VIEW_ID[3]}
-    lifecycle_environment_id: 1
+    lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
 
 EOF
+
 
 ###############################################################################
 # ROCKY LINUX 9.8
@@ -460,8 +673,8 @@ cat <<EOF
     #
     # AWX Survey:
     #
-    # 1 = ${SINGLE_HOSTGROUP[4]}
-    # 2 = ${RAID_HOSTGROUP[4]}
+    # 1 = ${SINGLE_HOSTGROUP_NAME[4]}
+    # 2 = ${RAID_HOSTGROUP_NAME[4]}
     #
     # ==============================================================================
 
@@ -469,27 +682,38 @@ cat <<EOF
 
     hostgroup_id: >-
       {{
-        {
+        {{
           '1': ${SINGLE_HOSTGROUP_ID[4]},
           '2': ${RAID_HOSTGROUP_ID[4]}
-        }[hostgroup | string]
+        }}[hostgroup | string]
       }}
 
-    operatingsystem_id: ${OPERATINGSYSTEM_ID[4]}
+    operatingsystem_id: >-
+      {{
+        {{
+          '1': ${SINGLE_OS_ID[4]},
+          '2': ${RAID_OS_ID[4]}
+        }}[hostgroup | string]
+      }}
 
     # ${MEDIUM_NAME[4]}
     medium_id: ${MEDIUM_ID[4]}
 
     # Kickstart default
-    ptable_id: 126
+    ptable_id: ${PTABLE_ID}
 
     # Rocky Linux 9 subnet
     subnet_name: "${SUBNET_NAME[4]}"
 
     # Katello Content
     content_view_id: ${CONTENT_VIEW_ID[4]}
-    lifecycle_environment_id: 1
+    lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
 
 EOF
+
+
+###############################################################################
+# FINAL SUMMARY
+###############################################################################
 
 header "        FOREMAN ID LOOKUP COMPLETED SUCCESSFULLY"
