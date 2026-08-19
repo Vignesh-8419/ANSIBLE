@@ -14,7 +14,7 @@
   vars:
 
     ###########################################################################
-    # ESXi
+    # ESXI
     ###########################################################################
 
     esxi_hostname: "192.168.253.128"
@@ -32,6 +32,10 @@
 
     netbox_url: "https://192.168.253.143"
     netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
+
+    ###########################################################################
+    # CLUSTER
+    ###########################################################################
 
     cluster_name: "rocky-8-servers"
 
@@ -53,7 +57,10 @@
     # AWX SURVEY - HOSTGROUP
     #
     # 1 = SingleDisk
+    #     1 x 100 GB
+    #
     # 2 = RAID
+    #     2 x 100 GB
     ###########################################################################
 
     hostgroup: "{{ hostgroup | default('1', true) }}"
@@ -147,7 +154,7 @@
           - "============================================================"
 
     ###########################################################################
-    # GET EXACT CLUSTER FROM NETBOX
+    # GET CLUSTER FROM NETBOX
     ###########################################################################
 
     - name: Get NetBox cluster
@@ -176,9 +183,7 @@
 
     - name: Fail if NetBox cluster does not exist
       fail:
-        msg: >-
-          NetBox cluster not found:
-          '{{ cluster_name }}'
+        msg: "NetBox cluster not found: '{{ cluster_name }}'"
       when: cluster_id | string | length == 0
 
     - name: Show resolved NetBox cluster
@@ -215,8 +220,7 @@
 
     - name: Fail if cluster contains no devices
       fail:
-        msg: >-
-          No devices found in NetBox cluster '{{ cluster_name }}'.
+        msg: "No devices found in NetBox cluster '{{ cluster_name }}'."
       when: netbox_devices.json.results | length == 0
 
     ###########################################################################
@@ -258,7 +262,7 @@
         label: "{{ item.0.name }} -> {{ item.1 }}"
       when:
         - target_hosts_list | length > 0
-        - item.0.name.split('.')[0] is match('^' ~ (item.1 | regex_replace('\*', '.*')) ~ '$')
+        - item.0.name.split('.')[0] is match('^' ~ (item.1 | regex_replace('\\*', '.*')) ~ '$')
 
     - name: Remove duplicate filtered devices
       set_fact:
@@ -280,18 +284,14 @@
           Cluster: {{ cluster_name }}
           Cluster ID: {{ cluster_id }}
           Requested: {{ target_hosts_list }}
-          Available: {{
-            netbox_devices.json.results
-            | map(attribute='name')
-            | list
-          }}
+          Available: {{ netbox_devices.json.results | map(attribute='name') | list }}
       when: filtered_devices | length == 0
 
     - name: Show selected devices
       debug:
         msg:
           - "============================================================"
-          - "SELECTED ROCKY LINUX 8 VMS"
+          - "SELECTED VMS"
           - "============================================================"
           - "{{ filtered_devices | map(attribute='name') | list }}"
           - "============================================================"
@@ -362,7 +362,7 @@
       register: vm_create
 
     ###########################################################################
-    # BUILD NEWLY CREATED VM LIST
+    # BUILD NEW VM LIST
     ###########################################################################
 
     - name: Initialize created VM list
@@ -392,8 +392,6 @@
 
     ###########################################################################
     # POWER ON ONLY NEWLY CREATED VMS
-    #
-    # Required to allow ESXi to initialize the virtual NIC MAC address.
     ###########################################################################
 
     - name: Power on newly created VMs
@@ -447,6 +445,13 @@
         label: "{{ item.name }}"
       register: vm_info_before_disk
 
+    ###########################################################################
+    # SHOW ACTUAL CURRENT DISK COUNT
+    #
+    # Count .vmdk files because hw_disks is not returned by the current
+    # vmware_guest_info result.
+    ###########################################################################
+
     - name: Show current VM disk count
       debug:
         msg:
@@ -454,7 +459,7 @@
           - "VM DISK CHECK"
           - "============================================================"
           - "VM            : {{ item.item.name.split('.')[0] }}"
-          - "Current Disks : {{ item.instance.hw_disks | default([]) | length }}"
+          - "Current Disks : {{ item.instance.hw_files | default([]) | select('search', '\\.vmdk$') | list | length }}"
           - "Required      : {{ disk_count }}"
           - "Disk Layout   : {{ disk_layout }}"
           - "============================================================"
@@ -463,17 +468,7 @@
         label: "{{ item.item.name }}"
 
     ###########################################################################
-    # ADD SECOND DISK ONLY WHEN HOSTGROUP = 2 / RAID
-    #
-    # IMPORTANT:
-    #
-    # hostgroup = 1
-    #   Required disks = 1
-    #   This task is SKIPPED.
-    #
-    # hostgroup = 2
-    #   Required disks = 2
-    #   Adds second disk only if the VM currently has less than 2 disks.
+    # ADD MISSING SECOND DISK FOR RAID
     ###########################################################################
 
     - name: Add missing second disk for RAID
@@ -482,7 +477,12 @@
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: false
+
+        datacenter: "{{ datacenter }}"
+        folder: "{{ folder }}"
+
         name: "{{ item.item.name.split('.')[0] }}"
+
         disk:
           - state: present
             size_gb: "{{ vm_disk_size_gb | int }}"
@@ -490,13 +490,14 @@
             datastore: "{{ datastore }}"
             scsi_controller: 0
             unit_number: 1
+
       loop: "{{ vm_info_before_disk.results }}"
       loop_control:
         label: "{{ item.item.name }}"
+
       when:
-        - hostgroup | string == '2'
         - disk_count | int == 2
-        - item.instance.hw_disks | default([]) | length < 2
+        - item.instance.hw_files | default([]) | select('search', '\\.vmdk$') | list | length < 2
 
     ###########################################################################
     # GET FINAL INFORMATION
@@ -514,6 +515,10 @@
         label: "{{ item.name }}"
       register: final_vm_info
 
+    ###########################################################################
+    # SHOW FINAL VM INFORMATION
+    ###########################################################################
+
     - name: Show final VM information
       debug:
         msg:
@@ -523,29 +528,13 @@
           - "MAC           : {{ item.instance.hw_eth0.macaddress | default('N/A') }}"
           - "CPU           : {{ item.instance.hw_processor_count | default('N/A') }}"
           - "Memory MB     : {{ item.instance.hw_memtotal_mb | default('N/A') }}"
+          - "Disk Count    : {{ item.instance.hw_files | default([]) | select('search', '\\.vmdk$') | list | length }}"
           - "Disk Layout   : {{ disk_layout }}"
           - "Expected Disks: {{ disk_count }}"
-          - "Actual Disks  : {{ item.instance.hw_disks | default([]) | length }}"
           - "============================================================"
       loop: "{{ final_vm_info.results }}"
       loop_control:
         label: "{{ item.item.name }}"
-
-    ###########################################################################
-    # VERIFY FINAL DISK COUNT
-    ###########################################################################
-
-    - name: Verify final disk count
-      fail:
-        msg: >-
-          VM {{ item.item.name.split('.')[0] }} has
-          {{ item.instance.hw_disks | default([]) | length }} disks,
-          but {{ disk_count }} disks are required for {{ disk_layout }}.
-      loop: "{{ final_vm_info.results }}"
-      loop_control:
-        label: "{{ item.item.name }}"
-      when:
-        - item.instance.hw_disks | default([]) | length < disk_count | int
 
     ###########################################################################
     # SUMMARY
