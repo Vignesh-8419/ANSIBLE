@@ -1203,6 +1203,13 @@ process_device \
     "$CLUSTER_NAME"
 
 process_device \
+    "rocky-08-01.vgs.com" \
+    "192.168.253.141/24" \
+    "manual" \
+    "$CLUSTER_ID" \
+    "$CLUSTER_NAME"
+
+process_device \
     "ansible-server-01.vgs.com" \
     "192.168.253.145/24" \
     "auto" \
