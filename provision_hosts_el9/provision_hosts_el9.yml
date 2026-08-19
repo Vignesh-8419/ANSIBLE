@@ -1,5 +1,5 @@
 ---
-- name: Prepare and recreate Rocky 9 hosts in Foreman using API
+- name: Prepare and recreate ROCKY LINUX 9 hosts in Foreman using API
   hosts: localhost
   connection: local
   gather_facts: false
@@ -10,11 +10,22 @@
   vars:
 
     ###########################################################################
+    # ESXi
+    ###########################################################################
+
+    esxi_hostname: "192.168.253.128"
+    esxi_username: "root"
+    esxi_password: "Root@123"
+
+
+    ###########################################################################
     # NETBOX
     ###########################################################################
 
     netbox_url: "https://netbox.vgs.com"
-    netbox_token: "<NETBOX_API_TOKEN>"
+    netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
+
+    cluster_name: "rocky-9-servers"
 
 
     ###########################################################################
@@ -22,8 +33,8 @@
     #
     # AWX Survey:
     #
-    # 1 = Frontend
-    # 2 = Backend
+    # 1 = Frontend Foreman
+    # 2 = Backend Foreman
     ###########################################################################
 
     foreman_server: "{{ foreman_server | default('1', true) }}"
@@ -37,7 +48,7 @@
       }}
 
     foreman_user: "admin"
-    foreman_api_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
+    foreman_api_token: "_bkE_ov7gKb68d3aR01m5A"
 
 
     ###########################################################################
@@ -46,13 +57,17 @@
 
     host_root_pass: "Root@123"
 
-    cluster_name: "rocky-9-servers"
 
-    # Example:
+    ###########################################################################
+    # AWX SURVEY - TARGET HOSTS
     #
+    # Examples:
+    #
+    # rocky-09-01
     # rocky-09-01,rocky-09-02
     #
-    # Leave empty to process all Rocky 9 hosts.
+    # Leave empty to process all hosts.
+    ###########################################################################
 
     target_hosts: "{{ target_hosts | default('', true) }}"
 
@@ -73,97 +88,163 @@
     loc_id: 2
 
 
-    # ============================================================================
-    # Rocky Linux 9.2 Host Group / Operating System Selection
+    ###########################################################################
+    # ROCKY LINUX 9 HOSTGROUP SELECTION
     #
     # AWX Survey:
     #
-    # 1 = RockyLinux9.2-SingleDisk
-    #     OS = RockyLinux9.2-SingleDisk 9.2
-    #
-    # 2 = RockyLinux9.2-RAID
-    #     OS = RockyLinux9.2-RAID 9.2
-    #
-    # ============================================================================
-    
+    # 1 = RockyLinux9-SingleDisk
+    # 2 = RockyLinux9-RAID
+    ###########################################################################
+
     hostgroup: "{{ hostgroup | default('1', true) }}"
-    
+
+
+    ###########################################################################
+    # ROCKY 9 HOSTGROUP ID
+    #
+    # CHANGE THESE TO YOUR ACTUAL FOREMAN IDs
+    #
+    # Example:
+    #
+    # 1 = SingleDisk
+    # 2 = RAID
+    ###########################################################################
+
     hostgroup_id: >-
       {{
         {
-          '1': 7,
-          '2': 3
+          '1': 0,
+          '2': 0
         }[hostgroup | string]
       }}
-    
+
+
+    ###########################################################################
+    # ROCKY 9 OPERATING SYSTEM ID
+    #
+    # CHANGE THESE TO YOUR ACTUAL FOREMAN IDs
+    #
+    # If both hostgroups use the same Rocky 9 OS,
+    # you can put the same ID for both.
+    ###########################################################################
+
     operatingsystem_id: >-
       {{
         {
-          '1': 7,
-          '2': 6
+          '1': 0,
+          '2': 0
         }[hostgroup | string]
       }}
-    
-    # Rocky 9.2 Remote
-    medium_id: 17
-    
-    # Kickstart default
-    ptable_id: 126
-    
-    # Rocky Linux 9.2 subnet
-    subnet_name: "vgs-subnet-rockyos"
-    
-    # Katello Content
-    content_view_id: 4
-    lifecycle_environment_id: 1
-    
-    # Architecture
-    architecture_id: 1
-    
-    # Domain
-    domain_id: 1
-    
-    # PXE
-    pxe_loader: "Grub2 UEFI"
 
-    build: true
+
+    ###########################################################################
+    # INSTALLATION MEDIUM
+    #
+    # CHANGE TO YOUR ROCKY 9 MEDIUM ID
+    ###########################################################################
+
+    medium_id: 0
+
+
+    ###########################################################################
+    # PARTITION TABLE
+    #
+    # CHANGE TO YOUR ROCKY 9 PARTITION TABLE ID
+    #
+    # If Foreman partition table differs between
+    # SingleDisk and RAID, use the mapping below.
+    ###########################################################################
+
+    ptable_id: >-
+      {{
+        {
+          '1': 0,
+          '2': 0
+        }[hostgroup | string]
+      }}
+
+
+    ###########################################################################
+    # ARCHITECTURE
+    #
+    # x86_64 normally ID 1 in your existing configuration
+    ###########################################################################
+
+    architecture_id: 1
+
+
+    ###########################################################################
+    # NETWORK
+    ###########################################################################
+
+    subnet_name: "vgs-subnet-centos"
+
+    domain_id: 1
 
 
     ###########################################################################
     # KATELLO CONTENT
     #
-    # 1 = Rocky9.2-CV
-    # 2 = Rocky9.2-CV
-    # 3 = Rocky9.8-CV
-    # 4 = Rocky9.8-CV
+    # CHANGE TO YOUR ROCKY 9 CONTENT VIEW ID
     ###########################################################################
 
-    content_view_id: >-
-      {{
-        {
-          '1': 4,
-          '2': 4,
-          '3': 5,
-          '4': 5
-        }[hostgroup | string]
-      }}
+    content_view_id: 0
 
+    # Library
     lifecycle_environment_id: 1
+
+
+    ###########################################################################
+    # PXE SETTINGS
+    ###########################################################################
+
+    pxe_loader: "Grub2 UEFI"
+    build: true
 
 
   tasks:
 
     ###########################################################################
-    # SHOW CONFIGURATION
+    # VALIDATE SELECTION
     ###########################################################################
 
-    - name: Show selected Rocky 9 provisioning configuration
+    - name: Validate hostgroup selection
+      fail:
+        msg: >-
+          Invalid hostgroup '{{ hostgroup }}'.
+          Valid values are:
+          1 = RockyLinux9-SingleDisk
+          2 = RockyLinux9-RAID
+      when: hostgroup | string not in ['1', '2']
+
+
+    - name: Validate Rocky 9 Foreman IDs are configured
+      fail:
+        msg: >-
+          Rocky Linux 9 Foreman IDs are not configured correctly.
+          Check hostgroup_id, operatingsystem_id, medium_id,
+          ptable_id and content_view_id.
+      when: >-
+        hostgroup_id | int == 0
+        or operatingsystem_id | int == 0
+        or medium_id | int == 0
+        or ptable_id | int == 0
+        or content_view_id | int == 0
+
+
+    ###########################################################################
+    # SHOW SELECTED CONFIGURATION
+    ###########################################################################
+
+    - name: Show selected Rocky Linux 9 provisioning configuration
       debug:
         msg:
           - "============================================================"
           - "ROCKY LINUX 9 FOREMAN PROVISIONING"
           - "============================================================"
           - "Foreman Server        : {{ foreman_url }}"
+          - "ESXi Server           : {{ esxi_hostname }}"
           - "Cluster               : {{ cluster_name }}"
           - "Target Hosts          : {{ target_hosts | default('ALL', true) }}"
           - "Hostgroup Selection   : {{ hostgroup }}"
@@ -177,6 +258,7 @@
           - "Architecture ID       : {{ architecture_id }}"
           - "Domain ID             : {{ domain_id }}"
           - "PXE Loader            : {{ pxe_loader }}"
+          - "Build                 : {{ build }}"
           - "============================================================"
 
 
@@ -221,6 +303,8 @@
       set_fact:
         filtered_devices: "{{ filtered_devices + [item] }}"
       loop: "{{ netbox_devices.json.results }}"
+      loop_control:
+        label: "{{ item.name }}"
       when:
         - target_servers | length > 0
         - item.name.split('.')[0] in target_servers
@@ -238,14 +322,14 @@
 
 
     ###########################################################################
-    # GET VM INFORMATION FROM ESXI
+    # GET VM INFORMATION FROM ESXi
     ###########################################################################
 
     - name: Get VM information from ESXi
       community.vmware.vmware_guest_info:
-        hostname: "192.168.253.128"
-        username: "root"
-        password: "Root@123"
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
         validate_certs: false
         name: "{{ item.name.split('.')[0] }}"
       loop: "{{ filtered_devices }}"
@@ -288,7 +372,6 @@
               {
                 'name': item.0.name.split('.')[0],
                 'netbox_name': item.0.name,
-
                 'ip': (
                   netbox_ips.json.results
                   | selectattr('assigned_object', 'defined')
@@ -305,7 +388,6 @@
                   | first
                   | default('')
                 ),
-
                 'mac': (
                   item.1.instance.hw_eth0.macaddress
                   | default('')
@@ -391,16 +473,6 @@
 
     ###########################################################################
     # GET ALL FOREMAN HOSTS
-    #
-    # Same safe logic as Rocky 8:
-    #
-    # Retrieve all visible hosts and compare locally.
-    #
-    # This avoids depending on:
-    #
-    # GET /api/hosts/<hostname>
-    #
-    # and Foreman hostname/FQDN lookup behavior.
     ###########################################################################
 
     - name: Get all Foreman hosts
@@ -431,12 +503,10 @@
     ###########################################################################
     # BUILD COMPLETE MATCHING HOST LIST
     #
-    # Match all of:
+    # Match:
     #
     # rocky-09-01
     # rocky-09-01.vgs.com
-    #
-    # Also compare the short hostname component.
     ###########################################################################
 
     - name: Initialize Foreman hosts to delete
@@ -451,15 +521,12 @@
             foreman_hosts_to_delete +
             [
               {
-                'target_name': target.name,
-                'found_name': foreman_host.name,
-                'id': foreman_host.id
+                'target_name': item.0.name,
+                'found_name': item.1.name,
+                'id': item.1.id
               }
             ]
           }}
-      vars:
-        target: "{{ item.0 }}"
-        foreman_host: "{{ item.1 }}"
       loop: "{{ host_info | product(all_foreman_hosts.json.results) | list }}"
       loop_control:
         label: "{{ item.0.name }} -> {{ item.1.name }}"
@@ -489,7 +556,7 @@
 
 
     ###########################################################################
-    # DELETE EVERY MATCHING HOST BY NUMERIC ID
+    # DELETE EVERY MATCHING HOST
     ###########################################################################
 
     - name: Delete every matching existing Foreman host by numeric ID
@@ -516,7 +583,10 @@
 
     - name: Show deleted Foreman hosts
       debug:
-        msg: "Deleted Foreman host {{ item.item.found_name }} with ID {{ item.item.id }}"
+        msg: >-
+          Deleted Foreman host
+          {{ item.item.found_name }}
+          with ID {{ item.item.id }}
       loop: "{{ foreman_delete.results | default([]) }}"
       loop_control:
         label: "{{ item.item.found_name | default('unknown') }}"
@@ -536,7 +606,7 @@
 
 
     ###########################################################################
-    # GET ALL HOSTS AGAIN AFTER DELETION
+    # REFRESH FOREMAN HOST LIST
     ###########################################################################
 
     - name: Refresh complete Foreman host list after deletion
@@ -555,56 +625,7 @@
 
 
     ###########################################################################
-    # FINAL EXACT HOSTNAME SAFETY CHECK
-    ###########################################################################
-
-    - name: Initialize remaining Foreman hosts
-      set_fact:
-        remaining_foreman_hosts: []
-
-
-    - name: Check whether any selected hostname still exists
-      set_fact:
-        remaining_foreman_hosts: >-
-          {{
-            remaining_foreman_hosts +
-            [
-              {
-                'target_name': item.name,
-                'matches': (
-                  all_foreman_hosts_after_delete.json.results
-                  | selectattr('name', 'defined')
-                  | selectattr('name', 'equalto', item.name)
-                  | list
-                )
-              }
-            ]
-          }}
-      loop: "{{ host_info }}"
-      loop_control:
-        label: "{{ item.name }}"
-
-
-    - name: Show remaining exact Foreman hosts
-      debug:
-        var: remaining_foreman_hosts
-
-
-    - name: Fail if exact Foreman hostname still exists
-      fail:
-        msg: >-
-          Foreman hostname still exists and cannot be recreated:
-          {{ item.target_name }}
-          Matching IDs:
-          {{ item.matches | map(attribute='id') | list }}
-      loop: "{{ remaining_foreman_hosts }}"
-      loop_control:
-        label: "{{ item.target_name }}"
-      when: item.matches | length > 0
-
-
-    ###########################################################################
-    # ADDITIONAL SHORT NAME / FQDN SAFETY CHECK
+    # FINAL SHORT NAME / FQDN SAFETY CHECK
     ###########################################################################
 
     - name: Initialize final conflicting Foreman hostname list
@@ -612,49 +633,65 @@
         final_name_conflicts: []
 
 
-    - name: Build final conflicting Foreman hostname list
+    - name: Find final short hostname and FQDN conflicts
       set_fact:
         final_name_conflicts: >-
           {{
             final_name_conflicts +
-            (
-              all_foreman_hosts_after_delete.json.results
-              | selectattr('name', 'defined')
-              | selectattr(
-                  'name',
-                  'in',
-                  [
-                    item.name,
-                    item.netbox_name
-                  ]
-                )
-              | map(attribute='name')
-              | list
-            )
+            [
+              {
+                'target_name': item.0.name,
+                'found_name': item.1.name,
+                'id': item.1.id
+              }
+            ]
           }}
-      loop: "{{ host_info }}"
+      loop: "{{ host_info | product(all_foreman_hosts_after_delete.json.results) | list }}"
       loop_control:
-        label: "{{ item.name }}"
+        label: "{{ item.0.name }} -> {{ item.1.name }}"
+      when:
+        - item.1.name is defined
+        - >-
+          item.1.name == item.0.name
+          or
+          item.1.name == item.0.netbox_name
+          or
+          item.1.name.split('.')[0] == item.0.name
+
+
+    - name: Remove duplicate final conflicts
+      set_fact:
+        final_name_conflicts: >-
+          {{
+            final_name_conflicts
+            | unique(attribute='id')
+            | list
+          }}
 
 
     - name: Show final conflicting names
       debug:
-        msg: "{{ final_name_conflicts | unique }}"
+        var: final_name_conflicts
 
 
     - name: Fail if short hostname or FQDN conflict remains
       fail:
         msg: >-
           A conflicting Foreman hostname still exists:
-          {{ final_name_conflicts | unique }}
+          Target={{ item.target_name }}
+          Found={{ item.found_name }}
+          ID={{ item.id }}
+      loop: "{{ final_name_conflicts }}"
+      loop_control:
+        label: "{{ item.target_name }} -> {{ item.found_name }}"
       when: final_name_conflicts | length > 0
 
 
     ###########################################################################
-    # CREATE HOSTS
+    # CREATE ROCKY LINUX 9 HOSTS
     ###########################################################################
 
-    - name: Create Rocky 9 host in Foreman
+    - name: Create Rocky Linux 9 host in Foreman
       uri:
         url: "{{ foreman_url }}/api/hosts"
         method: POST
@@ -724,6 +761,7 @@
           - "============================================================"
           - "Host    : {{ item.item.name }}"
           - "IP      : {{ item.item.ip }}"
+          - "MAC     : {{ item.item.mac }}"
           - "Status  : {{ item.status }}"
           - "Host ID : {{ item.json.id | default('UNKNOWN') }}"
           - "============================================================"
@@ -733,10 +771,10 @@
 
 
     ###########################################################################
-    # VERIFY FOREMAN RETURNED NUMERIC ID
+    # VERIFY CREATED HOST IDs
     ###########################################################################
 
-    - name: Verify Foreman returned a host ID
+    - name: Verify Foreman returned a valid host ID
       fail:
         msg: >-
           Foreman created host {{ item.item.name }}
@@ -745,12 +783,11 @@
       loop_control:
         label: "{{ item.item.name }}"
       when:
-        - item.json is not defined
-          or item.json.id is not defined
+        - item.json is not defined or item.json.id is not defined
 
 
     ###########################################################################
-    # VERIFY USING NUMERIC ID RETURNED BY POST
+    # REFRESH CREATED HOSTS
     ###########################################################################
 
     - name: Refresh Foreman host information using created ID
@@ -767,7 +804,7 @@
         return_content: true
       loop: "{{ foreman_create.results }}"
       loop_control:
-        label: "{{ item.item.name }}"
+        label: "{{ item.item.name }} (ID={{ item.json.id }})"
       register: final_hosts
 
 
@@ -775,7 +812,7 @@
     # SHOW FINAL CONFIGURATION
     ###########################################################################
 
-    - name: Show final host configuration
+    - name: Show final Rocky Linux 9 host configuration
       debug:
         msg:
           - "============================================================"
@@ -808,9 +845,7 @@
           - "Hosts Processed       : {{ host_info | length }}"
           - "Existing hosts deleted: {{ foreman_hosts_to_delete | length }}"
           - "New hosts created     : {{ foreman_create.results | length }}"
-          - "Hostgroup ID          : {{ hostgroup_id }}"
-          - "Operating System ID   : {{ operatingsystem_id }}"
-          - "Medium ID             : {{ medium_id }}"
-          - "Content View ID       : {{ content_view_id }}"
+          - "Hostgroup             : {{ hostgroup }}"
           - "PXE build mode        : {{ build }}"
+          - "PXE Loader            : {{ pxe_loader }}"
           - "============================================================"
