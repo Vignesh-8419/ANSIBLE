@@ -24,7 +24,7 @@
       }}
   
     foreman_user: "admin"
-    foreman_api_token: "oUzg-aMfjcT3q_wZ8NRLfQ"
+    foreman_api_token: "_bkE_ov7gKb68d3aR01m5A"
 
     host_root_pass: "Root@123"
     cluster_name: "rocky-8-servers"
