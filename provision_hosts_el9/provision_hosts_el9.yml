@@ -1,5 +1,5 @@
 ---
-- name: Prepare and create RockyOS 9 hosts in Foreman using API
+- name: Prepare and recreate RockyOS 9 hosts in Foreman using API
   hosts: localhost
   connection: local
   gather_facts: no
@@ -8,13 +8,26 @@
     - community.vmware
 
   vars:
+
+    ###########################################################################
+    # NETBOX
+    ###########################################################################
+
     netbox_url: "https://netbox.vgs.com"
     netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
-  
-    # 1 = Frontend (default)
+
+    ###########################################################################
+    # FOREMAN SERVER SELECTION
+    #
+    # AWX Survey:
+    #
+    # 1 = Frontend
     # 2 = Backend
+    #
+    ###########################################################################
+
     foreman_server: "{{ foreman_server | default('1', true) }}"
-  
+
     foreman_url: >-
       {{
         {
@@ -22,24 +35,37 @@
           '2': 'https://cent-07-01.vgs.com'
         }[foreman_server | string]
       }}
-  
+
     foreman_user: "admin"
     foreman_api_token: "oUzg-aMfjcT3q_wZ8NRLfQ"
 
     host_root_pass: "Root@123"
 
+    ###########################################################################
+    # NETBOX CLUSTER
+    ###########################################################################
+
     cluster_name: "rocky-9-servers"
 
-    # Leave empty to create all Rocky hosts
+    ###########################################################################
+    # TARGET HOSTS
+    #
+    # Example:
+    #
+    # target_hosts: "rocky-09-01,rocky-09-02"
+    #
+    ###########################################################################
+
     target_servers: "{{ target_hosts.split(',') | map('trim') | list }}"
 
-    # Foreman IDs
-    # Foreman IDs
-    # Foreman IDs
+    ###########################################################################
+    # FOREMAN ORGANIZATION / LOCATION
+    ###########################################################################
+
     org_id: 1
-    loc_id: 2    
-    
-    # ==============================================================================
+    loc_id: 2
+
+    ###########################################################################
     # Rocky Linux 9 Host Group / OS Selection
     #
     # AWX Survey:
@@ -49,7 +75,7 @@
     # 3 = RockyLinux9.8-SingleDisk
     # 4 = RockyLinux9.8-RAID
     #
-    # ==============================================================================
+    ###########################################################################
 
     hostgroup: "{{ hostgroup | default('1', true) }}"
 
@@ -83,20 +109,28 @@
         }[hostgroup | string]
       }}
 
+    ###########################################################################
+    # FOREMAN PROVISIONING SETTINGS
+    ###########################################################################
+
     ptable_id: 126
 
     subnet_name: "vgs-subnet-rockyos"
 
-    # ==============================================================================
-    # Katello Content
+    architecture_id: 1
+    domain_id: 1
+
+    pxe_loader: "Grub2 UEFI"
+
+    ###########################################################################
+    # KATELLO CONTENT
     #
     # 1 = Rocky9.2-CV
     # 2 = Rocky9.2-CV
     # 3 = Rocky9.8-CV
     # 4 = Rocky9.8-CV
     #
-    # Library = Lifecycle Environment 1
-    # ==============================================================================
+    ###########################################################################
 
     content_view_id: >-
       {{
@@ -113,7 +147,30 @@
   tasks:
 
     ###########################################################################
-    # Get devices from NetBox
+    # SHOW SELECTED CONFIGURATION
+    ###########################################################################
+
+    - name: Show selected Foreman configuration
+      debug:
+        msg:
+          - "============================================================"
+          - "FOREMAN HOST RECREATE CONFIGURATION"
+          - "============================================================"
+          - "Foreman URL     : {{ foreman_url }}"
+          - "Cluster         : {{ cluster_name }}"
+          - "Hostgroup Input : {{ hostgroup }}"
+          - "Hostgroup ID    : {{ hostgroup_id }}"
+          - "OS ID           : {{ operatingsystem_id }}"
+          - "Medium ID       : {{ medium_id }}"
+          - "Content View ID : {{ content_view_id }}"
+          - "Lifecycle ID    : {{ lifecycle_environment_id }}"
+          - "Subnet          : {{ subnet_name }}"
+          - "Organization ID : {{ org_id }}"
+          - "Location ID     : {{ loc_id }}"
+          - "============================================================"
+
+    ###########################################################################
+    # GET DEVICES FROM NETBOX
     ###########################################################################
 
     - name: Get devices from NetBox cluster
@@ -123,6 +180,7 @@
         headers:
           Authorization: "Token {{ netbox_token }}"
         validate_certs: no
+        status_code: 200
       register: netbox_devices
 
     - name: Show devices returned by NetBox
@@ -130,7 +188,7 @@
         msg: "{{ netbox_devices.json.results | map(attribute='name') | list }}"
 
     ###########################################################################
-    # Filter selected hosts
+    # FILTER SELECTED HOSTS
     ###########################################################################
 
     - name: Initialize filtered device list
@@ -146,16 +204,17 @@
 
     - name: Show filtered devices
       debug:
-        var: filtered_devices
+        msg: "{{ filtered_devices | map(attribute='name') | list }}"
 
     - name: Fail if no hosts matched
       fail:
-        msg: "No matching hosts found in NetBox."
+        msg: >-
+          No matching hosts found in NetBox.
+          Requested hosts: {{ target_servers | join(', ') }}
       when: filtered_devices | length == 0
 
-
     ###########################################################################
-    # Get VM information from ESXi
+    # GET VM INFORMATION FROM ESXI
     ###########################################################################
 
     - name: Get VM information from ESXi
@@ -169,46 +228,77 @@
       register: vm_info
 
     ###########################################################################
-    # Get IP addresses
+    # GET IP ADDRESSES FROM NETBOX
     ###########################################################################
-    
+
     - name: Get IP addresses from NetBox
       uri:
-        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/?limit=0"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
         validate_certs: no
+        status_code: 200
       register: netbox_ips
+
+    ###########################################################################
+    # BUILD HOST INFORMATION
+    ###########################################################################
 
     - name: Initialize host info
       set_fact:
         host_info: []
-    
+
     - name: Build host info
       set_fact:
-        host_info: "{{ host_info + [ {
-          'name': item.0.name,
-          'ip': (
-            netbox_ips.json.results
-            | selectattr('assigned_object.device.name','equalto',item.0.name)
-            | map(attribute='address')
-            | map('regex_replace','/.*$','')
-            | first
-            | default('')
-          ),
-          'mac': (
-            item.1.instance.hw_eth0.macaddress
-            | default('')
-          )
-        } ] }}"
+        host_info: >-
+          {{
+            host_info + [
+              {
+                'name': item.0.name,
+                'ip': (
+                  netbox_ips.json.results
+                  | selectattr(
+                      'assigned_object.device.name',
+                      'equalto',
+                      item.0.name
+                    )
+                  | map(attribute='address')
+                  | map('regex_replace', '/.*$', '')
+                  | first
+                  | default('')
+                ),
+                'mac': (
+                  item.1.instance.hw_eth0.macaddress
+                  | default('')
+                )
+              }
+            ]
+          }}
       loop: "{{ filtered_devices | zip(vm_info.results) | list }}"
 
-    - debug:
+    - name: Show host information
+      debug:
         var: host_info
 
     ###########################################################################
-    # Check if host already exists in Foreman
+    # VALIDATE HOST INFORMATION
+    ###########################################################################
+
+    - name: Verify host IP addresses
+      fail:
+        msg: "IP address not found for host: {{ item.name }}"
+      loop: "{{ host_info }}"
+      when: item.ip | length == 0
+
+    - name: Verify host MAC addresses
+      fail:
+        msg: "MAC address not found for host: {{ item.name }}"
+      loop: "{{ host_info }}"
+      when: item.mac | length == 0
+
+    ###########################################################################
+    # CHECK WHETHER HOST EXISTS IN FOREMAN
     ###########################################################################
 
     - name: Check if host exists in Foreman
@@ -227,8 +317,89 @@
       loop: "{{ host_info }}"
       register: foreman_hosts
 
+    - name: Show existing Foreman hosts
+      debug:
+        msg:
+          - "Host   : {{ item.item.name }}"
+          - "Status : {{ item.status }}"
+          - "Host ID: {{ item.json.id | default('NOT FOUND') }}"
+      loop: "{{ foreman_hosts.results }}"
+
     ###########################################################################
-    # Resolve Foreman Subnet
+    # DELETE EXISTING HOSTS
+    #
+    # If the host exists:
+    #
+    # GET /api/hosts/name -> 200
+    # DELETE /api/hosts/ID
+    #
+    ###########################################################################
+
+    - name: Delete existing host from Foreman
+      uri:
+        url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}"
+        method: DELETE
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_api_token }}"
+        force_basic_auth: yes
+        validate_certs: no
+        use_proxy: false
+        timeout: 120
+        status_code:
+          - 200
+          - 202
+          - 204
+      loop: "{{ foreman_hosts.results }}"
+      when: item.status == 200
+      register: foreman_delete
+
+    - name: Show deleted Foreman hosts
+      debug:
+        msg: >-
+          Deleted existing Foreman host:
+          {{ item.item.item.name }}
+      loop: "{{ foreman_delete.results | default([]) }}"
+      when:
+        - item is not skipped
+        - item.status is defined
+
+    ###########################################################################
+    # WAIT FOR FOREMAN DELETE OPERATION
+    ###########################################################################
+
+    - name: Wait briefly after Foreman host deletion
+      pause:
+        seconds: 3
+      when: foreman_delete is defined
+
+    ###########################################################################
+    # VERIFY OLD HOST IS GONE
+    ###########################################################################
+
+    - name: Verify existing host was deleted
+      uri:
+        url: "{{ foreman_url }}/api/hosts/{{ item.name }}"
+        method: GET
+        user: "{{ foreman_user }}"
+        password: "{{ foreman_api_token }}"
+        force_basic_auth: yes
+        validate_certs: no
+        use_proxy: false
+        timeout: 120
+        status_code:
+          - 200
+          - 404
+      loop: "{{ host_info }}"
+      register: foreman_hosts_after_delete
+
+    - name: Fail if host still exists after delete
+      fail:
+        msg: "Foreman host still exists after deletion: {{ item.item.name }}"
+      loop: "{{ foreman_hosts_after_delete.results }}"
+      when: item.status == 200
+
+    ###########################################################################
+    # RESOLVE FOREMAN SUBNET
     ###########################################################################
 
     - name: Get Foreman subnet
@@ -267,10 +438,18 @@
           - "Subnet ID   : {{ subnet_id }}"
 
     ###########################################################################
-    # Create hosts in Foreman
+    # CREATE ALL HOSTS IN FOREMAN
+    #
+    # At this point:
+    #
+    # - Existing hosts have been deleted
+    # - Missing hosts remain missing
+    #
+    # Therefore every host in host_info is created fresh.
+    #
     ###########################################################################
 
-    - name: Create host in Foreman (only if missing)
+    - name: Create fresh host in Foreman
       uri:
         url: "{{ foreman_url }}/api/hosts"
         method: POST
@@ -292,23 +471,22 @@
 
         body:
           host:
-            name: "{{ item.item.name }}"
+            name: "{{ item.name }}"
 
-            # Explicit organization and location
-            organization_id: 1
-            location_id: 2
+            organization_id: "{{ org_id }}"
+            location_id: "{{ loc_id }}"
 
             hostgroup_id: "{{ hostgroup_id }}"
             operatingsystem_id: "{{ operatingsystem_id }}"
             medium_id: "{{ medium_id }}"
             ptable_id: "{{ ptable_id }}"
-            architecture_id: 1
+            architecture_id: "{{ architecture_id }}"
 
             subnet_id: "{{ subnet_id }}"
-            domain_id: 1
+            domain_id: "{{ domain_id }}"
 
             build: true
-            pxe_loader: "Grub2 UEFI"
+            pxe_loader: "{{ pxe_loader }}"
             root_pass: "{{ host_root_pass }}"
 
             content_facet_attributes:
@@ -317,19 +495,35 @@
 
             interfaces_attributes:
               - type: interface
-                mac: "{{ item.item.mac | replace('\\:', ':') }}"
-                ip: "{{ item.item.ip }}"
+                mac: "{{ item.mac | replace('\\:', ':') }}"
+                ip: "{{ item.ip }}"
                 subnet_id: "{{ subnet_id }}"
-                domain_id: 1
+                domain_id: "{{ domain_id }}"
                 primary: true
                 provision: true
                 managed: true
 
-      when: item.status == 404
-      loop: "{{ foreman_hosts.results }}"
+      loop: "{{ host_info }}"
       register: foreman_create
 
-    - name: Refresh Foreman host information
+    ###########################################################################
+    # SHOW CREATE RESULTS
+    ###########################################################################
+
+    - name: Show Foreman create results
+      debug:
+        msg:
+          - "Host : {{ item.item.name }}"
+          - "IP   : {{ item.item.ip }}"
+          - "Status : {{ item.status }}"
+          - "Result : {{ item.json.message | default('Created successfully') }}"
+      loop: "{{ foreman_create.results }}"
+
+    ###########################################################################
+    # REFRESH NEWLY CREATED HOST INFORMATION
+    ###########################################################################
+
+    - name: Refresh newly created Foreman host information
       uri:
         url: "{{ foreman_url }}/api/hosts/{{ item.name }}"
         method: GET
@@ -341,89 +535,10 @@
         timeout: 120
         status_code: 200
       loop: "{{ host_info }}"
-      register: foreman_hosts_updated
-
-    - name: Show refreshed Foreman hosts
-      debug:
-        msg:
-          - "Host: {{ item.json.name }}"
-          - "ID: {{ item.json.id }}"
-      loop: "{{ foreman_hosts_updated.results }}"
-        
-    ###########################################################################
-    # Update existing Foreman host
-    ###########################################################################
-
-    - name: Update existing Foreman host
-      uri:
-        url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}"
-        method: PUT
-        user: "{{ foreman_user }}"
-        password: "{{ foreman_api_token }}"
-        force_basic_auth: yes
-        validate_certs: no
-        use_proxy: false
-        timeout: 120
-        headers:
-          Content-Type: application/json
-        body_format: json
-
-        body:
-          host:
-            name: "{{ item.json.name }}"
-            hostgroup_id: "{{ hostgroup_id }}"
-            operatingsystem_id: "{{ operatingsystem_id }}"
-            medium_id: "{{ medium_id }}"
-            ptable_id: "{{ ptable_id }}"
-            architecture_id: 1
-            subnet_id: "{{ subnet_id }}"
-            domain_id: 1
-
-            build: true
-            pxe_loader: "Grub2 UEFI"
-            root_pass: "{{ host_root_pass }}"
-
-            content_facet_attributes:
-              content_view_id: "{{ content_view_id }}"
-              lifecycle_environment_id: "{{ lifecycle_environment_id }}"
-
-            interfaces_attributes:
-              - id: "{{ item.json.interfaces[0].id }}"
-                subnet_id: "{{ subnet_id }}"
-                domain_id: 1
-                mac: "{{ item.json.interfaces[0].mac }}"
-                ip: "{{ item.json.interfaces[0].ip }}"
-                primary: true
-                provision: true
-
-        status_code:
-          - 200
-
-      loop: "{{ foreman_hosts_updated.results }}"
-      register: foreman_update
-
-
-    ###########################################################################
-    # Verify final Foreman host
-    ###########################################################################
-
-    - name: Verify final Foreman host
-      uri:
-        url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}"
-        method: GET
-        user: "{{ foreman_user }}"
-        password: "{{ foreman_api_token }}"
-        force_basic_auth: yes
-        validate_certs: no
-        use_proxy: false
-        timeout: 120
-        status_code: 200
-      loop: "{{ foreman_hosts_updated.results }}"
       register: final_hosts
 
-
     ###########################################################################
-    # Show final host configuration
+    # SHOW FINAL HOST CONFIGURATION
     ###########################################################################
 
     - name: Show final host configuration
@@ -432,22 +547,30 @@
           - "============================================================"
           - "Host       : {{ item.json.name }}"
           - "Host ID    : {{ item.json.id }}"
-          - "Host Group : {{ item.json.hostgroup_name }}"
-          - "OS         : {{ item.json.operatingsystem_name }}"
-          - "Medium     : {{ item.json.medium_name }}"
-          - "Subnet     : {{ item.json.subnet_name }}"
-          - "IP         : {{ item.json.ip }}"
-          - "PXE Loader : {{ item.json.pxe_loader }}"
+          - "Host Group : {{ item.json.hostgroup_name | default('N/A') }}"
+          - "OS         : {{ item.json.operatingsystem_name | default('N/A') }}"
+          - "Medium     : {{ item.json.medium_name | default('N/A') }}"
+          - "Subnet     : {{ item.json.subnet_name | default('N/A') }}"
+          - "IP         : {{ item.json.ip | default('N/A') }}"
+          - "PXE Loader : {{ item.json.pxe_loader | default('N/A') }}"
           - "Build      : {{ item.json.build }}"
-          - "Status     : {{ item.json.build_status_label }}"
+          - "Status     : {{ item.json.build_status_label | default('N/A') }}"
           - "============================================================"
       loop: "{{ final_hosts.results }}"
 
-
     ###########################################################################
-    # Show update result
+    # FINAL SUCCESS SUMMARY
     ###########################################################################
 
-    - name: Show Foreman update result
+    - name: Final success summary
       debug:
-        var: foreman_update
+        msg:
+          - "============================================================"
+          - "FOREMAN HOST RECREATE COMPLETED SUCCESSFULLY"
+          - "============================================================"
+          - "Hosts processed : {{ host_info | length }}"
+          - "Foreman URL     : {{ foreman_url }}"
+          - "Hostgroup ID    : {{ hostgroup_id }}"
+          - "OS ID           : {{ operatingsystem_id }}"
+          - "Medium ID       : {{ medium_id }}"
+          - "============================================================"
