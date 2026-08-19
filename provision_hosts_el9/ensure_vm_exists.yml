@@ -14,7 +14,7 @@
   vars:
 
     ###########################################################################
-    # ESXi
+    # ESXI
     ###########################################################################
 
     esxi_hostname: "192.168.253.128"
@@ -33,10 +33,14 @@
     netbox_url: "https://192.168.253.143"
     netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
 
+    ###########################################################################
+    # CLUSTER
+    ###########################################################################
+
     cluster_name: "rocky-9-servers"
 
     ###########################################################################
-    # AWX SURVEY - TARGET HOSTS
+    # TARGET HOSTS
     #
     # Examples:
     #
@@ -44,13 +48,13 @@
     # rocky-09-01,rocky-09-02
     # rocky-09-*
     #
-    # Empty = ALL hosts in cluster
+    # Empty = all hosts in rocky-9-servers
     ###########################################################################
 
     target_hosts: "{{ target_hosts | default('', true) }}"
 
     ###########################################################################
-    # AWX SURVEY - HOSTGROUP
+    # DISK SELECTION
     #
     # 1 = SingleDisk
     #     1 x 100 GB
@@ -81,7 +85,7 @@
     ###########################################################################
 
     - name: Validate hostgroup selection
-      fail:
+      ansible.builtin.fail:
         msg: >-
           Invalid hostgroup '{{ hostgroup }}'.
           Valid values:
@@ -94,15 +98,15 @@
     ###########################################################################
 
     - name: Set disk count
-      set_fact:
+      ansible.builtin.set_fact:
         disk_count: "{{ 1 if hostgroup | string == '1' else 2 }}"
 
     - name: Set disk layout
-      set_fact:
+      ansible.builtin.set_fact:
         disk_layout: "{{ 'SingleDisk' if hostgroup | string == '1' else 'RAID' }}"
 
     - name: Build VM disk configuration
-      set_fact:
+      ansible.builtin.set_fact:
         vm_disks: >-
           {{
             [
@@ -131,7 +135,7 @@
     ###########################################################################
 
     - name: Show selected VM configuration
-      debug:
+      ansible.builtin.debug:
         msg:
           - "============================================================"
           - "ENSURE ROCKY LINUX 9 VMS EXIST ON ESXI"
@@ -147,6 +151,7 @@
           - "Memory             : {{ vm_memory_mb }} MB"
           - "CPUs               : {{ vm_num_cpus }}"
           - "Firmware           : {{ vm_boot_firmware }}"
+          - "Guest ID           : {{ vm_guest_id }}"
           - "============================================================"
 
     ###########################################################################
@@ -154,7 +159,7 @@
     ###########################################################################
 
     - name: Get NetBox cluster
-      uri:
+      ansible.builtin.uri:
         url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ cluster_name | urlencode }}&limit=100"
         method: GET
         headers:
@@ -167,7 +172,7 @@
       register: netbox_cluster_result
 
     - name: Resolve NetBox cluster ID
-      set_fact:
+      ansible.builtin.set_fact:
         cluster_id: >-
           {{
             netbox_cluster_result.json.results
@@ -178,14 +183,14 @@
           }}
 
     - name: Fail if NetBox cluster does not exist
-      fail:
+      ansible.builtin.fail:
         msg: >-
           NetBox cluster not found:
           '{{ cluster_name }}'
       when: cluster_id | string | length == 0
 
     - name: Show resolved NetBox cluster
-      debug:
+      ansible.builtin.debug:
         msg:
           - "Cluster Name : {{ cluster_name }}"
           - "Cluster ID   : {{ cluster_id }}"
@@ -195,7 +200,7 @@
     ###########################################################################
 
     - name: Get devices from exact NetBox cluster
-      uri:
+      ansible.builtin.uri:
         url: "{{ netbox_url }}/api/dcim/devices/?cluster_id={{ cluster_id }}&limit=1000"
         method: GET
         headers:
@@ -208,7 +213,7 @@
       register: netbox_devices
 
     - name: Show devices returned by NetBox
-      debug:
+      ansible.builtin.debug:
         msg:
           - "============================================================"
           - "DEVICES IN CLUSTER: {{ cluster_name }}"
@@ -217,7 +222,7 @@
           - "============================================================"
 
     - name: Fail if cluster contains no devices
-      fail:
+      ansible.builtin.fail:
         msg: >-
           No devices found in NetBox cluster '{{ cluster_name }}'.
       when: netbox_devices.json.results | length == 0
@@ -227,7 +232,7 @@
     ###########################################################################
 
     - name: Build requested target host list
-      set_fact:
+      ansible.builtin.set_fact:
         target_hosts_list: >-
           {{
             target_hosts.split(',')
@@ -237,7 +242,7 @@
           }}
 
     - name: Show requested hosts
-      debug:
+      ansible.builtin.debug:
         var: target_hosts_list
 
     ###########################################################################
@@ -245,39 +250,45 @@
     ###########################################################################
 
     - name: Initialize filtered devices
-      set_fact:
+      ansible.builtin.set_fact:
         filtered_devices: []
 
     - name: Select all devices when target hosts is empty
-      set_fact:
+      ansible.builtin.set_fact:
         filtered_devices: "{{ netbox_devices.json.results }}"
       when: target_hosts_list | length == 0
 
     - name: Add exact or wildcard matching devices
-      set_fact:
+      ansible.builtin.set_fact:
         filtered_devices: "{{ filtered_devices + [item.0] }}"
       loop: "{{ netbox_devices.json.results | product(target_hosts_list) | list }}"
       loop_control:
         label: "{{ item.0.name }} -> {{ item.1 }}"
       when:
         - target_hosts_list | length > 0
-        - item.0.name.split('.')[0] is match('^' ~ (item.1 | regex_replace('\*', '.*')) ~ '$')
+        - item.0.name.split('.')[0] is match(
+            '^' ~ (item.1 | regex_replace('\\*', '.*')) ~ '$'
+          )
 
     - name: Remove duplicate filtered devices
-      set_fact:
+      ansible.builtin.set_fact:
         filtered_devices: "{{ filtered_devices | unique(attribute='name') | list }}"
 
     - name: Show cluster and filtering result
-      debug:
+      ansible.builtin.debug:
         msg:
+          - "============================================================"
+          - "HOST FILTER RESULT"
+          - "============================================================"
           - "Cluster Used      : {{ cluster_name }}"
           - "Cluster ID        : {{ cluster_id }}"
           - "Requested Hosts   : {{ target_hosts_list }}"
           - "Available Hosts   : {{ netbox_devices.json.results | map(attribute='name') | list }}"
           - "Selected Hosts    : {{ filtered_devices | map(attribute='name') | list }}"
+          - "============================================================"
 
     - name: Fail if no matching hosts found
-      fail:
+      ansible.builtin.fail:
         msg: >-
           No matching hosts found.
           Cluster: {{ cluster_name }}
@@ -291,10 +302,10 @@
       when: filtered_devices | length == 0
 
     - name: Show selected devices
-      debug:
+      ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "SELECTED VMS"
+          - "SELECTED ROCKY LINUX 9 VMS"
           - "============================================================"
           - "{{ filtered_devices | map(attribute='name') | list }}"
           - "============================================================"
@@ -309,6 +320,7 @@
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: false
+        datacenter: "{{ datacenter }}"
         name: "{{ item.name.split('.')[0] }}"
       loop: "{{ filtered_devices }}"
       loop_control:
@@ -317,7 +329,7 @@
       failed_when: false
 
     - name: Show VM existence status
-      debug:
+      ansible.builtin.debug:
         msg:
           - "VM     : {{ item.item.name.split('.')[0] }}"
           - "Exists : {{ item.instance is defined }}"
@@ -346,9 +358,9 @@
         guest_id: "{{ vm_guest_id }}"
 
         hardware:
-          memory_mb: "{{ vm_memory_mb }}"
-          num_cpus: "{{ vm_num_cpus }}"
-          num_cpu_cores_per_socket: "{{ vm_num_cpu_cores_per_socket }}"
+          memory_mb: "{{ vm_memory_mb | int }}"
+          num_cpus: "{{ vm_num_cpus | int }}"
+          num_cpu_cores_per_socket: "{{ vm_num_cpu_cores_per_socket | int }}"
           boot_firmware: "{{ vm_boot_firmware }}"
 
         disk: "{{ vm_disks }}"
@@ -365,15 +377,15 @@
       register: vm_create
 
     ###########################################################################
-    # BUILD NEW VM LIST
+    # BUILD NEWLY CREATED VM LIST
     ###########################################################################
 
     - name: Initialize created VM list
-      set_fact:
+      ansible.builtin.set_fact:
         created_vm_names: []
 
     - name: Build newly created VM list
-      set_fact:
+      ansible.builtin.set_fact:
         created_vm_names: >-
           {{
             created_vm_names +
@@ -388,10 +400,13 @@
         - item.item.item is defined
 
     - name: Show newly created VMs
-      debug:
+      ansible.builtin.debug:
         msg:
-          - "Newly Created VMs:"
+          - "============================================================"
+          - "NEWLY CREATED VMS"
+          - "============================================================"
           - "{{ created_vm_names }}"
+          - "============================================================"
 
     ###########################################################################
     # POWER ON ONLY NEWLY CREATED VMS
@@ -403,6 +418,7 @@
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: false
+        datacenter: "{{ datacenter }}"
         name: "{{ item }}"
         state: powered-on
       loop: "{{ created_vm_names }}"
@@ -411,7 +427,7 @@
       when: created_vm_names | length > 0
 
     - name: Wait for MAC address initialization
-      pause:
+      ansible.builtin.pause:
         seconds: 10
       when: created_vm_names | length > 0
 
@@ -425,6 +441,7 @@
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: false
+        datacenter: "{{ datacenter }}"
         name: "{{ item }}"
         state: powered-off
       loop: "{{ created_vm_names }}"
@@ -434,6 +451,9 @@
 
     ###########################################################################
     # GET ACTUAL VM DISK INFORMATION
+    #
+    # This fixes the previous problem where hw_disks showed 0 even though
+    # the VM had a real 100 GB disk.
     ###########################################################################
 
     - name: Get actual VM disk information
@@ -449,8 +469,8 @@
         label: "{{ item.name }}"
       register: vm_disk_info
 
-    - name: Show current VM disk count
-      debug:
+    - name: Show actual VM disk count
+      ansible.builtin.debug:
         msg:
           - "============================================================"
           - "VM DISK CHECK"
@@ -458,13 +478,14 @@
           - "VM            : {{ item.item.name.split('.')[0] }}"
           - "Current Disks : {{ item.guest_disk_info | default({}) | length }}"
           - "Required      : {{ disk_count }}"
+          - "Disk Layout   : {{ disk_layout }}"
           - "============================================================"
       loop: "{{ vm_disk_info.results }}"
       loop_control:
         label: "{{ item.item.name }}"
 
     ###########################################################################
-    # ADD MISSING SECOND DISK ONLY FOR RAID / HOSTGROUP 2
+    # ADD SECOND DISK WHEN RAID / HOSTGROUP 2 IS SELECTED
     ###########################################################################
 
     - name: Add missing second disk for RAID
@@ -473,8 +494,12 @@
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: false
+
+        # REQUIRED
         datacenter: "{{ datacenter }}"
+
         name: "{{ item.item.name.split('.')[0] }}"
+
         disk:
           - state: present
             size_gb: "{{ vm_disk_size_gb | int }}"
@@ -482,32 +507,16 @@
             datastore: "{{ datastore }}"
             scsi_controller: 0
             unit_number: 1
+
       loop: "{{ vm_disk_info.results }}"
       loop_control:
         label: "{{ item.item.name }}"
       when:
-        - hostgroup | string == '2'
+        - disk_count | int == 2
         - item.guest_disk_info | default({}) | length < 2
-      register: second_disk_result
 
     ###########################################################################
-    # GET FINAL VM INFORMATION
-    ###########################################################################
-
-    - name: Get final VM information
-      community.vmware.vmware_guest_info:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: false
-        name: "{{ item.name.split('.')[0] }}"
-      loop: "{{ filtered_devices }}"
-      loop_control:
-        label: "{{ item.name }}"
-      register: final_vm_info
-
-    ###########################################################################
-    # GET FINAL DISK INFORMATION
+    # VERIFY FINAL DISK INFORMATION
     ###########################################################################
 
     - name: Get final VM disk information
@@ -523,29 +532,80 @@
         label: "{{ item.name }}"
       register: final_vm_disk_info
 
-    - name: Show final VM information
-      debug:
+    - name: Show final disk information
+      ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "VM Name       : {{ item.0.instance.hw_name | default(item.0.item.name.split('.')[0]) }}"
-          - "Power         : {{ item.0.instance.hw_power_status | default('N/A') }}"
-          - "MAC           : {{ item.0.instance.hw_eth0.macaddress | default('N/A') }}"
-          - "CPU           : {{ item.0.instance.hw_processor_count | default('N/A') }}"
-          - "Memory MB     : {{ item.0.instance.hw_memtotal_mb | default('N/A') }}"
-          - "Current Disks : {{ item.1.guest_disk_info | default({}) | length }}"
+          - "FINAL VM DISK STATUS"
+          - "============================================================"
+          - "VM            : {{ item.item.name.split('.')[0] }}"
+          - "Actual Disks  : {{ item.guest_disk_info | default({}) | length }}"
+          - "Required      : {{ disk_count }}"
+          - "Disk Layout   : {{ disk_layout }}"
+          - "Status        : {{ 'OK' if (item.guest_disk_info | default({}) | length | int) >= (disk_count | int) else 'FAILED' }}"
+          - "============================================================"
+      loop: "{{ final_vm_disk_info.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    ###########################################################################
+    # GET FINAL VM INFORMATION
+    ###########################################################################
+
+    - name: Get final VM information
+      community.vmware.vmware_guest_info:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: false
+        datacenter: "{{ datacenter }}"
+        name: "{{ item.name.split('.')[0] }}"
+      loop: "{{ filtered_devices }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: final_vm_info
+
+    - name: Show final VM information
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "FINAL VM INFORMATION"
+          - "============================================================"
+          - "VM Name       : {{ item.instance.hw_name | default(item.item.name.split('.')[0]) }}"
+          - "Power         : {{ item.instance.hw_power_status | default('N/A') }}"
+          - "MAC           : {{ item.instance.hw_eth0.macaddress | default('N/A') }}"
+          - "CPU           : {{ item.instance.hw_processor_count | default('N/A') }}"
+          - "Memory MB     : {{ item.instance.hw_memtotal_mb | default('N/A') }}"
           - "Disk Layout   : {{ disk_layout }}"
           - "Expected Disks: {{ disk_count }}"
           - "============================================================"
-      loop: "{{ final_vm_info.results | zip(final_vm_disk_info.results) | list }}"
+      loop: "{{ final_vm_info.results }}"
       loop_control:
-        label: "{{ item.0.item.name }}"
+        label: "{{ item.item.name }}"
+
+    ###########################################################################
+    # VERIFY ALL DISK REQUIREMENTS
+    ###########################################################################
+
+    - name: Fail if any VM does not have required disk count
+      ansible.builtin.fail:
+        msg: >-
+          VM '{{ item.item.name.split('.')[0] }}' does not have the required
+          number of disks. Actual:
+          {{ item.guest_disk_info | default({}) | length }},
+          Required: {{ disk_count }}
+      loop: "{{ final_vm_disk_info.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when:
+        - item.guest_disk_info | default({}) | length | int < disk_count | int
 
     ###########################################################################
     # SUMMARY
     ###########################################################################
 
     - name: Show final result
-      debug:
+      ansible.builtin.debug:
         msg:
           - "============================================================"
           - "ROCKY LINUX 9 VM ENSURE COMPLETED SUCCESSFULLY"
@@ -557,4 +617,5 @@
           - "Disk Count per VM    : {{ disk_count }}"
           - "Disk Size            : {{ vm_disk_size_gb }} GB"
           - "Firmware             : {{ vm_boot_firmware }}"
+          - "Guest ID             : {{ vm_guest_id }}"
           - "============================================================"
