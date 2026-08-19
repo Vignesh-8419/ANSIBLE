@@ -53,7 +53,10 @@
     # AWX SURVEY - HOSTGROUP
     #
     # 1 = SingleDisk
+    #     1 x 100 GB
+    #
     # 2 = RAID
+    #     2 x 100 GB
     ###########################################################################
 
     hostgroup: "{{ hostgroup | default('1', true) }}"
@@ -104,7 +107,7 @@
           {{
             [
               {
-                'size_gb': vm_disk_size_gb,
+                'size_gb': vm_disk_size_gb | int,
                 'datastore': datastore,
                 'type': 'thin'
               }
@@ -113,7 +116,7 @@
             (
               [
                 {
-                  'size_gb': vm_disk_size_gb,
+                  'size_gb': vm_disk_size_gb | int,
                   'datastore': datastore,
                   'type': 'thin'
                 }
@@ -131,7 +134,7 @@
       debug:
         msg:
           - "============================================================"
-          - "ENSURE CENTOS 7 VMS EXIST ON ESXI"
+          - "ENSURE ROCKY LINUX 9 VMS EXIST ON ESXI"
           - "============================================================"
           - "ESXi Server        : {{ esxi_hostname }}"
           - "NetBox Server      : {{ netbox_url }}"
@@ -148,9 +151,6 @@
 
     ###########################################################################
     # GET CLUSTER FROM NETBOX
-    #
-    # IMPORTANT:
-    # Resolve the exact cluster ID first.
     ###########################################################################
 
     - name: Get NetBox cluster
@@ -191,7 +191,7 @@
           - "Cluster ID   : {{ cluster_id }}"
 
     ###########################################################################
-    # GET DEVICES ONLY FROM THE EXACT CLUSTER
+    # GET DEVICES FROM EXACT CLUSTER
     ###########################################################################
 
     - name: Get devices from exact NetBox cluster
@@ -243,16 +243,16 @@
     ###########################################################################
     # FILTER SELECTED DEVICES
     ###########################################################################
-    
+
     - name: Initialize filtered devices
       set_fact:
         filtered_devices: []
-    
+
     - name: Select all devices when target hosts is empty
       set_fact:
         filtered_devices: "{{ netbox_devices.json.results }}"
       when: target_hosts_list | length == 0
-    
+
     - name: Add exact or wildcard matching devices
       set_fact:
         filtered_devices: "{{ filtered_devices + [item.0] }}"
@@ -262,11 +262,11 @@
       when:
         - target_hosts_list | length > 0
         - item.0.name.split('.')[0] is match('^' ~ (item.1 | regex_replace('\*', '.*')) ~ '$')
-    
+
     - name: Remove duplicate filtered devices
       set_fact:
         filtered_devices: "{{ filtered_devices | unique(attribute='name') | list }}"
-    
+
     - name: Show cluster and filtering result
       debug:
         msg:
@@ -275,7 +275,7 @@
           - "Requested Hosts   : {{ target_hosts_list }}"
           - "Available Hosts   : {{ netbox_devices.json.results | map(attribute='name') | list }}"
           - "Selected Hosts    : {{ filtered_devices | map(attribute='name') | list }}"
-    
+
     - name: Fail if no matching hosts found
       fail:
         msg: >-
@@ -433,20 +433,21 @@
       when: created_vm_names | length > 0
 
     ###########################################################################
-    # ENSURE EXISTING VM HAS REQUIRED DISKS
+    # GET ACTUAL VM DISK INFORMATION
     ###########################################################################
 
-    - name: Get VM information before checking disks
-      community.vmware.vmware_guest_info:
+    - name: Get actual VM disk information
+      community.vmware.vmware_guest_disk_info:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: false
+        datacenter: "{{ datacenter }}"
         name: "{{ item.name.split('.')[0] }}"
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
-      register: vm_info_before_disk
+      register: vm_disk_info
 
     - name: Show current VM disk count
       debug:
@@ -455,15 +456,15 @@
           - "VM DISK CHECK"
           - "============================================================"
           - "VM            : {{ item.item.name.split('.')[0] }}"
-          - "Current Disks : {{ item.instance.hw_disks | default([]) | length }}"
+          - "Current Disks : {{ item.guest_disk_info | default({}) | length }}"
           - "Required      : {{ disk_count }}"
           - "============================================================"
-      loop: "{{ vm_info_before_disk.results }}"
+      loop: "{{ vm_disk_info.results }}"
       loop_control:
         label: "{{ item.item.name }}"
 
     ###########################################################################
-    # ADD SECOND DISK WHEN RAID / HOSTGROUP 2 IS SELECTED
+    # ADD MISSING SECOND DISK ONLY FOR RAID / HOSTGROUP 2
     ###########################################################################
 
     - name: Add missing second disk for RAID
@@ -472,6 +473,7 @@
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: false
+        datacenter: "{{ datacenter }}"
         name: "{{ item.item.name.split('.')[0] }}"
         disk:
           - state: present
@@ -480,15 +482,16 @@
             datastore: "{{ datastore }}"
             scsi_controller: 0
             unit_number: 1
-      loop: "{{ vm_info_before_disk.results }}"
+      loop: "{{ vm_disk_info.results }}"
       loop_control:
         label: "{{ item.item.name }}"
       when:
-        - disk_count | int == 2
-        - item.instance.hw_disks | default([]) | length < 2
+        - hostgroup | string == '2'
+        - item.guest_disk_info | default({}) | length < 2
+      register: second_disk_result
 
     ###########################################################################
-    # GET FINAL INFORMATION
+    # GET FINAL VM INFORMATION
     ###########################################################################
 
     - name: Get final VM information
@@ -503,21 +506,39 @@
         label: "{{ item.name }}"
       register: final_vm_info
 
+    ###########################################################################
+    # GET FINAL DISK INFORMATION
+    ###########################################################################
+
+    - name: Get final VM disk information
+      community.vmware.vmware_guest_disk_info:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: false
+        datacenter: "{{ datacenter }}"
+        name: "{{ item.name.split('.')[0] }}"
+      loop: "{{ filtered_devices }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: final_vm_disk_info
+
     - name: Show final VM information
       debug:
         msg:
           - "============================================================"
-          - "VM Name       : {{ item.instance.hw_name | default(item.item.name.split('.')[0]) }}"
-          - "Power         : {{ item.instance.hw_power_status | default('N/A') }}"
-          - "MAC           : {{ item.instance.hw_eth0.macaddress | default('N/A') }}"
-          - "CPU           : {{ item.instance.hw_processor_count | default('N/A') }}"
-          - "Memory MB     : {{ item.instance.hw_memtotal_mb | default('N/A') }}"
+          - "VM Name       : {{ item.0.instance.hw_name | default(item.0.item.name.split('.')[0]) }}"
+          - "Power         : {{ item.0.instance.hw_power_status | default('N/A') }}"
+          - "MAC           : {{ item.0.instance.hw_eth0.macaddress | default('N/A') }}"
+          - "CPU           : {{ item.0.instance.hw_processor_count | default('N/A') }}"
+          - "Memory MB     : {{ item.0.instance.hw_memtotal_mb | default('N/A') }}"
+          - "Current Disks : {{ item.1.guest_disk_info | default({}) | length }}"
           - "Disk Layout   : {{ disk_layout }}"
           - "Expected Disks: {{ disk_count }}"
           - "============================================================"
-      loop: "{{ final_vm_info.results }}"
+      loop: "{{ final_vm_info.results | zip(final_vm_disk_info.results) | list }}"
       loop_control:
-        label: "{{ item.item.name }}"
+        label: "{{ item.0.item.name }}"
 
     ###########################################################################
     # SUMMARY
@@ -527,7 +548,7 @@
       debug:
         msg:
           - "============================================================"
-          - "CENTOS 7 VM ENSURE COMPLETED SUCCESSFULLY"
+          - "ROCKY LINUX 9 VM ENSURE COMPLETED SUCCESSFULLY"
           - "============================================================"
           - "Cluster              : {{ cluster_name }}"
           - "Selected VMs         : {{ filtered_devices | length }}"
