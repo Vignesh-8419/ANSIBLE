@@ -1,6 +1,6 @@
 ---
 # ============================================================
-# PLAY 1: ENSURE SELECTED CENTOS 7 VMS EXIST ON ESXI
+# ENSURE SELECTED CENTOS 7 VMS EXIST ON ESXI
 # ============================================================
 
 - name: Ensure selected CentOS 7 VMs exist on ESXi
@@ -14,7 +14,7 @@
   vars:
 
     ###########################################################################
-    # ESXi
+    # ESXI
     ###########################################################################
 
     esxi_hostname: "192.168.253.128"
@@ -27,11 +27,15 @@
     folder: "/"
 
     ###########################################################################
-    # NetBox
+    # NETBOX
     ###########################################################################
 
-    netbox_url: "https://192.168.253.143"
+    netbox_url: "https://netbox.vgs.com"
     netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
+
+    ###########################################################################
+    # CLUSTER
+    ###########################################################################
 
     cluster_name: "centos-07-servers"
 
@@ -40,55 +44,26 @@
     #
     # Examples:
     #
-    # cent-07-01,cent-07-02
-    #
-    # Wildcard:
-    #
+    # cent-07-03
+    # cent-07-01,cent-07-03
     # cent-07-*
     #
+    # Empty = all hosts in centos-07-servers
     ###########################################################################
 
     target_hosts: "{{ target_hosts | default('', true) }}"
 
-    target_patterns: >-
-      {{
-        target_hosts.split(',')
-        | map('trim')
-        | reject('equalto', '')
-        | map('regex_replace', '\*', '.*')
-        | list
-      }}
-
     ###########################################################################
-    # DISK / HOSTGROUP SELECTION
-    #
-    # AWX Survey:
+    # DISK SELECTION
     #
     # 1 = SingleDisk
-    #     1 x 100 GB Disk
+    #     1 x 100 GB
     #
     # 2 = RAID
-    #     2 x 100 GB Disks
-    #
+    #     2 x 100 GB
     ###########################################################################
 
     hostgroup: "{{ hostgroup | default('1', true) }}"
-
-    disk_count: >-
-      {{
-        {
-          '1': 1,
-          '2': 2
-        }[hostgroup | string]
-      }}
-
-    disk_layout: >-
-      {{
-        {
-          '1': 'SingleDisk',
-          '2': 'RAID'
-        }[hostgroup | string]
-      }}
 
     ###########################################################################
     # VM HARDWARE
@@ -102,42 +77,57 @@
     vm_guest_id: "centos7_64Guest"
     vm_boot_firmware: "efi"
 
-    ###########################################################################
-    # DISK DEFINITIONS
-    #
-    # SingleDisk:
-    #   Disk 1 = 100 GB
-    #
-    # RAID:
-    #   Disk 1 = 100 GB
-    #   Disk 2 = 100 GB
-    #
-    ###########################################################################
-
-    vm_disks: >-
-      {{
-        [
-          {
-            'size_gb': vm_disk_size_gb,
-            'datastore': datastore,
-            'type': 'thin'
-          }
-        ]
-        +
-        (
-          [
-            {
-              'size_gb': vm_disk_size_gb,
-              'datastore': datastore,
-              'type': 'thin'
-            }
-          ]
-          if (hostgroup | string) == '2'
-          else []
-        )
-      }}
-
   tasks:
+
+    ###########################################################################
+    # VALIDATE HOSTGROUP
+    ###########################################################################
+
+    - name: Validate hostgroup selection
+      fail:
+        msg: >-
+          Invalid hostgroup '{{ hostgroup }}'.
+          Valid values:
+          1 = SingleDisk
+          2 = RAID
+      when: hostgroup | string not in ['1', '2']
+
+    ###########################################################################
+    # BUILD DISK CONFIGURATION
+    ###########################################################################
+
+    - name: Set disk count
+      set_fact:
+        disk_count: "{{ 1 if hostgroup | string == '1' else 2 }}"
+
+    - name: Set disk layout
+      set_fact:
+        disk_layout: "{{ 'SingleDisk' if hostgroup | string == '1' else 'RAID' }}"
+
+    - name: Build VM disk configuration
+      set_fact:
+        vm_disks: >-
+          {{
+            [
+              {
+                'size_gb': vm_disk_size_gb,
+                'datastore': datastore,
+                'type': 'thin'
+              }
+            ]
+            +
+            (
+              [
+                {
+                  'size_gb': vm_disk_size_gb,
+                  'datastore': datastore,
+                  'type': 'thin'
+                }
+              ]
+              if hostgroup | string == '2'
+              else []
+            )
+          }}
 
     ###########################################################################
     # SHOW CONFIGURATION
@@ -150,12 +140,10 @@
           - "ENSURE CENTOS 7 VMS EXIST ON ESXI"
           - "============================================================"
           - "ESXi Server        : {{ esxi_hostname }}"
-          - "Datacenter         : {{ datacenter }}"
-          - "Datastore          : {{ datastore }}"
-          - "Network            : {{ vm_network }}"
+          - "NetBox Server      : {{ netbox_url }}"
           - "Cluster            : {{ cluster_name }}"
           - "Target Hosts       : {{ target_hosts | default('ALL', true) }}"
-          - "Hostgroup Selection: {{ hostgroup }}"
+          - "Hostgroup          : {{ hostgroup }}"
           - "Disk Layout        : {{ disk_layout }}"
           - "Disk Count         : {{ disk_count }}"
           - "Disk Size          : {{ vm_disk_size_gb }} GB"
@@ -165,60 +153,164 @@
           - "============================================================"
 
     ###########################################################################
-    # VALIDATE HOSTGROUP
+    # GET CLUSTER FROM NETBOX
+    #
+    # IMPORTANT:
+    # Resolve the exact cluster ID first.
     ###########################################################################
 
-    - name: Validate hostgroup selection
-      fail:
-        msg: >-
-          Invalid hostgroup selection: {{ hostgroup }}.
-          Valid values are:
-          1 = SingleDisk
-          2 = RAID
-      when: hostgroup | string not in ['1', '2']
-
-    ###########################################################################
-    # GET DEVICES FROM NETBOX
-    ###########################################################################
-
-    - name: Get devices from NetBox cluster
+    - name: Get NetBox cluster
       uri:
-        url: "{{ netbox_url }}/api/dcim/devices/?cluster={{ cluster_name | urlencode }}&limit=1000"
+        url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ cluster_name | urlencode }}&limit=100"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
+          Accept: "application/json"
         validate_certs: false
         use_proxy: false
-        status_code: 200
         return_content: true
-      register: netbox_devices
+        status_code: 200
+      register: netbox_cluster_result
 
-    - name: Show devices in cluster
+    - name: Resolve NetBox cluster ID
+      set_fact:
+        cluster_id: >-
+          {{
+            netbox_cluster_result.json.results
+            | selectattr('name', 'equalto', cluster_name)
+            | map(attribute='id')
+            | first
+            | default('')
+          }}
+
+    - name: Fail if NetBox cluster does not exist
+      fail:
+        msg: >-
+          NetBox cluster not found:
+          '{{ cluster_name }}'
+      when: cluster_id | string | length == 0
+
+    - name: Show resolved NetBox cluster
       debug:
-        msg: "{{ netbox_devices.json.results | map(attribute='name') | list }}"
+        msg:
+          - "Cluster Name : {{ cluster_name }}"
+          - "Cluster ID   : {{ cluster_id }}"
 
     ###########################################################################
-    # FILTER SELECTED DEVICES
+    # GET DEVICES ONLY FROM THE EXACT CLUSTER
+    ###########################################################################
+
+    - name: Get devices from exact NetBox cluster
+      uri:
+        url: "{{ netbox_url }}/api/dcim/devices/?cluster_id={{ cluster_id }}&limit=1000"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+          Accept: "application/json"
+        validate_certs: false
+        use_proxy: false
+        return_content: true
+        status_code: 200
+      register: netbox_devices
+
+    - name: Show devices returned by NetBox
+      debug:
+        msg:
+          - "============================================================"
+          - "DEVICES IN CLUSTER: {{ cluster_name }}"
+          - "============================================================"
+          - "{{ netbox_devices.json.results | map(attribute='name') | list }}"
+          - "============================================================"
+
+    - name: Fail if cluster contains no devices
+      fail:
+        msg: >-
+          No devices found in NetBox cluster '{{ cluster_name }}'.
+      when: netbox_devices.json.results | length == 0
+
+    ###########################################################################
+    # BUILD TARGET HOST LIST
+    ###########################################################################
+
+    - name: Build requested target host list
+      set_fact:
+        target_hosts_list: >-
+          {{
+            target_hosts.split(',')
+            | map('trim')
+            | reject('equalto', '')
+            | list
+          }}
+
+    - name: Show requested hosts
+      debug:
+        var: target_hosts_list
+
+    ###########################################################################
+    # FILTER DEVICES
     ###########################################################################
 
     - name: Initialize filtered devices
       set_fact:
         filtered_devices: []
 
-    - name: Use all devices when target_hosts is empty
+    - name: Select all devices when target hosts is empty
       set_fact:
         filtered_devices: "{{ netbox_devices.json.results }}"
-      when: target_patterns | length == 0
+      when: target_hosts_list | length == 0
 
-    - name: Add devices matching target patterns
+    - name: Filter selected devices
+      set_fact:
+        filtered_devices: "{{ filtered_devices + [item] }}"
+      loop: "{{ netbox_devices.json.results }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when:
+        - target_hosts_list | length > 0
+        - >-
+          (
+            target_hosts_list
+            | select(
+                'match',
+                '^' ~
+                (
+                  item.name.split('.')[0]
+                  | regex_replace('([.^$+?{}\\[\\]\\\\|()])', '\\\\\\1')
+                )
+                ~ '$'
+              )
+            | list
+            | length
+          ) > 0
+          or
+          (
+            target_hosts_list
+            | select(
+                'match',
+                '^' ~
+                (
+                  item.name.split('.')[0]
+                  | regex_replace('([.^$+?{}\\[\\]\\\\|()])', '\\\\\\1')
+                )
+                ~ '$'
+              )
+            | list
+            | length
+          ) > 0
+
+    ###########################################################################
+    # SIMPLER EXACT/WILDCARD FILTER
+    ###########################################################################
+
+    - name: Add exact or wildcard matching devices
       set_fact:
         filtered_devices: "{{ filtered_devices + [item.0] }}"
-      loop: "{{ netbox_devices.json.results | product(target_patterns) | list }}"
+      loop: "{{ netbox_devices.json.results | product(target_hosts_list) | list }}"
       loop_control:
         label: "{{ item.0.name }} -> {{ item.1 }}"
       when:
-        - target_patterns | length > 0
-        - item.0.name.split('.')[0] is match('^' ~ item.1 ~ '$')
+        - target_hosts_list | length > 0
+        - item.0.name.split('.')[0] is match('^' ~ (item.1 | regex_replace('\*', '.*')) ~ '$')
 
     - name: Remove duplicate filtered devices
       set_fact:
@@ -229,23 +321,33 @@
             | list
           }}
 
-    - name: Fail if no hosts found
+    - name: Fail if no matching hosts found
       fail:
         msg: >-
           No matching hosts found in NetBox.
           Cluster: {{ cluster_name }}
-          Target Hosts: {{ target_hosts }}
+          Requested: {{ target_hosts_list }}
+          Available: {{
+            netbox_devices.json.results
+            | map(attribute='name')
+            | list
+          }}
       when: filtered_devices | length == 0
 
-    - name: Show selected VMs
+    - name: Show selected devices
       debug:
-        msg: "{{ filtered_devices | map(attribute='name') | list }}"
+        msg:
+          - "============================================================"
+          - "SELECTED VMS"
+          - "============================================================"
+          - "{{ filtered_devices | map(attribute='name') | list }}"
+          - "============================================================"
 
     ###########################################################################
-    # CHECK WHETHER VM ALREADY EXISTS
+    # CHECK EXISTING VMS
     ###########################################################################
 
-    - name: Check if VM already exists
+    - name: Check whether VM exists on ESXi
       community.vmware.vmware_guest_info:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
@@ -258,22 +360,20 @@
       register: vm_lookup
       failed_when: false
 
-    - name: Show existing VM status
+    - name: Show VM existence status
       debug:
         msg:
-          - "============================================================"
-          - "VM Name : {{ item.item.name.split('.')[0] }}"
-          - "Exists  : {{ item.instance is defined }}"
-          - "============================================================"
+          - "VM     : {{ item.item.name.split('.')[0] }}"
+          - "Exists : {{ item.instance is defined }}"
       loop: "{{ vm_lookup.results }}"
       loop_control:
         label: "{{ item.item.name }}"
 
     ###########################################################################
-    # CREATE VM ONLY WHEN MISSING
+    # CREATE ONLY MISSING VMS
     ###########################################################################
 
-    - name: Create missing VM
+    - name: Create missing VMs
       community.vmware.vmware_guest:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
@@ -309,14 +409,14 @@
       register: vm_create
 
     ###########################################################################
-    # BUILD LIST OF NEWLY CREATED VMS
+    # BUILD NEW VM LIST
     ###########################################################################
 
     - name: Initialize created VM list
       set_fact:
         created_vm_names: []
 
-    - name: Build list of newly created VMs
+    - name: Build newly created VM list
       set_fact:
         created_vm_names: >-
           {{
@@ -325,7 +425,7 @@
           }}
       loop: "{{ vm_create.results | default([]) }}"
       loop_control:
-        label: "{{ item.item.item.name | default('unknown') }}"
+        label: "{{ item.item.item.name | default('UNKNOWN') }}"
       when:
         - item.changed | default(false)
         - item.item is defined
@@ -334,17 +434,14 @@
     - name: Show newly created VMs
       debug:
         msg:
-          - "============================================================"
-          - "NEWLY CREATED VMS"
-          - "============================================================"
+          - "Newly Created VMs:"
           - "{{ created_vm_names }}"
-          - "============================================================"
 
     ###########################################################################
     # POWER ON ONLY NEWLY CREATED VMS
     ###########################################################################
 
-    - name: Power on newly created VM
+    - name: Power on newly created VMs
       community.vmware.vmware_guest_powerstate:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
@@ -357,7 +454,7 @@
         label: "{{ item }}"
       when: created_vm_names | length > 0
 
-    - name: Wait for ESXi to assign MAC address
+    - name: Wait for MAC address initialization
       pause:
         seconds: 10
       when: created_vm_names | length > 0
@@ -366,7 +463,7 @@
     # POWER OFF ONLY NEWLY CREATED VMS
     ###########################################################################
 
-    - name: Power off newly created VM
+    - name: Power off newly created VMs
       community.vmware.vmware_guest_powerstate:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
@@ -380,7 +477,7 @@
       when: created_vm_names | length > 0
 
     ###########################################################################
-    # GET FINAL VM INFORMATION
+    # GET FINAL INFORMATION
     ###########################################################################
 
     - name: Get final VM information
@@ -393,13 +490,9 @@
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
-      register: vm_info
+      register: final_vm_info
 
-    ###########################################################################
-    # SHOW VM INFORMATION
-    ###########################################################################
-
-    - name: Show VM information
+    - name: Show final VM information
       debug:
         msg:
           - "============================================================"
@@ -408,22 +501,22 @@
           - "MAC           : {{ item.instance.hw_eth0.macaddress | default('N/A') }}"
           - "CPU           : {{ item.instance.hw_processor_count | default('N/A') }}"
           - "Memory MB     : {{ item.instance.hw_memtotal_mb | default('N/A') }}"
-          - "Configured For: {{ disk_layout }}"
+          - "Disk Layout   : {{ disk_layout }}"
           - "Expected Disks: {{ disk_count }}"
           - "============================================================"
-      loop: "{{ vm_info.results }}"
+      loop: "{{ final_vm_info.results }}"
       loop_control:
         label: "{{ item.item.name }}"
 
     ###########################################################################
-    # FINAL SUMMARY
+    # SUMMARY
     ###########################################################################
 
     - name: Show final result
       debug:
         msg:
           - "============================================================"
-          - "VM ENSURE OPERATION COMPLETED SUCCESSFULLY"
+          - "CENTOS 7 VM ENSURE COMPLETED SUCCESSFULLY"
           - "============================================================"
           - "Cluster              : {{ cluster_name }}"
           - "Selected VMs         : {{ filtered_devices | length }}"
@@ -431,6 +524,5 @@
           - "Disk Layout          : {{ disk_layout }}"
           - "Disk Count per VM    : {{ disk_count }}"
           - "Disk Size            : {{ vm_disk_size_gb }} GB"
-          - "Expected Total Space : {{ disk_count | int * vm_disk_size_gb | int }} GB per VM"
           - "Firmware             : {{ vm_boot_firmware }}"
           - "============================================================"
