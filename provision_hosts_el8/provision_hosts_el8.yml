@@ -247,16 +247,23 @@
         validate_certs: no
         use_proxy: false
         timeout: 120
+
         status_code:
           - 200
           - 201
+
         headers:
           Content-Type: application/json
+
         body_format: json
 
         body:
           host:
             name: "{{ item.item.name }}"
+
+            # Explicit organization and location
+            organization_id: 1
+            location_id: 2
 
             hostgroup_id: "{{ hostgroup_id }}"
             operatingsystem_id: "{{ operatingsystem_id }}"
@@ -277,12 +284,13 @@
 
             interfaces_attributes:
               - type: interface
-                mac: "{{ item.item.mac }}"
+                mac: "{{ item.item.mac | replace('\\:', ':') }}"
                 ip: "{{ item.item.ip }}"
                 subnet_id: "{{ subnet_id }}"
                 domain_id: 1
                 primary: true
                 provision: true
+                managed: true
 
       when: item.status == 404
       loop: "{{ foreman_hosts.results }}"
