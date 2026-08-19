@@ -1142,6 +1142,46 @@ wait_for_foreman_task()
         )"
 
         #######################################################################
+        # Fix Foreman/Dynflow progress value
+        #
+        # Example:
+        #   0.39 = 39%
+        #   0.50 = 50%
+        #   1.00 = 100%
+        #######################################################################
+
+        if ! echo "${PROGRESS}" | grep -qE '^[0-9]+([.][0-9]+)?$'
+        then
+            PROGRESS="0"
+        else
+            PROGRESS="$(
+                awk -v progress="${PROGRESS}" '
+                BEGIN {
+                    if (progress >= 0 && progress <= 1) {
+                        progress = progress * 100
+                    }
+
+                    if (progress > 100) {
+                        progress = 100
+                    }
+
+                    if (progress < 0) {
+                        progress = 0
+                    }
+
+                    printf "%.1f", progress
+                }'
+            )"
+        fi
+
+        # If task completed successfully, always show 100%
+        if echo "${STATE}" | grep -qi '^stopped$' &&
+           echo "${RESULT}" | grep -qi '^success$'
+        then
+            PROGRESS="100.0"
+        fi
+
+        #######################################################################
         # Display live task progress
         #######################################################################
 
@@ -1150,7 +1190,6 @@ wait_for_foreman_task()
             "${PROGRESS:-0}" \
             "${STATE:-unknown}" \
             "${RESULT:-unknown}"
-
         #######################################################################
         # Successful completion
         #######################################################################
