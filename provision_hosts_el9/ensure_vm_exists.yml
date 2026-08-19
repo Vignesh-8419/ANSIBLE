@@ -1,5 +1,9 @@
 ---
-- name: Prepare and recreate ROCKY LINUX 9 hosts in Foreman using API
+# ============================================================
+# ENSURE SELECTED ROCKY LINUX 9 VMS EXIST ON ESXI
+# ============================================================
+
+- name: Ensure selected Rocky Linux 9 VMs exist on ESXi
   hosts: localhost
   connection: local
   gather_facts: false
@@ -17,46 +21,19 @@
     esxi_username: "root"
     esxi_password: "Root@123"
 
+    datacenter: "ha-datacenter"
+    datastore: "datastore1"
+    vm_network: "VM Network"
+    folder: "/"
 
     ###########################################################################
     # NETBOX
     ###########################################################################
 
-    netbox_url: "https://netbox.vgs.com"
+    netbox_url: "https://192.168.253.143"
     netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
 
     cluster_name: "rocky-9-servers"
-
-
-    ###########################################################################
-    # FOREMAN SERVER SELECTION
-    #
-    # AWX Survey:
-    #
-    # 1 = Frontend Foreman
-    # 2 = Backend Foreman
-    ###########################################################################
-
-    foreman_server: "{{ foreman_server | default('1', true) }}"
-
-    foreman_url: >-
-      {{
-        {
-          '1': 'https://rocky-08-01.vgs.com',
-          '2': 'https://cent-07-01.vgs.com'
-        }[foreman_server | string]
-      }}
-
-    foreman_user: "admin"
-    foreman_api_token: "_bkE_ov7gKb68d3aR01m5A"
-
-
-    ###########################################################################
-    # HOST SETTINGS
-    ###########################################################################
-
-    host_root_pass: "Root@123"
-
 
     ###########################################################################
     # AWX SURVEY - TARGET HOSTS
@@ -65,148 +42,39 @@
     #
     # rocky-09-01
     # rocky-09-01,rocky-09-02
+    # rocky-09-*
     #
-    # Leave empty to process all hosts.
+    # Empty = ALL hosts in cluster
     ###########################################################################
 
     target_hosts: "{{ target_hosts | default('', true) }}"
 
-    target_servers: >-
-      {{
-        target_hosts.split(',')
-        | map('trim')
-        | reject('equalto', '')
-        | list
-      }}
-
-
     ###########################################################################
-    # FOREMAN ORGANIZATION / LOCATION
-    ###########################################################################
-
-    org_id: 1
-    loc_id: 2
-
-
-    ###########################################################################
-    # ROCKY LINUX 9 HOSTGROUP SELECTION
-    #
-    # AWX Survey:
-    #
-    # 1 = RockyLinux9-SingleDisk
-    # 2 = RockyLinux9-RAID
-    ###########################################################################
-
-    hostgroup: "{{ hostgroup | default('1', true) }}"
-
-
-    ###########################################################################
-    # ROCKY 9 HOSTGROUP ID
-    #
-    # CHANGE THESE TO YOUR ACTUAL FOREMAN IDs
-    #
-    # Example:
+    # AWX SURVEY - HOSTGROUP
     #
     # 1 = SingleDisk
     # 2 = RAID
     ###########################################################################
 
-    hostgroup_id: >-
-      {{
-        {
-          '1': 0,
-          '2': 0
-        }[hostgroup | string]
-      }}
-
+    hostgroup: "{{ hostgroup | default('1', true) }}"
 
     ###########################################################################
-    # ROCKY 9 OPERATING SYSTEM ID
-    #
-    # CHANGE THESE TO YOUR ACTUAL FOREMAN IDs
-    #
-    # If both hostgroups use the same Rocky 9 OS,
-    # you can put the same ID for both.
+    # VM HARDWARE
     ###########################################################################
 
-    operatingsystem_id: >-
-      {{
-        {
-          '1': 0,
-          '2': 0
-        }[hostgroup | string]
-      }}
+    vm_memory_mb: 4096
+    vm_num_cpus: 4
+    vm_num_cpu_cores_per_socket: 2
 
+    vm_disk_size_gb: 100
 
-    ###########################################################################
-    # INSTALLATION MEDIUM
-    #
-    # CHANGE TO YOUR ROCKY 9 MEDIUM ID
-    ###########################################################################
-
-    medium_id: 0
-
-
-    ###########################################################################
-    # PARTITION TABLE
-    #
-    # CHANGE TO YOUR ROCKY 9 PARTITION TABLE ID
-    #
-    # If Foreman partition table differs between
-    # SingleDisk and RAID, use the mapping below.
-    ###########################################################################
-
-    ptable_id: >-
-      {{
-        {
-          '1': 0,
-          '2': 0
-        }[hostgroup | string]
-      }}
-
-
-    ###########################################################################
-    # ARCHITECTURE
-    #
-    # x86_64 normally ID 1 in your existing configuration
-    ###########################################################################
-
-    architecture_id: 1
-
-
-    ###########################################################################
-    # NETWORK
-    ###########################################################################
-
-    subnet_name: "vgs-subnet-centos"
-
-    domain_id: 1
-
-
-    ###########################################################################
-    # KATELLO CONTENT
-    #
-    # CHANGE TO YOUR ROCKY 9 CONTENT VIEW ID
-    ###########################################################################
-
-    content_view_id: 0
-
-    # Library
-    lifecycle_environment_id: 1
-
-
-    ###########################################################################
-    # PXE SETTINGS
-    ###########################################################################
-
-    pxe_loader: "Grub2 UEFI"
-    build: true
-
+    vm_guest_id: "rocky9_64Guest"
+    vm_boot_firmware: "efi"
 
   tasks:
 
     ###########################################################################
-    # VALIDATE SELECTION
+    # VALIDATE HOSTGROUP
     ###########################################################################
 
     - name: Validate hostgroup selection
@@ -214,53 +82,68 @@
         msg: >-
           Invalid hostgroup '{{ hostgroup }}'.
           Valid values are:
-          1 = RockyLinux9-SingleDisk
-          2 = RockyLinux9-RAID
+          1 = SingleDisk
+          2 = RAID
       when: hostgroup | string not in ['1', '2']
 
-
-    - name: Validate Rocky 9 Foreman IDs are configured
-      fail:
-        msg: >-
-          Rocky Linux 9 Foreman IDs are not configured correctly.
-          Check hostgroup_id, operatingsystem_id, medium_id,
-          ptable_id and content_view_id.
-      when: >-
-        hostgroup_id | int == 0
-        or operatingsystem_id | int == 0
-        or medium_id | int == 0
-        or ptable_id | int == 0
-        or content_view_id | int == 0
-
-
     ###########################################################################
-    # SHOW SELECTED CONFIGURATION
+    # SET DISK CONFIGURATION
     ###########################################################################
 
-    - name: Show selected Rocky Linux 9 provisioning configuration
+    - name: Set disk configuration
+      set_fact:
+        disk_count: "{{ 1 if hostgroup | string == '1' else 2 }}"
+        disk_layout: "{{ 'SingleDisk' if hostgroup | string == '1' else 'RAID' }}"
+
+    - name: Build VM disk configuration
+      set_fact:
+        vm_disks: >-
+          {{
+            [
+              {
+                'size_gb': vm_disk_size_gb,
+                'datastore': datastore,
+                'type': 'thin'
+              }
+            ]
+            +
+            (
+              [
+                {
+                  'size_gb': vm_disk_size_gb,
+                  'datastore': datastore,
+                  'type': 'thin'
+                }
+              ]
+              if hostgroup | string == '2'
+              else []
+            )
+          }}
+
+    ###########################################################################
+    # SHOW CONFIGURATION
+    ###########################################################################
+
+    - name: Show selected VM configuration
       debug:
         msg:
           - "============================================================"
-          - "ROCKY LINUX 9 FOREMAN PROVISIONING"
+          - "ENSURE ROCKY LINUX 9 VMS EXIST ON ESXI"
           - "============================================================"
-          - "Foreman Server        : {{ foreman_url }}"
-          - "ESXi Server           : {{ esxi_hostname }}"
-          - "Cluster               : {{ cluster_name }}"
-          - "Target Hosts          : {{ target_hosts | default('ALL', true) }}"
-          - "Hostgroup Selection   : {{ hostgroup }}"
-          - "Hostgroup ID          : {{ hostgroup_id }}"
-          - "Operating System ID   : {{ operatingsystem_id }}"
-          - "Medium ID             : {{ medium_id }}"
-          - "Partition Table ID    : {{ ptable_id }}"
-          - "Subnet Name           : {{ subnet_name }}"
-          - "Content View ID       : {{ content_view_id }}"
-          - "Lifecycle Environment : {{ lifecycle_environment_id }}"
-          - "Architecture ID       : {{ architecture_id }}"
-          - "Domain ID             : {{ domain_id }}"
-          - "PXE Loader            : {{ pxe_loader }}"
-          - "Build                 : {{ build }}"
+          - "ESXi Server        : {{ esxi_hostname }}"
+          - "Datacenter         : {{ datacenter }}"
+          - "Datastore          : {{ datastore }}"
+          - "Network            : {{ vm_network }}"
+          - "Cluster            : {{ cluster_name }}"
+          - "Target Hosts       : {{ target_hosts | default('ALL', true) }}"
+          - "Hostgroup          : {{ hostgroup }}"
+          - "Disk Layout        : {{ disk_layout }}"
+          - "Disk Count         : {{ disk_count }}"
+          - "Disk Size          : {{ vm_disk_size_gb }} GB"
+          - "Memory             : {{ vm_memory_mb }} MB"
+          - "CPUs               : {{ vm_num_cpus }}"
+          - "Firmware           : {{ vm_boot_firmware }}"
           - "============================================================"
-
 
     ###########################################################################
     # GET DEVICES FROM NETBOX
@@ -274,58 +157,217 @@
           Authorization: "Token {{ netbox_token }}"
         validate_certs: false
         use_proxy: false
-        return_content: true
         status_code: 200
+        return_content: true
       register: netbox_devices
 
-
-    - name: Show devices returned by NetBox
+    - name: Show devices in cluster
       debug:
         msg: "{{ netbox_devices.json.results | map(attribute='name') | list }}"
 
+    ###########################################################################
+    # BUILD TARGET PATTERNS
+    ###########################################################################
+
+    - name: Initialize target patterns
+      set_fact:
+        target_patterns: []
+
+    - name: Build target patterns
+      set_fact:
+        target_patterns: >-
+          {{
+            target_hosts.split(',')
+            | map('trim')
+            | reject('equalto', '')
+            | map('regex_replace', '\*', '.*')
+            | list
+          }}
+      when: target_hosts | trim | length > 0
 
     ###########################################################################
-    # FILTER SELECTED HOSTS
+    # FILTER SELECTED DEVICES
     ###########################################################################
 
-    - name: Initialize filtered device list
+    - name: Initialize filtered devices
       set_fact:
         filtered_devices: []
 
-
-    - name: Use all devices when target_hosts is empty
+    - name: Use all devices when target hosts is empty
       set_fact:
         filtered_devices: "{{ netbox_devices.json.results }}"
-      when: target_servers | length == 0
+      when: target_patterns | length == 0
 
-
-    - name: Filter devices by hostname when target_hosts is specified
+    - name: Add devices matching target patterns
       set_fact:
-        filtered_devices: "{{ filtered_devices + [item] }}"
-      loop: "{{ netbox_devices.json.results }}"
+        filtered_devices: "{{ filtered_devices + [item.0] }}"
+      loop: "{{ netbox_devices.json.results | product(target_patterns) | list }}"
       loop_control:
-        label: "{{ item.name }}"
+        label: "{{ item.0.name }} -> {{ item.1 }}"
       when:
-        - target_servers | length > 0
-        - item.name.split('.')[0] in target_servers
+        - target_patterns | length > 0
+        - item.0.name.split('.')[0] is match('^' ~ item.1 ~ '$')
 
+    - name: Remove duplicate filtered devices
+      set_fact:
+        filtered_devices: "{{ filtered_devices | unique(attribute='name') | list }}"
 
-    - name: Show filtered devices
-      debug:
-        msg: "{{ filtered_devices | map(attribute='name') | list }}"
-
-
-    - name: Fail if no hosts matched
+    - name: Fail if no hosts found
       fail:
-        msg: "No matching hosts found in NetBox for target_hosts={{ target_hosts }}"
+        msg: >-
+          No matching hosts found in NetBox.
+          Cluster: {{ cluster_name }}
+          Target Hosts: {{ target_hosts }}
       when: filtered_devices | length == 0
 
+    - name: Show selected VMs
+      debug:
+        msg:
+          - "============================================================"
+          - "SELECTED ROCKY 9 VMS"
+          - "============================================================"
+          - "{{ filtered_devices | map(attribute='name') | list }}"
+          - "============================================================"
 
     ###########################################################################
-    # GET VM INFORMATION FROM ESXi
+    # CHECK WHETHER VM EXISTS
     ###########################################################################
 
-    - name: Get VM information from ESXi
+    - name: Check if VM already exists
+      community.vmware.vmware_guest_info:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: false
+        name: "{{ item.name.split('.')[0] }}"
+      loop: "{{ filtered_devices }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: vm_lookup
+      failed_when: false
+
+    - name: Show VM existence status
+      debug:
+        msg:
+          - "VM     : {{ item.item.name.split('.')[0] }}"
+          - "Exists : {{ item.instance is defined }}"
+      loop: "{{ vm_lookup.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    ###########################################################################
+    # CREATE ONLY MISSING VMS
+    ###########################################################################
+
+    - name: Create missing VM
+      community.vmware.vmware_guest:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: false
+
+        datacenter: "{{ datacenter }}"
+        folder: "{{ folder }}"
+        datastore: "{{ datastore }}"
+
+        name: "{{ item.item.name.split('.')[0] }}"
+        state: present
+
+        guest_id: "{{ vm_guest_id }}"
+
+        hardware:
+          memory_mb: "{{ vm_memory_mb }}"
+          num_cpus: "{{ vm_num_cpus }}"
+          num_cpu_cores_per_socket: "{{ vm_num_cpu_cores_per_socket }}"
+          boot_firmware: "{{ vm_boot_firmware }}"
+
+        disk: "{{ vm_disks }}"
+
+        networks:
+          - name: "{{ vm_network }}"
+            start_connected: true
+            device_type: vmxnet3
+
+      loop: "{{ vm_lookup.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when: item.instance is not defined
+      register: vm_create
+
+    ###########################################################################
+    # BUILD NEW VM LIST
+    ###########################################################################
+
+    - name: Initialize created VM list
+      set_fact:
+        created_vm_names: []
+
+    - name: Build list of newly created VMs
+      set_fact:
+        created_vm_names: >-
+          {{
+            created_vm_names +
+            [item.item.item.name.split('.')[0]]
+          }}
+      loop: "{{ vm_create.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.item.name | default('unknown') }}"
+      when:
+        - item.changed | default(false)
+        - item.item is defined
+        - item.item.item is defined
+
+    - name: Show newly created VMs
+      debug:
+        msg:
+          - "============================================================"
+          - "NEWLY CREATED VMS"
+          - "============================================================"
+          - "{{ created_vm_names }}"
+          - "============================================================"
+
+    ###########################################################################
+    # POWER ON ONLY NEW VMS
+    #
+    # This ensures ESXi initializes the VM hardware and NIC.
+    ###########################################################################
+
+    - name: Power on newly created VMs
+      community.vmware.vmware_guest_powerstate:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: false
+        name: "{{ item }}"
+        state: powered-on
+      loop: "{{ created_vm_names }}"
+      when: created_vm_names | length > 0
+
+    - name: Wait for ESXi to initialize newly created VMs
+      pause:
+        seconds: 10
+      when: created_vm_names | length > 0
+
+    ###########################################################################
+    # POWER OFF ONLY NEW VMS
+    ###########################################################################
+
+    - name: Power off newly created VMs
+      community.vmware.vmware_guest_powerstate:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: false
+        name: "{{ item }}"
+        state: powered-off
+      loop: "{{ created_vm_names }}"
+      when: created_vm_names | length > 0
+
+    ###########################################################################
+    # GET FINAL VM INFORMATION
+    ###########################################################################
+
+    - name: Get final VM information
       community.vmware.vmware_guest_info:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
@@ -337,515 +379,58 @@
         label: "{{ item.name }}"
       register: vm_info
 
-
     ###########################################################################
-    # GET IP ADDRESSES FROM NETBOX
-    ###########################################################################
-
-    - name: Get IP addresses from NetBox
-      uri:
-        url: "{{ netbox_url }}/api/ipam/ip-addresses/?limit=1000"
-        method: GET
-        headers:
-          Authorization: "Token {{ netbox_token }}"
-        validate_certs: false
-        use_proxy: false
-        return_content: true
-        status_code: 200
-      register: netbox_ips
-
-
-    ###########################################################################
-    # BUILD HOST INFORMATION
+    # VALIDATE ALL VMS WERE FOUND
     ###########################################################################
 
-    - name: Initialize host information
-      set_fact:
-        host_info: []
-
-
-    - name: Build host information
-      set_fact:
-        host_info: >-
-          {{
-            host_info + [
-              {
-                'name': item.0.name.split('.')[0],
-                'netbox_name': item.0.name,
-                'ip': (
-                  netbox_ips.json.results
-                  | selectattr('assigned_object', 'defined')
-                  | selectattr('assigned_object', 'ne', none)
-                  | selectattr('assigned_object.device', 'defined')
-                  | selectattr('assigned_object.device', 'ne', none)
-                  | selectattr(
-                      'assigned_object.device.name',
-                      'equalto',
-                      item.0.name
-                    )
-                  | map(attribute='address')
-                  | map('regex_replace', '/.*$', '')
-                  | first
-                  | default('')
-                ),
-                'mac': (
-                  item.1.instance.hw_eth0.macaddress
-                  | default('')
-                )
-              }
-            ]
-          }}
-      loop: "{{ filtered_devices | zip(vm_info.results) | list }}"
-      loop_control:
-        label: "{{ item.0.name }}"
-
-
-    - name: Show host information
-      debug:
-        var: host_info
-
-
-    ###########################################################################
-    # VALIDATE HOST INFORMATION
-    ###########################################################################
-
-    - name: Verify host IP addresses were found
-      fail:
-        msg: "No IP address found in NetBox for {{ item.name }}"
-      loop: "{{ host_info }}"
-      loop_control:
-        label: "{{ item.name }}"
-      when: item.ip | length == 0
-
-
-    - name: Verify host MAC addresses were found
-      fail:
-        msg: "No MAC address found from ESXi for {{ item.name }}"
-      loop: "{{ host_info }}"
-      loop_control:
-        label: "{{ item.name }}"
-      when: item.mac | length == 0
-
-
-    ###########################################################################
-    # RESOLVE FOREMAN SUBNET
-    ###########################################################################
-
-    - name: Get Foreman subnet
-      uri:
-        url: "{{ foreman_url }}/api/subnets?search={{ ('name=' ~ subnet_name) | urlencode }}&per_page=1000"
-        method: GET
-        user: "{{ foreman_user }}"
-        password: "{{ foreman_api_token }}"
-        force_basic_auth: true
-        validate_certs: false
-        use_proxy: false
-        timeout: 120
-        status_code: 200
-        return_content: true
-      register: foreman_subnets
-
-
-    - name: Resolve Foreman subnet ID
-      set_fact:
-        subnet_id: >-
-          {{
-            foreman_subnets.json.results
-            | selectattr('name', 'equalto', subnet_name)
-            | map(attribute='id')
-            | first
-            | default('')
-          }}
-
-
-    - name: Verify Foreman subnet
-      fail:
-        msg: "Foreman subnet not found: {{ subnet_name }}"
-      when: subnet_id | string | length == 0
-
-
-    - name: Show Foreman subnet
-      debug:
-        msg:
-          - "Subnet Name : {{ subnet_name }}"
-          - "Subnet ID   : {{ subnet_id }}"
-
-
-    ###########################################################################
-    # GET ALL FOREMAN HOSTS
-    ###########################################################################
-
-    - name: Get all Foreman hosts
-      uri:
-        url: "{{ foreman_url }}/api/hosts?per_page=1000"
-        method: GET
-        user: "{{ foreman_user }}"
-        password: "{{ foreman_api_token }}"
-        force_basic_auth: true
-        validate_certs: false
-        use_proxy: false
-        timeout: 120
-        status_code: 200
-        return_content: true
-      register: all_foreman_hosts
-
-
-    - name: Show Foreman host count
-      debug:
-        msg: >-
-          Total Foreman hosts returned:
-          {{
-            all_foreman_hosts.json.total
-            | default(all_foreman_hosts.json.results | length)
-          }}
-
-
-    ###########################################################################
-    # BUILD COMPLETE MATCHING HOST LIST
-    #
-    # Match:
-    #
-    # rocky-09-01
-    # rocky-09-01.vgs.com
-    ###########################################################################
-
-    - name: Initialize Foreman hosts to delete
-      set_fact:
-        foreman_hosts_to_delete: []
-
-
-    - name: Find all matching Foreman hosts locally
-      set_fact:
-        foreman_hosts_to_delete: >-
-          {{
-            foreman_hosts_to_delete +
-            [
-              {
-                'target_name': item.0.name,
-                'found_name': item.1.name,
-                'id': item.1.id
-              }
-            ]
-          }}
-      loop: "{{ host_info | product(all_foreman_hosts.json.results) | list }}"
-      loop_control:
-        label: "{{ item.0.name }} -> {{ item.1.name }}"
-      when: >-
-        item.1.name == item.0.name
-        or
-        item.1.name == item.0.netbox_name
-        or
-        (
-          item.1.name.split('.')[0] == item.0.name
-        )
-
-
-    - name: Remove duplicate Foreman deletion records
-      set_fact:
-        foreman_hosts_to_delete: >-
-          {{
-            foreman_hosts_to_delete
-            | unique(attribute='id')
-            | list
-          }}
-
-
-    - name: Show all matching existing Foreman hosts
-      debug:
-        msg: "{{ foreman_hosts_to_delete }}"
-
-
-    ###########################################################################
-    # DELETE EVERY MATCHING HOST
-    ###########################################################################
-
-    - name: Delete every matching existing Foreman host by numeric ID
-      uri:
-        url: "{{ foreman_url }}/api/hosts/{{ item.id }}"
-        method: DELETE
-        user: "{{ foreman_user }}"
-        password: "{{ foreman_api_token }}"
-        force_basic_auth: true
-        validate_certs: false
-        use_proxy: false
-        timeout: 120
-        status_code:
-          - 200
-          - 202
-          - 204
-        return_content: true
-      loop: "{{ foreman_hosts_to_delete }}"
-      loop_control:
-        label: "{{ item.found_name }} (ID={{ item.id }})"
-      register: foreman_delete
-      when: foreman_hosts_to_delete | length > 0
-
-
-    - name: Show deleted Foreman hosts
-      debug:
-        msg: >-
-          Deleted Foreman host
-          {{ item.item.found_name }}
-          with ID {{ item.item.id }}
-      loop: "{{ foreman_delete.results | default([]) }}"
-      loop_control:
-        label: "{{ item.item.found_name | default('unknown') }}"
-      when:
-        - item.item is defined
-        - item.status is defined
-
-
-    ###########################################################################
-    # WAIT FOR DELETION
-    ###########################################################################
-
-    - name: Wait after Foreman host deletion
-      pause:
-        seconds: 5
-      when: foreman_hosts_to_delete | length > 0
-
-
-    ###########################################################################
-    # REFRESH FOREMAN HOST LIST
-    ###########################################################################
-
-    - name: Refresh complete Foreman host list after deletion
-      uri:
-        url: "{{ foreman_url }}/api/hosts?per_page=1000"
-        method: GET
-        user: "{{ foreman_user }}"
-        password: "{{ foreman_api_token }}"
-        force_basic_auth: true
-        validate_certs: false
-        use_proxy: false
-        timeout: 120
-        status_code: 200
-        return_content: true
-      register: all_foreman_hosts_after_delete
-
-
-    ###########################################################################
-    # FINAL SHORT NAME / FQDN SAFETY CHECK
-    ###########################################################################
-
-    - name: Initialize final conflicting Foreman hostname list
-      set_fact:
-        final_name_conflicts: []
-
-
-    - name: Find final short hostname and FQDN conflicts
-      set_fact:
-        final_name_conflicts: >-
-          {{
-            final_name_conflicts +
-            [
-              {
-                'target_name': item.0.name,
-                'found_name': item.1.name,
-                'id': item.1.id
-              }
-            ]
-          }}
-      loop: "{{ host_info | product(all_foreman_hosts_after_delete.json.results) | list }}"
-      loop_control:
-        label: "{{ item.0.name }} -> {{ item.1.name }}"
-      when:
-        - item.1.name is defined
-        - >-
-          item.1.name == item.0.name
-          or
-          item.1.name == item.0.netbox_name
-          or
-          item.1.name.split('.')[0] == item.0.name
-
-
-    - name: Remove duplicate final conflicts
-      set_fact:
-        final_name_conflicts: >-
-          {{
-            final_name_conflicts
-            | unique(attribute='id')
-            | list
-          }}
-
-
-    - name: Show final conflicting names
-      debug:
-        var: final_name_conflicts
-
-
-    - name: Fail if short hostname or FQDN conflict remains
+    - name: Fail if a VM is missing after ensure operation
       fail:
         msg: >-
-          A conflicting Foreman hostname still exists:
-          Target={{ item.target_name }}
-          Found={{ item.found_name }}
-          ID={{ item.id }}
-      loop: "{{ final_name_conflicts }}"
+          VM {{ item.item.name.split('.')[0] }}
+          was not found on ESXi after the ensure operation.
+      loop: "{{ vm_info.results }}"
       loop_control:
-        label: "{{ item.target_name }} -> {{ item.found_name }}"
-      when: final_name_conflicts | length > 0
-
-
-    ###########################################################################
-    # CREATE ROCKY LINUX 9 HOSTS
-    ###########################################################################
-
-    - name: Create Rocky Linux 9 host in Foreman
-      uri:
-        url: "{{ foreman_url }}/api/hosts"
-        method: POST
-        user: "{{ foreman_user }}"
-        password: "{{ foreman_api_token }}"
-        force_basic_auth: true
-        validate_certs: false
-        use_proxy: false
-        timeout: 120
-
-        status_code:
-          - 200
-          - 201
-
-        headers:
-          Content-Type: "application/json"
-
-        body_format: json
-
-        body:
-          host:
-            name: "{{ item.name }}"
-
-            organization_id: "{{ org_id }}"
-            location_id: "{{ loc_id }}"
-
-            hostgroup_id: "{{ hostgroup_id }}"
-            operatingsystem_id: "{{ operatingsystem_id }}"
-            medium_id: "{{ medium_id }}"
-            ptable_id: "{{ ptable_id }}"
-            architecture_id: "{{ architecture_id }}"
-
-            subnet_id: "{{ subnet_id }}"
-            domain_id: "{{ domain_id }}"
-
-            build: "{{ build }}"
-            pxe_loader: "{{ pxe_loader }}"
-            root_pass: "{{ host_root_pass }}"
-
-            content_facet_attributes:
-              content_view_id: "{{ content_view_id }}"
-              lifecycle_environment_id: "{{ lifecycle_environment_id }}"
-
-            interfaces_attributes:
-              - type: "interface"
-                mac: "{{ item.mac }}"
-                ip: "{{ item.ip }}"
-                subnet_id: "{{ subnet_id }}"
-                domain_id: "{{ domain_id }}"
-                primary: true
-                provision: true
-                managed: true
-
-      loop: "{{ host_info }}"
-      loop_control:
-        label: "{{ item.name }}"
-      register: foreman_create
-
+        label: "{{ item.item.name }}"
+      when: item.instance is not defined
 
     ###########################################################################
-    # SHOW CREATE RESULTS
+    # SHOW FINAL VM INFORMATION
     ###########################################################################
 
-    - name: Show Foreman create result
+    - name: Show VM information
       debug:
         msg:
           - "============================================================"
-          - "Host    : {{ item.item.name }}"
-          - "IP      : {{ item.item.ip }}"
-          - "MAC     : {{ item.item.mac }}"
-          - "Status  : {{ item.status }}"
-          - "Host ID : {{ item.json.id | default('UNKNOWN') }}"
+          - "VM Name       : {{ item.instance.hw_name | default(item.item.name.split('.')[0]) }}"
+          - "Power         : {{ item.instance.hw_power_status | default('N/A') }}"
+          - "MAC           : {{ item.instance.hw_eth0.macaddress | default('N/A') }}"
+          - "CPU           : {{ item.instance.hw_processor_count | default('N/A') }}"
+          - "Memory MB     : {{ item.instance.hw_memtotal_mb | default('N/A') }}"
+          - "Configured For: {{ disk_layout }}"
+          - "Expected Disks: {{ disk_count }}"
           - "============================================================"
-      loop: "{{ foreman_create.results }}"
+      loop: "{{ vm_info.results }}"
       loop_control:
         label: "{{ item.item.name }}"
 
-
     ###########################################################################
-    # VERIFY CREATED HOST IDs
-    ###########################################################################
-
-    - name: Verify Foreman returned a valid host ID
-      fail:
-        msg: >-
-          Foreman created host {{ item.item.name }}
-          but did not return a valid host ID.
-      loop: "{{ foreman_create.results }}"
-      loop_control:
-        label: "{{ item.item.name }}"
-      when:
-        - item.json is not defined or item.json.id is not defined
-
-
-    ###########################################################################
-    # REFRESH CREATED HOSTS
+    # FINAL SUMMARY
     ###########################################################################
 
-    - name: Refresh Foreman host information using created ID
-      uri:
-        url: "{{ foreman_url }}/api/hosts/{{ item.json.id }}"
-        method: GET
-        user: "{{ foreman_user }}"
-        password: "{{ foreman_api_token }}"
-        force_basic_auth: true
-        validate_certs: false
-        use_proxy: false
-        timeout: 120
-        status_code: 200
-        return_content: true
-      loop: "{{ foreman_create.results }}"
-      loop_control:
-        label: "{{ item.item.name }} (ID={{ item.json.id }})"
-      register: final_hosts
-
-
-    ###########################################################################
-    # SHOW FINAL CONFIGURATION
-    ###########################################################################
-
-    - name: Show final Rocky Linux 9 host configuration
+    - name: Show final result
       debug:
         msg:
           - "============================================================"
-          - "Host       : {{ item.json.name }}"
-          - "Host ID    : {{ item.json.id }}"
-          - "Host Group : {{ item.json.hostgroup_name | default('N/A') }}"
-          - "OS         : {{ item.json.operatingsystem_name | default('N/A') }}"
-          - "Medium     : {{ item.json.medium_name | default('N/A') }}"
-          - "Subnet     : {{ item.json.subnet_name | default('N/A') }}"
-          - "IP         : {{ item.json.ip | default('N/A') }}"
-          - "PXE Loader : {{ item.json.pxe_loader | default('N/A') }}"
-          - "Build      : {{ item.json.build | default('N/A') }}"
-          - "Status     : {{ item.json.build_status_label | default('N/A') }}"
+          - "ROCKY LINUX 9 VM ENSURE OPERATION COMPLETED SUCCESSFULLY"
           - "============================================================"
-      loop: "{{ final_hosts.results }}"
-      loop_control:
-        label: "{{ item.json.name }}"
-
-
-    ###########################################################################
-    # FINAL SUCCESS MESSAGE
-    ###########################################################################
-
-    - name: Show completion message
-      debug:
-        msg:
-          - "============================================================"
-          - "ROCKY LINUX 9 FOREMAN RECREATION COMPLETED SUCCESSFULLY"
-          - "============================================================"
-          - "Hosts Processed       : {{ host_info | length }}"
-          - "Existing hosts deleted: {{ foreman_hosts_to_delete | length }}"
-          - "New hosts created     : {{ foreman_create.results | length }}"
-          - "Hostgroup             : {{ hostgroup }}"
-          - "PXE build mode        : {{ build }}"
-          - "PXE Loader            : {{ pxe_loader }}"
+          - "Cluster              : {{ cluster_name }}"
+          - "Selected VMs         : {{ filtered_devices | length }}"
+          - "New VMs Created      : {{ created_vm_names | length }}"
+          - "Existing VMs Kept    : {{ (filtered_devices | length) - (created_vm_names | length) }}"
+          - "Disk Layout          : {{ disk_layout }}"
+          - "Disk Count per VM    : {{ disk_count }}"
+          - "Disk Size            : {{ vm_disk_size_gb }} GB"
+          - "Expected Total Space : {{ disk_count | int * vm_disk_size_gb | int }} GB per VM"
+          - "Firmware             : {{ vm_boot_firmware }}"
+          - "Final State          : Newly created VMs are powered OFF"
           - "============================================================"
