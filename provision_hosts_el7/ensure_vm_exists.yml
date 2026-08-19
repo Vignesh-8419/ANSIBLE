@@ -40,21 +40,21 @@
     cluster_name: "centos-07-servers"
 
     ###########################################################################
-    # TARGET HOSTS
+    # AWX SURVEY - TARGET HOSTS
     #
     # Examples:
     #
-    # cent-07-03
-    # cent-07-01,cent-07-03
+    # cent-07-01
+    # cent-07-01,cent-07-02
     # cent-07-*
     #
-    # Empty = all hosts in centos-07-servers
+    # Empty = ALL hosts in cluster
     ###########################################################################
 
     target_hosts: "{{ target_hosts | default('', true) }}"
 
     ###########################################################################
-    # DISK SELECTION
+    # AWX SURVEY - HOSTGROUP
     #
     # 1 = SingleDisk
     #     1 x 100 GB
@@ -74,6 +74,7 @@
     vm_num_cpu_cores_per_socket: 2
 
     vm_disk_size_gb: 100
+
     vm_guest_id: "centos7_64Guest"
     vm_boot_firmware: "efi"
 
@@ -153,10 +154,7 @@
           - "============================================================"
 
     ###########################################################################
-    # GET CLUSTER FROM NETBOX
-    #
-    # IMPORTANT:
-    # Resolve the exact cluster ID first.
+    # GET EXACT CLUSTER FROM NETBOX
     ###########################################################################
 
     - name: Get NetBox cluster
@@ -197,7 +195,7 @@
           - "Cluster ID   : {{ cluster_id }}"
 
     ###########################################################################
-    # GET DEVICES ONLY FROM THE EXACT CLUSTER
+    # GET DEVICES FROM EXACT CLUSTER
     ###########################################################################
 
     - name: Get devices from exact NetBox cluster
@@ -249,16 +247,16 @@
     ###########################################################################
     # FILTER SELECTED DEVICES
     ###########################################################################
-    
+
     - name: Initialize filtered devices
       set_fact:
         filtered_devices: []
-    
+
     - name: Select all devices when target hosts is empty
       set_fact:
         filtered_devices: "{{ netbox_devices.json.results }}"
       when: target_hosts_list | length == 0
-    
+
     - name: Add exact or wildcard matching devices
       set_fact:
         filtered_devices: "{{ filtered_devices + [item.0] }}"
@@ -268,11 +266,11 @@
       when:
         - target_hosts_list | length > 0
         - item.0.name.split('.')[0] is match('^' ~ (item.1 | regex_replace('\*', '.*')) ~ '$')
-    
+
     - name: Remove duplicate filtered devices
       set_fact:
         filtered_devices: "{{ filtered_devices | unique(attribute='name') | list }}"
-    
+
     - name: Show cluster and filtering result
       debug:
         msg:
@@ -281,7 +279,7 @@
           - "Requested Hosts   : {{ target_hosts_list }}"
           - "Available Hosts   : {{ netbox_devices.json.results | map(attribute='name') | list }}"
           - "Selected Hosts    : {{ filtered_devices | map(attribute='name') | list }}"
-    
+
     - name: Fail if no matching hosts found
       fail:
         msg: >-
@@ -300,7 +298,7 @@
       debug:
         msg:
           - "============================================================"
-          - "SELECTED VMS"
+          - "SELECTED CENTOS 7 VMS"
           - "============================================================"
           - "{{ filtered_devices | map(attribute='name') | list }}"
           - "============================================================"
@@ -335,7 +333,7 @@
     # CREATE ONLY MISSING VMS
     ###########################################################################
 
-    - name: Create missing VMs
+    - name: Create missing CentOS 7 VMs
       community.vmware.vmware_guest:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
@@ -396,11 +394,13 @@
     - name: Show newly created VMs
       debug:
         msg:
-          - "Newly Created VMs:"
+          - "Newly Created CentOS 7 VMs:"
           - "{{ created_vm_names }}"
 
     ###########################################################################
     # POWER ON ONLY NEWLY CREATED VMS
+    #
+    # This is done temporarily so ESXi initializes the virtual NIC MAC address.
     ###########################################################################
 
     - name: Power on newly created VMs
@@ -439,7 +439,7 @@
       when: created_vm_names | length > 0
 
     ###########################################################################
-    # ENSURE EXISTING VM HAS REQUIRED DISKS
+    # ENSURE VM HAS REQUIRED DISKS
     ###########################################################################
 
     - name: Get VM information before checking disks
@@ -458,7 +458,7 @@
       debug:
         msg:
           - "============================================================"
-          - "VM DISK CHECK"
+          - "CENTOS 7 VM DISK CHECK"
           - "============================================================"
           - "VM            : {{ item.item.name.split('.')[0] }}"
           - "Current Disks : {{ item.instance.hw_disks | default([]) | length }}"
@@ -469,7 +469,7 @@
         label: "{{ item.item.name }}"
 
     ###########################################################################
-    # ADD SECOND DISK WHEN RAID / HOSTGROUP 2 IS SELECTED
+    # ADD SECOND DISK FOR RAID
     ###########################################################################
 
     - name: Add missing second disk for RAID
@@ -494,7 +494,7 @@
         - item.instance.hw_disks | default([]) | length < 2
 
     ###########################################################################
-    # GET FINAL INFORMATION
+    # GET FINAL VM INFORMATION
     ###########################################################################
 
     - name: Get final VM information
