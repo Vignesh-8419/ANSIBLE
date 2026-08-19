@@ -432,6 +432,61 @@
       when: created_vm_names | length > 0
 
     ###########################################################################
+    # ENSURE EXISTING VM HAS REQUIRED DISKS
+    ###########################################################################
+
+    - name: Get VM information before checking disks
+      community.vmware.vmware_guest_info:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ item.name.split('.')[0] }}"
+      loop: "{{ filtered_devices }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: vm_info_before_disk
+
+    - name: Show current VM disk count
+      debug:
+        msg:
+          - "============================================================"
+          - "VM DISK CHECK"
+          - "============================================================"
+          - "VM            : {{ item.item.name.split('.')[0] }}"
+          - "Current Disks : {{ item.instance.hw_disks | default([]) | length }}"
+          - "Required      : {{ disk_count }}"
+          - "============================================================"
+      loop: "{{ vm_info_before_disk.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    ###########################################################################
+    # ADD SECOND DISK WHEN RAID / HOSTGROUP 2 IS SELECTED
+    ###########################################################################
+
+    - name: Add missing second disk for RAID
+      community.vmware.vmware_guest_disk:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ item.item.name.split('.')[0] }}"
+        disk:
+          - state: present
+            size_gb: "{{ disk_size | int }}"
+            type: thin
+            datastore: "{{ datastore }}"
+            scsi_controller: 0
+            unit_number: 1
+      loop: "{{ vm_info_before_disk.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when:
+        - disk_count | int == 2
+        - item.instance.hw_disks | default([]) | length < 2
+
+    ###########################################################################
     # GET FINAL INFORMATION
     ###########################################################################
 
