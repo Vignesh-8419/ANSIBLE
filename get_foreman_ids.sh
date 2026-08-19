@@ -11,6 +11,20 @@
 #   3. Rocky Linux 9.2
 #   4. Rocky Linux 9.8
 #
+# IMPORTANT:
+#
+# Each OS version has TWO separate Foreman Operating Systems:
+#
+#   1 = SingleDisk
+#   2 = RAID
+#
+# Therefore BOTH:
+#
+#   - hostgroup_id
+#   - operatingsystem_id
+#
+# are dynamically selected from the AWX Survey value.
+#
 ###############################################################################
 
 set -o pipefail
@@ -21,7 +35,21 @@ set -o pipefail
 
 FOREMAN_SERVER="https://cent-07-01.vgs.com"
 FOREMAN_USER="admin"
-FOREMAN_PASSWORD="zqs977dXzqfEvTML"
+
+# Export before running:
+#
+# export FOREMAN_PASSWORD='your-password'
+#
+FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-}"
+
+if [[ -z "${FOREMAN_PASSWORD}" ]]; then
+    echo "[ERROR] FOREMAN_PASSWORD environment variable is not set"
+    echo
+    echo "Run:"
+    echo "export FOREMAN_PASSWORD='your-foreman-password'"
+    echo "./get_foreman_ids.sh"
+    exit 1
+fi
 
 HAMMER="hammer \
   --server ${FOREMAN_SERVER} \
@@ -81,12 +109,8 @@ die() {
 ###############################################################################
 # GENERIC HAMMER ID LOOKUP
 #
-# Hammer commands can have different column layouts.
-#
-# This function:
-#   1. Searches every row
-#   2. Finds the exact resource name
-#   3. Returns the first numeric ID from that same row
+# Searches Hammer table output for an EXACT resource name.
+# Returns the first numeric ID from the matching row.
 #
 ###############################################################################
 
@@ -109,18 +133,15 @@ get_id_from_output() {
                 gsub(/^[ \t]+/, "", field)
                 gsub(/[ \t]+$/, "", field)
 
-                # Save the first numeric value as ID
                 if (id == "" && field ~ /^[0-9]+$/) {
                     id = field
                 }
 
-                # Exact resource name match
                 if (field == name) {
                     found = 1
                 }
             }
 
-            # Return numeric ID only when exact name is found
             if (found == 1 && id != "") {
                 print id
                 exit
@@ -264,6 +285,19 @@ get_lifecycle_environment_id() {
 }
 
 ###############################################################################
+# VALIDATE REQUIRED ID
+###############################################################################
+
+require_id() {
+    local DESCRIPTION="$1"
+    local ID="$2"
+
+    if [[ -z "${ID}" ]]; then
+        die "${DESCRIPTION} not found"
+    fi
+}
+
+###############################################################################
 # VERIFY FOREMAN CONNECTION
 ###############################################################################
 
@@ -288,14 +322,23 @@ PTABLE_ID=$(get_ptable_id "${PTABLE_NAME}")
 ARCHITECTURE_ID=$(get_architecture_id "${ARCH_NAME}")
 DOMAIN_ID=$(get_domain_id "${DOMAIN_NAME}")
 
-LIFECYCLE_ENVIRONMENT_ID=$(get_lifecycle_environment_id "${LIFECYCLE_ENVIRONMENT_NAME}")
+LIFECYCLE_ENVIRONMENT_ID=$(get_lifecycle_environment_id \
+    "${LIFECYCLE_ENVIRONMENT_NAME}")
 
-ok "Organization ID          : ${ORG_ID:-NOT FOUND}"
-ok "Location ID              : ${LOCATION_ID:-NOT FOUND}"
-ok "Partition Table ID       : ${PTABLE_ID:-NOT FOUND}"
-ok "Architecture ID          : ${ARCHITECTURE_ID:-NOT FOUND}"
-ok "Domain ID                : ${DOMAIN_ID:-NOT FOUND}"
-ok "Lifecycle Environment ID : ${LIFECYCLE_ENVIRONMENT_ID:-NOT FOUND}"
+require_id "Organization '${ORG_NAME}'" "${ORG_ID}"
+require_id "Location '${LOCATION_NAME}'" "${LOCATION_ID}"
+require_id "Partition Table '${PTABLE_NAME}'" "${PTABLE_ID}"
+require_id "Architecture '${ARCH_NAME}'" "${ARCHITECTURE_ID}"
+require_id "Domain '${DOMAIN_NAME}'" "${DOMAIN_ID}"
+require_id "Lifecycle Environment '${LIFECYCLE_ENVIRONMENT_NAME}'" \
+    "${LIFECYCLE_ENVIRONMENT_ID}"
+
+ok "Organization ID          : ${ORG_ID}"
+ok "Location ID              : ${LOCATION_ID}"
+ok "Partition Table ID       : ${PTABLE_ID}"
+ok "Architecture ID          : ${ARCHITECTURE_ID}"
+ok "Domain ID                : ${DOMAIN_ID}"
+ok "Lifecycle Environment ID : ${LIFECYCLE_ENVIRONMENT_ID}"
 
 ###############################################################################
 # CENTOS LINUX 7 CONFIGURATION
@@ -306,12 +349,12 @@ CENTOS7_NAME="CentOS Linux 7"
 CENTOS7_RAID_HG="CentOSLinux7-RAID"
 CENTOS7_SINGLE_HG="CentOSLinux7-SingleDisk"
 
-# Both RAID and SingleDisk provisioning use this OS ID.
-CENTOS7_OS="CentOSLinux7-RAID 7"
+# TWO SEPARATE OPERATING SYSTEMS
+CENTOS7_RAID_OS="CentOSLinux7-RAID 7"
+CENTOS7_SINGLE_OS="CentOSLinux7-SingleDisk 7"
 
 CENTOS7_MEDIUM="CentOS 7 Remote"
 CENTOS7_SUBNET="vgs-subnet-centos"
-
 CENTOS7_CONTENT_VIEW="CentOS7-CV"
 
 ###############################################################################
@@ -323,12 +366,12 @@ ROCKY8_NAME="Rocky Linux 8.10"
 ROCKY8_RAID_HG="RockyLinux8.10-RAID"
 ROCKY8_SINGLE_HG="RockyLinux8.10-SingleDisk"
 
-# Both RAID and SingleDisk provisioning use this OS ID.
-ROCKY8_OS="RockyLinux8.10-RAID 8.10"
+# TWO SEPARATE OPERATING SYSTEMS
+ROCKY8_RAID_OS="RockyLinux8.10-RAID 8.10"
+ROCKY8_SINGLE_OS="RockyLinux8.10-SingleDisk 8.10"
 
 ROCKY8_MEDIUM="Rocky 8 Remote"
 ROCKY8_SUBNET="vgs-subnet-rockyos"
-
 ROCKY8_CONTENT_VIEW="Rocky8-CV"
 
 ###############################################################################
@@ -340,12 +383,12 @@ ROCKY92_NAME="Rocky Linux 9.2"
 ROCKY92_RAID_HG="RockyLinux9.2-RAID"
 ROCKY92_SINGLE_HG="RockyLinux9.2-SingleDisk"
 
-# Both RAID and SingleDisk provisioning use this OS ID.
-ROCKY92_OS="RockyLinux9.2-RAID 9.2"
+# TWO SEPARATE OPERATING SYSTEMS
+ROCKY92_RAID_OS="RockyLinux9.2-RAID 9.2"
+ROCKY92_SINGLE_OS="RockyLinux9.2-SingleDisk 9.2"
 
 ROCKY92_MEDIUM="Rocky 9.2 Remote"
 ROCKY92_SUBNET="vgs-subnet-rockyos"
-
 ROCKY92_CONTENT_VIEW="Rocky9.2-CV"
 
 ###############################################################################
@@ -357,12 +400,12 @@ ROCKY98_NAME="Rocky Linux 9.8"
 ROCKY98_RAID_HG="RockyLinux9.8-RAID"
 ROCKY98_SINGLE_HG="RockyLinux9.8-SingleDisk"
 
-# Both RAID and SingleDisk provisioning use this OS ID.
-ROCKY98_OS="RockyLinux9.8-RAID 9.8"
+# TWO SEPARATE OPERATING SYSTEMS
+ROCKY98_RAID_OS="RockyLinux9.8-RAID 9.8"
+ROCKY98_SINGLE_OS="RockyLinux9.8-SingleDisk 9.8"
 
 ROCKY98_MEDIUM="Rocky 9 Remote"
 ROCKY98_SUBNET="vgs-subnet-rockyos"
-
 ROCKY98_CONTENT_VIEW="Rocky9.8-CV"
 
 ###############################################################################
@@ -374,28 +417,54 @@ separator "Checking CentOS Linux 7"
 CENTOS7_RAID_HG_ID=$(get_hostgroup_id "${CENTOS7_RAID_HG}")
 CENTOS7_SINGLE_HG_ID=$(get_hostgroup_id "${CENTOS7_SINGLE_HG}")
 
-CENTOS7_OS_ID=$(get_os_id "${CENTOS7_OS}")
+CENTOS7_RAID_OS_ID=$(get_os_id "${CENTOS7_RAID_OS}")
+CENTOS7_SINGLE_OS_ID=$(get_os_id "${CENTOS7_SINGLE_OS}")
+
 CENTOS7_MEDIUM_ID=$(get_medium_id "${CENTOS7_MEDIUM}")
 CENTOS7_SUBNET_ID=$(get_subnet_id "${CENTOS7_SUBNET}")
 CENTOS7_CV_ID=$(get_content_view_id "${CENTOS7_CONTENT_VIEW}")
 
+require_id "CentOS 7 RAID Hostgroup '${CENTOS7_RAID_HG}'" \
+    "${CENTOS7_RAID_HG_ID}"
+require_id "CentOS 7 SingleDisk Hostgroup '${CENTOS7_SINGLE_HG}'" \
+    "${CENTOS7_SINGLE_HG_ID}"
+
+require_id "CentOS 7 RAID OS '${CENTOS7_RAID_OS}'" \
+    "${CENTOS7_RAID_OS_ID}"
+require_id "CentOS 7 SingleDisk OS '${CENTOS7_SINGLE_OS}'" \
+    "${CENTOS7_SINGLE_OS_ID}"
+
+require_id "CentOS 7 Medium '${CENTOS7_MEDIUM}'" \
+    "${CENTOS7_MEDIUM_ID}"
+require_id "CentOS 7 Subnet '${CENTOS7_SUBNET}'" \
+    "${CENTOS7_SUBNET_ID}"
+require_id "CentOS 7 Content View '${CENTOS7_CONTENT_VIEW}'" \
+    "${CENTOS7_CV_ID}"
+
 ok "RAID Hostgroup"
 echo "     Name : ${CENTOS7_RAID_HG}"
-echo "     ID   : ${CENTOS7_RAID_HG_ID:-NOT FOUND}"
+echo "     ID   : ${CENTOS7_RAID_HG_ID}"
 
 ok "SingleDisk Hostgroup"
 echo "     Name : ${CENTOS7_SINGLE_HG}"
-echo "     ID   : ${CENTOS7_SINGLE_HG_ID:-NOT FOUND}"
+echo "     ID   : ${CENTOS7_SINGLE_HG_ID}"
 
 echo
-echo "     Operating System : ${CENTOS7_OS}"
-echo "     Medium           : ${CENTOS7_MEDIUM}"
-echo "     Subnet           : ${CENTOS7_SUBNET}"
+ok "RAID Operating System"
+echo "     Name : ${CENTOS7_RAID_OS}"
+echo "     ID   : ${CENTOS7_RAID_OS_ID}"
 
-ok "Operating System ID : ${CENTOS7_OS_ID:-NOT FOUND}"
-ok "Medium ID           : ${CENTOS7_MEDIUM_ID:-NOT FOUND}"
-ok "Subnet ID           : ${CENTOS7_SUBNET_ID:-NOT FOUND}"
-ok "Content View ID     : ${CENTOS7_CV_ID:-NOT FOUND}"
+ok "SingleDisk Operating System"
+echo "     Name : ${CENTOS7_SINGLE_OS}"
+echo "     ID   : ${CENTOS7_SINGLE_OS_ID}"
+
+echo
+echo "     Medium : ${CENTOS7_MEDIUM}"
+echo "     Subnet : ${CENTOS7_SUBNET}"
+
+ok "Medium ID       : ${CENTOS7_MEDIUM_ID}"
+ok "Subnet ID       : ${CENTOS7_SUBNET_ID}"
+ok "Content View ID : ${CENTOS7_CV_ID}"
 
 ###############################################################################
 # LOOKUP ROCKY LINUX 8.10 IDS
@@ -406,28 +475,54 @@ separator "Checking Rocky Linux 8.10"
 ROCKY8_RAID_HG_ID=$(get_hostgroup_id "${ROCKY8_RAID_HG}")
 ROCKY8_SINGLE_HG_ID=$(get_hostgroup_id "${ROCKY8_SINGLE_HG}")
 
-ROCKY8_OS_ID=$(get_os_id "${ROCKY8_OS}")
+ROCKY8_RAID_OS_ID=$(get_os_id "${ROCKY8_RAID_OS}")
+ROCKY8_SINGLE_OS_ID=$(get_os_id "${ROCKY8_SINGLE_OS}")
+
 ROCKY8_MEDIUM_ID=$(get_medium_id "${ROCKY8_MEDIUM}")
 ROCKY8_SUBNET_ID=$(get_subnet_id "${ROCKY8_SUBNET}")
 ROCKY8_CV_ID=$(get_content_view_id "${ROCKY8_CONTENT_VIEW}")
 
+require_id "Rocky 8 RAID Hostgroup '${ROCKY8_RAID_HG}'" \
+    "${ROCKY8_RAID_HG_ID}"
+require_id "Rocky 8 SingleDisk Hostgroup '${ROCKY8_SINGLE_HG}'" \
+    "${ROCKY8_SINGLE_HG_ID}"
+
+require_id "Rocky 8 RAID OS '${ROCKY8_RAID_OS}'" \
+    "${ROCKY8_RAID_OS_ID}"
+require_id "Rocky 8 SingleDisk OS '${ROCKY8_SINGLE_OS}'" \
+    "${ROCKY8_SINGLE_OS_ID}"
+
+require_id "Rocky 8 Medium '${ROCKY8_MEDIUM}'" \
+    "${ROCKY8_MEDIUM_ID}"
+require_id "Rocky 8 Subnet '${ROCKY8_SUBNET}'" \
+    "${ROCKY8_SUBNET_ID}"
+require_id "Rocky 8 Content View '${ROCKY8_CONTENT_VIEW}'" \
+    "${ROCKY8_CV_ID}"
+
 ok "RAID Hostgroup"
 echo "     Name : ${ROCKY8_RAID_HG}"
-echo "     ID   : ${ROCKY8_RAID_HG_ID:-NOT FOUND}"
+echo "     ID   : ${ROCKY8_RAID_HG_ID}"
 
 ok "SingleDisk Hostgroup"
 echo "     Name : ${ROCKY8_SINGLE_HG}"
-echo "     ID   : ${ROCKY8_SINGLE_HG_ID:-NOT FOUND}"
+echo "     ID   : ${ROCKY8_SINGLE_HG_ID}"
 
 echo
-echo "     Operating System : ${ROCKY8_OS}"
-echo "     Medium           : ${ROCKY8_MEDIUM}"
-echo "     Subnet           : ${ROCKY8_SUBNET}"
+ok "RAID Operating System"
+echo "     Name : ${ROCKY8_RAID_OS}"
+echo "     ID   : ${ROCKY8_RAID_OS_ID}"
 
-ok "Operating System ID : ${ROCKY8_OS_ID:-NOT FOUND}"
-ok "Medium ID           : ${ROCKY8_MEDIUM_ID:-NOT FOUND}"
-ok "Subnet ID           : ${ROCKY8_SUBNET_ID:-NOT FOUND}"
-ok "Content View ID     : ${ROCKY8_CV_ID:-NOT FOUND}"
+ok "SingleDisk Operating System"
+echo "     Name : ${ROCKY8_SINGLE_OS}"
+echo "     ID   : ${ROCKY8_SINGLE_OS_ID}"
+
+echo
+echo "     Medium : ${ROCKY8_MEDIUM}"
+echo "     Subnet : ${ROCKY8_SUBNET}"
+
+ok "Medium ID       : ${ROCKY8_MEDIUM_ID}"
+ok "Subnet ID       : ${ROCKY8_SUBNET_ID}"
+ok "Content View ID : ${ROCKY8_CV_ID}"
 
 ###############################################################################
 # LOOKUP ROCKY LINUX 9.2 IDS
@@ -438,28 +533,54 @@ separator "Checking Rocky Linux 9.2"
 ROCKY92_RAID_HG_ID=$(get_hostgroup_id "${ROCKY92_RAID_HG}")
 ROCKY92_SINGLE_HG_ID=$(get_hostgroup_id "${ROCKY92_SINGLE_HG}")
 
-ROCKY92_OS_ID=$(get_os_id "${ROCKY92_OS}")
+ROCKY92_RAID_OS_ID=$(get_os_id "${ROCKY92_RAID_OS}")
+ROCKY92_SINGLE_OS_ID=$(get_os_id "${ROCKY92_SINGLE_OS}")
+
 ROCKY92_MEDIUM_ID=$(get_medium_id "${ROCKY92_MEDIUM}")
 ROCKY92_SUBNET_ID=$(get_subnet_id "${ROCKY92_SUBNET}")
 ROCKY92_CV_ID=$(get_content_view_id "${ROCKY92_CONTENT_VIEW}")
 
+require_id "Rocky 9.2 RAID Hostgroup '${ROCKY92_RAID_HG}'" \
+    "${ROCKY92_RAID_HG_ID}"
+require_id "Rocky 9.2 SingleDisk Hostgroup '${ROCKY92_SINGLE_HG}'" \
+    "${ROCKY92_SINGLE_HG_ID}"
+
+require_id "Rocky 9.2 RAID OS '${ROCKY92_RAID_OS}'" \
+    "${ROCKY92_RAID_OS_ID}"
+require_id "Rocky 9.2 SingleDisk OS '${ROCKY92_SINGLE_OS}'" \
+    "${ROCKY92_SINGLE_OS_ID}"
+
+require_id "Rocky 9.2 Medium '${ROCKY92_MEDIUM}'" \
+    "${ROCKY92_MEDIUM_ID}"
+require_id "Rocky 9.2 Subnet '${ROCKY92_SUBNET}'" \
+    "${ROCKY92_SUBNET_ID}"
+require_id "Rocky 9.2 Content View '${ROCKY92_CONTENT_VIEW}'" \
+    "${ROCKY92_CV_ID}"
+
 ok "RAID Hostgroup"
 echo "     Name : ${ROCKY92_RAID_HG}"
-echo "     ID   : ${ROCKY92_RAID_HG_ID:-NOT FOUND}"
+echo "     ID   : ${ROCKY92_RAID_HG_ID}"
 
 ok "SingleDisk Hostgroup"
 echo "     Name : ${ROCKY92_SINGLE_HG}"
-echo "     ID   : ${ROCKY92_SINGLE_HG_ID:-NOT FOUND}"
+echo "     ID   : ${ROCKY92_SINGLE_HG_ID}"
 
 echo
-echo "     Operating System : ${ROCKY92_OS}"
-echo "     Medium           : ${ROCKY92_MEDIUM}"
-echo "     Subnet           : ${ROCKY92_SUBNET}"
+ok "RAID Operating System"
+echo "     Name : ${ROCKY92_RAID_OS}"
+echo "     ID   : ${ROCKY92_RAID_OS_ID}"
 
-ok "Operating System ID : ${ROCKY92_OS_ID:-NOT FOUND}"
-ok "Medium ID           : ${ROCKY92_MEDIUM_ID:-NOT FOUND}"
-ok "Subnet ID           : ${ROCKY92_SUBNET_ID:-NOT FOUND}"
-ok "Content View ID     : ${ROCKY92_CV_ID:-NOT FOUND}"
+ok "SingleDisk Operating System"
+echo "     Name : ${ROCKY92_SINGLE_OS}"
+echo "     ID   : ${ROCKY92_SINGLE_OS_ID}"
+
+echo
+echo "     Medium : ${ROCKY92_MEDIUM}"
+echo "     Subnet : ${ROCKY92_SUBNET}"
+
+ok "Medium ID       : ${ROCKY92_MEDIUM_ID}"
+ok "Subnet ID       : ${ROCKY92_SUBNET_ID}"
+ok "Content View ID : ${ROCKY92_CV_ID}"
 
 ###############################################################################
 # LOOKUP ROCKY LINUX 9.8 IDS
@@ -470,28 +591,54 @@ separator "Checking Rocky Linux 9.8"
 ROCKY98_RAID_HG_ID=$(get_hostgroup_id "${ROCKY98_RAID_HG}")
 ROCKY98_SINGLE_HG_ID=$(get_hostgroup_id "${ROCKY98_SINGLE_HG}")
 
-ROCKY98_OS_ID=$(get_os_id "${ROCKY98_OS}")
+ROCKY98_RAID_OS_ID=$(get_os_id "${ROCKY98_RAID_OS}")
+ROCKY98_SINGLE_OS_ID=$(get_os_id "${ROCKY98_SINGLE_OS}")
+
 ROCKY98_MEDIUM_ID=$(get_medium_id "${ROCKY98_MEDIUM}")
 ROCKY98_SUBNET_ID=$(get_subnet_id "${ROCKY98_SUBNET}")
 ROCKY98_CV_ID=$(get_content_view_id "${ROCKY98_CONTENT_VIEW}")
 
+require_id "Rocky 9.8 RAID Hostgroup '${ROCKY98_RAID_HG}'" \
+    "${ROCKY98_RAID_HG_ID}"
+require_id "Rocky 9.8 SingleDisk Hostgroup '${ROCKY98_SINGLE_HG}'" \
+    "${ROCKY98_SINGLE_HG_ID}"
+
+require_id "Rocky 9.8 RAID OS '${ROCKY98_RAID_OS}'" \
+    "${ROCKY98_RAID_OS_ID}"
+require_id "Rocky 9.8 SingleDisk OS '${ROCKY98_SINGLE_OS}'" \
+    "${ROCKY98_SINGLE_OS_ID}"
+
+require_id "Rocky 9.8 Medium '${ROCKY98_MEDIUM}'" \
+    "${ROCKY98_MEDIUM_ID}"
+require_id "Rocky 9.8 Subnet '${ROCKY98_SUBNET}'" \
+    "${ROCKY98_SUBNET_ID}"
+require_id "Rocky 9.8 Content View '${ROCKY98_CONTENT_VIEW}'" \
+    "${ROCKY98_CV_ID}"
+
 ok "RAID Hostgroup"
 echo "     Name : ${ROCKY98_RAID_HG}"
-echo "     ID   : ${ROCKY98_RAID_HG_ID:-NOT FOUND}"
+echo "     ID   : ${ROCKY98_RAID_HG_ID}"
 
 ok "SingleDisk Hostgroup"
 echo "     Name : ${ROCKY98_SINGLE_HG}"
-echo "     ID   : ${ROCKY98_SINGLE_HG_ID:-NOT FOUND}"
+echo "     ID   : ${ROCKY98_SINGLE_HG_ID}"
 
 echo
-echo "     Operating System : ${ROCKY98_OS}"
-echo "     Medium           : ${ROCKY98_MEDIUM}"
-echo "     Subnet           : ${ROCKY98_SUBNET}"
+ok "RAID Operating System"
+echo "     Name : ${ROCKY98_RAID_OS}"
+echo "     ID   : ${ROCKY98_RAID_OS_ID}"
 
-ok "Operating System ID : ${ROCKY98_OS_ID:-NOT FOUND}"
-ok "Medium ID           : ${ROCKY98_MEDIUM_ID:-NOT FOUND}"
-ok "Subnet ID           : ${ROCKY98_SUBNET_ID:-NOT FOUND}"
-ok "Content View ID     : ${ROCKY98_CV_ID:-NOT FOUND}"
+ok "SingleDisk Operating System"
+echo "     Name : ${ROCKY98_SINGLE_OS}"
+echo "     ID   : ${ROCKY98_SINGLE_OS_ID}"
+
+echo
+echo "     Medium : ${ROCKY98_MEDIUM}"
+echo "     Subnet : ${ROCKY98_SUBNET}"
+
+ok "Medium ID       : ${ROCKY98_MEDIUM_ID}"
+ok "Subnet ID       : ${ROCKY98_SUBNET_ID}"
+ok "Content View ID : ${ROCKY98_CV_ID}"
 
 ###############################################################################
 # GENERATED AWX / ANSIBLE VARIABLES
@@ -501,200 +648,220 @@ header "GENERATED AWX / ANSIBLE VARIABLES"
 
 cat <<EOF
 
-    # ==========================================================================
-    # CentOS Linux 7 Host Group / OS Selection
-    #
-    # AWX Survey:
-    #
-    # 1 = ${CENTOS7_SINGLE_HG}
-    # 2 = ${CENTOS7_RAID_HG}
-    #
-    # ==========================================================================
+# ============================================================================
+# CentOS Linux 7 Host Group / Operating System Selection
+#
+# AWX Survey:
+#
+# 1 = ${CENTOS7_SINGLE_HG}
+#     OS = ${CENTOS7_SINGLE_OS}
+#
+# 2 = ${CENTOS7_RAID_HG}
+#     OS = ${CENTOS7_RAID_OS}
+#
+# ============================================================================
 
-    hostgroup: "{{ hostgroup | default('1', true) }}"
+hostgroup: "{{ hostgroup | default('1', true) }}"
 
-    hostgroup_id: >-
-      {{
-        {
-          '1': ${CENTOS7_SINGLE_HG_ID},
-          '2': ${CENTOS7_RAID_HG_ID}
-        }[hostgroup | string]
-      }}
+hostgroup_id: >-
+  {{
+    {
+      '1': ${CENTOS7_SINGLE_HG_ID},
+      '2': ${CENTOS7_RAID_HG_ID}
+    }[hostgroup | string]
+  }}
 
-    # ${CENTOS7_OS}
-    #
-    # OS ID is common for both RAID and SingleDisk provisioning.
-    #
-    operatingsystem_id: ${CENTOS7_OS_ID}
+operatingsystem_id: >-
+  {{
+    {
+      '1': ${CENTOS7_SINGLE_OS_ID},
+      '2': ${CENTOS7_RAID_OS_ID}
+    }[hostgroup | string]
+  }}
 
-    # ${CENTOS7_MEDIUM}
-    medium_id: ${CENTOS7_MEDIUM_ID}
+# ${CENTOS7_MEDIUM}
+medium_id: ${CENTOS7_MEDIUM_ID}
 
-    # ${PTABLE_NAME}
-    ptable_id: ${PTABLE_ID}
+# ${PTABLE_NAME}
+ptable_id: ${PTABLE_ID}
 
-    # CentOS 7 subnet
-    subnet_name: "${CENTOS7_SUBNET}"
+# CentOS 7 subnet
+subnet_name: "${CENTOS7_SUBNET}"
 
-    # Katello Content
-    content_view_id: ${CENTOS7_CV_ID}
-    lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
+# Katello Content
+content_view_id: ${CENTOS7_CV_ID}
+lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
 
-    # Architecture
-    architecture_id: ${ARCHITECTURE_ID}
+# Architecture
+architecture_id: ${ARCHITECTURE_ID}
 
-    # Domain
-    domain_id: ${DOMAIN_ID}
+# Domain
+domain_id: ${DOMAIN_ID}
 
-    # PXE
-    pxe_loader: "${PXE_LOADER}"
-
-
-    # ==========================================================================
-    # Rocky Linux 8.10 Host Group / OS Selection
-    #
-    # AWX Survey:
-    #
-    # 1 = ${ROCKY8_SINGLE_HG}
-    # 2 = ${ROCKY8_RAID_HG}
-    #
-    # ==========================================================================
-
-    hostgroup: "{{ hostgroup | default('1', true) }}"
-
-    hostgroup_id: >-
-      {{
-        {
-          '1': ${ROCKY8_SINGLE_HG_ID},
-          '2': ${ROCKY8_RAID_HG_ID}
-        }[hostgroup | string]
-      }}
-
-    # ${ROCKY8_OS}
-    #
-    # OS ID is common for both RAID and SingleDisk provisioning.
-    #
-    operatingsystem_id: ${ROCKY8_OS_ID}
-
-    # ${ROCKY8_MEDIUM}
-    medium_id: ${ROCKY8_MEDIUM_ID}
-
-    # ${PTABLE_NAME}
-    ptable_id: ${PTABLE_ID}
-
-    # Rocky Linux 8 subnet
-    subnet_name: "${ROCKY8_SUBNET}"
-
-    # Katello Content
-    content_view_id: ${ROCKY8_CV_ID}
-    lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
-
-    # Architecture
-    architecture_id: ${ARCHITECTURE_ID}
-
-    # Domain
-    domain_id: ${DOMAIN_ID}
-
-    # PXE
-    pxe_loader: "${PXE_LOADER}"
+# PXE
+pxe_loader: "${PXE_LOADER}"
 
 
-    # ==========================================================================
-    # Rocky Linux 9.2 Host Group / OS Selection
-    #
-    # AWX Survey:
-    #
-    # 1 = ${ROCKY92_SINGLE_HG}
-    # 2 = ${ROCKY92_RAID_HG}
-    #
-    # ==========================================================================
+# ============================================================================
+# Rocky Linux 8.10 Host Group / Operating System Selection
+#
+# AWX Survey:
+#
+# 1 = ${ROCKY8_SINGLE_HG}
+#     OS = ${ROCKY8_SINGLE_OS}
+#
+# 2 = ${ROCKY8_RAID_HG}
+#     OS = ${ROCKY8_RAID_OS}
+#
+# ============================================================================
 
-    hostgroup: "{{ hostgroup | default('1', true) }}"
+hostgroup: "{{ hostgroup | default('1', true) }}"
 
-    hostgroup_id: >-
-      {{
-        {
-          '1': ${ROCKY92_SINGLE_HG_ID},
-          '2': ${ROCKY92_RAID_HG_ID}
-        }[hostgroup | string]
-      }}
+hostgroup_id: >-
+  {{
+    {
+      '1': ${ROCKY8_SINGLE_HG_ID},
+      '2': ${ROCKY8_RAID_HG_ID}
+    }[hostgroup | string]
+  }}
 
-    # ${ROCKY92_OS}
-    #
-    # OS ID is common for both RAID and SingleDisk provisioning.
-    #
-    operatingsystem_id: ${ROCKY92_OS_ID}
+operatingsystem_id: >-
+  {{
+    {
+      '1': ${ROCKY8_SINGLE_OS_ID},
+      '2': ${ROCKY8_RAID_OS_ID}
+    }[hostgroup | string]
+  }}
 
-    # ${ROCKY92_MEDIUM}
-    medium_id: ${ROCKY92_MEDIUM_ID}
+# ${ROCKY8_MEDIUM}
+medium_id: ${ROCKY8_MEDIUM_ID}
 
-    # ${PTABLE_NAME}
-    ptable_id: ${PTABLE_ID}
+# ${PTABLE_NAME}
+ptable_id: ${PTABLE_ID}
 
-    # Rocky Linux 9 subnet
-    subnet_name: "${ROCKY92_SUBNET}"
+# Rocky Linux 8 subnet
+subnet_name: "${ROCKY8_SUBNET}"
 
-    # Katello Content
-    content_view_id: ${ROCKY92_CV_ID}
-    lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
+# Katello Content
+content_view_id: ${ROCKY8_CV_ID}
+lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
 
-    # Architecture
-    architecture_id: ${ARCHITECTURE_ID}
+# Architecture
+architecture_id: ${ARCHITECTURE_ID}
 
-    # Domain
-    domain_id: ${DOMAIN_ID}
+# Domain
+domain_id: ${DOMAIN_ID}
 
-    # PXE
-    pxe_loader: "${PXE_LOADER}"
+# PXE
+pxe_loader: "${PXE_LOADER}"
 
 
-    # ==========================================================================
-    # Rocky Linux 9.8 Host Group / OS Selection
-    #
-    # AWX Survey:
-    #
-    # 1 = ${ROCKY98_SINGLE_HG}
-    # 2 = ${ROCKY98_RAID_HG}
-    #
-    # ==========================================================================
+# ============================================================================
+# Rocky Linux 9.2 Host Group / Operating System Selection
+#
+# AWX Survey:
+#
+# 1 = ${ROCKY92_SINGLE_HG}
+#     OS = ${ROCKY92_SINGLE_OS}
+#
+# 2 = ${ROCKY92_RAID_HG}
+#     OS = ${ROCKY92_RAID_OS}
+#
+# ============================================================================
 
-    hostgroup: "{{ hostgroup | default('1', true) }}"
+hostgroup: "{{ hostgroup | default('1', true) }}"
 
-    hostgroup_id: >-
-      {{
-        {
-          '1': ${ROCKY98_SINGLE_HG_ID},
-          '2': ${ROCKY98_RAID_HG_ID}
-        }[hostgroup | string]
-      }}
+hostgroup_id: >-
+  {{
+    {
+      '1': ${ROCKY92_SINGLE_HG_ID},
+      '2': ${ROCKY92_RAID_HG_ID}
+    }[hostgroup | string]
+  }}
 
-    # ${ROCKY98_OS}
-    #
-    # OS ID is common for both RAID and SingleDisk provisioning.
-    #
-    operatingsystem_id: ${ROCKY98_OS_ID}
+operatingsystem_id: >-
+  {{
+    {
+      '1': ${ROCKY92_SINGLE_OS_ID},
+      '2': ${ROCKY92_RAID_OS_ID}
+    }[hostgroup | string]
+  }}
 
-    # ${ROCKY98_MEDIUM}
-    medium_id: ${ROCKY98_MEDIUM_ID}
+# ${ROCKY92_MEDIUM}
+medium_id: ${ROCKY92_MEDIUM_ID}
 
-    # ${PTABLE_NAME}
-    ptable_id: ${PTABLE_ID}
+# ${PTABLE_NAME}
+ptable_id: ${PTABLE_ID}
 
-    # Rocky Linux 9 subnet
-    subnet_name: "${ROCKY98_SUBNET}"
+# Rocky Linux 9.2 subnet
+subnet_name: "${ROCKY92_SUBNET}"
 
-    # Katello Content
-    content_view_id: ${ROCKY98_CV_ID}
-    lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
+# Katello Content
+content_view_id: ${ROCKY92_CV_ID}
+lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
 
-    # Architecture
-    architecture_id: ${ARCHITECTURE_ID}
+# Architecture
+architecture_id: ${ARCHITECTURE_ID}
 
-    # Domain
-    domain_id: ${DOMAIN_ID}
+# Domain
+domain_id: ${DOMAIN_ID}
 
-    # PXE
-    pxe_loader: "${PXE_LOADER}"
+# PXE
+pxe_loader: "${PXE_LOADER}"
+
+
+# ============================================================================
+# Rocky Linux 9.8 Host Group / Operating System Selection
+#
+# AWX Survey:
+#
+# 1 = ${ROCKY98_SINGLE_HG}
+#     OS = ${ROCKY98_SINGLE_OS}
+#
+# 2 = ${ROCKY98_RAID_HG}
+#     OS = ${ROCKY98_RAID_OS}
+#
+# ============================================================================
+
+hostgroup: "{{ hostgroup | default('1', true) }}"
+
+hostgroup_id: >-
+  {{
+    {
+      '1': ${ROCKY98_SINGLE_HG_ID},
+      '2': ${ROCKY98_RAID_HG_ID}
+    }[hostgroup | string]
+  }}
+
+operatingsystem_id: >-
+  {{
+    {
+      '1': ${ROCKY98_SINGLE_OS_ID},
+      '2': ${ROCKY98_RAID_OS_ID}
+    }[hostgroup | string]
+  }}
+
+# ${ROCKY98_MEDIUM}
+medium_id: ${ROCKY98_MEDIUM_ID}
+
+# ${PTABLE_NAME}
+ptable_id: ${PTABLE_ID}
+
+# Rocky Linux 9.8 subnet
+subnet_name: "${ROCKY98_SUBNET}"
+
+# Katello Content
+content_view_id: ${ROCKY98_CV_ID}
+lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
+
+# Architecture
+architecture_id: ${ARCHITECTURE_ID}
+
+# Domain
+domain_id: ${DOMAIN_ID}
+
+# PXE
+pxe_loader: "${PXE_LOADER}"
 
 EOF
 
