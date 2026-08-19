@@ -1,3 +1,4 @@
+---
 # ============================================================
 # ENSURE SELECTED ROCKY LINUX 8 VMS EXIST ON ESXI
 # ============================================================
@@ -130,7 +131,7 @@
       debug:
         msg:
           - "============================================================"
-          - "ENSURE CENTOS 7 VMS EXIST ON ESXI"
+          - "ENSURE ROCKY LINUX 8 VMS EXIST ON ESXI"
           - "============================================================"
           - "ESXi Server        : {{ esxi_hostname }}"
           - "NetBox Server      : {{ netbox_url }}"
@@ -146,10 +147,7 @@
           - "============================================================"
 
     ###########################################################################
-    # GET CLUSTER FROM NETBOX
-    #
-    # IMPORTANT:
-    # Resolve the exact cluster ID first.
+    # GET EXACT CLUSTER FROM NETBOX
     ###########################################################################
 
     - name: Get NetBox cluster
@@ -190,7 +188,7 @@
           - "Cluster ID   : {{ cluster_id }}"
 
     ###########################################################################
-    # GET DEVICES ONLY FROM THE EXACT CLUSTER
+    # GET DEVICES FROM EXACT CLUSTER
     ###########################################################################
 
     - name: Get devices from exact NetBox cluster
@@ -242,16 +240,16 @@
     ###########################################################################
     # FILTER SELECTED DEVICES
     ###########################################################################
-    
+
     - name: Initialize filtered devices
       set_fact:
         filtered_devices: []
-    
+
     - name: Select all devices when target hosts is empty
       set_fact:
         filtered_devices: "{{ netbox_devices.json.results }}"
       when: target_hosts_list | length == 0
-    
+
     - name: Add exact or wildcard matching devices
       set_fact:
         filtered_devices: "{{ filtered_devices + [item.0] }}"
@@ -261,11 +259,11 @@
       when:
         - target_hosts_list | length > 0
         - item.0.name.split('.')[0] is match('^' ~ (item.1 | regex_replace('\*', '.*')) ~ '$')
-    
+
     - name: Remove duplicate filtered devices
       set_fact:
         filtered_devices: "{{ filtered_devices | unique(attribute='name') | list }}"
-    
+
     - name: Show cluster and filtering result
       debug:
         msg:
@@ -274,7 +272,7 @@
           - "Requested Hosts   : {{ target_hosts_list }}"
           - "Available Hosts   : {{ netbox_devices.json.results | map(attribute='name') | list }}"
           - "Selected Hosts    : {{ filtered_devices | map(attribute='name') | list }}"
-    
+
     - name: Fail if no matching hosts found
       fail:
         msg: >-
@@ -293,7 +291,7 @@
       debug:
         msg:
           - "============================================================"
-          - "SELECTED VMS"
+          - "SELECTED ROCKY LINUX 8 VMS"
           - "============================================================"
           - "{{ filtered_devices | map(attribute='name') | list }}"
           - "============================================================"
@@ -364,7 +362,7 @@
       register: vm_create
 
     ###########################################################################
-    # BUILD NEW VM LIST
+    # BUILD NEWLY CREATED VM LIST
     ###########################################################################
 
     - name: Initialize created VM list
@@ -394,6 +392,8 @@
 
     ###########################################################################
     # POWER ON ONLY NEWLY CREATED VMS
+    #
+    # Required to allow ESXi to initialize the virtual NIC MAC address.
     ###########################################################################
 
     - name: Power on newly created VMs
@@ -432,7 +432,7 @@
       when: created_vm_names | length > 0
 
     ###########################################################################
-    # ENSURE EXISTING VM HAS REQUIRED DISKS
+    # GET VM INFORMATION BEFORE DISK CHECK
     ###########################################################################
 
     - name: Get VM information before checking disks
@@ -456,13 +456,24 @@
           - "VM            : {{ item.item.name.split('.')[0] }}"
           - "Current Disks : {{ item.instance.hw_disks | default([]) | length }}"
           - "Required      : {{ disk_count }}"
+          - "Disk Layout   : {{ disk_layout }}"
           - "============================================================"
       loop: "{{ vm_info_before_disk.results }}"
       loop_control:
         label: "{{ item.item.name }}"
 
     ###########################################################################
-    # ADD SECOND DISK WHEN RAID / HOSTGROUP 2 IS SELECTED
+    # ADD SECOND DISK ONLY WHEN HOSTGROUP = 2 / RAID
+    #
+    # IMPORTANT:
+    #
+    # hostgroup = 1
+    #   Required disks = 1
+    #   This task is SKIPPED.
+    #
+    # hostgroup = 2
+    #   Required disks = 2
+    #   Adds second disk only if the VM currently has less than 2 disks.
     ###########################################################################
 
     - name: Add missing second disk for RAID
@@ -483,6 +494,7 @@
       loop_control:
         label: "{{ item.item.name }}"
       when:
+        - hostgroup | string == '2'
         - disk_count | int == 2
         - item.instance.hw_disks | default([]) | length < 2
 
@@ -513,10 +525,27 @@
           - "Memory MB     : {{ item.instance.hw_memtotal_mb | default('N/A') }}"
           - "Disk Layout   : {{ disk_layout }}"
           - "Expected Disks: {{ disk_count }}"
+          - "Actual Disks  : {{ item.instance.hw_disks | default([]) | length }}"
           - "============================================================"
       loop: "{{ final_vm_info.results }}"
       loop_control:
         label: "{{ item.item.name }}"
+
+    ###########################################################################
+    # VERIFY FINAL DISK COUNT
+    ###########################################################################
+
+    - name: Verify final disk count
+      fail:
+        msg: >-
+          VM {{ item.item.name.split('.')[0] }} has
+          {{ item.instance.hw_disks | default([]) | length }} disks,
+          but {{ disk_count }} disks are required for {{ disk_layout }}.
+      loop: "{{ final_vm_info.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when:
+        - item.instance.hw_disks | default([]) | length < disk_count | int
 
     ###########################################################################
     # SUMMARY
@@ -526,7 +555,7 @@
       debug:
         msg:
           - "============================================================"
-          - "CENTOS 7 VM ENSURE COMPLETED SUCCESSFULLY"
+          - "ROCKY LINUX 8 VM ENSURE COMPLETED SUCCESSFULLY"
           - "============================================================"
           - "Cluster              : {{ cluster_name }}"
           - "Selected VMs         : {{ filtered_devices | length }}"
