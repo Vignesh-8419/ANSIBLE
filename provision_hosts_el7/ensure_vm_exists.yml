@@ -1,4 +1,8 @@
 ---
+# ============================================================
+# PLAY 1: ENSURE SELECTED CENTOS 7 VMS EXIST ON ESXI
+# ============================================================
+
 - name: Ensure selected CentOS 7 VMs exist on ESXi
   hosts: localhost
   connection: local
@@ -143,7 +147,7 @@
       debug:
         msg:
           - "============================================================"
-          - "ENSURE CENTOS 7 VMs EXIST ON ESXI"
+          - "ENSURE CENTOS 7 VMS EXIST ON ESXI"
           - "============================================================"
           - "ESXi Server        : {{ esxi_hostname }}"
           - "Datacenter         : {{ datacenter }}"
@@ -160,7 +164,6 @@
           - "Firmware           : {{ vm_boot_firmware }}"
           - "============================================================"
 
-
     ###########################################################################
     # VALIDATE HOSTGROUP
     ###########################################################################
@@ -174,17 +177,13 @@
           2 = RAID
       when: hostgroup | string not in ['1', '2']
 
-
     ###########################################################################
     # GET DEVICES FROM NETBOX
     ###########################################################################
 
     - name: Get devices from NetBox cluster
       uri:
-        url: >-
-          {{ netbox_url }}/api/dcim/devices/
-          ?cluster={{ cluster_name | urlencode }}
-          &limit=1000
+        url: "{{ netbox_url }}/api/dcim/devices/?cluster={{ cluster_name | urlencode }}&limit=1000"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
@@ -194,11 +193,9 @@
         return_content: true
       register: netbox_devices
 
-
     - name: Show devices in cluster
       debug:
         msg: "{{ netbox_devices.json.results | map(attribute='name') | list }}"
-
 
     ###########################################################################
     # FILTER SELECTED DEVICES
@@ -208,12 +205,10 @@
       set_fact:
         filtered_devices: []
 
-
     - name: Use all devices when target_hosts is empty
       set_fact:
         filtered_devices: "{{ netbox_devices.json.results }}"
       when: target_patterns | length == 0
-
 
     - name: Add devices matching target patterns
       set_fact:
@@ -225,7 +220,6 @@
         - target_patterns | length > 0
         - item.0.name.split('.')[0] is match('^' ~ item.1 ~ '$')
 
-
     - name: Remove duplicate filtered devices
       set_fact:
         filtered_devices: >-
@@ -235,7 +229,6 @@
             | list
           }}
 
-
     - name: Fail if no hosts found
       fail:
         msg: >-
@@ -244,11 +237,9 @@
           Target Hosts: {{ target_hosts }}
       when: filtered_devices | length == 0
 
-
     - name: Show selected VMs
       debug:
         msg: "{{ filtered_devices | map(attribute='name') | list }}"
-
 
     ###########################################################################
     # CHECK WHETHER VM ALREADY EXISTS
@@ -267,7 +258,6 @@
       register: vm_lookup
       failed_when: false
 
-
     - name: Show existing VM status
       debug:
         msg:
@@ -279,14 +269,12 @@
       loop_control:
         label: "{{ item.item.name }}"
 
-
     ###########################################################################
     # CREATE VM ONLY WHEN MISSING
     ###########################################################################
 
     - name: Create missing VM
       community.vmware.vmware_guest:
-
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
@@ -320,18 +308,13 @@
       when: item.instance is not defined
       register: vm_create
 
-
     ###########################################################################
     # BUILD LIST OF NEWLY CREATED VMS
-    #
-    # Existing VMs will NOT be powered on/off.
-    # Only newly created VMs are started temporarily to obtain the MAC address.
     ###########################################################################
 
     - name: Initialize created VM list
       set_fact:
         created_vm_names: []
-
 
     - name: Build list of newly created VMs
       set_fact:
@@ -348,7 +331,6 @@
         - item.item is defined
         - item.item.item is defined
 
-
     - name: Show newly created VMs
       debug:
         msg:
@@ -357,7 +339,6 @@
           - "============================================================"
           - "{{ created_vm_names }}"
           - "============================================================"
-
 
     ###########################################################################
     # POWER ON ONLY NEWLY CREATED VMS
@@ -376,17 +357,13 @@
         label: "{{ item }}"
       when: created_vm_names | length > 0
 
-
     - name: Wait for ESXi to assign MAC address
       pause:
         seconds: 10
       when: created_vm_names | length > 0
 
-
     ###########################################################################
     # POWER OFF ONLY NEWLY CREATED VMS
-    #
-    # This leaves existing VMs unchanged.
     ###########################################################################
 
     - name: Power off newly created VM
@@ -401,7 +378,6 @@
       loop_control:
         label: "{{ item }}"
       when: created_vm_names | length > 0
-
 
     ###########################################################################
     # GET FINAL VM INFORMATION
@@ -419,7 +395,6 @@
         label: "{{ item.name }}"
       register: vm_info
 
-
     ###########################################################################
     # SHOW VM INFORMATION
     ###########################################################################
@@ -428,8 +403,8 @@
       debug:
         msg:
           - "============================================================"
-          - "VM Name       : {{ item.instance.hw_name }}"
-          - "Power         : {{ item.instance.hw_power_status }}"
+          - "VM Name       : {{ item.instance.hw_name | default(item.item.name.split('.')[0]) }}"
+          - "Power         : {{ item.instance.hw_power_status | default('N/A') }}"
           - "MAC           : {{ item.instance.hw_eth0.macaddress | default('N/A') }}"
           - "CPU           : {{ item.instance.hw_processor_count | default('N/A') }}"
           - "Memory MB     : {{ item.instance.hw_memtotal_mb | default('N/A') }}"
@@ -439,7 +414,6 @@
       loop: "{{ vm_info.results }}"
       loop_control:
         label: "{{ item.item.name }}"
-
 
     ###########################################################################
     # FINAL SUMMARY
