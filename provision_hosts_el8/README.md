@@ -42,13 +42,13 @@ The following systems must be reachable:
 ### Single Disk Installation
 
 ```bash
-ansible-playbook ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -e "target_hosts=rocky-08-01 foreman_server=1 hostgroup=1"
+ansible-playbook -i rocky-8-servers_inventory.yml ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -e "target_hosts=rocky-08-01 foreman_server=1 hostgroup=1"
 ```
 
 ### RAID Installation
 
 ```bash
-ansible-playbook ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -e "target_hosts=rocky-08-01 foreman_server=1 hostgroup=2"
+ansible-playbook -i rocky-8-servers_inventory.yml ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -e "target_hosts=rocky-08-01 foreman_server=1 hostgroup=2"
 ```
 
 ## Parameters
@@ -72,7 +72,7 @@ target_hosts=rocky-08-01,rocky-08-02
 Example:
 
 ```bash
-ansible-playbook ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -e "target_hosts=rocky-08-01,rocky-08-02 foreman_server=1 hostgroup=1"
+ansible-playbook -i rocky-8-servers_inventory.yml ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -e "target_hosts=rocky-08-01,rocky-08-02 foreman_server=1 hostgroup=1"
 ```
 
 ### foreman_server
@@ -100,7 +100,7 @@ Select the installation and disk configuration.
 Provision `rocky-08-01` using Foreman Server 1:
 
 ```bash
-ansible-playbook ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -e "target_hosts=rocky-08-01 foreman_server=1 hostgroup=1"
+ansible-playbook -i rocky-8-servers_inventory.yml ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -e "target_hosts=rocky-08-01 foreman_server=1 hostgroup=1"
 ```
 
 ### Example 2: RAID
@@ -108,7 +108,7 @@ ansible-playbook ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -
 Provision `rocky-08-01` using Foreman Server 1 with RAID:
 
 ```bash
-ansible-playbook ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -e "target_hosts=rocky-08-01 foreman_server=1 hostgroup=2"
+ansible-playbook -i rocky-8-servers_inventory.yml ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -e "target_hosts=rocky-08-01 foreman_server=1 hostgroup=2"
 ```
 
 ### Example 3: Multiple Hosts
@@ -116,7 +116,7 @@ ansible-playbook ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -
 Provision multiple hosts:
 
 ```bash
-ansible-playbook ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -e "target_hosts=rocky-08-01,rocky-08-02 foreman_server=1 hostgroup=1"
+ansible-playbook -i rocky-8-servers_inventory.yml ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -e "target_hosts=rocky-08-01,rocky-08-02 foreman_server=1 hostgroup=1"
 ```
 
 ## Provisioning Workflow
@@ -209,13 +209,13 @@ The playbook:
 ### Single Disk
 
 ```bash
-ansible-playbook ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -e "target_hosts=HOSTNAME foreman_server=1 hostgroup=1"
+ansible-playbook -i rocky-8-servers_inventory.yml ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -e "target_hosts=HOSTNAME foreman_server=1 hostgroup=1"
 ```
 
 ### RAID
 
 ```bash
-ansible-playbook ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -e "target_hosts=HOSTNAME foreman_server=1 hostgroup=2"
+ansible-playbook -i rocky-8-servers_inventory.yml ~/ANSIBLE/provision_hosts_el8/Foreman_provision_hosts_el8.yml -e "target_hosts=HOSTNAME foreman_server=1 hostgroup=2"
 ```
 
 Replace `HOSTNAME` with the required NetBox hostname.
