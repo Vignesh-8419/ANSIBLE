@@ -1,4 +1,3 @@
----
 # ============================================================
 # ENSURE SELECTED ROCKY LINUX 8 VMS EXIST ON ESXI
 # ============================================================
@@ -27,7 +26,7 @@
     folder: "/"
 
     ###########################################################################
-    # NetBox
+    # NETBOX
     ###########################################################################
 
     netbox_url: "https://192.168.253.143"
@@ -74,7 +73,7 @@
   tasks:
 
     ###########################################################################
-    # VALIDATE HOSTGROUP FIRST
+    # VALIDATE HOSTGROUP
     ###########################################################################
 
     - name: Validate hostgroup selection
@@ -86,6 +85,7 @@
           2 = RAID
       when: hostgroup | string not in ['1', '2']
 
+
     ###########################################################################
     # SET DISK CONFIGURATION
     ###########################################################################
@@ -94,6 +94,7 @@
       set_fact:
         disk_count: "{{ 1 if hostgroup | string == '1' else 2 }}"
         disk_layout: "{{ 'SingleDisk' if hostgroup | string == '1' else 'RAID' }}"
+
 
     - name: Build VM disk configuration
       set_fact:
@@ -120,6 +121,7 @@
             )
           }}
 
+
     ###########################################################################
     # SHOW CONFIGURATION
     ###########################################################################
@@ -145,6 +147,7 @@
           - "Firmware           : {{ vm_boot_firmware }}"
           - "============================================================"
 
+
     ###########################################################################
     # GET DEVICES FROM NETBOX
     ###########################################################################
@@ -161,9 +164,16 @@
         return_content: true
       register: netbox_devices
 
-    - name: Show devices in cluster
+
+    - name: Show devices returned by NetBox
       debug:
-        msg: "{{ netbox_devices.json.results | map(attribute='name') | list }}"
+        msg:
+          - "============================================================"
+          - "NETBOX DEVICES RETURNED"
+          - "============================================================"
+          - "{{ netbox_devices.json.results | map(attribute='name') | list }}"
+          - "============================================================"
+
 
     ###########################################################################
     # BUILD TARGET PATTERNS
@@ -173,7 +183,8 @@
       set_fact:
         target_patterns: []
 
-    - name: Build target patterns
+
+    - name: Build target patterns from AWX survey
       set_fact:
         target_patterns: >-
           {{
@@ -185,6 +196,14 @@
           }}
       when: target_hosts | trim | length > 0
 
+
+    - name: Show requested hosts
+      debug:
+        msg:
+          - "Requested Input : {{ target_hosts | default('ALL', true) }}"
+          - "Target Patterns : {{ target_patterns }}"
+
+
     ###########################################################################
     # FILTER SELECTED DEVICES
     ###########################################################################
@@ -193,10 +212,12 @@
       set_fact:
         filtered_devices: []
 
+
     - name: Use all devices when target hosts is empty
       set_fact:
         filtered_devices: "{{ netbox_devices.json.results }}"
       when: target_patterns | length == 0
+
 
     - name: Add devices matching target patterns
       set_fact:
@@ -208,26 +229,32 @@
         - target_patterns | length > 0
         - item.0.name.split('.')[0] is match('^' ~ item.1 ~ '$')
 
+
     - name: Remove duplicate filtered devices
       set_fact:
         filtered_devices: "{{ filtered_devices | unique(attribute='name') | list }}"
 
-    - name: Fail if no hosts found
+
+    - name: Show filtered devices
+      debug:
+        msg:
+          - "============================================================"
+          - "SELECTED ROCKY LINUX 8 VMS"
+          - "============================================================"
+          - "{{ filtered_devices | map(attribute='name') | list }}"
+          - "============================================================"
+
+
+    - name: Fail if no matching hosts found
       fail:
         msg: >-
           No matching hosts found in NetBox.
           Cluster: {{ cluster_name }}
-          Target Hosts: {{ target_hosts }}
+          Requested: {{ target_hosts }}
+          Available:
+          {{ netbox_devices.json.results | map(attribute='name') | list }}
       when: filtered_devices | length == 0
 
-    - name: Show selected VMs
-      debug:
-        msg:
-          - "============================================================"
-          - "SELECTED ROCKY 8 VMS"
-          - "============================================================"
-          - "{{ filtered_devices | map(attribute='name') | list }}"
-          - "============================================================"
 
     ###########################################################################
     # CHECK WHETHER VM EXISTS
@@ -246,6 +273,7 @@
       register: vm_lookup
       failed_when: false
 
+
     - name: Show VM existence status
       debug:
         msg:
@@ -254,6 +282,7 @@
       loop: "{{ vm_lookup.results }}"
       loop_control:
         label: "{{ item.item.name }}"
+
 
     ###########################################################################
     # CREATE ONLY MISSING VMS
@@ -294,6 +323,7 @@
       when: item.instance is not defined
       register: vm_create
 
+
     ###########################################################################
     # BUILD NEW VM LIST
     ###########################################################################
@@ -301,6 +331,7 @@
     - name: Initialize created VM list
       set_fact:
         created_vm_names: []
+
 
     - name: Build list of newly created VMs
       set_fact:
@@ -317,6 +348,12 @@
         - item.item is defined
         - item.item.item is defined
 
+
+    - name: Remove duplicate newly created VM names
+      set_fact:
+        created_vm_names: "{{ created_vm_names | unique | list }}"
+
+
     - name: Show newly created VMs
       debug:
         msg:
@@ -325,6 +362,7 @@
           - "============================================================"
           - "{{ created_vm_names }}"
           - "============================================================"
+
 
     ###########################################################################
     # POWER ON ONLY NEW VMS
@@ -339,15 +377,21 @@
         name: "{{ item }}"
         state: powered-on
       loop: "{{ created_vm_names }}"
+      loop_control:
+        label: "{{ item }}"
       when: created_vm_names | length > 0
+
 
     - name: Wait for ESXi to initialize newly created VMs
       pause:
         seconds: 10
       when: created_vm_names | length > 0
 
+
     ###########################################################################
     # POWER OFF ONLY NEW VMS
+    #
+    # Existing VMs ARE NOT touched.
     ###########################################################################
 
     - name: Power off newly created VMs
@@ -359,7 +403,10 @@
         name: "{{ item }}"
         state: powered-off
       loop: "{{ created_vm_names }}"
+      loop_control:
+        label: "{{ item }}"
       when: created_vm_names | length > 0
+
 
     ###########################################################################
     # GET FINAL VM INFORMATION
@@ -376,6 +423,7 @@
       loop_control:
         label: "{{ item.name }}"
       register: vm_info
+
 
     ###########################################################################
     # SHOW FINAL VM INFORMATION
@@ -397,6 +445,7 @@
       loop_control:
         label: "{{ item.item.name }}"
 
+
     ###########################################################################
     # FINAL SUMMARY
     ###########################################################################
@@ -410,6 +459,7 @@
           - "Cluster              : {{ cluster_name }}"
           - "Selected VMs         : {{ filtered_devices | length }}"
           - "New VMs Created      : {{ created_vm_names | length }}"
+          - "New VM Names         : {{ created_vm_names }}"
           - "Disk Layout          : {{ disk_layout }}"
           - "Disk Count per VM    : {{ disk_count }}"
           - "Disk Size            : {{ vm_disk_size_gb }} GB"
