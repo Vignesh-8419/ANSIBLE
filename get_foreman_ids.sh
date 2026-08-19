@@ -21,7 +21,7 @@ set -o pipefail
 
 FOREMAN_SERVER="https://cent-07-01.vgs.com"
 FOREMAN_USER="admin"
-FOREMAN_PASSWORD="YOUR_FOREMAN_PASSWORD"
+FOREMAN_PASSWORD="zqs977dXzqfEvTML"
 
 HAMMER="hammer \
   --server ${FOREMAN_SERVER} \
