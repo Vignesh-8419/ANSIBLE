@@ -53,26 +53,20 @@
     hostgroup_id: >-
       {{
         {
-          '1': 14,
-          '2': 10
+          '1': 6,
+          '2': 2
         }[hostgroup | string]
       }}
 
-    operatingsystem_id: >-
-      {{
-        {
-          '1': 14,
-          '2': 13
-        }[hostgroup | string]
-      }}
+    operatingsystem_id: 4
 
-    # Rocky Linux 8 Remote
+    # Rocky 8 Remote
     medium_id: 16
 
     # Kickstart default
     ptable_id: 126
 
-    # Rocky 8 subnet
+    # Rocky Linux 8 subnet
     subnet_name: "vgs-subnet-rockyos"
 
     # Katello Content
