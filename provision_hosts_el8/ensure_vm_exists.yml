@@ -1,5 +1,5 @@
 ---
-- name: Ensure selected VMs exist on ESXi
+- name: Ensure selected Rocky 8 VMs exist on ESXi
   hosts: localhost
   connection: local
   gather_facts: false
@@ -31,64 +31,228 @@
 
     cluster_name: "rocky-8-servers"
 
-    target_servers: "{{ target_hosts.split(',') | map('trim') | list }}"
+    ###########################################################################
+    # TARGET HOSTS
+    #
+    # Examples:
+    #
+    # rocky-08-01,rocky-08-02
+    #
+    # Wildcard:
+    #
+    # rocky-08-*
+    #
+    # Leave empty to process ALL hosts in the cluster.
+    ###########################################################################
+
+    target_hosts: "{{ target_hosts | default('', true) }}"
+
+    target_patterns: >-
+      {{
+        target_hosts.split(',')
+        | map('trim')
+        | reject('equalto', '')
+        | map('regex_replace', '\*', '.*')
+        | list
+      }}
+
+    ###########################################################################
+    # HOSTGROUP / DISK SELECTION
+    #
+    # AWX Survey:
+    #
+    # 1 = RockyLinux8-SingleDisk
+    #     1 x 100 GB Disk
+    #
+    # 2 = RockyLinux8-RAID
+    #     2 x 100 GB Disks
+    ###########################################################################
+
+    hostgroup: "{{ hostgroup | default('1', true) }}"
+
+    disk_count: >-
+      {{
+        {
+          '1': 1,
+          '2': 2
+        }[hostgroup | string]
+      }}
+
+    disk_layout: >-
+      {{
+        {
+          '1': 'SingleDisk',
+          '2': 'RAID'
+        }[hostgroup | string]
+      }}
+
+    ###########################################################################
+    # VM HARDWARE
+    ###########################################################################
+
+    vm_memory_mb: 4096
+    vm_num_cpus: 4
+    vm_num_cpu_cores_per_socket: 2
+
+    vm_disk_size_gb: 100
+
+    ###########################################################################
+    # Rocky Linux 8 VMware Guest ID
+    #
+    # centos8_64Guest is appropriate for Rocky Linux 8.
+    ###########################################################################
+
+    vm_guest_id: "centos8_64Guest"
+
+    vm_boot_firmware: "efi"
+
+    ###########################################################################
+    # DISK CONFIGURATION
+    #
+    # hostgroup=1
+    #   Disk 1 = 100 GB
+    #
+    # hostgroup=2
+    #   Disk 1 = 100 GB
+    #   Disk 2 = 100 GB
+    ###########################################################################
+
+    vm_disks: >-
+      {{
+        [
+          {
+            'size_gb': vm_disk_size_gb,
+            'datastore': datastore,
+            'type': 'thin'
+          }
+        ]
+        +
+        (
+          [
+            {
+              'size_gb': vm_disk_size_gb,
+              'datastore': datastore,
+              'type': 'thin'
+            }
+          ]
+          if (hostgroup | string) == '2'
+          else []
+        )
+      }}
 
   tasks:
 
     ###########################################################################
-    # Get Devices from NetBox
+    # VALIDATE HOSTGROUP
+    ###########################################################################
+
+    - name: Validate hostgroup selection
+      fail:
+        msg: >-
+          Invalid hostgroup selection: {{ hostgroup }}.
+          Valid values are:
+          1 = SingleDisk
+          2 = RAID
+      when: hostgroup | string not in ['1', '2']
+
+
+    ###########################################################################
+    # SHOW SELECTED CONFIGURATION
+    ###########################################################################
+
+    - name: Show selected VM configuration
+      debug:
+        msg:
+          - "============================================================"
+          - "ENSURE ROCKY LINUX 8 VMs EXIST ON ESXI"
+          - "============================================================"
+          - "ESXi Server        : {{ esxi_hostname }}"
+          - "Datacenter         : {{ datacenter }}"
+          - "Datastore          : {{ datastore }}"
+          - "Network            : {{ vm_network }}"
+          - "Cluster            : {{ cluster_name }}"
+          - "Target Hosts       : {{ target_hosts if target_hosts | length > 0 else 'ALL HOSTS' }}"
+          - "Hostgroup Selection: {{ hostgroup }}"
+          - "Disk Layout        : {{ disk_layout }}"
+          - "Disk Count         : {{ disk_count }}"
+          - "Disk Size          : {{ vm_disk_size_gb }} GB"
+          - "Memory             : {{ vm_memory_mb }} MB"
+          - "CPUs               : {{ vm_num_cpus }}"
+          - "Firmware           : {{ vm_boot_firmware }}"
+          - "============================================================"
+
+
+    ###########################################################################
+    # GET DEVICES FROM NETBOX
     ###########################################################################
 
     - name: Get devices from NetBox cluster
       uri:
-        url: "{{ netbox_url }}/api/dcim/devices/?cluster={{ cluster_name }}"
+        url: "{{ netbox_url }}/api/dcim/devices/?cluster={{ cluster_name | urlencode }}&limit=1000"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
         validate_certs: false
+        use_proxy: false
+        status_code: 200
+        return_content: true
       register: netbox_devices
+
 
     - name: Show devices in cluster
       debug:
         msg: "{{ netbox_devices.json.results | map(attribute='name') | list }}"
 
+
     ###########################################################################
-    # Filter Selected Devices
+    # FILTER SELECTED DEVICES
     ###########################################################################
 
     - name: Initialize filtered devices
       set_fact:
         filtered_devices: []
-    
-    - name: Build target patterns
+
+
+    - name: Select all devices when target_hosts is empty
       set_fact:
-        target_patterns: >-
-          {{
-            target_hosts.split(',')
-            | map('trim')
-            | map('regex_replace', '\*', '.*')
-            | list
-          }}
-    
-    - name: Add matching devices
+        filtered_devices: "{{ netbox_devices.json.results }}"
+      when: target_patterns | length == 0
+
+
+    - name: Add devices matching target patterns
       set_fact:
         filtered_devices: "{{ filtered_devices + [item.0] }}"
       loop: "{{ netbox_devices.json.results | product(target_patterns) | list }}"
-      when: item.0.name.split('.')[0] is match('^' ~ item.1 ~ '$')
+      loop_control:
+        label: "{{ item.0.name }} -> {{ item.1 }}"
+      when:
+        - target_patterns | length > 0
+        - item.0.name.split('.')[0] is match('^' ~ item.1 ~ '$')
+
+
+    - name: Remove duplicate devices
+      set_fact:
+        filtered_devices: "{{ filtered_devices | unique(attribute='name') | list }}"
+
 
     - name: Fail if no hosts found
       fail:
-        msg: "No matching hosts found in NetBox."
+        msg: >-
+          No matching hosts found in NetBox.
+          Cluster={{ cluster_name }}
+          Target Hosts={{ target_hosts }}
       when: filtered_devices | length == 0
+
 
     - name: Show selected VMs
       debug:
         msg: "{{ filtered_devices | map(attribute='name') | list }}"
 
+
     ###########################################################################
-    # Check whether VM already exists
+    # CHECK WHETHER VM ALREADY EXISTS
     ###########################################################################
-    
+
     - name: Check if VM already exists
       community.vmware.vmware_guest_info:
         hostname: "{{ esxi_hostname }}"
@@ -97,92 +261,141 @@
         validate_certs: false
         name: "{{ item.name.split('.')[0] }}"
       loop: "{{ filtered_devices }}"
+      loop_control:
+        label: "{{ item.name }}"
       register: vm_lookup
       failed_when: false
 
 
+    - name: Show existing VM status
+      debug:
+        msg:
+          - "VM Name : {{ item.item.name.split('.')[0] }}"
+          - "Exists  : {{ item.instance is defined }}"
+      loop: "{{ vm_lookup.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+
     ###########################################################################
-    # Create VM (only if missing)
+    # CREATE VM ONLY IF MISSING
     ###########################################################################
 
     - name: Create VM only if it does not exist
       community.vmware.vmware_guest:
-    
+
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: false
-    
+
         datacenter: "{{ datacenter }}"
         folder: "{{ folder }}"
         datastore: "{{ datastore }}"
-    
+
         name: "{{ item.item.name.split('.')[0] }}"
         state: present
-    
-        guest_id: centos7_64Guest
-    
+
+        guest_id: "{{ vm_guest_id }}"
+
         hardware:
-          memory_mb: 4096
-          num_cpus: 4
-          num_cpu_cores_per_socket: 2
-          boot_firmware: efi
-    
-        disk:
-          - size_gb: 100
-            datastore: "{{ datastore }}"
-            type: thin
-    
+          memory_mb: "{{ vm_memory_mb }}"
+          num_cpus: "{{ vm_num_cpus }}"
+          num_cpu_cores_per_socket: "{{ vm_num_cpu_cores_per_socket }}"
+          boot_firmware: "{{ vm_boot_firmware }}"
+
+        disk: "{{ vm_disks }}"
+
         networks:
           - name: "{{ vm_network }}"
             start_connected: true
             device_type: vmxnet3
-    
+
       loop: "{{ vm_lookup.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
       when: item.instance is not defined
       register: vm_create
 
-    - name: Power on VM
+
+    ###########################################################################
+    # BUILD LIST OF NEWLY CREATED VMS
+    ###########################################################################
+
+    - name: Initialize newly created VM list
+      set_fact:
+        created_vm_names: []
+
+
+    - name: Add newly created VMs to list
+      set_fact:
+        created_vm_names: >-
+          {{
+            created_vm_names +
+            [item.item.item.name.split('.')[0]]
+          }}
+      loop: "{{ vm_create.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.item.name | default('unknown') }}"
+      when:
+        - item.changed | default(false)
+        - item.item is defined
+        - item.item.item is defined
+
+
+    - name: Show newly created VMs
+      debug:
+        msg: "{{ created_vm_names }}"
+
+
+    ###########################################################################
+    # POWER ON ONLY NEWLY CREATED VMS
+    #
+    # Existing VMs remain in their current power state.
+    ###########################################################################
+
+    - name: Power on newly created VM
       community.vmware.vmware_guest_powerstate:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: false
-        name: "{{ item.name.split('.')[0] }}"
+        name: "{{ item }}"
         state: powered-on
-      loop: "{{ filtered_devices }}"
-      when: >
-        (
-          vm_lookup.results
-          | selectattr('item.name', 'equalto', item.name)
-          | first
-        ).instance is defined
-        or
-        (
-          vm_create.results
-          | default([])
-          | selectattr('item.item.name', 'equalto', item.name)
-          | first
-        ).changed | default(false)
-    
+      loop: "{{ created_vm_names }}"
+      loop_control:
+        label: "{{ item }}"
+      when: created_vm_names | length > 0
+
+
     - name: Wait for ESXi to assign MAC
       pause:
         seconds: 10
-    
-    - name: Power off VM
+      when: created_vm_names | length > 0
+
+
+    ###########################################################################
+    # POWER OFF ONLY NEWLY CREATED VMS
+    ###########################################################################
+
+    - name: Power off newly created VM
       community.vmware.vmware_guest_powerstate:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: false
-        name: "{{ item.name.split('.')[0] }}"
+        name: "{{ item }}"
         state: powered-off
-      loop: "{{ filtered_devices }}"
+      loop: "{{ created_vm_names }}"
+      loop_control:
+        label: "{{ item }}"
+      when: created_vm_names | length > 0
+
 
     ###########################################################################
-    # Get VM Information
+    # GET FINAL VM INFORMATION
     ###########################################################################
-    
+
     - name: Get VM information
       community.vmware.vmware_guest_info:
         hostname: "{{ esxi_hostname }}"
@@ -191,20 +404,45 @@
         validate_certs: false
         name: "{{ item.name.split('.')[0] }}"
       loop: "{{ filtered_devices }}"
+      loop_control:
+        label: "{{ item.name }}"
       register: vm_info
-    
-    - name: Show VM information
-      debug:
-        var: vm_info.results
+
 
     ###########################################################################
-    # Summary
+    # SHOW VM INFORMATION
     ###########################################################################
 
     - name: Show result
       debug:
         msg:
+          - "============================================================"
           - "VM Name : {{ item.instance.hw_name }}"
-          - "Power    : {{ item.instance.hw_power_status }}"
-          - "MAC      : {{ item.instance.hw_eth0.macaddress }}"
+          - "Power   : {{ item.instance.hw_power_status }}"
+          - "MAC     : {{ item.instance.hw_eth0.macaddress | default('N/A') }}"
+          - "Layout  : {{ disk_layout }}"
+          - "Disks   : {{ disk_count }}"
+          - "============================================================"
       loop: "{{ vm_info.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+
+    ###########################################################################
+    # FINAL SUMMARY
+    ###########################################################################
+
+    - name: Final summary
+      debug:
+        msg:
+          - "============================================================"
+          - "ROCKY LINUX 8 VM ENSURE COMPLETED SUCCESSFULLY"
+          - "============================================================"
+          - "Cluster           : {{ cluster_name }}"
+          - "VMs Processed     : {{ filtered_devices | length }}"
+          - "New VMs Created   : {{ created_vm_names | length }}"
+          - "Disk Layout       : {{ disk_layout }}"
+          - "Disk Count per VM : {{ disk_count }}"
+          - "Disk Size         : {{ vm_disk_size_gb }} GB"
+          - "Total Disk Space  : {{ disk_count | int * vm_disk_size_gb | int }} GB per VM"
+          - "============================================================"
