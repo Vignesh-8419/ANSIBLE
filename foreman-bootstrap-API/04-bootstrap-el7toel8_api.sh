@@ -98,12 +98,12 @@ FOREMAN_URL="${FOREMAN_URL:-https://cent-07-01.vgs.com}"
 
 FOREMAN_USER="${FOREMAN_USER:-admin}"
 
-if [ -z "${FOREMAN_PASSWORD:-}" ]
+if [ -z "${FOREMAN_TOKEN:-}" ]
 then
-    error "FOREMAN_PASSWORD is not set."
+    error "FOREMAN_TOKEN is not set."
     echo
     echo "Example:"
-    echo "export FOREMAN_PASSWORD='your-password'"
+    echo "export FOREMAN_TOKEN='your-password'"
     exit 1
 fi
 
@@ -165,7 +165,7 @@ api_request()
 
         HTTP_STATUS="$(
             /bin/curl -ksS \
-                --user "${FOREMAN_USER}:${FOREMAN_PASSWORD}" \
+                --user "${FOREMAN_USER}:${FOREMAN_TOKEN}" \
                 -H "Accept: application/json" \
                 -H "Content-Type: application/json" \
                 -X "${METHOD}" \
@@ -179,7 +179,7 @@ api_request()
 
         HTTP_STATUS="$(
             /bin/curl -ksS \
-                --user "${FOREMAN_USER}:${FOREMAN_PASSWORD}" \
+                --user "${FOREMAN_USER}:${FOREMAN_TOKEN}" \
                 -H "Accept: application/json" \
                 -H "Content-Type: application/json" \
                 -X "${METHOD}" \
@@ -2039,14 +2039,14 @@ manual_verification()
 1. Foreman API Status
 ------------------------------------------------------------
 curl -ksS \\
-  --user "admin:\\\$FOREMAN_PASSWORD" \\
+  --user "admin:\\\$FOREMAN_TOKEN" \\
   -H 'Accept: application/json' \\
   "${FOREMAN_URL}/api/status" | jq
 
 2. Product
 ------------------------------------------------------------
 curl -ksS \\
-  --user "admin:\\\$FOREMAN_PASSWORD" \\
+  --user "admin:\\\$FOREMAN_TOKEN" \\
   -H 'Accept: application/json' \\
   "${FOREMAN_URL}/katello/api/organizations/${ORG_ID}/products?per_page=all" |
 jq -r '.results[] | select(.name=="${PRODUCT_NAME}")'
@@ -2054,7 +2054,7 @@ jq -r '.results[] | select(.name=="${PRODUCT_NAME}")'
 3. Repositories
 ------------------------------------------------------------
 curl -ksS \\
-  --user "admin:\\\$FOREMAN_PASSWORD" \\
+  --user "admin:\\\$FOREMAN_TOKEN" \\
   -H 'Accept: application/json' \\
   "${FOREMAN_URL}/katello/api/products/${PRODUCT_ID}/repositories?per_page=all" |
 jq
@@ -2062,7 +2062,7 @@ jq
 4. Content View
 ------------------------------------------------------------
 curl -ksS \\
-  --user "admin:\\\$FOREMAN_PASSWORD" \\
+  --user "admin:\\\$FOREMAN_TOKEN" \\
   -H 'Accept: application/json' \\
   "${FOREMAN_URL}/katello/api/content_views/${CONTENT_VIEW_ID}" |
 jq
@@ -2070,7 +2070,7 @@ jq
 5. Activation Key
 ------------------------------------------------------------
 curl -ksS \\
-  --user "admin:\\\$FOREMAN_PASSWORD" \\
+  --user "admin:\\\$FOREMAN_TOKEN" \\
   -H 'Accept: application/json' \\
   "${FOREMAN_URL}/katello/api/activation_keys/${ACTIVATION_KEY_ID}" |
 jq
@@ -2078,7 +2078,7 @@ jq
 6. Repository Sync Status
 ------------------------------------------------------------
 curl -ksS \\
-  --user "admin:\\\$FOREMAN_PASSWORD" \\
+  --user "admin:\\\$FOREMAN_TOKEN" \\
   -H 'Accept: application/json' \\
   "${FOREMAN_URL}/katello/api/repositories/REPOSITORY_ID/sync" |
 jq
