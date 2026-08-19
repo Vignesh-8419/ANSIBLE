@@ -287,9 +287,9 @@
         seconds: 3
 
     ###########################################################################
-    # POWER ON
+    # POWER ON SELECTED VM
     ###########################################################################
-
+    
     - name: Power ON selected Rocky Linux 8 VM
       community.vmware.vmware_guest_powerstate:
         hostname: "{{ esxi_hostname }}"
@@ -301,6 +301,52 @@
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
+    
+    ###########################################################################
+    # WAIT 10 SECONDS
+    #
+    # Give EFI/PXE boot enough time to start
+    ###########################################################################
+    
+    - name: Wait 10 seconds after power ON
+      pause:
+        seconds: 10
+    
+    ###########################################################################
+    # CHANGE BOOT ORDER TO DISK FIRST
+    #
+    # This affects the NEXT reboot.
+    # The current PXE boot continues normally.
+    ###########################################################################
+    
+    - name: Change boot order to disk first after PXE starts
+      community.vmware.vmware_guest_boot_manager:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ item.name.split('.')[0] }}"
+        boot_order:
+          - disk
+          - ethernet
+      loop: "{{ filtered_devices }}"
+      loop_control:
+        label: "{{ item.name }}"
+    
+    ###########################################################################
+    # SHOW RESULT
+    ###########################################################################
+    
+    - name: Show boot order update message
+      debug:
+        msg:
+          - "============================================================"
+          - "PXE BOOT STARTED"
+          - "Waited 10 seconds"
+          - "Next boot order changed to:"
+          - "1. Disk"
+          - "2. Ethernet"
+          - "============================================================"
 
 # ============================================================
 # PLAY 3: Build Dynamic Inventory and Wait for SSH
