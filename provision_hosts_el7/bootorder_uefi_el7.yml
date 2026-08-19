@@ -58,57 +58,109 @@
     ###########################################################################
     # Get Devices
     ###########################################################################
-
+    
     - name: Get devices from NetBox cluster
       uri:
-        url: "{{ netbox_url }}/api/dcim/devices/?cluster_id={{ cluster_id }}&limit=100"
+        url: "{{ netbox_url }}/api/dcim/devices/?cluster_id={{ cluster_id }}&limit=1000"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
+          Accept: "application/json"
         return_content: true
         validate_certs: false
+        status_code: 200
       register: netbox_devices
-
-    - name: Show all devices in cluster
+    
+    - name: Show cluster ID used for device lookup
       debug:
-        msg: "{{ netbox_devices.json.results | map(attribute='name') | list }}"
-
+        msg:
+          - "Requested Cluster Name : {{ cluster_name }}"
+          - "Requested Cluster ID   : {{ cluster_id }}"
+          - "Devices Returned       : {{ netbox_devices.json.results | length }}"
+    
+    ###########################################################################
+    # SAFETY FILTER - ENSURE DEVICES BELONG TO EXACT CLUSTER
+    ###########################################################################
+    
+    - name: Filter devices belonging to exact cluster
+      set_fact:
+        cluster_devices: >-
+          {{
+            netbox_devices.json.results
+            | selectattr('cluster', 'defined')
+            | selectattr('cluster.name', 'defined')
+            | selectattr('cluster.name', 'equalto', cluster_name)
+            | list
+          }}
+    
+    - name: Show devices in exact cluster
+      debug:
+        msg:
+          - "============================================================"
+          - "DEVICES IN EXACT CLUSTER: {{ cluster_name }}"
+          - "============================================================"
+          - "{{ cluster_devices | map(attribute='name') | list }}"
+          - "============================================================"
+    
+    - name: Fail if no devices found in exact cluster
+      fail:
+        msg: >-
+          No devices found in exact cluster '{{ cluster_name }}'.
+          Cluster ID used: {{ cluster_id }}
+      when: cluster_devices | length == 0
+    
     ###########################################################################
     # Convert Survey Input
     ###########################################################################
-
+    
     - name: Convert target_hosts string to list
       set_fact:
-        target_hosts_list: "{{ target_hosts.split(',') | map('trim') | reject('equalto', '') | list }}"
-
+        target_hosts_list: >-
+          {{
+            target_hosts.split(',')
+            | map('trim')
+            | reject('equalto', '')
+            | list
+          }}
+    
     - name: Show requested hosts
       debug:
         var: target_hosts_list
-
+    
     ###########################################################################
     # Filter Devices
     ###########################################################################
-
+    
     - name: Initialize filtered devices
       set_fact:
         filtered_devices: []
-
+    
     - name: Filter selected devices
       set_fact:
         filtered_devices: "{{ filtered_devices + [item] }}"
-      loop: "{{ netbox_devices.json.results }}"
+      loop: "{{ cluster_devices }}"
+      loop_control:
+        label: "{{ item.name }}"
       when: item.name.split('.')[0] in target_hosts_list
-
+    
     - name: Fail if no matching hosts found
       fail:
         msg: >-
           No matching hosts found in NetBox.
+          Cluster: {{ cluster_name }}
+          Cluster ID: {{ cluster_id }}
           Requested: {{ target_hosts_list }}
+          Available in cluster: {{ cluster_devices | map(attribute='name') | list }}
       when: filtered_devices | length == 0
-
+    
     - name: Show selected devices
       debug:
-        msg: "{{ filtered_devices | map(attribute='name') | list }}"
+        msg:
+          - "============================================================"
+          - "SELECTED DEVICES"
+          - "============================================================"
+          - "{{ filtered_devices | map(attribute='name') | list }}"
+          - "============================================================"
 
 
 # ============================================================
