@@ -37,7 +37,7 @@
       }}
 
     foreman_user: "admin"
-    foreman_api_token: "{{ vault_foreman_api_token | default('PUT_FOREMAN_TOKEN_HERE') }}"
+    foreman_api_token: "_bkE_ov7gKb68d3aR01m5A"
 
 
     ###########################################################################
