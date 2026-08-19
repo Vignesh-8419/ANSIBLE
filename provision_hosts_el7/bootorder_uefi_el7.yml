@@ -239,9 +239,9 @@
       delegate_to: localhost
       register: poweroff_result
 
-    # ==========================================================
-    # SET EFI
-    # ==========================================================
+    ###########################################################################
+    # SET EFI FIRMWARE
+    ###########################################################################
 
     - name: Set EFI firmware
       community.vmware.vmware_guest:
@@ -256,46 +256,38 @@
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
-      delegate_to: localhost
 
-    # ==========================================================
-    # WAIT AFTER CONFIGURATION
-    # ==========================================================
+    ###########################################################################
+    # SET PXE / NETWORK BOOT FIRST
+    ###########################################################################
 
-    - name: Pause after firmware configuration
-      ansible.builtin.pause:
-        seconds: 3
-
-    # ==========================================================
-    # SET PXE / NETWORK BOOT
-    #
-    # IMPORTANT:
-    # The previous vmware_guest_boot_manager task caused Ansible
-    # to attempt remote temporary directory creation.
-    #
-    # Use vmware_guest with boot settings instead.
-    # ==========================================================
-
-    - name: Configure network boot first
-      community.vmware.vmware_guest:
+    - name: Set PXE first boot
+      community.vmware.vmware_guest_boot_manager:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: "{{ validate_certs }}"
         name: "{{ item.name.split('.')[0] }}"
-        state: present
-        hardware:
-          boot_firmware: efi
+        boot_order:
+          - ethernet
+          - disk
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
-      delegate_to: localhost
 
-    # ==========================================================
+    ###########################################################################
+    # WAIT FOR CONFIGURATION
+    ###########################################################################
+
+    - name: Pause after firmware and PXE configuration
+      pause:
+        seconds: 3
+
+    ###########################################################################
     # POWER ON
-    # ==========================================================
+    ###########################################################################
 
-    - name: Power ON selected VM
+    - name: Power ON selected Rocky Linux 8 VM
       community.vmware.vmware_guest_powerstate:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
@@ -306,8 +298,6 @@
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
-      delegate_to: localhost
-
 
 # ============================================================
 # PLAY 3: Get NetBox IPs and Wait for SSH
