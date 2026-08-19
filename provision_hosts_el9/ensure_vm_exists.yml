@@ -441,7 +441,7 @@
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
-        validate_certs: "{{ validate_certs }}"
+        validate_certs: false
         name: "{{ item.name.split('.')[0] }}"
       loop: "{{ filtered_devices }}"
       loop_control:
