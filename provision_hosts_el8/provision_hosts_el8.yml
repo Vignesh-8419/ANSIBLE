@@ -73,15 +73,21 @@
     loc_id: 2
 
 
-    ###########################################################################
-    # ROCKY LINUX 8.10 HOSTGROUP SELECTION
+    # ============================================================================
+    # Rocky Linux 8.10 Host Group / Operating System Selection
+    #
+    # AWX Survey:
     #
     # 1 = RockyLinux8.10-SingleDisk
+    #     OS = RockyLinux8.10-SingleDisk 8.10
+    #
     # 2 = RockyLinux8.10-RAID
-    ###########################################################################
-
+    #     OS = RockyLinux8.10-RAID 8.10
+    #
+    # ============================================================================
+    
     hostgroup: "{{ hostgroup | default('1', true) }}"
-
+    
     hostgroup_id: >-
       {{
         {
@@ -89,27 +95,37 @@
           '2': 2
         }[hostgroup | string]
       }}
-
-
-    ###########################################################################
-    # FOREMAN PROVISIONING IDS
-    ###########################################################################
-
-    operatingsystem_id: 4
+    
+    operatingsystem_id: >-
+      {{
+        {
+          '1': 5,
+          '2': 4
+        }[hostgroup | string]
+      }}
+    
+    # Rocky 8 Remote
     medium_id: 16
+    
+    # Kickstart default
     ptable_id: 126
-
+    
+    # Rocky Linux 8 subnet
     subnet_name: "vgs-subnet-rockyos"
-
+    
+    # Katello Content
     content_view_id: 3
     lifecycle_environment_id: 1
-
+    
+    # Architecture
     architecture_id: 1
+    
+    # Domain
     domain_id: 1
-
+    
+    # PXE
     pxe_loader: "Grub2 UEFI"
     build: true
-
 
   tasks:
 
