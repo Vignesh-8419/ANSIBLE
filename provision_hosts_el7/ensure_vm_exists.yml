@@ -481,7 +481,7 @@
         name: "{{ item.item.name.split('.')[0] }}"
         disk:
           - state: present
-            size_gb: "{{ disk_size | int }}"
+            size_gb: "{{ vm_disk_size_gb | int }}"
             type: thin
             datastore: "{{ datastore }}"
             scsi_controller: 0
