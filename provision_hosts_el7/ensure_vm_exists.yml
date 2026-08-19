@@ -247,61 +247,18 @@
         var: target_hosts_list
 
     ###########################################################################
-    # FILTER DEVICES
+    # FILTER SELECTED DEVICES
     ###########################################################################
-
+    
     - name: Initialize filtered devices
       set_fact:
         filtered_devices: []
-
+    
     - name: Select all devices when target hosts is empty
       set_fact:
         filtered_devices: "{{ netbox_devices.json.results }}"
       when: target_hosts_list | length == 0
-
-    - name: Filter selected devices
-      set_fact:
-        filtered_devices: "{{ filtered_devices + [item] }}"
-      loop: "{{ netbox_devices.json.results }}"
-      loop_control:
-        label: "{{ item.name }}"
-      when:
-        - target_hosts_list | length > 0
-        - >-
-          (
-            target_hosts_list
-            | select(
-                'match',
-                '^' ~
-                (
-                  item.name.split('.')[0]
-                  | regex_replace('([.^$+?{}\\[\\]\\\\|()])', '\\\\\\1')
-                )
-                ~ '$'
-              )
-            | list
-            | length
-          ) > 0
-          or
-          (
-            target_hosts_list
-            | select(
-                'match',
-                '^' ~
-                (
-                  item.name.split('.')[0]
-                  | regex_replace('([.^$+?{}\\[\\]\\\\|()])', '\\\\\\1')
-                )
-                ~ '$'
-              )
-            | list
-            | length
-          ) > 0
-
-    ###########################################################################
-    # SIMPLER EXACT/WILDCARD FILTER
-    ###########################################################################
-
+    
     - name: Add exact or wildcard matching devices
       set_fact:
         filtered_devices: "{{ filtered_devices + [item.0] }}"
@@ -311,21 +268,26 @@
       when:
         - target_hosts_list | length > 0
         - item.0.name.split('.')[0] is match('^' ~ (item.1 | regex_replace('\*', '.*')) ~ '$')
-
+    
     - name: Remove duplicate filtered devices
       set_fact:
-        filtered_devices: >-
-          {{
-            filtered_devices
-            | unique(attribute='name')
-            | list
-          }}
-
+        filtered_devices: "{{ filtered_devices | unique(attribute='name') | list }}"
+    
+    - name: Show cluster and filtering result
+      debug:
+        msg:
+          - "Cluster Used      : {{ cluster_name }}"
+          - "Cluster ID        : {{ cluster_id }}"
+          - "Requested Hosts   : {{ target_hosts_list }}"
+          - "Available Hosts   : {{ netbox_devices.json.results | map(attribute='name') | list }}"
+          - "Selected Hosts    : {{ filtered_devices | map(attribute='name') | list }}"
+    
     - name: Fail if no matching hosts found
       fail:
         msg: >-
-          No matching hosts found in NetBox.
+          No matching hosts found.
           Cluster: {{ cluster_name }}
+          Cluster ID: {{ cluster_id }}
           Requested: {{ target_hosts_list }}
           Available: {{
             netbox_devices.json.results
