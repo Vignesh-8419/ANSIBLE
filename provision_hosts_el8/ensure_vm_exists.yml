@@ -207,52 +207,51 @@
     ###########################################################################
     # FILTER SELECTED DEVICES
     ###########################################################################
-
+    
     - name: Initialize filtered devices
       set_fact:
         filtered_devices: []
-
-
-    - name: Use all devices when target hosts is empty
+    
+    - name: Select all devices when target hosts is empty
       set_fact:
         filtered_devices: "{{ netbox_devices.json.results }}"
-      when: target_patterns | length == 0
-
-
-    - name: Add devices matching target patterns
+      when: target_hosts_list | length == 0
+    
+    - name: Add exact or wildcard matching devices
       set_fact:
         filtered_devices: "{{ filtered_devices + [item.0] }}"
-      loop: "{{ netbox_devices.json.results | product(target_patterns) | list }}"
+      loop: "{{ netbox_devices.json.results | product(target_hosts_list) | list }}"
       loop_control:
         label: "{{ item.0.name }} -> {{ item.1 }}"
       when:
-        - target_patterns | length > 0
-        - item.0.name.split('.')[0] is match('^' ~ item.1 ~ '$')
-
-
+        - target_hosts_list | length > 0
+        - item.0.name.split('.')[0] is match('^' ~ (item.1 | regex_replace('\*', '.*')) ~ '$')
+    
     - name: Remove duplicate filtered devices
       set_fact:
         filtered_devices: "{{ filtered_devices | unique(attribute='name') | list }}"
-
-
-    - name: Show filtered devices
+    
+    - name: Show cluster and filtering result
       debug:
         msg:
-          - "============================================================"
-          - "SELECTED ROCKY LINUX 8 VMS"
-          - "============================================================"
-          - "{{ filtered_devices | map(attribute='name') | list }}"
-          - "============================================================"
-
-
+          - "Cluster Used      : {{ cluster_name }}"
+          - "Cluster ID        : {{ cluster_id }}"
+          - "Requested Hosts   : {{ target_hosts_list }}"
+          - "Available Hosts   : {{ netbox_devices.json.results | map(attribute='name') | list }}"
+          - "Selected Hosts    : {{ filtered_devices | map(attribute='name') | list }}"
+    
     - name: Fail if no matching hosts found
       fail:
         msg: >-
-          No matching hosts found in NetBox.
+          No matching hosts found.
           Cluster: {{ cluster_name }}
-          Requested: {{ target_hosts }}
-          Available:
-          {{ netbox_devices.json.results | map(attribute='name') | list }}
+          Cluster ID: {{ cluster_id }}
+          Requested: {{ target_hosts_list }}
+          Available: {{
+            netbox_devices.json.results
+            | map(attribute='name')
+            | list
+          }}
       when: filtered_devices | length == 0
 
 
