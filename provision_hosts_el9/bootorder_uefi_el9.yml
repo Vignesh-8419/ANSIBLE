@@ -1,9 +1,9 @@
 ---
 # ============================================================
-# PLAY 1: Load selected VMs from NetBox
+# PLAY 1: Load selected Rocky 9 VMs from NetBox
 # ============================================================
 
-- name: Load selected VMs from NetBox
+- name: Load selected Rocky 9 VMs from NetBox
   hosts: localhost
   connection: local
   gather_facts: false
@@ -12,53 +12,83 @@
     netbox_url: "https://192.168.253.143"
     netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
 
-    # From AWX Survey
-    cluster_name: "rocky-8-servers"
+    # ========================================================
+    # FIXED CLUSTER
+    # ========================================================
+    cluster_name: "rocky-9-servers"
 
   tasks:
 
-    ###########################################################################
-    # Validate Survey Input
-    ###########################################################################
+    # ========================================================
+    # SHOW RUNTIME VARIABLES
+    # ========================================================
+
+    - name: Show runtime variables
+      debug:
+        msg:
+          - "============================================================"
+          - "RUNTIME VARIABLES"
+          - "============================================================"
+          - "Cluster Name : {{ cluster_name }}"
+          - "Target Hosts : {{ target_hosts | default('NOT SET', true) }}"
+          - "============================================================"
+
+    # ========================================================
+    # VALIDATE TARGET HOSTS
+    # ========================================================
 
     - name: Fail if target_hosts is not provided
       fail:
         msg: "Please provide target_hosts in the AWX Survey."
       when: target_hosts is not defined or target_hosts | trim == ""
 
-    ###########################################################################
-    # Get Cluster ID
-    ###########################################################################
+    # ========================================================
+    # GET EXACT CLUSTER
+    # ========================================================
 
-    - name: Get cluster ID from NetBox
+    - name: Get cluster from NetBox
       uri:
-        url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ cluster_name }}"
+        url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ cluster_name | urlencode }}&limit=100"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
+          Accept: "application/json"
         return_content: true
         validate_certs: false
+        use_proxy: false
+        status_code: 200
       register: cluster_lookup
+
+    - name: Resolve exact cluster ID
+      set_fact:
+        cluster_id: >-
+          {{
+            cluster_lookup.json.results
+            | selectattr('name', 'equalto', cluster_name)
+            | map(attribute='id')
+            | first
+            | default('')
+          }}
 
     - name: Fail if cluster not found
       fail:
         msg: "Cluster '{{ cluster_name }}' not found in NetBox."
-      when: cluster_lookup.json.results | length == 0
-
-    - name: Set cluster ID
-      set_fact:
-        cluster_id: "{{ (cluster_lookup.json.results | first).id }}"
+      when: cluster_id | string | length == 0
 
     - name: Show cluster information
       debug:
         msg:
+          - "============================================================"
+          - "NETBOX CLUSTER"
+          - "============================================================"
           - "Cluster Name : {{ cluster_name }}"
           - "Cluster ID   : {{ cluster_id }}"
+          - "============================================================"
 
-    ###########################################################################
-    # Get Devices
-    ###########################################################################
-    
+    # ========================================================
+    # GET DEVICES FROM CLUSTER
+    # ========================================================
+
     - name: Get devices from NetBox cluster
       uri:
         url: "{{ netbox_url }}/api/dcim/devices/?cluster_id={{ cluster_id }}&limit=1000"
@@ -68,31 +98,37 @@
           Accept: "application/json"
         return_content: true
         validate_certs: false
+        use_proxy: false
         status_code: 200
       register: netbox_devices
-    
-    - name: Show cluster ID used for device lookup
+
+    - name: Show device lookup information
       debug:
         msg:
-          - "Requested Cluster Name : {{ cluster_name }}"
-          - "Requested Cluster ID   : {{ cluster_id }}"
-          - "Devices Returned       : {{ netbox_devices.json.results | length }}"
-    
-    ###########################################################################
-    # SAFETY FILTER - ENSURE DEVICES BELONG TO EXACT CLUSTER
-    ###########################################################################
-    
-    - name: Filter devices belonging to exact cluster
+          - "Cluster Name Used : {{ cluster_name }}"
+          - "Cluster ID Used   : {{ cluster_id }}"
+          - "Devices Returned  : {{ netbox_devices.json.results | length }}"
+
+    # ========================================================
+    # SAFETY FILTER - EXACT CLUSTER ONLY
+    # ========================================================
+
+    - name: Initialize exact cluster devices
       set_fact:
-        cluster_devices: >-
-          {{
-            netbox_devices.json.results
-            | selectattr('cluster', 'defined')
-            | selectattr('cluster.name', 'defined')
-            | selectattr('cluster.name', 'equalto', cluster_name)
-            | list
-          }}
-    
+        cluster_devices: []
+
+    - name: Add devices belonging to exact cluster
+      set_fact:
+        cluster_devices: "{{ cluster_devices + [item] }}"
+      loop: "{{ netbox_devices.json.results }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when:
+        - item.cluster is defined
+        - item.cluster is not none
+        - item.cluster.name is defined
+        - item.cluster.name == cluster_name
+
     - name: Show devices in exact cluster
       debug:
         msg:
@@ -101,18 +137,22 @@
           - "============================================================"
           - "{{ cluster_devices | map(attribute='name') | list }}"
           - "============================================================"
-    
+
     - name: Fail if no devices found in exact cluster
       fail:
         msg: >-
           No devices found in exact cluster '{{ cluster_name }}'.
           Cluster ID used: {{ cluster_id }}
       when: cluster_devices | length == 0
-    
-    ###########################################################################
-    # Convert Survey Input
-    ###########################################################################
-    
+
+    # ========================================================
+    # CONVERT AWX SURVEY INPUT
+    #
+    # Examples:
+    # rocky-09-01
+    # rocky-09-01,rocky-09-02
+    # ========================================================
+
     - name: Convert target_hosts string to list
       set_fact:
         target_hosts_list: >-
@@ -122,19 +162,19 @@
             | reject('equalto', '')
             | list
           }}
-    
+
     - name: Show requested hosts
       debug:
         var: target_hosts_list
-    
-    ###########################################################################
-    # Filter Devices
-    ###########################################################################
-    
+
+    # ========================================================
+    # FILTER SELECTED DEVICES
+    # ========================================================
+
     - name: Initialize filtered devices
       set_fact:
         filtered_devices: []
-    
+
     - name: Filter selected devices
       set_fact:
         filtered_devices: "{{ filtered_devices + [item] }}"
@@ -142,32 +182,32 @@
       loop_control:
         label: "{{ item.name }}"
       when: item.name.split('.')[0] in target_hosts_list
-    
+
     - name: Fail if no matching hosts found
       fail:
         msg: >-
-          No matching hosts found in NetBox.
+          No matching Rocky 9 hosts found in NetBox.
           Cluster: {{ cluster_name }}
           Cluster ID: {{ cluster_id }}
           Requested: {{ target_hosts_list }}
           Available in cluster: {{ cluster_devices | map(attribute='name') | list }}
       when: filtered_devices | length == 0
-    
+
     - name: Show selected devices
       debug:
         msg:
           - "============================================================"
-          - "SELECTED DEVICES"
+          - "SELECTED ROCKY 9 DEVICES"
           - "============================================================"
           - "{{ filtered_devices | map(attribute='name') | list }}"
           - "============================================================"
 
 
 # ============================================================
-# PLAY 2: Configure ESXi Boot
+# PLAY 2: Configure Rocky 9 VM for EFI PXE Boot
 # ============================================================
 
-- name: Configure VM Boot
+- name: Configure Rocky 9 VM Boot
   hosts: localhost
   connection: local
   gather_facts: false
@@ -175,140 +215,121 @@
   collections:
     - community.vmware
 
-  vars:
-
-    esxi_hostname: "192.168.253.128"
-    esxi_username: "root"
-    esxi_password: "Root@123"
-
-    validate_certs: false
-
   tasks:
 
-    ###########################################################################
-    # Power OFF
-    ###########################################################################
+    # ========================================================
+    # POWER OFF
+    # ========================================================
 
-    - name: Power OFF VM
+    - name: Power OFF selected VM
       community.vmware.vmware_guest_powerstate:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: "{{ validate_certs }}"
+        hostname: "{{ item.config_context.esxi_hostname }}"
+        username: "{{ item.config_context.esxi_username }}"
+        password: "{{ item.config_context.esxi_password }}"
+        validate_certs: false
         name: "{{ item.name.split('.')[0] }}"
         state: powered-off
+      delegate_to: localhost
       loop: "{{ filtered_devices }}"
+      loop_control:
+        label: "{{ item.name }}"
       register: poweroff_result
 
-    ###########################################################################
-    # Configure EFI
-    ###########################################################################
+    - name: Show power OFF result
+      debug:
+        msg: "VM {{ item.item.name }} power operation completed"
+      loop: "{{ poweroff_result.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Wait after VM power OFF
+      pause:
+        seconds: 5
+      delegate_to: localhost
+
+    # ========================================================
+    # SET EFI
+    # ========================================================
 
     - name: Set EFI firmware
       community.vmware.vmware_guest:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: "{{ validate_certs }}"
+        hostname: "{{ item.config_context.esxi_hostname }}"
+        username: "{{ item.config_context.esxi_username }}"
+        password: "{{ item.config_context.esxi_password }}"
+        validate_certs: false
         name: "{{ item.name.split('.')[0] }}"
         state: present
         hardware:
           boot_firmware: efi
+      delegate_to: localhost
       loop: "{{ filtered_devices }}"
+      loop_control:
+        label: "{{ item.name }}"
 
-    ###########################################################################
-    # Configure PXE Boot First
-    ###########################################################################
+    # ========================================================
+    # SET PXE FIRST
+    # ========================================================
 
     - name: Set PXE first boot
       community.vmware.vmware_guest_boot_manager:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: "{{ validate_certs }}"
+        hostname: "{{ item.config_context.esxi_hostname }}"
+        username: "{{ item.config_context.esxi_username }}"
+        password: "{{ item.config_context.esxi_password }}"
+        validate_certs: false
         name: "{{ item.name.split('.')[0] }}"
         boot_order:
           - ethernet
           - disk
+      delegate_to: localhost
       loop: "{{ filtered_devices }}"
+      loop_control:
+        label: "{{ item.name }}"
 
-    ###########################################################################
-    # Power ON
-    ###########################################################################
+    # ========================================================
+    # POWER ON
+    # ========================================================
 
-    - name: Power ON VM
+    - name: Power ON selected VM
       community.vmware.vmware_guest_powerstate:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: "{{ validate_certs }}"
+        hostname: "{{ item.config_context.esxi_hostname }}"
+        username: "{{ item.config_context.esxi_username }}"
+        password: "{{ item.config_context.esxi_password }}"
+        validate_certs: false
         name: "{{ item.name.split('.')[0] }}"
         state: powered-on
+      delegate_to: localhost
       loop: "{{ filtered_devices }}"
+      loop_control:
+        label: "{{ item.name }}"
 
-    ###########################################################################
-    # Restore Disk First
-    #
-    # This only sets the normal boot order after PXE configuration.
-    ###########################################################################
-
-    - name: Restore disk first boot order
-      community.vmware.vmware_guest_boot_manager:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: "{{ validate_certs }}"
-        name: "{{ item.name.split('.')[0] }}"
-        boot_order:
-          - disk
-          - ethernet
-      loop: "{{ filtered_devices }}"
+    - name: Wait for Rocky 9 PXE boot to start
+      pause:
+        seconds: 20
+      delegate_to: localhost
 
 
 # ============================================================
 # PLAY 3: Get NetBox IPs and Wait for SSH
 # ============================================================
 
-- name: Wait for VMs and build dynamic inventory
+- name: Wait for Rocky 9 VMs and build dynamic inventory
   hosts: localhost
   connection: local
   gather_facts: false
 
   vars:
-    netbox_url: "https://192.168.253.143"
-    netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
-
-    # Default credentials
     default_ssh_user: "root"
     default_ssh_password: "Root@123"
 
   tasks:
 
-    ###########################################################################
-    # Get IP Addresses
-    ###########################################################################
-
-    - name: Get all IP addresses from NetBox
-      uri:
-        url: "{{ netbox_url }}/api/ipam/ip-addresses/?limit=100"
-        method: GET
-        headers:
-          Authorization: "Token {{ netbox_token }}"
-        return_content: true
-        validate_certs: false
-      register: netbox_ips
-
-    ###########################################################################
-    # Initialize VM Connection List
-    ###########################################################################
+    # ========================================================
+    # BUILD CONNECTION INFORMATION
+    # ========================================================
 
     - name: Initialize selected VM connection information
       set_fact:
         selected_vm_connections: []
-
-    ###########################################################################
-    # Build Hostname and IP Mapping
-    ###########################################################################
 
     - name: Build selected VM connection information
       set_fact:
@@ -321,52 +342,46 @@
                 'name': item.name,
                 'short_name': item.name.split('.')[0],
                 'ip': (
-                  netbox_ips.json.results
-                  | selectattr(
-                      'assigned_object.device.name',
-                      'defined'
-                    )
-                  | selectattr(
-                      'assigned_object.device.name',
-                      'equalto',
-                      item.name
-                    )
-                  | map(attribute='address')
-                  | map('regex_replace', '/.*$', '')
-                  | first
-                  | default(item.primary_ip4.address | default('') | regex_replace('/.*$', ''))
+                  item.primary_ip4.address
+                  | default('')
+                  | regex_replace('/.*$', '')
                 ),
                 'ssh_user': (
                   item.config_context.vm_root_user
-                  | default(default_ssh_user)
+                  | default(default_ssh_user, true)
                 ),
                 'ssh_password': (
                   item.config_context.vm_root_password
-                  | default(default_ssh_password)
+                  | default(default_ssh_password, true)
                 )
               }
             ]
           }}
       loop: "{{ filtered_devices }}"
+      loop_control:
+        label: "{{ item.name }}"
 
-    - name: Show selected VM IP mapping
+    - name: Show selected Rocky 9 VM IP mapping
       debug:
         msg:
           - "VM       : {{ item.name }}"
           - "IP       : {{ item.ip }}"
           - "SSH User : {{ item.ssh_user }}"
       loop: "{{ selected_vm_connections }}"
-      no_log: false
+      loop_control:
+        label: "{{ item.name }}"
 
     - name: Fail if any selected VM has no IP address
       fail:
         msg: "No IP address found in NetBox for VM {{ item.name }}"
       when: item.ip | length == 0
       loop: "{{ selected_vm_connections }}"
+      loop_control:
+        label: "{{ item.name }}"
 
-    ###########################################################################
-    # Wait for Port 22
-    ###########################################################################
+    # ========================================================
+    # WAIT FOR SSH
+    # ========================================================
 
     - name: Wait for SSH port 22
       wait_for:
@@ -376,12 +391,14 @@
         timeout: 3600
         state: started
       loop: "{{ selected_vm_connections }}"
+      loop_control:
+        label: "{{ item.name }}"
 
-    ###########################################################################
-    # Add VMs to Dynamic Inventory
-    ###########################################################################
+    # ========================================================
+    # ADD TO DYNAMIC INVENTORY
+    # ========================================================
 
-    - name: Add selected VMs to dynamic inventory
+    - name: Add selected Rocky 9 VMs to dynamic inventory
       add_host:
         name: "{{ item.short_name }}"
         groups: verification_vms
@@ -395,6 +412,8 @@
           -o StrictHostKeyChecking=no
           -o UserKnownHostsFile=/dev/null
       loop: "{{ selected_vm_connections }}"
+      loop_control:
+        label: "{{ item.name }}"
 
     - name: Show dynamic inventory hosts
       debug:
@@ -402,79 +421,49 @@
           - "Host: {{ item.short_name }}"
           - "IP: {{ item.ip }}"
       loop: "{{ selected_vm_connections }}"
+      loop_control:
+        label: "{{ item.name }}"
 
 
 # ============================================================
-# PLAY 4: Final System Verification
-#
-# IMPORTANT:
-# This play runs DIRECTLY against the dynamically added VMs.
-# No delegate_to is used.
+# PLAY 4: Final Rocky 9 System Verification
 # ============================================================
 
-- name: Final System Verification
+- name: Final Rocky 9 System Verification
   hosts: verification_vms
   gather_facts: false
 
   tasks:
-
-    ###########################################################################
-    # Wait until Ansible SSH authentication succeeds
-    ###########################################################################
 
     - name: Wait for SSH authentication
       wait_for_connection:
         delay: 5
         timeout: 600
 
-    ###########################################################################
-    # Check Hostname
-    ###########################################################################
-
     - name: Check hostname
       raw: hostname
       register: hostname_result
       changed_when: false
-
-    ###########################################################################
-    # Check Uptime
-    ###########################################################################
 
     - name: Check uptime
       raw: uptime -p
       register: uptime_result
       changed_when: false
 
-    ###########################################################################
-    # Check Kernel
-    ###########################################################################
-
     - name: Check kernel
       raw: uname -r
       register: kernel_result
       changed_when: false
-
-    ###########################################################################
-    # Check Operating System
-    ###########################################################################
 
     - name: Check operating system
       raw: cat /etc/os-release
       register: os_result
       changed_when: false
 
-    ###########################################################################
-    # Get Disk Information
-    ###########################################################################
-
     - name: Check block devices
       raw: lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
       register: disk_result
       changed_when: false
-
-    ###########################################################################
-    # Check RAID
-    ###########################################################################
 
     - name: Check RAID status
       raw: cat /proc/mdstat
@@ -482,13 +471,11 @@
       changed_when: false
       failed_when: false
 
-    ###########################################################################
-    # Display Final Verification
-    ###########################################################################
-
-    - name: Display final system information
+    - name: Display final Rocky 9 system information
       debug:
         msg:
+          - "============================================================"
+          - "FINAL ROCKY 9 SYSTEM VERIFICATION"
           - "============================================================"
           - "Host      : {{ inventory_hostname }}"
           - "IP        : {{ ansible_host }}"
@@ -501,5 +488,5 @@
           - "{{ disk_result.stdout_lines }}"
           - "------------------------------------------------------------"
           - "RAID:"
-          - "{{ raid_result.stdout_lines | default(['No software RAID detected']) }}"
+          - "{{ raid_result.stdout_lines }}"
           - "============================================================"
