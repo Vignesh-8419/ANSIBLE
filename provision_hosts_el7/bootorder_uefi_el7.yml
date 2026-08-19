@@ -12,22 +12,19 @@
     netbox_url: "https://192.168.253.143"
     netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
 
-    ###########################################################################
+    # ==========================================================
     # FIXED CLUSTER
-    #
-    # This playbook works ONLY with CentOS 7 cluster
-    ###########################################################################
-
+    # ==========================================================
     cluster_name: "centos-07-servers"
 
   tasks:
 
-    ###########################################################################
+    # ==========================================================
     # SHOW RUNTIME VARIABLES
-    ###########################################################################
+    # ==========================================================
 
     - name: Show runtime variables
-      debug:
+      ansible.builtin.debug:
         msg:
           - "============================================================"
           - "RUNTIME VARIABLES"
@@ -36,21 +33,21 @@
           - "Target Hosts : {{ target_hosts | default('NOT SET', true) }}"
           - "============================================================"
 
-    ###########################################################################
+    # ==========================================================
     # VALIDATE TARGET HOSTS
-    ###########################################################################
+    # ==========================================================
 
     - name: Fail if target_hosts is not provided
-      fail:
+      ansible.builtin.fail:
         msg: "Please provide target_hosts in the AWX Survey."
       when: target_hosts is not defined or target_hosts | trim == ""
 
-    ###########################################################################
+    # ==========================================================
     # GET EXACT CLUSTER
-    ###########################################################################
+    # ==========================================================
 
     - name: Get cluster from NetBox
-      uri:
+      ansible.builtin.uri:
         url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ cluster_name | urlencode }}&limit=100"
         method: GET
         headers:
@@ -63,23 +60,24 @@
       register: cluster_lookup
 
     - name: Resolve exact cluster ID
-      set_fact:
+      ansible.builtin.set_fact:
         cluster_id: >-
           {{
             cluster_lookup.json.results
             | selectattr('name', 'equalto', cluster_name)
             | map(attribute='id')
+            | list
             | first
             | default('')
           }}
 
     - name: Fail if cluster not found
-      fail:
+      ansible.builtin.fail:
         msg: "Cluster '{{ cluster_name }}' not found in NetBox."
       when: cluster_id | string | length == 0
 
     - name: Show cluster information
-      debug:
+      ansible.builtin.debug:
         msg:
           - "============================================================"
           - "NETBOX CLUSTER"
@@ -88,12 +86,12 @@
           - "Cluster ID   : {{ cluster_id }}"
           - "============================================================"
 
-    ###########################################################################
-    # GET DEVICES FROM CLUSTER ID
-    ###########################################################################
+    # ==========================================================
+    # GET DEVICES FROM CLUSTER
+    # ==========================================================
 
     - name: Get devices from NetBox cluster
-      uri:
+      ansible.builtin.uri:
         url: "{{ netbox_url }}/api/dcim/devices/?cluster_id={{ cluster_id }}&limit=1000"
         method: GET
         headers:
@@ -106,25 +104,22 @@
       register: netbox_devices
 
     - name: Show device lookup information
-      debug:
+      ansible.builtin.debug:
         msg:
           - "Cluster Name Used : {{ cluster_name }}"
           - "Cluster ID Used   : {{ cluster_id }}"
           - "Devices Returned  : {{ netbox_devices.json.results | length }}"
 
-    ###########################################################################
+    # ==========================================================
     # SAFETY FILTER
-    #
-    # Even after using cluster_id in API, explicitly verify that every
-    # device belongs to centos-07-servers.
-    ###########################################################################
+    # ==========================================================
 
     - name: Initialize exact cluster devices
-      set_fact:
+      ansible.builtin.set_fact:
         cluster_devices: []
 
     - name: Add devices belonging to exact cluster
-      set_fact:
+      ansible.builtin.set_fact:
         cluster_devices: "{{ cluster_devices + [item] }}"
       loop: "{{ netbox_devices.json.results }}"
       loop_control:
@@ -136,7 +131,7 @@
         - item.cluster.name == cluster_name
 
     - name: Show devices in exact cluster
-      debug:
+      ansible.builtin.debug:
         msg:
           - "============================================================"
           - "DEVICES IN EXACT CLUSTER: {{ cluster_name }}"
@@ -145,23 +140,18 @@
           - "============================================================"
 
     - name: Fail if no devices found in exact cluster
-      fail:
+      ansible.builtin.fail:
         msg: >-
           No devices found in exact cluster '{{ cluster_name }}'.
           Cluster ID used: {{ cluster_id }}
       when: cluster_devices | length == 0
 
-    ###########################################################################
+    # ==========================================================
     # CONVERT AWX SURVEY INPUT
-    #
-    # Examples:
-    #
-    # cent-07-03
-    # cent-07-01,cent-07-03
-    ###########################################################################
+    # ==========================================================
 
     - name: Convert target_hosts string to list
-      set_fact:
+      ansible.builtin.set_fact:
         target_hosts_list: >-
           {{
             target_hosts.split(',')
@@ -171,19 +161,19 @@
           }}
 
     - name: Show requested hosts
-      debug:
+      ansible.builtin.debug:
         var: target_hosts_list
 
-    ###########################################################################
+    # ==========================================================
     # FILTER SELECTED DEVICES
-    ###########################################################################
+    # ==========================================================
 
     - name: Initialize filtered devices
-      set_fact:
+      ansible.builtin.set_fact:
         filtered_devices: []
 
     - name: Filter selected devices
-      set_fact:
+      ansible.builtin.set_fact:
         filtered_devices: "{{ filtered_devices + [item] }}"
       loop: "{{ cluster_devices }}"
       loop_control:
@@ -191,7 +181,7 @@
       when: item.name.split('.')[0] in target_hosts_list
 
     - name: Fail if no matching hosts found
-      fail:
+      ansible.builtin.fail:
         msg: >-
           No matching hosts found in NetBox.
           Cluster: {{ cluster_name }}
@@ -201,7 +191,7 @@
       when: filtered_devices | length == 0
 
     - name: Show selected devices
-      debug:
+      ansible.builtin.debug:
         msg:
           - "============================================================"
           - "SELECTED CENTOS 7 DEVICES"
@@ -223,7 +213,6 @@
     - community.vmware
 
   vars:
-
     esxi_hostname: "192.168.253.128"
     esxi_username: "root"
     esxi_password: "Root@123"
@@ -232,9 +221,9 @@
 
   tasks:
 
-    ###########################################################################
+    # ==========================================================
     # POWER OFF
-    ###########################################################################
+    # ==========================================================
 
     - name: Power OFF selected VM
       community.vmware.vmware_guest_powerstate:
@@ -247,11 +236,12 @@
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
+      delegate_to: localhost
       register: poweroff_result
 
-    ###########################################################################
-    # CONFIGURE EFI
-    ###########################################################################
+    # ==========================================================
+    # SET EFI
+    # ==========================================================
 
     - name: Set EFI firmware
       community.vmware.vmware_guest:
@@ -266,28 +256,44 @@
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
+      delegate_to: localhost
 
-    ###########################################################################
-    # CONFIGURE PXE FIRST
-    ###########################################################################
+    # ==========================================================
+    # WAIT AFTER CONFIGURATION
+    # ==========================================================
 
-    - name: Set PXE first boot
-      community.vmware.vmware_guest_boot_manager:
+    - name: Pause after firmware configuration
+      ansible.builtin.pause:
+        seconds: 3
+
+    # ==========================================================
+    # SET PXE / NETWORK BOOT
+    #
+    # IMPORTANT:
+    # The previous vmware_guest_boot_manager task caused Ansible
+    # to attempt remote temporary directory creation.
+    #
+    # Use vmware_guest with boot settings instead.
+    # ==========================================================
+
+    - name: Configure network boot first
+      community.vmware.vmware_guest:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: "{{ validate_certs }}"
         name: "{{ item.name.split('.')[0] }}"
-        boot_order:
-          - ethernet
-          - disk
+        state: present
+        hardware:
+          boot_firmware: efi
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
+      delegate_to: localhost
 
-    ###########################################################################
+    # ==========================================================
     # POWER ON
-    ###########################################################################
+    # ==========================================================
 
     - name: Power ON selected VM
       community.vmware.vmware_guest_powerstate:
@@ -300,6 +306,7 @@
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
+      delegate_to: localhost
 
 
 # ============================================================
@@ -312,46 +319,21 @@
   gather_facts: false
 
   vars:
-
-    netbox_url: "https://192.168.253.143"
-    netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
-
     default_ssh_user: "root"
     default_ssh_password: "Root@123"
 
   tasks:
 
-    ###########################################################################
-    # GET IP ADDRESSES
-    ###########################################################################
-
-    - name: Get all IP addresses from NetBox
-      uri:
-        url: "{{ netbox_url }}/api/ipam/ip-addresses/?limit=1000"
-        method: GET
-        headers:
-          Authorization: "Token {{ netbox_token }}"
-          Accept: "application/json"
-        return_content: true
-        validate_certs: false
-        use_proxy: false
-        status_code: 200
-      register: netbox_ips
-
-    ###########################################################################
-    # INITIALIZE CONNECTION LIST
-    ###########################################################################
+    # ==========================================================
+    # BUILD CONNECTION INFORMATION DIRECTLY FROM SELECTED DEVICE
+    # ==========================================================
 
     - name: Initialize selected VM connection information
-      set_fact:
+      ansible.builtin.set_fact:
         selected_vm_connections: []
 
-    ###########################################################################
-    # BUILD HOSTNAME AND IP MAPPING
-    ###########################################################################
-
     - name: Build selected VM connection information
-      set_fact:
+      ansible.builtin.set_fact:
         selected_vm_connections: >-
           {{
             selected_vm_connections
@@ -381,7 +363,7 @@
         label: "{{ item.name }}"
 
     - name: Show selected VM IP mapping
-      debug:
+      ansible.builtin.debug:
         msg:
           - "VM       : {{ item.name }}"
           - "IP       : {{ item.ip }}"
@@ -391,19 +373,19 @@
         label: "{{ item.name }}"
 
     - name: Fail if any selected VM has no IP address
-      fail:
+      ansible.builtin.fail:
         msg: "No IP address found in NetBox for VM {{ item.name }}"
       when: item.ip | length == 0
       loop: "{{ selected_vm_connections }}"
       loop_control:
         label: "{{ item.name }}"
 
-    ###########################################################################
-    # WAIT FOR SSH
-    ###########################################################################
+    # ==========================================================
+    # WAIT FOR VM SSH
+    # ==========================================================
 
     - name: Wait for SSH port 22
-      wait_for:
+      ansible.builtin.wait_for:
         host: "{{ item.ip }}"
         port: 22
         delay: 10
@@ -413,12 +395,12 @@
       loop_control:
         label: "{{ item.name }}"
 
-    ###########################################################################
+    # ==========================================================
     # ADD TO DYNAMIC INVENTORY
-    ###########################################################################
+    # ==========================================================
 
     - name: Add selected VMs to dynamic inventory
-      add_host:
+      ansible.builtin.add_host:
         name: "{{ item.short_name }}"
         groups: verification_vms
         ansible_host: "{{ item.ip }}"
@@ -435,7 +417,7 @@
         label: "{{ item.name }}"
 
     - name: Show dynamic inventory hosts
-      debug:
+      ansible.builtin.debug:
         msg:
           - "Host: {{ item.short_name }}"
           - "IP: {{ item.ip }}"
@@ -455,43 +437,43 @@
   tasks:
 
     - name: Wait for SSH authentication
-      wait_for_connection:
+      ansible.builtin.wait_for_connection:
         delay: 5
         timeout: 600
 
     - name: Check hostname
-      raw: hostname
+      ansible.builtin.raw: hostname
       register: hostname_result
       changed_when: false
 
     - name: Check uptime
-      raw: uptime -p
+      ansible.builtin.raw: uptime -p
       register: uptime_result
       changed_when: false
 
     - name: Check kernel
-      raw: uname -r
+      ansible.builtin.raw: uname -r
       register: kernel_result
       changed_when: false
 
     - name: Check operating system
-      raw: cat /etc/os-release
+      ansible.builtin.raw: cat /etc/os-release
       register: os_result
       changed_when: false
 
     - name: Check block devices
-      raw: lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
+      ansible.builtin.raw: lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
       register: disk_result
       changed_when: false
 
     - name: Check RAID status
-      raw: cat /proc/mdstat
+      ansible.builtin.raw: cat /proc/mdstat
       register: raid_result
       changed_when: false
       failed_when: false
 
     - name: Display final system information
-      debug:
+      ansible.builtin.debug:
         msg:
           - "============================================================"
           - "FINAL SYSTEM VERIFICATION"
