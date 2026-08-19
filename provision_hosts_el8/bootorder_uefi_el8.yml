@@ -242,9 +242,9 @@
       delegate_to: localhost
       register: poweroff_result
 
-    # ==========================================================
+    ###########################################################################
     # SET EFI FIRMWARE
-    # ==========================================================
+    ###########################################################################
 
     - name: Set EFI firmware
       community.vmware.vmware_guest:
@@ -259,15 +259,36 @@
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
-      delegate_to: localhost
 
-    - name: Pause after firmware configuration
-      ansible.builtin.pause:
+    ###########################################################################
+    # SET PXE / NETWORK BOOT FIRST
+    ###########################################################################
+
+    - name: Set PXE first boot
+      community.vmware.vmware_guest_boot_manager:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ item.name.split('.')[0] }}"
+        boot_order:
+          - ethernet
+          - disk
+      loop: "{{ filtered_devices }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    ###########################################################################
+    # WAIT FOR CONFIGURATION
+    ###########################################################################
+
+    - name: Pause after firmware and PXE configuration
+      pause:
         seconds: 3
 
-    # ==========================================================
+    ###########################################################################
     # POWER ON
-    # ==========================================================
+    ###########################################################################
 
     - name: Power ON selected Rocky Linux 8 VM
       community.vmware.vmware_guest_powerstate:
@@ -280,8 +301,6 @@
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
-      delegate_to: localhost
-
 
 # ============================================================
 # PLAY 3: Build Dynamic Inventory and Wait for SSH
