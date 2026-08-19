@@ -1,5 +1,9 @@
 ---
-- name: Ensure selected Rocky 8 VMs exist on ESXi
+# ============================================================
+# ENSURE SELECTED ROCKY LINUX 8 VMS EXIST ON ESXI
+# ============================================================
+
+- name: Ensure selected Rocky Linux 8 VMs exist on ESXi
   hosts: localhost
   connection: local
   gather_facts: false
@@ -32,59 +36,27 @@
     cluster_name: "rocky-8-servers"
 
     ###########################################################################
-    # TARGET HOSTS
+    # AWX SURVEY - TARGET HOSTS
     #
     # Examples:
     #
+    # rocky-08-01
     # rocky-08-01,rocky-08-02
-    #
-    # Wildcard:
-    #
     # rocky-08-*
     #
-    # Leave empty to process ALL hosts in the cluster.
+    # Empty = ALL hosts in cluster
     ###########################################################################
 
     target_hosts: "{{ target_hosts | default('', true) }}"
 
-    target_patterns: >-
-      {{
-        target_hosts.split(',')
-        | map('trim')
-        | reject('equalto', '')
-        | map('regex_replace', '\*', '.*')
-        | list
-      }}
-
     ###########################################################################
-    # HOSTGROUP / DISK SELECTION
+    # AWX SURVEY - HOSTGROUP
     #
-    # AWX Survey:
-    #
-    # 1 = RockyLinux8-SingleDisk
-    #     1 x 100 GB Disk
-    #
-    # 2 = RockyLinux8-RAID
-    #     2 x 100 GB Disks
+    # 1 = SingleDisk
+    # 2 = RAID
     ###########################################################################
 
     hostgroup: "{{ hostgroup | default('1', true) }}"
-
-    disk_count: >-
-      {{
-        {
-          '1': 1,
-          '2': 2
-        }[hostgroup | string]
-      }}
-
-    disk_layout: >-
-      {{
-        {
-          '1': 'SingleDisk',
-          '2': 'RAID'
-        }[hostgroup | string]
-      }}
 
     ###########################################################################
     # VM HARDWARE
@@ -96,83 +68,75 @@
 
     vm_disk_size_gb: 100
 
-    ###########################################################################
-    # Rocky Linux 8 VMware Guest ID
-    #
-    # centos8_64Guest is appropriate for Rocky Linux 8.
-    ###########################################################################
-
-    vm_guest_id: "centos8_64Guest"
-
+    vm_guest_id: "rocky8_64Guest"
     vm_boot_firmware: "efi"
-
-    ###########################################################################
-    # DISK CONFIGURATION
-    #
-    # hostgroup=1
-    #   Disk 1 = 100 GB
-    #
-    # hostgroup=2
-    #   Disk 1 = 100 GB
-    #   Disk 2 = 100 GB
-    ###########################################################################
-
-    vm_disks: >-
-      {{
-        [
-          {
-            'size_gb': vm_disk_size_gb,
-            'datastore': datastore,
-            'type': 'thin'
-          }
-        ]
-        +
-        (
-          [
-            {
-              'size_gb': vm_disk_size_gb,
-              'datastore': datastore,
-              'type': 'thin'
-            }
-          ]
-          if (hostgroup | string) == '2'
-          else []
-        )
-      }}
 
   tasks:
 
     ###########################################################################
-    # VALIDATE HOSTGROUP
+    # VALIDATE HOSTGROUP FIRST
     ###########################################################################
 
     - name: Validate hostgroup selection
       fail:
         msg: >-
-          Invalid hostgroup selection: {{ hostgroup }}.
+          Invalid hostgroup '{{ hostgroup }}'.
           Valid values are:
           1 = SingleDisk
           2 = RAID
       when: hostgroup | string not in ['1', '2']
 
+    ###########################################################################
+    # SET DISK CONFIGURATION
+    ###########################################################################
+
+    - name: Set disk configuration
+      set_fact:
+        disk_count: "{{ 1 if hostgroup | string == '1' else 2 }}"
+        disk_layout: "{{ 'SingleDisk' if hostgroup | string == '1' else 'RAID' }}"
+
+    - name: Build VM disk configuration
+      set_fact:
+        vm_disks: >-
+          {{
+            [
+              {
+                'size_gb': vm_disk_size_gb,
+                'datastore': datastore,
+                'type': 'thin'
+              }
+            ]
+            +
+            (
+              [
+                {
+                  'size_gb': vm_disk_size_gb,
+                  'datastore': datastore,
+                  'type': 'thin'
+                }
+              ]
+              if hostgroup | string == '2'
+              else []
+            )
+          }}
 
     ###########################################################################
-    # SHOW SELECTED CONFIGURATION
+    # SHOW CONFIGURATION
     ###########################################################################
 
     - name: Show selected VM configuration
       debug:
         msg:
           - "============================================================"
-          - "ENSURE ROCKY LINUX 8 VMs EXIST ON ESXI"
+          - "ENSURE ROCKY LINUX 8 VMS EXIST ON ESXI"
           - "============================================================"
           - "ESXi Server        : {{ esxi_hostname }}"
           - "Datacenter         : {{ datacenter }}"
           - "Datastore          : {{ datastore }}"
           - "Network            : {{ vm_network }}"
           - "Cluster            : {{ cluster_name }}"
-          - "Target Hosts       : {{ target_hosts if target_hosts | length > 0 else 'ALL HOSTS' }}"
-          - "Hostgroup Selection: {{ hostgroup }}"
+          - "Target Hosts       : {{ target_hosts | default('ALL', true) }}"
+          - "Hostgroup          : {{ hostgroup }}"
           - "Disk Layout        : {{ disk_layout }}"
           - "Disk Count         : {{ disk_count }}"
           - "Disk Size          : {{ vm_disk_size_gb }} GB"
@@ -180,7 +144,6 @@
           - "CPUs               : {{ vm_num_cpus }}"
           - "Firmware           : {{ vm_boot_firmware }}"
           - "============================================================"
-
 
     ###########################################################################
     # GET DEVICES FROM NETBOX
@@ -198,11 +161,29 @@
         return_content: true
       register: netbox_devices
 
-
     - name: Show devices in cluster
       debug:
         msg: "{{ netbox_devices.json.results | map(attribute='name') | list }}"
 
+    ###########################################################################
+    # BUILD TARGET PATTERNS
+    ###########################################################################
+
+    - name: Initialize target patterns
+      set_fact:
+        target_patterns: []
+
+    - name: Build target patterns
+      set_fact:
+        target_patterns: >-
+          {{
+            target_hosts.split(',')
+            | map('trim')
+            | reject('equalto', '')
+            | map('regex_replace', '\*', '.*')
+            | list
+          }}
+      when: target_hosts | trim | length > 0
 
     ###########################################################################
     # FILTER SELECTED DEVICES
@@ -212,12 +193,10 @@
       set_fact:
         filtered_devices: []
 
-
-    - name: Select all devices when target_hosts is empty
+    - name: Use all devices when target hosts is empty
       set_fact:
         filtered_devices: "{{ netbox_devices.json.results }}"
       when: target_patterns | length == 0
-
 
     - name: Add devices matching target patterns
       set_fact:
@@ -229,28 +208,29 @@
         - target_patterns | length > 0
         - item.0.name.split('.')[0] is match('^' ~ item.1 ~ '$')
 
-
-    - name: Remove duplicate devices
+    - name: Remove duplicate filtered devices
       set_fact:
         filtered_devices: "{{ filtered_devices | unique(attribute='name') | list }}"
-
 
     - name: Fail if no hosts found
       fail:
         msg: >-
           No matching hosts found in NetBox.
-          Cluster={{ cluster_name }}
-          Target Hosts={{ target_hosts }}
+          Cluster: {{ cluster_name }}
+          Target Hosts: {{ target_hosts }}
       when: filtered_devices | length == 0
-
 
     - name: Show selected VMs
       debug:
-        msg: "{{ filtered_devices | map(attribute='name') | list }}"
-
+        msg:
+          - "============================================================"
+          - "SELECTED ROCKY 8 VMS"
+          - "============================================================"
+          - "{{ filtered_devices | map(attribute='name') | list }}"
+          - "============================================================"
 
     ###########################################################################
-    # CHECK WHETHER VM ALREADY EXISTS
+    # CHECK WHETHER VM EXISTS
     ###########################################################################
 
     - name: Check if VM already exists
@@ -266,24 +246,21 @@
       register: vm_lookup
       failed_when: false
 
-
-    - name: Show existing VM status
+    - name: Show VM existence status
       debug:
         msg:
-          - "VM Name : {{ item.item.name.split('.')[0] }}"
-          - "Exists  : {{ item.instance is defined }}"
+          - "VM     : {{ item.item.name.split('.')[0] }}"
+          - "Exists : {{ item.instance is defined }}"
       loop: "{{ vm_lookup.results }}"
       loop_control:
         label: "{{ item.item.name }}"
 
-
     ###########################################################################
-    # CREATE VM ONLY IF MISSING
+    # CREATE ONLY MISSING VMS
     ###########################################################################
 
-    - name: Create VM only if it does not exist
+    - name: Create missing VM
       community.vmware.vmware_guest:
-
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
@@ -317,17 +294,15 @@
       when: item.instance is not defined
       register: vm_create
 
-
     ###########################################################################
-    # BUILD LIST OF NEWLY CREATED VMS
+    # BUILD NEW VM LIST
     ###########################################################################
 
-    - name: Initialize newly created VM list
+    - name: Initialize created VM list
       set_fact:
         created_vm_names: []
 
-
-    - name: Add newly created VMs to list
+    - name: Build list of newly created VMs
       set_fact:
         created_vm_names: >-
           {{
@@ -342,19 +317,20 @@
         - item.item is defined
         - item.item.item is defined
 
-
     - name: Show newly created VMs
       debug:
-        msg: "{{ created_vm_names }}"
-
+        msg:
+          - "============================================================"
+          - "NEWLY CREATED VMS"
+          - "============================================================"
+          - "{{ created_vm_names }}"
+          - "============================================================"
 
     ###########################################################################
-    # POWER ON ONLY NEWLY CREATED VMS
-    #
-    # Existing VMs remain in their current power state.
+    # POWER ON ONLY NEW VMS
     ###########################################################################
 
-    - name: Power on newly created VM
+    - name: Power on newly created VMs
       community.vmware.vmware_guest_powerstate:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
@@ -363,22 +339,18 @@
         name: "{{ item }}"
         state: powered-on
       loop: "{{ created_vm_names }}"
-      loop_control:
-        label: "{{ item }}"
       when: created_vm_names | length > 0
 
-
-    - name: Wait for ESXi to assign MAC
+    - name: Wait for ESXi to initialize newly created VMs
       pause:
         seconds: 10
       when: created_vm_names | length > 0
 
-
     ###########################################################################
-    # POWER OFF ONLY NEWLY CREATED VMS
+    # POWER OFF ONLY NEW VMS
     ###########################################################################
 
-    - name: Power off newly created VM
+    - name: Power off newly created VMs
       community.vmware.vmware_guest_powerstate:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
@@ -387,16 +359,13 @@
         name: "{{ item }}"
         state: powered-off
       loop: "{{ created_vm_names }}"
-      loop_control:
-        label: "{{ item }}"
       when: created_vm_names | length > 0
-
 
     ###########################################################################
     # GET FINAL VM INFORMATION
     ###########################################################################
 
-    - name: Get VM information
+    - name: Get final VM information
       community.vmware.vmware_guest_info:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
@@ -408,41 +377,42 @@
         label: "{{ item.name }}"
       register: vm_info
 
-
     ###########################################################################
-    # SHOW VM INFORMATION
+    # SHOW FINAL VM INFORMATION
     ###########################################################################
 
-    - name: Show result
+    - name: Show VM information
       debug:
         msg:
           - "============================================================"
-          - "VM Name : {{ item.instance.hw_name }}"
-          - "Power   : {{ item.instance.hw_power_status }}"
-          - "MAC     : {{ item.instance.hw_eth0.macaddress | default('N/A') }}"
-          - "Layout  : {{ disk_layout }}"
-          - "Disks   : {{ disk_count }}"
+          - "VM Name       : {{ item.instance.hw_name | default(item.item.name.split('.')[0]) }}"
+          - "Power         : {{ item.instance.hw_power_status | default('N/A') }}"
+          - "MAC           : {{ item.instance.hw_eth0.macaddress | default('N/A') }}"
+          - "CPU           : {{ item.instance.hw_processor_count | default('N/A') }}"
+          - "Memory MB     : {{ item.instance.hw_memtotal_mb | default('N/A') }}"
+          - "Configured For: {{ disk_layout }}"
+          - "Expected Disks: {{ disk_count }}"
           - "============================================================"
       loop: "{{ vm_info.results }}"
       loop_control:
         label: "{{ item.item.name }}"
 
-
     ###########################################################################
     # FINAL SUMMARY
     ###########################################################################
 
-    - name: Final summary
+    - name: Show final result
       debug:
         msg:
           - "============================================================"
-          - "ROCKY LINUX 8 VM ENSURE COMPLETED SUCCESSFULLY"
+          - "ROCKY LINUX 8 VM ENSURE OPERATION COMPLETED"
           - "============================================================"
-          - "Cluster           : {{ cluster_name }}"
-          - "VMs Processed     : {{ filtered_devices | length }}"
-          - "New VMs Created   : {{ created_vm_names | length }}"
-          - "Disk Layout       : {{ disk_layout }}"
-          - "Disk Count per VM : {{ disk_count }}"
-          - "Disk Size         : {{ vm_disk_size_gb }} GB"
-          - "Total Disk Space  : {{ disk_count | int * vm_disk_size_gb | int }} GB per VM"
+          - "Cluster              : {{ cluster_name }}"
+          - "Selected VMs         : {{ filtered_devices | length }}"
+          - "New VMs Created      : {{ created_vm_names | length }}"
+          - "Disk Layout          : {{ disk_layout }}"
+          - "Disk Count per VM    : {{ disk_count }}"
+          - "Disk Size            : {{ vm_disk_size_gb }} GB"
+          - "Expected Total Space : {{ disk_count | int * vm_disk_size_gb | int }} GB per VM"
+          - "Firmware             : {{ vm_boot_firmware }}"
           - "============================================================"
