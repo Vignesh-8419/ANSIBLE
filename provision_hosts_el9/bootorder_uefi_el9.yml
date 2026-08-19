@@ -247,66 +247,65 @@
         seconds: 5
       delegate_to: localhost
 
-    # ========================================================
-    # SET EFI
-    # ========================================================
+    ###########################################################################
+    # SET EFI FIRMWARE
+    ###########################################################################
 
     - name: Set EFI firmware
       community.vmware.vmware_guest:
-        hostname: "{{ item.config_context.esxi_hostname }}"
-        username: "{{ item.config_context.esxi_username }}"
-        password: "{{ item.config_context.esxi_password }}"
-        validate_certs: false
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: "{{ validate_certs }}"
         name: "{{ item.name.split('.')[0] }}"
         state: present
         hardware:
           boot_firmware: efi
-      delegate_to: localhost
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
 
-    # ========================================================
-    # SET PXE FIRST
-    # ========================================================
+    ###########################################################################
+    # SET PXE / NETWORK BOOT FIRST
+    ###########################################################################
 
     - name: Set PXE first boot
       community.vmware.vmware_guest_boot_manager:
-        hostname: "{{ item.config_context.esxi_hostname }}"
-        username: "{{ item.config_context.esxi_username }}"
-        password: "{{ item.config_context.esxi_password }}"
-        validate_certs: false
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: "{{ validate_certs }}"
         name: "{{ item.name.split('.')[0] }}"
         boot_order:
           - ethernet
           - disk
-      delegate_to: localhost
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
 
-    # ========================================================
-    # POWER ON
-    # ========================================================
+    ###########################################################################
+    # WAIT FOR CONFIGURATION
+    ###########################################################################
 
-    - name: Power ON selected VM
+    - name: Pause after firmware and PXE configuration
+      pause:
+        seconds: 3
+
+    ###########################################################################
+    # POWER ON
+    ###########################################################################
+
+    - name: Power ON selected Rocky Linux 8 VM
       community.vmware.vmware_guest_powerstate:
-        hostname: "{{ item.config_context.esxi_hostname }}"
-        username: "{{ item.config_context.esxi_username }}"
-        password: "{{ item.config_context.esxi_password }}"
-        validate_certs: false
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: "{{ validate_certs }}"
         name: "{{ item.name.split('.')[0] }}"
         state: powered-on
-      delegate_to: localhost
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
-
-    - name: Wait for Rocky 9 PXE boot to start
-      pause:
-        seconds: 20
-      delegate_to: localhost
-
 
 # ============================================================
 # PLAY 3: Get NetBox IPs and Wait for SSH
