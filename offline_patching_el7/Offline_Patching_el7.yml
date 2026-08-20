@@ -9,6 +9,10 @@
 
   pre_tasks:
 
+    # ============================================================
+    # LOAD NETBOX CONFIGURATION CONTEXT
+    # ============================================================
+
     - name: Load NetBox Context
       set_fact:
         nb_ctx: "{{ config_context[0] }}"
@@ -22,11 +26,19 @@
     - name: Display NetBox Context
       debug:
         msg:
+          - "===================================================="
+          - "NETBOX REPOSITORY CONFIGURATION"
+          - "===================================================="
           - "Repository URL : {{ repo_url }}"
           - "Base Repo      : {{ base_repo }}"
           - "Patch Repo     : {{ patch_repo }}"
+          - "===================================================="
 
   tasks:
+
+    # ============================================================
+    # REPOSITORY CONNECTIVITY CHECKS
+    # ============================================================
 
     - name: Verify DNS Resolution
       raw: |
@@ -49,10 +61,27 @@
       changed_when: false
       failed_when: patch_repo_check.rc != 0
 
+    # ============================================================
+    # CAPTURE KERNEL BEFORE PATCHING
+    # ============================================================
+
     - name: Capture Current Kernel Version
       raw: uname -r
       register: kernel_before
       changed_when: false
+
+    - name: Display Kernel Before Patching
+      debug:
+        msg:
+          - "===================================================="
+          - "KERNEL BEFORE PATCHING"
+          - "===================================================="
+          - "Running Kernel : {{ kernel_before.stdout }}"
+          - "===================================================="
+
+    # ============================================================
+    # OFFLINE PATCHING
+    # ============================================================
 
     - name: Execute Offline Patching
       raw: |
@@ -60,10 +89,14 @@
 
         BACKUP_DIR=/etc/yum.repos.d/backup_repos_original
 
-        mkdir -p ${BACKUP_DIR}
+        mkdir -p "${BACKUP_DIR}"
 
-        find /etc/yum.repos.d -maxdepth 1 -name "*.repo" -type f \
-          -exec mv {} ${BACKUP_DIR}/ \; 2>/dev/null || true
+        find /etc/yum.repos.d \
+          -maxdepth 1 \
+          -name "*.repo" \
+          -type f \
+          -exec mv {} "${BACKUP_DIR}/" \; \
+          2>/dev/null || true
 
         cat > /etc/yum.repos.d/base.repo <<EOF
         [base]
@@ -99,8 +132,8 @@
         rm -f /etc/yum.repos.d/patch.repo
 
         if [ -d "${BACKUP_DIR}" ]; then
-          mv ${BACKUP_DIR}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
-          rmdir ${BACKUP_DIR} 2>/dev/null || true
+          mv "${BACKUP_DIR}"/*.repo /etc/yum.repos.d/ 2>/dev/null || true
+          rmdir "${BACKUP_DIR}" 2>/dev/null || true
         fi
 
         yum clean all
@@ -112,8 +145,13 @@
       debug:
         var: patch_output.stdout_lines
 
-    - name: Check Installed Kernel Package
-      raw: rpm -q kernel --last | head -1 | awk '{print $1}'
+    # ============================================================
+    # KERNEL STATUS
+    # ============================================================
+
+    - name: Check Latest Installed Kernel
+      raw: |
+        rpm -q kernel --last | head -1 | awk '{print $1}' | sed 's/^kernel-//'
       register: latest_kernel
       changed_when: false
 
@@ -122,41 +160,142 @@
       register: running_kernel
       changed_when: false
 
+    - name: Determine Whether Reboot Is Required
+      set_fact:
+        reboot_required: "{{ running_kernel.stdout | trim != latest_kernel.stdout | trim }}"
+
     - name: Show Kernel Status
       debug:
         msg:
-          - "Running Kernel : {{ running_kernel.stdout }}"
-          - "Latest Kernel  : {{ latest_kernel.stdout }}"
+          - "===================================================="
+          - "KERNEL STATUS"
+          - "===================================================="
+          - "Running Kernel   : {{ running_kernel.stdout | trim }}"
+          - "Latest Kernel    : {{ latest_kernel.stdout | trim }}"
+          - "Reboot Required  : {{ reboot_required }}"
+          - "===================================================="
 
-    - name: Update GRUB and Synchronize Secondary EFI
+    # ============================================================
+    # DETECT SECONDARY EFI PARTITION
+    # ============================================================
+
+    - name: Detect Secondary EFI Partition
+      raw: |
+        if [ -b /dev/sdb1 ] && \
+           blkid -s TYPE -o value /dev/sdb1 2>/dev/null | grep -qx "vfat"; then
+          echo "SECONDARY_EFI_PRESENT"
+        else
+          echo "SINGLE_DISK_OR_NO_SECONDARY_EFI"
+        fi
+      register: efi_layout
+      changed_when: false
+
+    - name: Display Disk and EFI Layout
+      debug:
+        msg:
+          - "===================================================="
+          - "EFI CONFIGURATION"
+          - "===================================================="
+          - "EFI Detection : {{ efi_layout.stdout | trim }}"
+          - "Mode          : {{ 'DUAL DISK / SECONDARY EFI SYNC ENABLED' if 'SECONDARY_EFI_PRESENT' in efi_layout.stdout else 'SINGLE DISK / SECONDARY EFI SYNC SKIPPED' }}"
+          - "===================================================="
+
+    # ============================================================
+    # UPDATE GRUB - ALL SYSTEMS
+    # ============================================================
+
+    - name: Update GRUB Configuration
       raw: |
         set -e
+        grub2-mkconfig -o /boot/grub2/grub.cfg
+      register: grub_update
+      when: reboot_required | bool
+
+    - name: Display GRUB Update Output
+      debug:
+        var: grub_update.stdout_lines
+      when: reboot_required | bool
+
+    # ============================================================
+    # SYNCHRONIZE SECONDARY EFI - RAID / DUAL DISK ONLY
+    # ============================================================
+
+    - name: Synchronize Secondary EFI Partition
+      raw: |
+        set -e
+
+        EFI1_WAS_MOUNTED=0
+        EFI2_WAS_MOUNTED=0
 
         mkdir -p /boot/efi
         mkdir -p /boot/efi2
 
-        mountpoint -q /boot/efi || mount /dev/sda1 /boot/efi
-        mountpoint -q /boot/efi2 || mount /dev/sdb1 /boot/efi2
+        if mountpoint -q /boot/efi; then
+          EFI1_WAS_MOUNTED=1
+        else
+          mount /dev/sda1 /boot/efi
+        fi
 
-        grub2-mkconfig -o /boot/grub2/grub.cfg
+        if mountpoint -q /boot/efi2; then
+          EFI2_WAS_MOUNTED=1
+        else
+          mount /dev/sdb1 /boot/efi2
+        fi
 
         rsync -aH --delete /boot/efi/ /boot/efi2/
 
         sync
 
-        umount /boot/efi2
-        umount /boot/efi
-      register: grub_sync
-      when: running_kernel.stdout not in latest_kernel.stdout
+        if [ "${EFI2_WAS_MOUNTED}" -eq 0 ]; then
+          umount /boot/efi2
+        fi
 
-    - name: Display GRUB Sync Output
+        if [ "${EFI1_WAS_MOUNTED}" -eq 0 ]; then
+          umount /boot/efi
+        fi
+      register: efi_sync
+      when:
+        - reboot_required | bool
+        - "'SECONDARY_EFI_PRESENT' in efi_layout.stdout"
+
+    - name: Display Secondary EFI Sync Output
       debug:
-        var: grub_sync.stdout_lines
-      when: running_kernel.stdout not in latest_kernel.stdout
+        var: efi_sync.stdout_lines
+      when:
+        - reboot_required | bool
+        - "'SECONDARY_EFI_PRESENT' in efi_layout.stdout"
+
+    - name: Display Single Disk EFI Skip Message
+      debug:
+        msg:
+          - "===================================================="
+          - "SECONDARY EFI SYNCHRONIZATION"
+          - "===================================================="
+          - "Status : SKIPPED"
+          - "Reason : No secondary VFAT EFI partition detected"
+          - "===================================================="
+      when:
+        - reboot_required | bool
+        - "'SECONDARY_EFI_PRESENT' not in efi_layout.stdout"
+
+    # ============================================================
+    # REBOOT
+    # ============================================================
 
     - name: Schedule Immediate Reboot
       raw: shutdown -r +1
-      when: running_kernel.stdout not in latest_kernel.stdout
+      when: reboot_required | bool
+
+    - name: Display Reboot Status
+      debug:
+        msg:
+          - "===================================================="
+          - "PATCHING COMPLETED"
+          - "===================================================="
+          - "Host            : {{ inventory_hostname }}"
+          - "Reboot Required : {{ reboot_required }}"
+          - "Reboot          : {{ 'SCHEDULED IN 1 MINUTE' if reboot_required | bool else 'NOT REQUIRED' }}"
+          - "===================================================="
 
     - meta: end_play
-      when: running_kernel.stdout not in latest_kernel.stdout
+      when: reboot_required | bool
