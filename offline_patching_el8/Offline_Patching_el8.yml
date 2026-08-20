@@ -1,6 +1,5 @@
 ---
 - name: Offline Infrastructure Patching Orchestrator
-#  hosts: "{{ target_hosts.split(',') | map('trim') | reject('equalto', '') | map('regex_replace', '$', '.vgs.com') | join(',') }}"
   hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
   become: yes
   become_method: sudo
@@ -12,6 +11,10 @@
     backup_dir_name: "backup_repos_original"
 
   pre_tasks:
+
+    # ============================================================
+    # LOAD NETBOX CONTEXT
+    # ============================================================
 
     - name: Load NetBox Context
       set_fact:
@@ -26,17 +29,34 @@
 
   tasks:
 
+    # ============================================================
+    # DISPLAY CONFIGURATION
+    # ============================================================
+
     - name: Display NetBox Context
       debug:
         msg:
+          - "===================================================="
+          - "NETBOX REPOSITORY CONFIGURATION"
+          - "===================================================="
           - "Repository URL : {{ repo_url }}"
           - "BaseOS Repo    : {{ rocky8_baseos }}"
           - "AppStream Repo : {{ rocky8_appstream }}"
           - "Installed Repo : {{ rocky8_installed_rhel }}"
+          - "===================================================="
 
     - name: Display Target Environment Info
       debug:
-        msg: "Processing Agent Node Workflow for {{ inventory_hostname }}"
+        msg:
+          - "===================================================="
+          - "PATCH TARGET"
+          - "===================================================="
+          - "Processing Agent Node Workflow for {{ inventory_hostname }}"
+          - "===================================================="
+
+    # ============================================================
+    # REPOSITORY CONNECTIVITY CHECKS
+    # ============================================================
 
     - name: Verify DNS Resolution
       shell: |
@@ -66,6 +86,10 @@
         status_code: 200
         timeout: 30
 
+    # ============================================================
+    # BACKUP CURRENT REPOSITORIES
+    # ============================================================
+
     - name: Create Repository Backup Directory
       file:
         path: "/etc/yum.repos.d/{{ backup_dir_name }}"
@@ -86,7 +110,15 @@
       loop: "{{ found_repos.files }}"
       when: found_repos.matched > 0
 
+    # ============================================================
+    # PATCHING BLOCK
+    # ============================================================
+
     - block:
+
+        # ========================================================
+        # CREATE TEMPORARY REPOSITORIES
+        # ========================================================
 
         - name: Create Temporary BaseOS Repository
           copy:
@@ -124,6 +156,10 @@
               gpgcheck=0
               sslverify=0
 
+        # ========================================================
+        # DNF PATCHING
+        # ========================================================
+
         - name: Clean DNF Cache
           command: dnf clean all
 
@@ -150,62 +186,175 @@
           set_fact:
             updates_installed: "{{ 'Nothing to do.' not in dnf_shell_output.stdout }}"
 
+        # ========================================================
+        # KERNEL STATUS
+        # ========================================================
+
         - name: Capture Running Kernel
           command: uname -r
           register: running_kernel
           changed_when: false
 
         - name: Capture Latest Installed Kernel
-          shell: rpm -q kernel --last | head -1 | awk '{print $1}'
+          shell: |
+            rpm -q kernel --last | head -1 | awk '{print $1}' | sed 's/^kernel-//'
           register: latest_kernel
           changed_when: false
+
+        - name: Determine Whether Reboot Is Required
+          set_fact:
+            reboot_required: "{{ running_kernel.stdout | trim != latest_kernel.stdout | trim }}"
 
         - name: Display Kernel Status
           debug:
             msg:
-              - "Running Kernel : {{ running_kernel.stdout }}"
-              - "Latest Kernel  : {{ latest_kernel.stdout }}"
+              - "===================================================="
+              - "KERNEL STATUS"
+              - "===================================================="
+              - "Running Kernel   : {{ running_kernel.stdout | trim }}"
+              - "Latest Kernel    : {{ latest_kernel.stdout | trim }}"
+              - "Updates Installed: {{ updates_installed }}"
+              - "Reboot Required  : {{ reboot_required }}"
+              - "===================================================="
 
-        - name: Update GRUB and Synchronize Secondary EFI
+        # ========================================================
+        # DETECT SINGLE / DUAL DISK EFI CONFIGURATION
+        # ========================================================
+
+        - name: Detect Secondary EFI Partition
+          shell: |
+            if [ -b /dev/sdb1 ] && \
+               blkid -s TYPE -o value /dev/sdb1 2>/dev/null | grep -qx "vfat"; then
+              echo "SECONDARY_EFI_PRESENT"
+            else
+              echo "SINGLE_DISK_OR_NO_SECONDARY_EFI"
+            fi
+          register: efi_layout
+          changed_when: false
+
+        - name: Display Disk and EFI Layout
+          debug:
+            msg:
+              - "===================================================="
+              - "EFI CONFIGURATION"
+              - "===================================================="
+              - "EFI Detection : {{ efi_layout.stdout | trim }}"
+              - "Mode          : {{ 'DUAL DISK / SECONDARY EFI SYNC ENABLED' if 'SECONDARY_EFI_PRESENT' in efi_layout.stdout else 'SINGLE DISK / SECONDARY EFI SYNC SKIPPED' }}"
+              - "===================================================="
+
+        # ========================================================
+        # UPDATE GRUB - ALL SERVER TYPES
+        # ========================================================
+
+        - name: Update GRUB Configuration
           shell: |
             set -e
+            grub2-mkconfig -o /boot/grub2/grub.cfg
+          register: grub_update
+          when:
+            - reboot_required | bool
+
+        - name: Display GRUB Update Output
+          debug:
+            var: grub_update.stdout_lines
+          when:
+            - reboot_required | bool
+
+        # ========================================================
+        # SECONDARY EFI SYNC - DUAL DISK ONLY
+        # ========================================================
+
+        - name: Synchronize Secondary EFI Partition
+          shell: |
+            set -e
+
+            EFI1_WAS_MOUNTED=0
+            EFI2_WAS_MOUNTED=0
 
             mkdir -p /boot/efi
             mkdir -p /boot/efi2
 
-            mount /dev/sda1 /boot/efi
-            mount /dev/sdb1 /boot/efi2
+            if mountpoint -q /boot/efi; then
+              EFI1_WAS_MOUNTED=1
+            else
+              mount /dev/sda1 /boot/efi
+            fi
 
-            grub2-mkconfig -o /boot/grub2/grub.cfg
+            if mountpoint -q /boot/efi2; then
+              EFI2_WAS_MOUNTED=1
+            else
+              mount /dev/sdb1 /boot/efi2
+            fi
 
             rsync -aH --delete /boot/efi/ /boot/efi2/
 
             sync
 
-            umount /boot/efi2
-            umount /boot/efi
-          register: grub_sync
-          when:
-            - updates_installed
-            - running_kernel.stdout not in latest_kernel.stdout
+            if [ "${EFI2_WAS_MOUNTED}" -eq 0 ]; then
+              umount /boot/efi2
+            fi
 
-        - name: Display GRUB Sync Output
-          debug:
-            var: grub_sync.stdout_lines
+            if [ "${EFI1_WAS_MOUNTED}" -eq 0 ]; then
+              umount /boot/efi
+            fi
+          register: efi_sync
           when:
-            - updates_installed
-            - running_kernel.stdout not in latest_kernel.stdout
+            - reboot_required | bool
+            - "'SECONDARY_EFI_PRESENT' in efi_layout.stdout"
+
+        - name: Display Secondary EFI Sync Output
+          debug:
+            var: efi_sync.stdout_lines
+          when:
+            - reboot_required | bool
+            - "'SECONDARY_EFI_PRESENT' in efi_layout.stdout"
+
+        - name: Display Single Disk EFI Skip Message
+          debug:
+            msg:
+              - "===================================================="
+              - "SECONDARY EFI SYNCHRONIZATION"
+              - "===================================================="
+              - "Status : SKIPPED"
+              - "Reason : Single disk or no secondary VFAT EFI partition"
+              - "===================================================="
+          when:
+            - reboot_required | bool
+            - "'SECONDARY_EFI_PRESENT' not in efi_layout.stdout"
+
+        # ========================================================
+        # REBOOT
+        # ========================================================
 
         - name: Schedule Reboot
           shell: shutdown -r +1
           when:
-            - updates_installed
-            - running_kernel.stdout not in latest_kernel.stdout
+            - reboot_required | bool
+
+        - name: Display Reboot Status
+          debug:
+            msg:
+              - "===================================================="
+              - "PATCHING COMPLETED"
+              - "===================================================="
+              - "Host            : {{ inventory_hostname }}"
+              - "Updates Installed: {{ updates_installed }}"
+              - "Reboot Required : {{ reboot_required }}"
+              - "Reboot          : {{ 'SCHEDULED IN 1 MINUTE' if reboot_required | bool else 'NOT REQUIRED' }}"
+              - "===================================================="
+
+      # ==========================================================
+      # FAILURE HANDLING
+      # ==========================================================
 
       rescue:
 
         - name: Restore Original Repositories After Failure
           shell: |
+            rm -f /etc/yum.repos.d/rocky8-baseos.repo
+            rm -f /etc/yum.repos.d/rocky8-appstream.repo
+            rm -f /etc/yum.repos.d/rocky8-installed-rhel.repo
+
             if [ -d "/etc/yum.repos.d/{{ backup_dir_name }}" ]; then
               mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
               rmdir /etc/yum.repos.d/{{ backup_dir_name }} 2>/dev/null || true
@@ -213,7 +362,11 @@
 
         - name: Fail Playbook
           fail:
-            msg: "Offline patching failed. Original repositories restored."
+            msg: "Offline patching failed on {{ inventory_hostname }}. Original repositories restored."
+
+      # ==========================================================
+      # ALWAYS RESTORE ORIGINAL REPOSITORIES
+      # ==========================================================
 
       always:
 
@@ -232,7 +385,7 @@
               mv /etc/yum.repos.d/{{ backup_dir_name }}/*.repo /etc/yum.repos.d/ 2>/dev/null || true
               rmdir /etc/yum.repos.d/{{ backup_dir_name }} 2>/dev/null || true
             fi
-          changed_when: true
+          changed_when: false
 
         - name: Final DNF Cleanup
           command: dnf clean all
