@@ -1,5 +1,5 @@
 ---
-- name: Offline Infrastructure Patching Orchestrator
+- name: Offline Infrastructure Patching Orchestrator Rocky Linux 8
   hosts: "{{ target_hosts.split(',') | map('trim') | map('regex_replace', '$', '*') | join(',') }}"
   become: yes
   become_method: sudo
