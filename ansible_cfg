@@ -1,0 +1,13 @@
+vi ansible.cfg
+[defaults]
+host_key_checking = False
+
+[ssh_connection]
+ssh_args = -o StrictHostKeyChecking=accept-new
+export ANSIBLE_CONFIG=~/ansible.cfg
+
+vi .bashrc
+
+source .bashrc
+
+ansible --version
