@@ -305,7 +305,7 @@
             device_type: vmxnet3
 
         customization:
-          hostname: "netbox"
+          hostname: "netbox.vgs.com"
           domain: "vgs.com"
           dns_servers:
             - "192.168.253.1"
@@ -371,7 +371,7 @@
             device_type: vmxnet3
 
         customization:
-          hostname: "ansible-server-01"
+          hostname: "ansible-server-01.vgs.com"
           domain: "vgs.com"
           dns_servers:
             - "192.168.253.1"
