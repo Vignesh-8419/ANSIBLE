@@ -38,9 +38,9 @@ FOREMAN_USER="admin"
 
 # Export before running:
 #
-# export FOREMAN_PASSWORD='your-password'
+export FOREMAN_PASSWORD='zqs977dXzqfEvTML'
 #
-FOREMAN_PASSWORD="${FOREMAN_PASSWORD:-}"
+FOREMAN_PASSWORD="zqs977dXzqfEvTML"
 
 if [[ -z "${FOREMAN_PASSWORD}" ]]; then
     echo "[ERROR] FOREMAN_PASSWORD environment variable is not set"
