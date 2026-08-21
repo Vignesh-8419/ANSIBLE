@@ -120,86 +120,59 @@
       }}
 
 
-    ###########################################################################
-    # ROCKY 9 OPERATING SYSTEM ID
+    # ============================================================================
+    # Rocky Linux 9.2 Host Group / Operating System Selection
     #
-    # CHANGE THESE TO YOUR ACTUAL FOREMAN IDs
+    # AWX Survey:
     #
-    # If both hostgroups use the same Rocky 9 OS,
-    # you can put the same ID for both.
-    ###########################################################################
-
+    # 1 = RockyLinux9.2-SingleDisk
+    #     OS = RockyLinux9.2-SingleDisk 9.2
+    #
+    # 2 = RockyLinux9.2-RAID
+    #     OS = RockyLinux9.2-RAID 9.2
+    #
+    # ============================================================================
+    
+    hostgroup: "{{ hostgroup | default('1', true) }}"
+    
+    hostgroup_id: >-
+      {{
+        {
+          '1': 7,
+          '2': 3
+        }[hostgroup | string]
+      }}
+    
     operatingsystem_id: >-
       {{
         {
-          '1': 0,
-          '2': 0
+          '1': 7,
+          '2': 6
         }[hostgroup | string]
       }}
-
-
-    ###########################################################################
-    # INSTALLATION MEDIUM
-    #
-    # CHANGE TO YOUR ROCKY 9 MEDIUM ID
-    ###########################################################################
-
-    medium_id: 0
-
-
-    ###########################################################################
-    # PARTITION TABLE
-    #
-    # CHANGE TO YOUR ROCKY 9 PARTITION TABLE ID
-    #
-    # If Foreman partition table differs between
-    # SingleDisk and RAID, use the mapping below.
-    ###########################################################################
-
-    ptable_id: >-
-      {{
-        {
-          '1': 0,
-          '2': 0
-        }[hostgroup | string]
-      }}
-
-
-    ###########################################################################
-    # ARCHITECTURE
-    #
-    # x86_64 normally ID 1 in your existing configuration
-    ###########################################################################
-
-    architecture_id: 1
-
-
-    ###########################################################################
-    # NETWORK
-    ###########################################################################
-
-    subnet_name: "vgs-subnet-centos"
-
-    domain_id: 1
-
-
-    ###########################################################################
-    # KATELLO CONTENT
-    #
-    # CHANGE TO YOUR ROCKY 9 CONTENT VIEW ID
-    ###########################################################################
-
-    content_view_id: 0
-
-    # Library
+    
+    # Rocky 9.2 Remote
+    medium_id: 17
+    
+    # Kickstart default
+    ptable_id: 126
+    
+    # Rocky Linux 9.2 subnet
+    subnet_name: "vgs-subnet-rockyos"
+    
+    # Katello Content
+    content_view_id: 4
     lifecycle_environment_id: 1
-
-
-    ###########################################################################
-    # PXE SETTINGS
-    ###########################################################################
-
+    
+    # Architecture
+    architecture_id: 1
+    
+    # Domain
+    domain_id: 1
+    
+    # PXE
     pxe_loader: "Grub2 UEFI"
+
     build: true
 
 
