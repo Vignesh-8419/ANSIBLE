@@ -125,6 +125,7 @@
     
     # PXE
     pxe_loader: "Grub2 UEFI"
+
     build: true
 
   tasks:
