@@ -648,220 +648,220 @@ header "GENERATED AWX / ANSIBLE VARIABLES"
 
 cat <<EOF
 
-# ============================================================================
-# CentOS Linux 7 Host Group / Operating System Selection
-#
-# AWX Survey:
-#
-# 1 = ${CENTOS7_SINGLE_HG}
-#     OS = ${CENTOS7_SINGLE_OS}
-#
-# 2 = ${CENTOS7_RAID_HG}
-#     OS = ${CENTOS7_RAID_OS}
-#
-# ============================================================================
-
-hostgroup: "{{ hostgroup | default('1', true) }}"
-
-hostgroup_id: >-
-  {{
-    {
-      '1': ${CENTOS7_SINGLE_HG_ID},
-      '2': ${CENTOS7_RAID_HG_ID}
-    }[hostgroup | string]
-  }}
-
-operatingsystem_id: >-
-  {{
-    {
-      '1': ${CENTOS7_SINGLE_OS_ID},
-      '2': ${CENTOS7_RAID_OS_ID}
-    }[hostgroup | string]
-  }}
-
-# ${CENTOS7_MEDIUM}
-medium_id: ${CENTOS7_MEDIUM_ID}
-
-# ${PTABLE_NAME}
-ptable_id: ${PTABLE_ID}
-
-# CentOS 7 subnet
-subnet_name: "${CENTOS7_SUBNET}"
-
-# Katello Content
-content_view_id: ${CENTOS7_CV_ID}
-lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
-
-# Architecture
-architecture_id: ${ARCHITECTURE_ID}
-
-# Domain
-domain_id: ${DOMAIN_ID}
-
-# PXE
-pxe_loader: "${PXE_LOADER}"
-
-
-# ============================================================================
-# Rocky Linux 8.10 Host Group / Operating System Selection
-#
-# AWX Survey:
-#
-# 1 = ${ROCKY8_SINGLE_HG}
-#     OS = ${ROCKY8_SINGLE_OS}
-#
-# 2 = ${ROCKY8_RAID_HG}
-#     OS = ${ROCKY8_RAID_OS}
-#
-# ============================================================================
-
-hostgroup: "{{ hostgroup | default('1', true) }}"
-
-hostgroup_id: >-
-  {{
-    {
-      '1': ${ROCKY8_SINGLE_HG_ID},
-      '2': ${ROCKY8_RAID_HG_ID}
-    }[hostgroup | string]
-  }}
-
-operatingsystem_id: >-
-  {{
-    {
-      '1': ${ROCKY8_SINGLE_OS_ID},
-      '2': ${ROCKY8_RAID_OS_ID}
-    }[hostgroup | string]
-  }}
-
-# ${ROCKY8_MEDIUM}
-medium_id: ${ROCKY8_MEDIUM_ID}
-
-# ${PTABLE_NAME}
-ptable_id: ${PTABLE_ID}
-
-# Rocky Linux 8 subnet
-subnet_name: "${ROCKY8_SUBNET}"
-
-# Katello Content
-content_view_id: ${ROCKY8_CV_ID}
-lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
-
-# Architecture
-architecture_id: ${ARCHITECTURE_ID}
-
-# Domain
-domain_id: ${DOMAIN_ID}
-
-# PXE
-pxe_loader: "${PXE_LOADER}"
-
-
-# ============================================================================
-# Rocky Linux 9.2 Host Group / Operating System Selection
-#
-# AWX Survey:
-#
-# 1 = ${ROCKY92_SINGLE_HG}
-#     OS = ${ROCKY92_SINGLE_OS}
-#
-# 2 = ${ROCKY92_RAID_HG}
-#     OS = ${ROCKY92_RAID_OS}
-#
-# ============================================================================
-
-hostgroup: "{{ hostgroup | default('1', true) }}"
-
-hostgroup_id: >-
-  {{
-    {
-      '1': ${ROCKY92_SINGLE_HG_ID},
-      '2': ${ROCKY92_RAID_HG_ID}
-    }[hostgroup | string]
-  }}
-
-operatingsystem_id: >-
-  {{
-    {
-      '1': ${ROCKY92_SINGLE_OS_ID},
-      '2': ${ROCKY92_RAID_OS_ID}
-    }[hostgroup | string]
-  }}
-
-# ${ROCKY92_MEDIUM}
-medium_id: ${ROCKY92_MEDIUM_ID}
-
-# ${PTABLE_NAME}
-ptable_id: ${PTABLE_ID}
-
-# Rocky Linux 9.2 subnet
-subnet_name: "${ROCKY92_SUBNET}"
-
-# Katello Content
-content_view_id: ${ROCKY92_CV_ID}
-lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
-
-# Architecture
-architecture_id: ${ARCHITECTURE_ID}
-
-# Domain
-domain_id: ${DOMAIN_ID}
-
-# PXE
-pxe_loader: "${PXE_LOADER}"
-
-
-# ============================================================================
-# Rocky Linux 9.8 Host Group / Operating System Selection
-#
-# AWX Survey:
-#
-# 1 = ${ROCKY98_SINGLE_HG}
-#     OS = ${ROCKY98_SINGLE_OS}
-#
-# 2 = ${ROCKY98_RAID_HG}
-#     OS = ${ROCKY98_RAID_OS}
-#
-# ============================================================================
-
-hostgroup: "{{ hostgroup | default('1', true) }}"
-
-hostgroup_id: >-
-  {{
-    {
-      '1': ${ROCKY98_SINGLE_HG_ID},
-      '2': ${ROCKY98_RAID_HG_ID}
-    }[hostgroup | string]
-  }}
-
-operatingsystem_id: >-
-  {{
-    {
-      '1': ${ROCKY98_SINGLE_OS_ID},
-      '2': ${ROCKY98_RAID_OS_ID}
-    }[hostgroup | string]
-  }}
-
-# ${ROCKY98_MEDIUM}
-medium_id: ${ROCKY98_MEDIUM_ID}
-
-# ${PTABLE_NAME}
-ptable_id: ${PTABLE_ID}
-
-# Rocky Linux 9.8 subnet
-subnet_name: "${ROCKY98_SUBNET}"
-
-# Katello Content
-content_view_id: ${ROCKY98_CV_ID}
-lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
-
-# Architecture
-architecture_id: ${ARCHITECTURE_ID}
-
-# Domain
-domain_id: ${DOMAIN_ID}
-
-# PXE
-pxe_loader: "${PXE_LOADER}"
+    # ============================================================================
+    # CentOS Linux 7 Host Group / Operating System Selection
+    #
+    # AWX Survey:
+    #
+    # 1 = ${CENTOS7_SINGLE_HG}
+    #     OS = ${CENTOS7_SINGLE_OS}
+    #
+    # 2 = ${CENTOS7_RAID_HG}
+    #     OS = ${CENTOS7_RAID_OS}
+    #
+    # ============================================================================
+    
+    hostgroup: "{{ hostgroup | default('1', true) }}"
+    
+    hostgroup_id: >-
+      {{
+        {
+          '1': ${CENTOS7_SINGLE_HG_ID},
+          '2': ${CENTOS7_RAID_HG_ID}
+        }[hostgroup | string]
+      }}
+    
+    operatingsystem_id: >-
+      {{
+        {
+          '1': ${CENTOS7_SINGLE_OS_ID},
+          '2': ${CENTOS7_RAID_OS_ID}
+        }[hostgroup | string]
+      }}
+    
+    # ${CENTOS7_MEDIUM}
+    medium_id: ${CENTOS7_MEDIUM_ID}
+    
+    # ${PTABLE_NAME}
+    ptable_id: ${PTABLE_ID}
+    
+    # CentOS 7 subnet
+    subnet_name: "${CENTOS7_SUBNET}"
+    
+    # Katello Content
+    content_view_id: ${CENTOS7_CV_ID}
+    lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
+    
+    # Architecture
+    architecture_id: ${ARCHITECTURE_ID}
+    
+    # Domain
+    domain_id: ${DOMAIN_ID}
+    
+    # PXE
+    pxe_loader: "${PXE_LOADER}"
+    
+    
+    # ============================================================================
+    # Rocky Linux 8.10 Host Group / Operating System Selection
+    #
+    # AWX Survey:
+    #
+    # 1 = ${ROCKY8_SINGLE_HG}
+    #     OS = ${ROCKY8_SINGLE_OS}
+    #
+    # 2 = ${ROCKY8_RAID_HG}
+    #     OS = ${ROCKY8_RAID_OS}
+    #
+    # ============================================================================
+    
+    hostgroup: "{{ hostgroup | default('1', true) }}"
+    
+    hostgroup_id: >-
+      {{
+        {
+          '1': ${ROCKY8_SINGLE_HG_ID},
+          '2': ${ROCKY8_RAID_HG_ID}
+        }[hostgroup | string]
+      }}
+    
+    operatingsystem_id: >-
+      {{
+        {
+          '1': ${ROCKY8_SINGLE_OS_ID},
+          '2': ${ROCKY8_RAID_OS_ID}
+        }[hostgroup | string]
+      }}
+    
+    # ${ROCKY8_MEDIUM}
+    medium_id: ${ROCKY8_MEDIUM_ID}
+    
+    # ${PTABLE_NAME}
+    ptable_id: ${PTABLE_ID}
+    
+    # Rocky Linux 8 subnet
+    subnet_name: "${ROCKY8_SUBNET}"
+    
+    # Katello Content
+    content_view_id: ${ROCKY8_CV_ID}
+    lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
+    
+    # Architecture
+    architecture_id: ${ARCHITECTURE_ID}
+    
+    # Domain
+    domain_id: ${DOMAIN_ID}
+    
+    # PXE
+    pxe_loader: "${PXE_LOADER}"
+    
+    
+    # ============================================================================
+    # Rocky Linux 9.2 Host Group / Operating System Selection
+    #
+    # AWX Survey:
+    #
+    # 1 = ${ROCKY92_SINGLE_HG}
+    #     OS = ${ROCKY92_SINGLE_OS}
+    #
+    # 2 = ${ROCKY92_RAID_HG}
+    #     OS = ${ROCKY92_RAID_OS}
+    #
+    # ============================================================================
+    
+    hostgroup: "{{ hostgroup | default('1', true) }}"
+    
+    hostgroup_id: >-
+      {{
+        {
+          '1': ${ROCKY92_SINGLE_HG_ID},
+          '2': ${ROCKY92_RAID_HG_ID}
+        }[hostgroup | string]
+      }}
+    
+    operatingsystem_id: >-
+      {{
+        {
+          '1': ${ROCKY92_SINGLE_OS_ID},
+          '2': ${ROCKY92_RAID_OS_ID}
+        }[hostgroup | string]
+      }}
+    
+    # ${ROCKY92_MEDIUM}
+    medium_id: ${ROCKY92_MEDIUM_ID}
+    
+    # ${PTABLE_NAME}
+    ptable_id: ${PTABLE_ID}
+    
+    # Rocky Linux 9.2 subnet
+    subnet_name: "${ROCKY92_SUBNET}"
+    
+    # Katello Content
+    content_view_id: ${ROCKY92_CV_ID}
+    lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
+    
+    # Architecture
+    architecture_id: ${ARCHITECTURE_ID}
+    
+    # Domain
+    domain_id: ${DOMAIN_ID}
+    
+    # PXE
+    pxe_loader: "${PXE_LOADER}"
+    
+    
+    # ============================================================================
+    # Rocky Linux 9.8 Host Group / Operating System Selection
+    #
+    # AWX Survey:
+    #
+    # 1 = ${ROCKY98_SINGLE_HG}
+    #     OS = ${ROCKY98_SINGLE_OS}
+    #
+    # 2 = ${ROCKY98_RAID_HG}
+    #     OS = ${ROCKY98_RAID_OS}
+    #
+    # ============================================================================
+    
+    hostgroup: "{{ hostgroup | default('1', true) }}"
+    
+    hostgroup_id: >-
+      {{
+        {
+          '1': ${ROCKY98_SINGLE_HG_ID},
+          '2': ${ROCKY98_RAID_HG_ID}
+        }[hostgroup | string]
+      }}
+    
+    operatingsystem_id: >-
+      {{
+        {
+          '1': ${ROCKY98_SINGLE_OS_ID},
+          '2': ${ROCKY98_RAID_OS_ID}
+        }[hostgroup | string]
+      }}
+    
+    # ${ROCKY98_MEDIUM}
+    medium_id: ${ROCKY98_MEDIUM_ID}
+    
+    # ${PTABLE_NAME}
+    ptable_id: ${PTABLE_ID}
+    
+    # Rocky Linux 9.8 subnet
+    subnet_name: "${ROCKY98_SUBNET}"
+    
+    # Katello Content
+    content_view_id: ${ROCKY98_CV_ID}
+    lifecycle_environment_id: ${LIFECYCLE_ENVIRONMENT_ID}
+    
+    # Architecture
+    architecture_id: ${ARCHITECTURE_ID}
+    
+    # Domain
+    domain_id: ${DOMAIN_ID}
+    
+    # PXE
+    pxe_loader: "${PXE_LOADER}"
 
 EOF
 
