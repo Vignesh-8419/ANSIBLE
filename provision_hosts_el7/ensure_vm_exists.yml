@@ -75,7 +75,7 @@
 
     vm_disk_size_gb: 100
 
-    vm_guest_id: "centos7_64Guest"
+    vm_guest_id: "rhel7_64Guest"
     vm_boot_firmware: "efi"
 
   tasks:
