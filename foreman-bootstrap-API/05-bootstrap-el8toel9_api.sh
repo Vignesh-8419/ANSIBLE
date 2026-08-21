@@ -14,7 +14,7 @@
 #   TARGET_VERSION=9.8
 #
 # Run:
-#   export FOREMAN_PASSWORD='...'
+#   export FOREMAN_TOKEN='...'
 #   TARGET_VERSION=9.2 ./05-bootstrap-el8toel9_api.sh
 #   TARGET_VERSION=9.8 ./05-bootstrap-el8toel9_api.sh
 ###############################################################################
@@ -64,9 +64,9 @@ API_VERSION="${API_VERSION:-2}"
 ORG_NAME="Default Organization"
 LOCATION_NAME="Default Location"
 
-if [ -z "${FOREMAN_PASSWORD:-}" ]; then
-    error "FOREMAN_PASSWORD is not set."
-    echo "Example: export FOREMAN_PASSWORD='your-password'"
+if [ -z "${FOREMAN_TOKEN:-}" ]; then
+    error "FOREMAN_TOKEN is not set."
+    echo "Example: export FOREMAN_TOKEN='your-password'"
     exit 1
 fi
 
@@ -137,7 +137,7 @@ api_request() {
     if [ -n "${PAYLOAD}" ]; then
         HTTP_STATUS="$(
             /bin/curl -ksS -g \
-                --user "${FOREMAN_USER}:${FOREMAN_PASSWORD}" \
+                --user "${FOREMAN_USER}:${FOREMAN_TOKEN}" \
                 -H "Accept: application/json" \
                 -H "Content-Type: application/json" \
                 -X "${METHOD}" \
@@ -149,7 +149,7 @@ api_request() {
     else
         HTTP_STATUS="$(
             /bin/curl -ksS -g \
-                --user "${FOREMAN_USER}:${FOREMAN_PASSWORD}" \
+                --user "${FOREMAN_USER}:${FOREMAN_TOKEN}" \
                 -H "Accept: application/json" \
                 -H "Content-Type: application/json" \
                 -X "${METHOD}" \
@@ -1279,40 +1279,40 @@ manual_verification() {
 
 1. Foreman API:
 curl -ksS \\
-  --user "admin:\$FOREMAN_PASSWORD" \\
+  --user "admin:\$FOREMAN_TOKEN" \\
   -H 'Accept: application/json' \\
   "${FOREMAN_URL}/api/status" | jq
 
 2. Products:
 curl -ksS \\
-  --user "admin:\$FOREMAN_PASSWORD" \\
+  --user "admin:\$FOREMAN_TOKEN" \\
   -H 'Accept: application/json' \\
   "${FOREMAN_URL}/katello/api/organizations/${ORG_ID}/products?per_page=100&page=1" |
 jq -r '.results[] | [.id,.name,.label,.repository_count] | @tsv'
 
 3. Rocky Linux 8 repositories:
 curl -ksS \\
-  --user "admin:\$FOREMAN_PASSWORD" \\
+  --user "admin:\$FOREMAN_TOKEN" \\
   -H 'Accept: application/json' \\
   "${FOREMAN_URL}/katello/api/products/${SOURCE_PRODUCT_ID}/repositories?per_page=100&page=1" |
 jq -r '.results[] | [.id,.name,.url] | @tsv'
 
 4. Target repositories:
 curl -ksS \\
-  --user "admin:\$FOREMAN_PASSWORD" \\
+  --user "admin:\$FOREMAN_TOKEN" \\
   -H 'Accept: application/json' \\
   "${FOREMAN_URL}/katello/api/products/${TARGET_PRODUCT_ID}/repositories?per_page=100&page=1" |
 jq -r '.results[] | [.id,.name,.url] | @tsv'
 
 5. Content View:
 curl -ksS \\
-  --user "admin:\$FOREMAN_PASSWORD" \\
+  --user "admin:\$FOREMAN_TOKEN" \\
   -H 'Accept: application/json' \\
   "${FOREMAN_URL}/katello/api/content_views/${CONTENT_VIEW_ID}" | jq
 
 6. Activation Key:
 curl -ksS \\
-  --user "admin:\$FOREMAN_PASSWORD" \\
+  --user "admin:\$FOREMAN_TOKEN" \\
   -H 'Accept: application/json' \\
   "${FOREMAN_URL}/katello/api/activation_keys/${ACTIVATION_KEY_ID}" | jq
 
