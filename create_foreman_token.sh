@@ -1,6 +1,6 @@
 #!/bin/bash
 
-TOKEN_NAME="ansible-api-token"
+TOKEN_NAME="admin"
 TOKEN_VALUE="_bkE_ov7gKb68d3aR01m5A"
 FOREMAN_USER="admin"
 
