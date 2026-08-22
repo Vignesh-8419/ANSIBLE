@@ -867,7 +867,7 @@ case "${TARGET_VERSION}" in
         ROCKY_KERNEL="/rocky92/vmlinuz"
         ROCKY_INITRD="/rocky92/initrd.img"
         ROCKY_REPO="http://192.168.253.136/repo/rocky9.2/"
-        ROCKY_KS="http://192.168.253.136/repo/Foreman-Kickstarts/rocky9-kickstart/Rocky9_2_Golden_SingleDisk_Minimal.cfg"
+        ROCKY_KS="http://192.168.253.136/repo/Foreman-Kickstarts/rocky9-kickstarts/Rocky9_2_Golden_SingleDisk_Minimal.cfg"
         ;;
 
     9.8)
@@ -1080,7 +1080,7 @@ menuentry 'Install Rocky Linux 9.2 Single Disk' {
         ip=dhcp \
         BOOTIF=01-${net_default_mac} \
         inst.repo=http://192.168.253.136/repo/rocky9.2/ \
-        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky9-kickstart/Rocky9_2_Golden_SingleDisk_Minimal.cfg \
+        inst.ks=http://192.168.253.136/repo/Foreman-Kickstarts/rocky9-kickstarts/Rocky9_2_Golden_SingleDisk_Minimal.cfg \
         inst.text \
         inst.ks.device=bootif \
         hostname=<%= @host.name %>
