@@ -153,6 +153,12 @@ chmod +x kernel_tuning_awx.sh
 ```
 
 ```text
+curl -L -o create_foreman_token.sh \
+"https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/create_foreman_token.sh?$(date +%s)" && \
+chmod +x create_foreman_token.sh
+```
+
+```text
 curl -L -o 01_foreman_pxe_bootstrap.sh \
 "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/foreman-bootstrap/01_foreman_pxe_bootstrap.sh?$(date +%s)" && \
 
