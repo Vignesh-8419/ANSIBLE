@@ -68,7 +68,7 @@
 
     esxi_hostname: "192.168.253.128"
     esxi_username: "root"
-    esxi_password: "{{ vault_esxi_password }}"
+    esxi_password: "Root@123"
 
     ###########################################################################
     # FOREMAN ORGANIZATION / LOCATION
