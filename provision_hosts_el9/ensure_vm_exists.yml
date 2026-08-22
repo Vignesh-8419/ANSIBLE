@@ -40,7 +40,7 @@
     cluster_name: "rocky-9-servers"
 
     ###########################################################################
-    # TARGET HOSTS
+    # AWX SURVEY - TARGET HOSTS
     #
     # Examples:
     #
@@ -48,13 +48,13 @@
     # rocky-09-01,rocky-09-02
     # rocky-09-*
     #
-    # Empty = all hosts in rocky-9-servers
+    # Empty = ALL hosts in cluster
     ###########################################################################
 
     target_hosts: "{{ target_hosts | default('', true) }}"
 
     ###########################################################################
-    # DISK SELECTION
+    # AWX SURVEY - HOSTGROUP
     #
     # 1 = SingleDisk
     #     1 x 100 GB
@@ -454,13 +454,6 @@
       when: created_vm_names | length > 0
 
     ###########################################################################
-    # GET ACTUAL VM DISK INFORMATION
-    #
-    # This fixes the previous problem where hw_disks showed 0 even though
-    # the VM had a real 100 GB disk.
-    ###########################################################################
-
-    ###########################################################################
     # GET VM INFORMATION BEFORE DISK CHECK
     ###########################################################################
 
@@ -478,6 +471,9 @@
 
     ###########################################################################
     # SHOW ACTUAL CURRENT DISK COUNT
+    #
+    # Count VMDK files because hw_disks is not returned reliably by the
+    # current vmware_guest_info result.
     ###########################################################################
 
     - name: Show current VM disk count
@@ -551,6 +547,8 @@
       ansible.builtin.debug:
         msg:
           - "============================================================"
+          - "FINAL VM INFORMATION"
+          - "============================================================"
           - "VM Name       : {{ item.instance.hw_name | default(item.item.name.split('.')[0]) }}"
           - "Power         : {{ item.instance.hw_power_status | default('N/A') }}"
           - "MAC           : {{ item.instance.hw_eth0.macaddress | default('N/A') }}"
@@ -572,14 +570,28 @@
       ansible.builtin.fail:
         msg: >-
           VM '{{ item.item.name.split('.')[0] }}' does not have the required
-          number of disks. Actual:
-          {{ item.guest_disk_info | default({}) | length }},
+          number of disks.
+          Actual: {{
+            item.instance.hw_files
+            | default([])
+            | select('search', '\\.vmdk$')
+            | list
+            | length
+          }},
           Required: {{ disk_count }}
-      loop: "{{ final_vm_disk_info.results }}"
+      loop: "{{ final_vm_info.results }}"
       loop_control:
         label: "{{ item.item.name }}"
       when:
-        - item.guest_disk_info | default({}) | length | int < disk_count | int
+        - >
+          (
+            item.instance.hw_files
+            | default([])
+            | select('search', '\\.vmdk$')
+            | list
+            | length
+            | int
+          ) < (disk_count | int)
 
     ###########################################################################
     # SUMMARY
