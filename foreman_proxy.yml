@@ -252,6 +252,7 @@
 
     proxy_ip: "192.168.253.132"
     dhcp_gateway: "192.168.253.2"
+    dhcp_dns_server: "192.168.253.1"
 
     local_patch_repo: "http://http-server-01.vgs.com/repo/installed_rhel7"
     mesa_repo: "http://http-server-01.vgs.com/repo/mesa"
@@ -685,9 +686,22 @@
           {{ proxy_installer.stdout | default('') }}
       when: proxy_installer.rc != 0
 
+
     ###########################################################################
     # DHCP
     ###########################################################################
+
+    - name: Configure DHCP DNS server
+      ansible.builtin.replace:
+        path: /etc/dhcp/dhcpd.conf
+        regexp: '^[[:space:]]*option[[:space:]]+domain-name-servers[[:space:]]+[^;]+;'
+        replace: '  option domain-name-servers {{ dhcp_dns_server }};'
+
+    - name: Configure DHCP domain name
+      ansible.builtin.replace:
+        path: /etc/dhcp/dhcpd.conf
+        regexp: '^[[:space:]]*option[[:space:]]+domain-name[[:space:]]+[^;]+;'
+        replace: '  option domain-name "{{ dhcp_domain }}";'
 
     - name: Add DHCP gateway option if missing
       ansible.builtin.lineinfile:
