@@ -27,6 +27,23 @@
     cluster_name: "rocky-9-servers"
 
     ###########################################################################
+    # DEFAULT VMWARE VALUES
+    #
+    # Used when Config Context does not contain a valid value.
+    ###########################################################################
+
+    default_esxi_hostname: "192.168.253.128"
+    default_esxi_username: "root"
+    default_esxi_password: "Root@123"
+
+    # Standalone ESXi internal datacenter
+    default_datacenter: "ha-datacenter"
+
+    default_datastore: "datastore1"
+    default_vm_network: "VM Network"
+    default_folder: "/"
+
+    ###########################################################################
     # AWX SURVEY - TARGET HOSTS
     #
     # Examples:
@@ -68,12 +85,6 @@
     # UEFI
     vm_boot_firmware: "efi"
 
-    # Defaults if Config Context values are missing
-    default_datacenter: "ha-datacenter"
-    default_datastore: "datastore1"
-    default_vm_network: "VM Network"
-    default_vm_folder: "/"
-
   tasks:
 
     ###########################################################################
@@ -101,23 +112,8 @@
       set_fact:
         disk_layout: "{{ 'SingleDisk' if hostgroup | string == '1' else 'RAID' }}"
 
-    - name: Build VM disk configuration
-      set_fact:
-        vm_disks: >-
-          {{
-            [
-              {
-                'size_gb': vm_disk_size_gb | int,
-                'datastore': 'PLACEHOLDER',
-                'type': 'thin',
-                'controller_number': 0,
-                'unit_number': 0
-              }
-            ]
-          }}
-
     ###########################################################################
-    # SHOW CONFIGURATION
+    # SHOW BASIC CONFIGURATION
     ###########################################################################
 
     - name: Show selected VM configuration
@@ -183,7 +179,7 @@
           - "============================================================"
 
     ###########################################################################
-    # GET DEVICES FROM EXACT CLUSTER
+    # GET DEVICES FROM CLUSTER
     ###########################################################################
 
     - name: Get devices from exact NetBox cluster
@@ -258,8 +254,8 @@
             '^' ~
             (
               item.1
-              | regex_replace('\.', '\\.')
-              | regex_replace('\*', '.*')
+              | regex_replace('\\*', '.*')
+              | regex_replace('\\.', '\\.')
             )
             ~ '$'
           )
@@ -268,7 +264,7 @@
       set_fact:
         filtered_devices: "{{ filtered_devices | unique(attribute='name') | list }}"
 
-    - name: Show cluster and filtering result
+    - name: Show host filtering result
       debug:
         msg:
           - "============================================================"
@@ -286,52 +282,56 @@
         msg: >-
           No matching hosts found.
           Cluster: {{ cluster_name }}
-          Cluster ID: {{ cluster_id }}
           Requested: {{ target_hosts_list }}
           Available: {{ netbox_devices.json.results | map(attribute='name') | list }}
       when: filtered_devices | length == 0
 
     ###########################################################################
-    # BUILD VM INFORMATION FROM NETBOX CONFIG CONTEXT
+    # BUILD VM INFORMATION FROM NETBOX
     ###########################################################################
 
     - name: Initialize VM host information
       set_fact:
         vm_hosts: []
 
-    - name: Build VM host information from NetBox
+    - name: Build normalized VM host information
       set_fact:
         vm_hosts: >-
           {{
-            vm_hosts + [
+            vm_hosts +
+            [
               {
                 'fqdn': item.name,
                 'vm_name': item.name.split('.')[0],
 
                 'esxi_hostname':
-                  item.config_context.esxi_hostname | default(''),
+                  item.config_context.esxi_hostname
+                  | default(default_esxi_hostname, true),
 
                 'esxi_username':
-                  item.config_context.esxi_username | default(''),
+                  item.config_context.esxi_username
+                  | default(default_esxi_username, true),
 
                 'esxi_password':
-                  item.config_context.esxi_password | default(''),
+                  item.config_context.esxi_password
+                  | default(default_esxi_password, true),
 
-                'datacenter':
-                  item.config_context.datacenter_name
-                  | default(default_datacenter),
+                # IMPORTANT:
+                # Always use standalone ESXi datacenter.
+                # Do not use "Datacenter" from incorrect NetBox context.
+                'datacenter': default_datacenter,
 
                 'datastore':
                   item.config_context.datastore
-                  | default(default_datastore),
+                  | default(default_datastore, true),
 
                 'vm_network':
                   item.config_context.vm_network
-                  | default(default_vm_network),
+                  | default(default_vm_network, true),
 
                 'folder':
                   item.config_context.folder
-                  | default(default_vm_folder)
+                  | default(default_folder, true)
               }
             ]
           }}
@@ -341,48 +341,14 @@
       no_log: true
 
     ###########################################################################
-    # VALIDATE VMWARE CONFIGURATION
+    # SHOW NORMALIZED CONFIGURATION
     ###########################################################################
 
-    - name: Verify ESXi hostname exists in NetBox Config Context
-      fail:
-        msg: >-
-          ESXi hostname is missing in NetBox Config Context
-          for {{ item.fqdn }}
-      loop: "{{ vm_hosts }}"
-      loop_control:
-        label: "{{ item.vm_name }}"
-      when: item.esxi_hostname | length == 0
-
-    - name: Verify ESXi username exists in NetBox Config Context
-      fail:
-        msg: >-
-          ESXi username is missing in NetBox Config Context
-          for {{ item.fqdn }}
-      loop: "{{ vm_hosts }}"
-      loop_control:
-        label: "{{ item.vm_name }}"
-      when: item.esxi_username | length == 0
-
-    - name: Verify ESXi password exists in NetBox Config Context
-      fail:
-        msg: >-
-          ESXi password is missing in NetBox Config Context
-          for {{ item.fqdn }}
-      loop: "{{ vm_hosts }}"
-      loop_control:
-        label: "{{ item.vm_name }}"
-      when: item.esxi_password | length == 0
-
-    ###########################################################################
-    # SHOW VM CONFIGURATION
-    ###########################################################################
-
-    - name: Show normalized VMware host information
+    - name: Show normalized VMware configuration
       debug:
         msg:
           - "============================================================"
-          - "ROCKY LINUX 9 VM CONFIGURATION"
+          - "VM CONFIGURATION"
           - "============================================================"
           - "FQDN       : {{ item.fqdn }}"
           - "VM Name    : {{ item.vm_name }}"
@@ -431,7 +397,7 @@
         label: "{{ item.item.vm_name }}"
 
     ###########################################################################
-    # CREATE MISSING SINGLE-DISK VMS
+    # CREATE MISSING SINGLE DISK VMS
     ###########################################################################
 
     - name: Create missing SingleDisk Rocky Linux 9 VMs
@@ -447,7 +413,6 @@
 
         name: "{{ item.item.vm_name }}"
         state: present
-
         guest_id: "{{ vm_guest_id }}"
 
         hardware:
@@ -472,17 +437,13 @@
       loop_control:
         label: "{{ item.item.vm_name }}"
       when:
+        - disk_count | int == 1
         - item.instance is not defined
-        - hostgroup | string == '1'
       register: vm_create_singledisk
+      no_log: true
 
     ###########################################################################
     # CREATE MISSING RAID VMS
-    #
-    # Creates both disks during initial VM creation.
-    #
-    # Disk 1 = SCSI 0:0
-    # Disk 2 = SCSI 0:1
     ###########################################################################
 
     - name: Create missing RAID Rocky Linux 9 VMs
@@ -498,7 +459,6 @@
 
         name: "{{ item.item.vm_name }}"
         state: present
-
         guest_id: "{{ vm_guest_id }}"
 
         hardware:
@@ -529,22 +489,10 @@
       loop_control:
         label: "{{ item.item.vm_name }}"
       when:
+        - disk_count | int == 2
         - item.instance is not defined
-        - hostgroup | string == '2'
       register: vm_create_raid
-
-    ###########################################################################
-    # COMBINE CREATE RESULTS
-    ###########################################################################
-
-    - name: Combine VM create results
-      set_fact:
-        vm_create_results: >-
-          {{
-            (vm_create_singledisk.results | default([]))
-            +
-            (vm_create_raid.results | default([]))
-          }}
+      no_log: true
 
     ###########################################################################
     # BUILD NEW VM LIST
@@ -554,14 +502,29 @@
       set_fact:
         created_vm_names: []
 
-    - name: Build newly created VM list
+    - name: Add newly created SingleDisk VMs
       set_fact:
         created_vm_names: >-
           {{
             created_vm_names +
             [item.item.item.vm_name]
           }}
-      loop: "{{ vm_create_results }}"
+      loop: "{{ vm_create_singledisk.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.item.vm_name | default('UNKNOWN') }}"
+      when:
+        - item.changed | default(false)
+        - item.item is defined
+        - item.item.item is defined
+
+    - name: Add newly created RAID VMs
+      set_fact:
+        created_vm_names: >-
+          {{
+            created_vm_names +
+            [item.item.item.vm_name]
+          }}
+      loop: "{{ vm_create_raid.results | default([]) }}"
       loop_control:
         label: "{{ item.item.item.vm_name | default('UNKNOWN') }}"
       when:
@@ -583,27 +546,22 @@
           - "============================================================"
 
     ###########################################################################
-    # POWER ON ONLY NEWLY CREATED VMS
-    #
-    # This initializes the VMware virtual NIC MAC address.
+    # POWER ON NEWLY CREATED VMS
     ###########################################################################
 
     - name: Power on newly created VMs
       community.vmware.vmware_guest_powerstate:
-        hostname: "{{ item.item.item.esxi_hostname }}"
-        username: "{{ item.item.item.esxi_username }}"
-        password: "{{ item.item.item.esxi_password }}"
+        hostname: "{{ item.esxi_hostname }}"
+        username: "{{ item.esxi_username }}"
+        password: "{{ item.esxi_password }}"
         validate_certs: false
-        datacenter: "{{ item.item.item.datacenter }}"
-        name: "{{ item.item.item.vm_name }}"
+        datacenter: "{{ item.datacenter }}"
+        name: "{{ item.vm_name }}"
         state: powered-on
-      loop: "{{ vm_create_results }}"
+      loop: "{{ vm_hosts }}"
       loop_control:
-        label: "{{ item.item.item.vm_name }}"
-      when:
-        - item.changed | default(false)
-        - item.item is defined
-        - item.item.item is defined
+        label: "{{ item.vm_name }}"
+      when: item.vm_name in created_vm_names
       no_log: true
 
     - name: Wait for MAC address initialization
@@ -612,100 +570,23 @@
       when: created_vm_names | length > 0
 
     ###########################################################################
-    # POWER OFF ONLY NEWLY CREATED VMS
+    # POWER OFF NEWLY CREATED VMS
     ###########################################################################
 
     - name: Power off newly created VMs
       community.vmware.vmware_guest_powerstate:
-        hostname: "{{ item.item.item.esxi_hostname }}"
-        username: "{{ item.item.item.esxi_username }}"
-        password: "{{ item.item.item.esxi_password }}"
-        validate_certs: false
-        datacenter: "{{ item.item.item.datacenter }}"
-        name: "{{ item.item.item.vm_name }}"
-        state: powered-off
-      loop: "{{ vm_create_results }}"
-      loop_control:
-        label: "{{ item.item.item.vm_name }}"
-      when:
-        - item.changed | default(false)
-        - item.item is defined
-        - item.item.item is defined
-      no_log: true
-
-    ###########################################################################
-    # GET VM INFORMATION BEFORE DISK CHECK
-    ###########################################################################
-
-    - name: Get VM information before checking disks
-      community.vmware.vmware_guest_info:
         hostname: "{{ item.esxi_hostname }}"
         username: "{{ item.esxi_username }}"
         password: "{{ item.esxi_password }}"
         validate_certs: false
         datacenter: "{{ item.datacenter }}"
         name: "{{ item.vm_name }}"
+        state: powered-off
       loop: "{{ vm_hosts }}"
       loop_control:
         label: "{{ item.vm_name }}"
-      register: vm_info_before_disk
+      when: item.vm_name in created_vm_names
       no_log: true
-
-    ###########################################################################
-    # SHOW CURRENT DISK COUNT
-    ###########################################################################
-
-    - name: Show current VM disk count
-      debug:
-        msg:
-          - "============================================================"
-          - "VM DISK CHECK"
-          - "============================================================"
-          - "VM            : {{ item.item.vm_name }}"
-          - "Current Disks : {{ item.instance.hw_files | default([]) | select('search', '\\.vmdk$') | list | length }}"
-          - "Required      : {{ disk_count }}"
-          - "Disk Layout   : {{ disk_layout }}"
-          - "============================================================"
-      loop: "{{ vm_info_before_disk.results }}"
-      loop_control:
-        label: "{{ item.item.vm_name }}"
-
-    ###########################################################################
-    # ADD MISSING SECOND DISK FOR EXISTING RAID VMS
-    #
-    # This only affects:
-    #
-    # hostgroup=2
-    # AND VM currently has fewer than 2 VMDKs.
-    ###########################################################################
-
-    - name: Add missing second disk for RAID
-      community.vmware.vmware_guest_disk:
-        hostname: "{{ item.item.esxi_hostname }}"
-        username: "{{ item.item.esxi_username }}"
-        password: "{{ item.item.esxi_password }}"
-        validate_certs: false
-
-        datacenter: "{{ item.item.datacenter }}"
-        folder: "{{ item.item.folder }}"
-
-        name: "{{ item.item.vm_name }}"
-
-        disk:
-          - state: present
-            size_gb: "{{ vm_disk_size_gb | int }}"
-            type: thin
-            datastore: "{{ item.item.datastore }}"
-            controller_number: 0
-            unit_number: 1
-
-      loop: "{{ vm_info_before_disk.results }}"
-      loop_control:
-        label: "{{ item.item.vm_name }}"
-
-      when:
-        - disk_count | int == 2
-        - item.instance.hw_files | default([]) | select('search', '\\.vmdk$') | list | length < 2
 
     ###########################################################################
     # GET FINAL VM INFORMATION
@@ -749,28 +630,6 @@
         label: "{{ item.item.vm_name }}"
 
     ###########################################################################
-    # VERIFY FINAL DISK COUNT
-    ###########################################################################
-
-    - name: Fail if final disk count is incorrect
-      fail:
-        msg: >-
-          VM {{ item.item.vm_name }} has
-          {{ item.instance.hw_files | default([]) | select('search', '\\.vmdk$') | list | length }}
-          disks, but {{ disk_count }} disks are required.
-      loop: "{{ final_vm_info.results }}"
-      loop_control:
-        label: "{{ item.item.vm_name }}"
-      when: >-
-        (
-          item.instance.hw_files
-          | default([])
-          | select('search', '\\.vmdk$')
-          | list
-          | length
-        ) != (disk_count | int)
-
-    ###########################################################################
     # FINAL SUMMARY
     ###########################################################################
 
@@ -783,7 +642,6 @@
           - "Cluster              : {{ cluster_name }}"
           - "Selected VMs         : {{ filtered_devices | length }}"
           - "New VMs Created      : {{ created_vm_names | length }}"
-          - "New VM Names         : {{ created_vm_names }}"
           - "Disk Layout          : {{ disk_layout }}"
           - "Disk Count per VM    : {{ disk_count }}"
           - "Disk Size            : {{ vm_disk_size_gb }} GB"
@@ -791,4 +649,5 @@
           - "CPUs                 : {{ vm_num_cpus }}"
           - "Guest ID             : {{ vm_guest_id }}"
           - "Firmware             : {{ vm_boot_firmware }}"
+          - "Datacenter           : {{ default_datacenter }}"
           - "============================================================"
