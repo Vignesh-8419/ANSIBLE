@@ -1,5 +1,10 @@
 #!/bin/bash
 #
+#DELETION COMMAND BELOW
+#foreman-rake console -s 'user=User.find_by!(login:"admin"); PersonalAccessToken.where(user:user,name:"admin").destroy_all; puts "ADMIN TOKEN DELETED"'
+#user=User.find_by!(login:"admin"); PersonalAccessToken.where(user:user,name:"admin").destroy_all; puts "ADMIN TOKEN DELETED"
+#puts PersonalAccessToken.where(user:user,name:"admin").count
+#exit
 # ============================================================
 # FOREMAN CUSTOM PERSONAL ACCESS TOKEN CREATOR
 # ============================================================
