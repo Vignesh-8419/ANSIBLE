@@ -692,30 +692,45 @@
     # DHCP
     ###########################################################################
 
-    - name: Configure DHCP DNS server
-      ansible.builtin.replace:
+    - name: Remove existing DHCP DNS server options
+      ansible.builtin.lineinfile:
         path: /etc/dhcp/dhcpd.conf
-        regexp: '^[[:space:]]*option[[:space:]]+domain-name-servers[[:space:]]+[^;]+;'
-        replace: '  option domain-name-servers {{ dhcp_dns_server }};'
+        regexp: '^\s*option\s+domain-name-servers\s+.*;'
+        state: absent
 
-    - name: Configure DHCP domain name
-      ansible.builtin.replace:
+    - name: Remove existing DHCP domain name options
+      ansible.builtin.lineinfile:
         path: /etc/dhcp/dhcpd.conf
-        regexp: '^[[:space:]]*option[[:space:]]+domain-name[[:space:]]+[^;]+;'
-        replace: '  option domain-name "{{ dhcp_domain }}";'
+        regexp: '^\s*option\s+domain-name\s+".*";'
+        state: absent
+
+    - name: Add correct DHCP DNS server
+      ansible.builtin.lineinfile:
+        path: /etc/dhcp/dhcpd.conf
+        insertafter: '^default-lease-time'
+        line: 'option domain-name-servers {{ dhcp_dns_server }};'
+        state: present
+
+    - name: Add correct DHCP domain name
+      ansible.builtin.lineinfile:
+        path: /etc/dhcp/dhcpd.conf
+        insertafter: '^option domain-name-servers'
+        line: 'option domain-name "{{ dhcp_domain }}";'
+        state: present
 
     - name: Add DHCP gateway option if missing
       ansible.builtin.lineinfile:
         path: /etc/dhcp/dhcpd.conf
-        insertafter: 'option subnet-mask'
-        line: "  option routers {{ dhcp_gateway }};"
+        insertafter: '^\s*option\s+subnet-mask'
+        line: '  option routers {{ dhcp_gateway }};'
         state: present
 
     - name: Make DHCP authoritative
-      ansible.builtin.replace:
+      ansible.builtin.lineinfile:
         path: /etc/dhcp/dhcpd.conf
-        regexp: '^not authoritative;$'
-        replace: 'authoritative;'
+        regexp: '^\s*not authoritative;'
+        line: 'authoritative;'
+        state: present
 
     - name: Validate DHCP configuration
       ansible.builtin.command:
@@ -727,6 +742,20 @@
         name: dhcpd
         enabled: true
         state: restarted
+
+    - name: Verify final DHCP DNS configuration
+      ansible.builtin.shell: |
+        echo "===== DHCP DNS SETTINGS ====="
+        grep -nE 'domain-name-servers|domain-name|routers' /etc/dhcp/dhcpd.conf
+        echo "=============================="
+      args:
+        executable: /bin/bash
+      register: dhcp_verify
+      changed_when: false
+
+    - name: Display final DHCP configuration
+      ansible.builtin.debug:
+        var: dhcp_verify.stdout_lines
 
     ###########################################################################
     # ROCKY PXE KERNEL / INITRD
