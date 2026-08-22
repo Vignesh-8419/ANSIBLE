@@ -1,171 +1,95 @@
 ---
-# ============================================================
-# PREPARE AND RECREATE ROCKY LINUX 9 HOSTS IN FOREMAN USING API
-# ============================================================
-
 - name: Prepare and recreate ROCKY LINUX 9 hosts in Foreman using API
   hosts: localhost
-  connection: local
   gather_facts: false
 
   collections:
     - community.vmware
+    - netbox.netbox
 
+  # ============================================================
+  # VARIABLES
+  # ============================================================
   vars:
 
-    ###########################################################################
-    # ESXI
-    ###########################################################################
+    # ------------------------------------------------------------
+    # TARGET HOST
+    # ------------------------------------------------------------
+    target_hosts: ""
 
-    esxi_hostname: "192.168.253.128"
-    esxi_username: "root"
-    esxi_password: "Root@123"
-
-    datacenter: "ha-datacenter"
-    datastore: "datastore1"
-    vm_network: "VM Network"
-    folder: "/"
-
-    ###########################################################################
-    # NETBOX
-    ###########################################################################
-
-    netbox_url: "https://192.168.253.143"
-    netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
-
-    ###########################################################################
-    # CLUSTER
-    ###########################################################################
-
-    cluster_name: "rocky-9-servers"
-
-    ###########################################################################
-    # TARGET HOSTS
-    #
-    # Examples:
-    #
-    # rocky-09-01
-    # rocky-09-01,rocky-09-02
-    # rocky-09-*
-    #
-    # Empty = all matching Rocky 9 hosts
-    ###########################################################################
-
-    target_hosts: "{{ target_hosts | default('', true) }}"
-
-    ###########################################################################
-    # HOSTGROUP / DISK SELECTION
-    #
-    # 1 = SingleDisk
-    #     1 x 100 GB
-    #
-    # 2 = RAID
-    #     2 x 100 GB
-    ###########################################################################
-
-    hostgroup: "{{ hostgroup | default('1', true) }}"
-
-    ###########################################################################
+    # ------------------------------------------------------------
     # FOREMAN
+    # Can be overridden using:
+    # -e "foreman_server=https://rocky-08-01.vgs.com"
+    # ------------------------------------------------------------
+    foreman_server: "https://rocky-08-01.vgs.com"
+    foreman_validate_certs: false
+
+    # ------------------------------------------------------------
+    # NETBOX
+    # ------------------------------------------------------------
+    netbox_url: "https://netbox.vgs.com"
+    netbox_validate_certs: false
+
+    # ------------------------------------------------------------
+    # HOSTGROUP SELECTION
     #
-    # Keep each variable defined ONLY ONCE.
-    ###########################################################################
+    # IMPORTANT:
+    # Do not define "hostgroup" twice.
+    # Do not define "hostgroup_id" twice.
+    # ------------------------------------------------------------
+    hostgroup_selection: "{{ hostgroup | default('1') | string }}"
 
-    foreman_server: "{{ foreman_server | default('1', true) }}"
-
-    rocky9_hostgroup_single_id: 7
-    rocky9_hostgroup_raid_id: 7
-
+    # ------------------------------------------------------------
+    # ROCKY LINUX 9 FOREMAN IDs
+    # ------------------------------------------------------------
+    rocky9_hostgroup_id: 7
     rocky9_operatingsystem_id: 7
     rocky9_medium_id: 17
-    rocky9_partition_table_id: 126
-    rocky9_subnet_name: "vgs-subnet-rockyos"
+    rocky9_ptable_id: 126
     rocky9_content_view_id: 4
     rocky9_lifecycle_environment_id: 1
     rocky9_architecture_id: 1
     rocky9_domain_id: 1
 
-    ###########################################################################
-    # VM HARDWARE
-    ###########################################################################
-
-    vm_memory_mb: 4096
-    vm_num_cpus: 4
-    vm_num_cpu_cores_per_socket: 2
-
-    vm_disk_size_gb: 100
-
-    vm_guest_id: "rhel9_64Guest"
-    vm_boot_firmware: "efi"
+    rocky9_subnet_name: "vgs-subnet-rockyos"
+    rocky9_pxe_loader: "Grub2 UEFI"
+    rocky9_build: true
 
   tasks:
 
-    ###########################################################################
+    # ============================================================
     # VALIDATE HOSTGROUP
-    ###########################################################################
+    # ============================================================
 
     - name: Validate hostgroup selection
-      ansible.builtin.fail:
-        msg: >-
-          Invalid hostgroup '{{ hostgroup }}'.
-          Valid values:
-          1 = SingleDisk
-          2 = RAID
-      when: hostgroup | string not in ['1', '2']
+      ansible.builtin.assert:
+        that:
+          - hostgroup_selection in ['1']
+        fail_msg: >-
+          Invalid hostgroup selection '{{ hostgroup_selection }}'.
+          Valid value is: 1
 
-    ###########################################################################
-    # SET FOREMAN HOSTGROUP ID
-    ###########################################################################
+    # ============================================================
+    # VALIDATE FOREMAN IDS
+    # ============================================================
 
-    - name: Set selected Rocky 9 Foreman hostgroup ID
-      ansible.builtin.set_fact:
-        selected_hostgroup_id: >-
-          {{
-            rocky9_hostgroup_single_id
-            if hostgroup | string == '1'
-            else rocky9_hostgroup_raid_id
-          }}
+    - name: Validate Rocky 9 Foreman IDs are configured
+      ansible.builtin.assert:
+        that:
+          - rocky9_hostgroup_id | int > 0
+          - rocky9_operatingsystem_id | int > 0
+          - rocky9_medium_id | int > 0
+          - rocky9_ptable_id | int > 0
+          - rocky9_content_view_id | int > 0
+          - rocky9_lifecycle_environment_id | int > 0
+          - rocky9_architecture_id | int > 0
+          - rocky9_domain_id | int > 0
+        fail_msg: "One or more Rocky Linux 9 Foreman IDs are missing or invalid."
 
-    ###########################################################################
-    # BUILD DISK CONFIGURATION
-    ###########################################################################
-
-    - name: Set disk count
-      ansible.builtin.set_fact:
-        disk_count: "{{ 1 if hostgroup | string == '1' else 2 }}"
-
-    - name: Set disk layout
-      ansible.builtin.set_fact:
-        disk_layout: "{{ 'SingleDisk' if hostgroup | string == '1' else 'RAID' }}"
-
-    - name: Build VM disk configuration
-      ansible.builtin.set_fact:
-        vm_disks: >-
-          {{
-            [
-              {
-                'size_gb': vm_disk_size_gb | int,
-                'datastore': datastore,
-                'type': 'thin'
-              }
-            ]
-            +
-            (
-              [
-                {
-                  'size_gb': vm_disk_size_gb | int,
-                  'datastore': datastore,
-                  'type': 'thin'
-                }
-              ]
-              if hostgroup | string == '2'
-              else []
-            )
-          }}
-
-    ###########################################################################
+    # ============================================================
     # SHOW CONFIGURATION
-    ###########################################################################
+    # ============================================================
 
     - name: Show selected Rocky Linux 9 provisioning configuration
       ansible.builtin.debug:
@@ -173,402 +97,389 @@
           - "============================================================"
           - "ROCKY LINUX 9 FOREMAN PROVISIONING"
           - "============================================================"
-          - "ESXi Server           : {{ esxi_hostname }}"
-          - "Cluster               : {{ cluster_name }}"
-          - "Target Hosts          : {{ target_hosts | default('ALL', true) }}"
-          - "Hostgroup Selection   : {{ hostgroup }}"
-          - "Hostgroup ID          : {{ selected_hostgroup_id }}"
+          - "Foreman Server        : {{ foreman_server }}"
+          - "Target Hosts          : {{ target_hosts | default('ALL') }}"
+          - "Hostgroup Selection   : {{ hostgroup_selection }}"
+          - "Hostgroup ID          : {{ rocky9_hostgroup_id }}"
           - "Operating System ID   : {{ rocky9_operatingsystem_id }}"
           - "Medium ID             : {{ rocky9_medium_id }}"
-          - "Partition Table ID    : {{ rocky9_partition_table_id }}"
+          - "Partition Table ID    : {{ rocky9_ptable_id }}"
           - "Subnet Name           : {{ rocky9_subnet_name }}"
           - "Content View ID       : {{ rocky9_content_view_id }}"
           - "Lifecycle Environment : {{ rocky9_lifecycle_environment_id }}"
           - "Architecture ID       : {{ rocky9_architecture_id }}"
           - "Domain ID             : {{ rocky9_domain_id }}"
-          - "PXE Loader            : Grub2 UEFI"
-          - "Build                 : True"
-          - "Disk Layout           : {{ disk_layout }}"
-          - "Disk Count            : {{ disk_count }}"
+          - "PXE Loader            : {{ rocky9_pxe_loader }}"
+          - "Build                 : {{ rocky9_build }}"
           - "============================================================"
 
-    ###########################################################################
+    # ============================================================
     # GET DEVICES FROM NETBOX
-    ###########################################################################
+    # ============================================================
 
     - name: Get devices from NetBox cluster
-      ansible.builtin.uri:
-        url: "{{ netbox_url }}/api/dcim/devices/?cluster={{ cluster_name | urlencode }}&limit=1000"
-        method: GET
-        headers:
-          Authorization: "Token {{ netbox_token }}"
-          Accept: "application/json"
-        validate_certs: false
-        use_proxy: false
-        return_content: true
-        status_code: 200
+      netbox.netbox.nb_lookup:
+        api_endpoint: "{{ netbox_url }}"
+        token: "{{ netbox_token }}"
+        validate_certs: "{{ netbox_validate_certs }}"
+        resource: devices
+        api_filter: "cluster=rocky-9-servers"
       register: netbox_devices
 
     - name: Show devices returned by NetBox
       ansible.builtin.debug:
-        msg: "{{ netbox_devices.json.results | map(attribute='name') | list }}"
+        msg: "{{ netbox_devices | map(attribute='value.name') | list }}"
 
-    - name: Fail if NetBox returned no devices
-      ansible.builtin.fail:
-        msg: "No devices returned from NetBox."
-      when: netbox_devices.json.results | length == 0
-
-    ###########################################################################
-    # INITIALIZE FILTERED DEVICE LIST
-    ###########################################################################
+    # ============================================================
+    # INITIALIZE FILTERED LIST
+    # ============================================================
 
     - name: Initialize filtered device list
       ansible.builtin.set_fact:
         filtered_devices: []
 
+    # ============================================================
+    # USE ALL DEVICES IF TARGET IS EMPTY
+    # ============================================================
+
     - name: Use all devices when target_hosts is empty
       ansible.builtin.set_fact:
-        filtered_devices: "{{ netbox_devices.json.results }}"
-      when: target_hosts | trim | length == 0
+        filtered_devices: "{{ netbox_devices }}"
+      when:
+        - target_hosts | default('') | trim == ''
+
+    # ============================================================
+    # FILTER BY SHORT NAME OR FQDN
+    # ============================================================
 
     - name: Filter devices by hostname when target_hosts is specified
       ansible.builtin.set_fact:
         filtered_devices: "{{ filtered_devices + [item] }}"
-      loop: "{{ netbox_devices.json.results }}"
-      loop_control:
-        label: "{{ item.name }}"
+      loop: "{{ netbox_devices }}"
       when:
-        - target_hosts | trim | length > 0
+        - target_hosts | default('') | trim != ''
         - >
-          item.name.split('.')[0]
-          in
-          (
-            target_hosts.split(',')
-            | map('trim')
-            | reject('equalto', '')
-            | list
-          )
+          item.value.name == target_hosts
+          or
+          (item.value.name | regex_replace('\..*$', '')) == target_hosts
+
+    # ============================================================
+    # SHOW FILTERED DEVICES
+    # ============================================================
 
     - name: Show filtered devices
       ansible.builtin.debug:
-        msg: "{{ filtered_devices | map(attribute='name') | list }}"
+        msg: "{{ filtered_devices | map(attribute='value.name') | list }}"
+
+    # ============================================================
+    # FAIL IF NO HOST FOUND
+    # ============================================================
 
     - name: Fail if no hosts matched
       ansible.builtin.fail:
         msg: >-
-          No hosts matched target_hosts '{{ target_hosts }}'.
-          Available hosts:
-          {{ netbox_devices.json.results | map(attribute='name') | list }}
-      when: filtered_devices | length == 0
+          No NetBox device matched target_hosts='{{ target_hosts }}'.
+          Available devices are:
+          {{ netbox_devices | map(attribute='value.name') | list }}
+      when:
+        - filtered_devices | length == 0
 
-    ###########################################################################
-    # GET VM INFORMATION FROM ESXI
+    # ============================================================
+    # PREPARE HOST DATA
+    # ============================================================
+
+    - name: Initialize provisioning hosts
+      ansible.builtin.set_fact:
+        provisioning_hosts: []
+
+    - name: Build provisioning host information
+      ansible.builtin.set_fact:
+        provisioning_hosts: >-
+          {{
+            provisioning_hosts +
+            [
+              {
+                'fqdn': item.value.name,
+                'vm_name': item.value.name | regex_replace('\..*$', ''),
+                'ip_address': (
+                  item.value.primary_ip4.address
+                  | default(item.value.primary_ip.address, true)
+                  | regex_replace('/.*$', '')
+                ),
+                'netbox_id': item.value.id,
+
+                'esxi_hostname': item.value.config_context.esxi_hostname,
+                'esxi_username': item.value.config_context.esxi_username,
+                'esxi_password': item.value.config_context.esxi_password,
+
+                'datacenter_name': item.value.config_context.datacenter_name,
+                'datastore': item.value.config_context.datastore,
+                'vm_network': item.value.config_context.vm_network,
+                'guest_domain': item.value.config_context.guest_domain,
+
+                'dns_primary': item.value.config_context.dns_primary,
+                'gateway': item.value.config_context.gateway,
+                'netmask': item.value.config_context.netmask
+              }
+            ]
+          }}
+      loop: "{{ filtered_devices }}"
+      loop_control:
+        label: "{{ item.value.name }}"
+      no_log: true
+
+    # ============================================================
+    # SHOW NORMALIZED HOST INFORMATION
+    # ============================================================
+
+    - name: Show normalized VMware host information
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "FQDN       : {{ item.fqdn }}"
+          - "VM Name    : {{ item.vm_name }}"
+          - "IP Address : {{ item.ip_address }}"
+          - "ESXi       : {{ item.esxi_hostname }}"
+          - "Datacenter : {{ item.datacenter_name }}"
+          - "Datastore  : {{ item.datastore }}"
+          - "Network    : {{ item.vm_network }}"
+          - "============================================================"
+      loop: "{{ provisioning_hosts }}"
+      loop_control:
+        label: "{{ item.vm_name }}"
+
+    # ============================================================
+    # VMWARE VM LOOKUP
     #
-    # IMPORTANT:
-    # A missing VM is EXPECTED.
-    # vmware_guest_info returns an error for a non-existing VM.
-    # failed_when: false prevents the playbook from stopping.
-    ###########################################################################
+    # THIS IS THE CRITICAL FIX.
+    #
+    # If VM does not exist:
+    # "Unable to gather information for non-existing VM ..."
+    #
+    # That is NOT a fatal error for a provisioning playbook.
+    # ============================================================
 
     - name: Get VM information from ESXi
       community.vmware.vmware_guest_info:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
+        hostname: "{{ item.esxi_hostname }}"
+        username: "{{ item.esxi_username }}"
+        password: "{{ item.esxi_password }}"
         validate_certs: false
-        datacenter: "{{ datacenter }}"
-        name: "{{ item.name.split('.')[0] }}"
-      loop: "{{ filtered_devices }}"
-      loop_control:
-        label: "{{ item.name }}"
-      register: vm_lookup
+        datacenter: "{{ item.datacenter_name }}"
+        name: "{{ item.vm_name }}"
+      register: vm_info_results
       failed_when: false
       changed_when: false
+      loop: "{{ provisioning_hosts }}"
+      loop_control:
+        label: "{{ item.vm_name }}"
+      no_log: true
 
-    ###########################################################################
-    # SHOW VM EXISTENCE STATUS
-    ###########################################################################
+    # ============================================================
+    # SHOW LOOKUP RESULT
+    # ============================================================
+
+    - name: Show VM lookup results
+      ansible.builtin.debug:
+        msg:
+          - "VM Name : {{ item.item.vm_name }}"
+          - "FQDN    : {{ item.item.fqdn }}"
+          - "Exists  : {{ not (item.failed | default(false)) }}"
+          - "Message : {{ item.msg | default('VM information gathered successfully') }}"
+      loop: "{{ vm_info_results.results }}"
+      loop_control:
+        label: "{{ item.item.vm_name }}"
+
+    # ============================================================
+    # INITIALIZE VM STATUS
+    # ============================================================
+
+    - name: Initialize VM status map
+      ansible.builtin.set_fact:
+        vm_status_map: {}
+
+    # ============================================================
+    # DETERMINE IF VM EXISTS
+    # ============================================================
+
+    - name: Record VM existence status
+      ansible.builtin.set_fact:
+        vm_status_map: >-
+          {{
+            vm_status_map | combine(
+              {
+                item.item.vm_name:
+                (
+                  not (item.failed | default(false))
+                  and
+                  (
+                    item.instance is defined
+                    or
+                    item.msg | default('') == ''
+                  )
+                )
+              }
+            )
+          }}
+      loop: "{{ vm_info_results.results }}"
+      loop_control:
+        label: "{{ item.item.vm_name }}"
+
+    # ============================================================
+    # SHOW VM STATUS
+    # ============================================================
 
     - name: Show VM existence status
       ansible.builtin.debug:
-        msg:
-          - "============================================================"
-          - "VM EXISTENCE CHECK"
-          - "============================================================"
-          - "VM     : {{ item.item.name.split('.')[0] }}"
-          - "Exists : {{ item.instance is defined }}"
-          - "Status : {{ 'EXISTS' if item.instance is defined else 'MISSING - WILL BE CREATED' }}"
-          - "Message: {{ item.msg | default('VM information retrieved successfully') }}"
-          - "============================================================"
-      loop: "{{ vm_lookup.results }}"
-      loop_control:
-        label: "{{ item.item.name }}"
+        msg: "{{ vm_status_map }}"
 
-    ###########################################################################
-    # CREATE ONLY MISSING VMS
-    ###########################################################################
+    # ============================================================
+    # EXPLICITLY SHOW WHETHER VM EXISTS
+    # ============================================================
 
-    - name: Create missing VMs
-      community.vmware.vmware_guest:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: false
-
-        datacenter: "{{ datacenter }}"
-        folder: "{{ folder }}"
-        datastore: "{{ datastore }}"
-
-        name: "{{ item.item.name.split('.')[0] }}"
-        state: present
-
-        guest_id: "{{ vm_guest_id }}"
-
-        hardware:
-          memory_mb: "{{ vm_memory_mb | int }}"
-          num_cpus: "{{ vm_num_cpus | int }}"
-          num_cpu_cores_per_socket: "{{ vm_num_cpu_cores_per_socket | int }}"
-          boot_firmware: "{{ vm_boot_firmware }}"
-
-        disk: "{{ vm_disks }}"
-
-        networks:
-          - name: "{{ vm_network }}"
-            start_connected: true
-            device_type: vmxnet3
-
-      loop: "{{ vm_lookup.results }}"
-      loop_control:
-        label: "{{ item.item.name }}"
-      when: item.instance is not defined
-      register: vm_create
-
-    ###########################################################################
-    # BUILD NEWLY CREATED VM LIST
-    ###########################################################################
-
-    - name: Initialize created VM list
-      ansible.builtin.set_fact:
-        created_vm_names: []
-
-    - name: Build newly created VM list
-      ansible.builtin.set_fact:
-        created_vm_names: >-
-          {{
-            created_vm_names +
-            [item.item.item.name.split('.')[0]]
-          }}
-      loop: "{{ vm_create.results | default([]) }}"
-      loop_control:
-        label: "{{ item.item.item.name | default('UNKNOWN') }}"
-      when:
-        - item.changed | default(false)
-        - item.item is defined
-        - item.item.item is defined
-
-    - name: Show newly created VMs
+    - name: Show VM status
       ansible.builtin.debug:
-        msg:
-          - "============================================================"
-          - "NEWLY CREATED VMS"
-          - "============================================================"
-          - "{{ created_vm_names }}"
-          - "============================================================"
-
-    ###########################################################################
-    # POWER ON ONLY NEWLY CREATED VMS
-    ###########################################################################
-
-    - name: Power on newly created VMs
-      community.vmware.vmware_guest_powerstate:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: false
-        datacenter: "{{ datacenter }}"
-        name: "{{ item }}"
-        state: powered-on
-      loop: "{{ created_vm_names }}"
+        msg: >-
+          {{
+            'VM ' ~ item.vm_name ~ ' EXISTS on ESXi.'
+            if (vm_status_map[item.vm_name] | default(false) | bool)
+            else
+            'VM ' ~ item.vm_name ~ ' DOES NOT EXIST on ESXi. New VM provisioning will continue.'
+          }}
+      loop: "{{ provisioning_hosts }}"
       loop_control:
-        label: "{{ item }}"
-      when: created_vm_names | length > 0
+        label: "{{ item.vm_name }}"
 
-    - name: Wait for MAC address initialization
+    # ============================================================
+    # POWER OFF EXISTING VM
+    # ============================================================
+
+    - name: Power off existing VM
+      community.vmware.vmware_guest_powerstate:
+        hostname: "{{ item.esxi_hostname }}"
+        username: "{{ item.esxi_username }}"
+        password: "{{ item.esxi_password }}"
+        validate_certs: false
+        datacenter: "{{ item.datacenter_name }}"
+        name: "{{ item.vm_name }}"
+        state: powered-off
+      loop: "{{ provisioning_hosts }}"
+      loop_control:
+        label: "{{ item.vm_name }}"
+      when:
+        - vm_status_map[item.vm_name] | default(false) | bool
+      register: poweroff_results
+      failed_when: false
+      no_log: true
+
+    # ============================================================
+    # DELETE EXISTING VM
+    # ============================================================
+
+    - name: Delete existing VM
+      community.vmware.vmware_guest:
+        hostname: "{{ item.esxi_hostname }}"
+        username: "{{ item.esxi_username }}"
+        password: "{{ item.esxi_password }}"
+        validate_certs: false
+        datacenter: "{{ item.datacenter_name }}"
+        name: "{{ item.vm_name }}"
+        state: absent
+        force: true
+      loop: "{{ provisioning_hosts }}"
+      loop_control:
+        label: "{{ item.vm_name }}"
+      when:
+        - vm_status_map[item.vm_name] | default(false) | bool
+      register: delete_results
+      no_log: true
+
+    # ============================================================
+    # WAIT FOR VM DELETION
+    # ============================================================
+
+    - name: Wait after deleting existing VMs
       ansible.builtin.pause:
         seconds: 10
-      when: created_vm_names | length > 0
-
-    ###########################################################################
-    # POWER OFF ONLY NEWLY CREATED VMS
-    ###########################################################################
-
-    - name: Power off newly created VMs
-      community.vmware.vmware_guest_powerstate:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: false
-        datacenter: "{{ datacenter }}"
-        name: "{{ item }}"
-        state: powered-off
-      loop: "{{ created_vm_names }}"
-      loop_control:
-        label: "{{ item }}"
-      when: created_vm_names | length > 0
-
-    ###########################################################################
-    # GET VM INFORMATION BEFORE DISK CHECK
-    ###########################################################################
-
-    - name: Get VM information before checking disks
-      community.vmware.vmware_guest_info:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: false
-        datacenter: "{{ datacenter }}"
-        name: "{{ item.name.split('.')[0] }}"
-      loop: "{{ filtered_devices }}"
-      loop_control:
-        label: "{{ item.name }}"
-      register: vm_info_before_disk
-
-    ###########################################################################
-    # SHOW CURRENT DISK COUNT
-    #
-    # Same logic as your working Rocky Linux 8 playbook.
-    ###########################################################################
-
-    - name: Show current VM disk count
-      ansible.builtin.debug:
-        msg:
-          - "============================================================"
-          - "VM DISK CHECK"
-          - "============================================================"
-          - "VM            : {{ item.item.name.split('.')[0] }}"
-          - "Current Disks : {{ item.instance.hw_files | default([]) | select('search', '\\.vmdk$') | list | length }}"
-          - "Required      : {{ disk_count }}"
-          - "Disk Layout   : {{ disk_layout }}"
-          - "============================================================"
-      loop: "{{ vm_info_before_disk.results }}"
-      loop_control:
-        label: "{{ item.item.name }}"
-
-    ###########################################################################
-    # ADD MISSING SECOND DISK FOR RAID
-    ###########################################################################
-
-    - name: Add missing second disk for RAID
-      community.vmware.vmware_guest_disk:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: false
-
-        datacenter: "{{ datacenter }}"
-        folder: "{{ folder }}"
-        name: "{{ item.item.name.split('.')[0] }}"
-
-        disk:
-          - state: present
-            size_gb: "{{ vm_disk_size_gb | int }}"
-            type: thin
-            datastore: "{{ datastore }}"
-            scsi_controller: 0
-            unit_number: 1
-
-      loop: "{{ vm_info_before_disk.results }}"
-      loop_control:
-        label: "{{ item.item.name }}"
-
       when:
-        - disk_count | int == 2
-        - item.instance.hw_files | default([]) | select('search', '\\.vmdk$') | list | length < 2
+        - vm_status_map.values() | select('equalto', true) | list | length > 0
 
-    ###########################################################################
-    # GET FINAL VM INFORMATION
-    ###########################################################################
+    # ============================================================
+    # SHOW READY STATUS
+    # ============================================================
 
-    - name: Get final VM information
-      community.vmware.vmware_guest_info:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: false
-        datacenter: "{{ datacenter }}"
-        name: "{{ item.name.split('.')[0] }}"
-      loop: "{{ filtered_devices }}"
-      loop_control:
-        label: "{{ item.name }}"
-      register: final_vm_info
-
-    ###########################################################################
-    # SHOW FINAL VM INFORMATION
-    ###########################################################################
-
-    - name: Show final VM information
+    - name: Show VM recreation status
       ansible.builtin.debug:
-        msg:
-          - "============================================================"
-          - "FINAL VM INFORMATION"
-          - "============================================================"
-          - "VM Name       : {{ item.instance.hw_name | default(item.item.name.split('.')[0]) }}"
-          - "Power         : {{ item.instance.hw_power_status | default('N/A') }}"
-          - "MAC           : {{ item.instance.hw_eth0.macaddress | default('N/A') }}"
-          - "CPU           : {{ item.instance.hw_processor_count | default('N/A') }}"
-          - "Memory MB     : {{ item.instance.hw_memtotal_mb | default('N/A') }}"
-          - "Disk Count    : {{ item.instance.hw_files | default([]) | select('search', '\\.vmdk$') | list | length }}"
-          - "Disk Layout   : {{ disk_layout }}"
-          - "Expected Disks: {{ disk_count }}"
-          - "============================================================"
-      loop: "{{ final_vm_info.results }}"
-      loop_control:
-        label: "{{ item.item.name }}"
-
-    ###########################################################################
-    # VERIFY ALL DISK REQUIREMENTS
-    #
-    # FIX:
-    # Use final_vm_info because final_vm_disk_info does not exist in this
-    # Rocky 9 version.
-    ###########################################################################
-
-    - name: Fail if any VM does not have required disk count
-      ansible.builtin.fail:
         msg: >-
-          VM '{{ item.item.name.split('.')[0] }}' does not have the required
-          number of disks. Actual:
-          {{ item.instance.hw_files | default([]) | select('search', '\\.vmdk$') | list | length }},
-          Required: {{ disk_count }}
-      loop: "{{ final_vm_info.results }}"
+          {{
+            'Existing VM ' ~ item.vm_name ~
+            ' was removed successfully. Ready for new provisioning.'
+            if (vm_status_map[item.vm_name] | default(false) | bool)
+            else
+            'VM ' ~ item.vm_name ~
+            ' was not present. Ready for new provisioning.'
+          }}
+      loop: "{{ provisioning_hosts }}"
       loop_control:
-        label: "{{ item.item.name }}"
-      when: >
-        (
-          item.instance.hw_files
-          | default([])
-          | select('search', '\.vmdk$')
-          | list
-          | length
-          | int
-        ) < (disk_count | int)
+        label: "{{ item.vm_name }}"
 
-    ###########################################################################
-    # SUMMARY
-    ###########################################################################
+    # ============================================================
+    # PREPARE FOREMAN HOST DATA
+    # ============================================================
 
-    - name: Show final result
+    - name: Initialize Foreman host payload list
+      ansible.builtin.set_fact:
+        foreman_provisioning_hosts: []
+
+    - name: Prepare Foreman provisioning data
+      ansible.builtin.set_fact:
+        foreman_provisioning_hosts: >-
+          {{
+            foreman_provisioning_hosts +
+            [
+              item | combine(
+                {
+                  'foreman_hostgroup_id': rocky9_hostgroup_id,
+                  'foreman_operatingsystem_id': rocky9_operatingsystem_id,
+                  'foreman_medium_id': rocky9_medium_id,
+                  'foreman_ptable_id': rocky9_ptable_id,
+                  'foreman_content_view_id': rocky9_content_view_id,
+                  'foreman_lifecycle_environment_id': rocky9_lifecycle_environment_id,
+                  'foreman_architecture_id': rocky9_architecture_id,
+                  'foreman_domain_id': rocky9_domain_id,
+                  'foreman_subnet_name': rocky9_subnet_name,
+                  'foreman_pxe_loader': rocky9_pxe_loader,
+                  'foreman_build': rocky9_build
+                }
+              )
+            ]
+          }}
+      loop: "{{ provisioning_hosts }}"
+      loop_control:
+        label: "{{ item.vm_name }}"
+
+    # ============================================================
+    # FINAL SUMMARY
+    # ============================================================
+
+    - name: Show hosts ready for Foreman provisioning
       ansible.builtin.debug:
         msg:
           - "============================================================"
-          - "ROCKY LINUX 9 VM ENSURE COMPLETED SUCCESSFULLY"
+          - "HOST READY FOR PROVISIONING"
           - "============================================================"
-          - "Cluster              : {{ cluster_name }}"
-          - "Selected VMs         : {{ filtered_devices | length }}"
-          - "New VMs Created      : {{ created_vm_names | length }}"
-          - "Disk Layout          : {{ disk_layout }}"
-          - "Disk Count per VM    : {{ disk_count }}"
-          - "Disk Size            : {{ vm_disk_size_gb }} GB"
-          - "Firmware             : {{ vm_boot_firmware }}"
-          - "Guest ID             : {{ vm_guest_id }}"
+          - "FQDN               : {{ item.fqdn }}"
+          - "VM Name            : {{ item.vm_name }}"
+          - "IP Address         : {{ item.ip_address }}"
+          - "Hostgroup ID       : {{ item.foreman_hostgroup_id }}"
+          - "Operating System ID: {{ item.foreman_operatingsystem_id }}"
+          - "Medium ID          : {{ item.foreman_medium_id }}"
+          - "Partition Table ID : {{ item.foreman_ptable_id }}"
+          - "Content View ID    : {{ item.foreman_content_view_id }}"
+          - "Lifecycle Env ID   : {{ item.foreman_lifecycle_environment_id }}"
+          - "PXE Loader         : {{ item.foreman_pxe_loader }}"
+          - "Build              : {{ item.foreman_build }}"
           - "============================================================"
+      loop: "{{ foreman_provisioning_hosts }}"
+      loop_control:
+        label: "{{ item.vm_name }}"
