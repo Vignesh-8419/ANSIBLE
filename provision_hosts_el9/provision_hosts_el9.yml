@@ -14,8 +14,7 @@
     ###########################################################################
 
     netbox_url: "https://netbox.vgs.com"
-    netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
-
+    netbox_token: "{{ vault_netbox_token }}"
 
     ###########################################################################
     # FOREMAN SERVER SELECTION
@@ -37,14 +36,13 @@
       }}
 
     foreman_user: "admin"
-    foreman_api_token: "_bkE_ov7gKb68d3aR01m5A"
-
+    foreman_api_token: "{{ vault_foreman_api_token }}"
 
     ###########################################################################
     # HOST SETTINGS
     ###########################################################################
 
-    host_root_pass: "Root@123"
+    host_root_pass: "{{ vault_host_root_password }}"
 
     # Rocky Linux 9 cluster in NetBox
     cluster_name: "rocky-9-servers"
@@ -64,15 +62,13 @@
         | list
       }}
 
-
     ###########################################################################
     # VMWARE / ESXI
     ###########################################################################
 
     esxi_hostname: "192.168.253.128"
     esxi_username: "root"
-    esxi_password: "Root@123"
-
+    esxi_password: "{{ vault_esxi_password }}"
 
     ###########################################################################
     # FOREMAN ORGANIZATION / LOCATION
@@ -80,7 +76,6 @@
 
     org_id: 1
     loc_id: 2
-
 
     ###########################################################################
     # ROCKY LINUX 9.2 HOSTGROUP / OS SELECTION
@@ -145,6 +140,16 @@
     ###########################################################################
     # VALIDATION
     ###########################################################################
+
+    - name: Validate Foreman server selection
+      fail:
+        msg: >-
+          Invalid foreman_server={{ foreman_server }}.
+          Valid values:
+          1 = https://rocky-08-01.vgs.com
+          2 = https://cent-07-01.vgs.com
+      when: foreman_server | string not in ['1', '2']
+
 
     - name: Validate hostgroup selection
       fail:
@@ -254,9 +259,8 @@
     ###########################################################################
     # GET VM INFORMATION FROM ESXI
     #
-    # IMPORTANT:
-    # A VM may not exist yet because Foreman is going to provision it.
-    # Therefore this lookup must NOT stop the entire playbook.
+    # VM MAY NOT EXIST YET.
+    # This lookup must never stop the playbook.
     ###########################################################################
 
     - name: Get VM information from ESXi if VM exists
@@ -277,9 +281,9 @@
     - name: Show ESXi VM lookup results
       debug:
         msg:
-          - "Host : {{ item.item.name }}"
-          - "VM exists / lookup success: {{ not (item.failed | default(false)) }}"
-          - "Message: {{ item.msg | default('VM information retrieved') }}"
+          - "Host                  : {{ item.item.name }}"
+          - "VM lookup failed      : {{ item.failed | default(false) }}"
+          - "VM lookup message     : {{ item.msg | default('VM information retrieved') }}"
       loop: "{{ vm_info.results }}"
       loop_control:
         label: "{{ item.item.name }}"
@@ -305,8 +309,7 @@
     ###########################################################################
     # GET INTERFACES FROM NETBOX
     #
-    # This allows MAC address retrieval from NetBox when the VM does not
-    # currently exist in ESXi.
+    # Used as second MAC source when VM does not exist in ESXi.
     ###########################################################################
 
     - name: Get interfaces from NetBox
@@ -382,26 +385,38 @@
 
 
     ###########################################################################
-    # SELECT FINAL MAC ADDRESS
+    # GENERATE FALLBACK MAC ADDRESS
     #
     # Priority:
     #
-    # 1. Existing ESXi VM MAC
+    # 1. ESXi existing VM MAC
     # 2. NetBox interface MAC
+    # 3. Generated deterministic VMware-compatible MAC
+    #
+    # Generated MAC uses hostname hash.
+    # Same hostname always gets the same fallback MAC.
+    #
+    # VMware range used:
+    # 00:50:56:00:00:00 - 00:50:56:3F:FF:FF
     ###########################################################################
 
-    - name: Select final MAC address for each host
+    - name: Initialize generated MAC information
       set_fact:
-        host_info_final: >-
+        host_info_with_generated_mac: []
+
+
+    - name: Generate fallback VMware MAC address for each host
+      set_fact:
+        host_info_with_generated_mac: >-
           {{
-            host_info_final | default([]) + [
+            host_info_with_generated_mac + [
               item | combine(
                 {
-                  'mac': (
-                    item.esxi_mac
-                    if item.esxi_mac | length > 0
-                    else item.netbox_mac
-                  )
+                  'generated_mac':
+                    '00:50:56:00:' +
+                    ((item.name | hash('sha1'))[0:2]) +
+                    ':' +
+                    ((item.name | hash('sha1'))[2:4])
                 }
               )
             ]
@@ -411,15 +426,72 @@
         label: "{{ item.name }}"
 
 
+    - name: Initialize final host information
+      set_fact:
+        host_info_final: []
+
+
+    - name: Select final MAC address for each host
+      set_fact:
+        host_info_final: >-
+          {{
+            host_info_final + [
+              item | combine(
+                {
+                  'mac': (
+                    item.esxi_mac
+                    if item.esxi_mac | default('') | length > 0
+                    else (
+                      item.netbox_mac
+                      if item.netbox_mac | default('') | length > 0
+                      else item.generated_mac
+                    )
+                  ),
+
+                  'mac_source': (
+                    'ESXi'
+                    if item.esxi_mac | default('') | length > 0
+                    else (
+                      'NetBox'
+                      if item.netbox_mac | default('') | length > 0
+                      else 'Generated'
+                    )
+                  )
+                }
+              )
+            ]
+          }}
+      loop: "{{ host_info_with_generated_mac }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+
     - name: Replace host information with final host information
       set_fact:
         host_info: "{{ host_info_final }}"
 
 
-    - name: Show host information
+    - name: Show final host information
       debug:
-        var: host_info
+        msg:
+          - "============================================================"
+          - "HOST         : {{ item.name }}"
+          - "NetBox Name  : {{ item.netbox_name }}"
+          - "IP           : {{ item.ip }}"
+          - "ESXi MAC     : {{ item.esxi_mac | default('NONE', true) }}"
+          - "NetBox MAC   : {{ item.netbox_mac | default('NONE', true) }}"
+          - "Generated MAC: {{ item.generated_mac }}"
+          - "Final MAC    : {{ item.mac }}"
+          - "MAC Source   : {{ item.mac_source }}"
+          - "============================================================"
+      loop: "{{ host_info }}"
+      loop_control:
+        label: "{{ item.name }}"
 
+
+    ###########################################################################
+    # VERIFY REQUIRED HOST INFORMATION
+    ###########################################################################
 
     - name: Verify host IP addresses were found
       fail:
@@ -427,18 +499,16 @@
       loop: "{{ host_info }}"
       loop_control:
         label: "{{ item.name }}"
-      when: item.ip | length == 0
+      when: item.ip | default('') | length == 0
 
 
-    - name: Verify host MAC addresses were found
+    - name: Verify final MAC addresses were generated or found
       fail:
-        msg: >-
-          No MAC address available for {{ item.name }}.
-          VM does not exist in ESXi and no MAC address was found in NetBox.
+        msg: "Unable to determine or generate a MAC address for {{ item.name }}"
       loop: "{{ host_info }}"
       loop_control:
         label: "{{ item.name }}"
-      when: item.mac | length == 0
+      when: item.mac | default('') | length == 0
 
 
     ###########################################################################
@@ -508,7 +578,10 @@
       debug:
         msg: >-
           Total Foreman hosts returned:
-          {{ all_foreman_hosts.json.total | default(all_foreman_hosts.json.results | length) }}
+          {{
+            all_foreman_hosts.json.total
+            | default(all_foreman_hosts.json.results | length)
+          }}
 
 
     ###########################################################################
@@ -556,7 +629,7 @@
 
     - name: Show all matching existing Foreman hosts
       debug:
-        msg: "{{ foreman_hosts_to_delete }}"
+        var: foreman_hosts_to_delete
 
 
     ###########################################################################
@@ -587,7 +660,11 @@
 
     - name: Show deleted Foreman hosts
       debug:
-        msg: "Deleted Foreman host {{ item.item.found_name }} with ID {{ item.item.id }}"
+        msg: >-
+          Deleted Foreman host
+          {{ item.item.found_name }}
+          with ID
+          {{ item.item.id }}
       loop: "{{ foreman_delete.results | default([]) }}"
       loop_control:
         label: "{{ item.item.found_name | default('unknown') }}"
@@ -742,9 +819,11 @@
       debug:
         msg:
           - "============================================================"
-          - "Host    : {{ item.item.name }}"
-          - "Status  : {{ item.status }}"
-          - "Host ID : {{ item.json.id | default('UNKNOWN') }}"
+          - "Host       : {{ item.item.name }}"
+          - "MAC        : {{ item.item.mac }}"
+          - "MAC Source : {{ item.item.mac_source }}"
+          - "Status     : {{ item.status }}"
+          - "Host ID    : {{ item.json.id | default('UNKNOWN') }}"
           - "============================================================"
       loop: "{{ foreman_create.results }}"
       loop_control:
@@ -788,6 +867,7 @@
           - "Medium     : {{ item.json.medium_name | default('N/A') }}"
           - "Subnet     : {{ item.json.subnet_name | default('N/A') }}"
           - "IP         : {{ item.json.ip | default('N/A') }}"
+          - "MAC        : {{ item.json.mac | default('N/A') }}"
           - "PXE Loader : {{ item.json.pxe_loader | default('N/A') }}"
           - "Build      : {{ item.json.build | default('N/A') }}"
           - "Status     : {{ item.json.build_status_label | default('N/A') }}"
