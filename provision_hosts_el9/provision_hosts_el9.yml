@@ -42,7 +42,7 @@
     # HOST SETTINGS
     ###########################################################################
 
-    host_root_pass: "{{ vault_host_root_password }}"
+    host_root_pass: "Root@123"
 
     # Rocky Linux 9 cluster in NetBox
     cluster_name: "rocky-9-servers"
