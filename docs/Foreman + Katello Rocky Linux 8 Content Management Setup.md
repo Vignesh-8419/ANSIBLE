@@ -367,6 +367,7 @@ cat <<EOF > /etc/yum.repos.d/rocky9-baseos.repo
 name=Rocky Linux 9 BaseOS
 baseurl=http://192.168.253.136/repo/rocky9/BaseOS
 enabled=1
+gpgcheck=0
 EOF
 
 cat <<EOF > /etc/yum.repos.d/rocky9-appstream.repo
