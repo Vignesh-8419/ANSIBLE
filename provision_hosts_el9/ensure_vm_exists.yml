@@ -320,19 +320,25 @@
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: false
-        datacenter: "{{ datacenter }}"
         name: "{{ item.name.split('.')[0] }}"
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
       register: vm_lookup
       failed_when: false
+      changed_when: false
 
     - name: Show VM existence status
       ansible.builtin.debug:
         msg:
+          - "============================================================"
+          - "VM EXISTENCE CHECK"
+          - "============================================================"
           - "VM     : {{ item.item.name.split('.')[0] }}"
           - "Exists : {{ item.instance is defined }}"
+          - "Status : {{ 'EXISTS' if item.instance is defined else 'MISSING - WILL BE CREATED' }}"
+          - "Message: {{ item.msg | default('VM information retrieved successfully') }}"
+          - "============================================================"
       loop: "{{ vm_lookup.results }}"
       loop_control:
         label: "{{ item.item.name }}"
@@ -418,7 +424,6 @@
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: false
-        datacenter: "{{ datacenter }}"
         name: "{{ item }}"
         state: powered-on
       loop: "{{ created_vm_names }}"
@@ -441,7 +446,6 @@
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: false
-        datacenter: "{{ datacenter }}"
         name: "{{ item }}"
         state: powered-off
       loop: "{{ created_vm_names }}"
@@ -456,36 +460,43 @@
     # the VM had a real 100 GB disk.
     ###########################################################################
 
-    - name: Get actual VM disk information
-      community.vmware.vmware_guest_disk_info:
+    ###########################################################################
+    # GET VM INFORMATION BEFORE DISK CHECK
+    ###########################################################################
+
+    - name: Get VM information before checking disks
+      community.vmware.vmware_guest_info:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: false
-        datacenter: "{{ datacenter }}"
         name: "{{ item.name.split('.')[0] }}"
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
-      register: vm_disk_info
+      register: vm_info_before_disk
 
-    - name: Show actual VM disk count
+    ###########################################################################
+    # SHOW ACTUAL CURRENT DISK COUNT
+    ###########################################################################
+
+    - name: Show current VM disk count
       ansible.builtin.debug:
         msg:
           - "============================================================"
           - "VM DISK CHECK"
           - "============================================================"
           - "VM            : {{ item.item.name.split('.')[0] }}"
-          - "Current Disks : {{ item.guest_disk_info | default({}) | length }}"
+          - "Current Disks : {{ item.instance.hw_files | default([]) | select('search', '\\.vmdk$') | list | length }}"
           - "Required      : {{ disk_count }}"
           - "Disk Layout   : {{ disk_layout }}"
           - "============================================================"
-      loop: "{{ vm_disk_info.results }}"
+      loop: "{{ vm_info_before_disk.results }}"
       loop_control:
         label: "{{ item.item.name }}"
 
     ###########################################################################
-    # ADD SECOND DISK WHEN RAID / HOSTGROUP 2 IS SELECTED
+    # ADD MISSING SECOND DISK FOR RAID
     ###########################################################################
 
     - name: Add missing second disk for RAID
@@ -495,8 +506,8 @@
         password: "{{ esxi_password }}"
         validate_certs: false
 
-        # REQUIRED
         datacenter: "{{ datacenter }}"
+        folder: "{{ folder }}"
 
         name: "{{ item.item.name.split('.')[0] }}"
 
@@ -508,48 +519,16 @@
             scsi_controller: 0
             unit_number: 1
 
-      loop: "{{ vm_disk_info.results }}"
+      loop: "{{ vm_info_before_disk.results }}"
       loop_control:
         label: "{{ item.item.name }}"
+
       when:
         - disk_count | int == 2
-        - item.guest_disk_info | default({}) | length < 2
+        - item.instance.hw_files | default([]) | select('search', '\\.vmdk$') | list | length < 2
 
     ###########################################################################
-    # VERIFY FINAL DISK INFORMATION
-    ###########################################################################
-
-    - name: Get final VM disk information
-      community.vmware.vmware_guest_disk_info:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: false
-        datacenter: "{{ datacenter }}"
-        name: "{{ item.name.split('.')[0] }}"
-      loop: "{{ filtered_devices }}"
-      loop_control:
-        label: "{{ item.name }}"
-      register: final_vm_disk_info
-
-    - name: Show final disk information
-      ansible.builtin.debug:
-        msg:
-          - "============================================================"
-          - "FINAL VM DISK STATUS"
-          - "============================================================"
-          - "VM            : {{ item.item.name.split('.')[0] }}"
-          - "Actual Disks  : {{ item.guest_disk_info | default({}) | length }}"
-          - "Required      : {{ disk_count }}"
-          - "Disk Layout   : {{ disk_layout }}"
-          - "Status        : {{ 'OK' if (item.guest_disk_info | default({}) | length | int) >= (disk_count | int) else 'FAILED' }}"
-          - "============================================================"
-      loop: "{{ final_vm_disk_info.results }}"
-      loop_control:
-        label: "{{ item.item.name }}"
-
-    ###########################################################################
-    # GET FINAL VM INFORMATION
+    # GET FINAL INFORMATION
     ###########################################################################
 
     - name: Get final VM information
@@ -558,24 +537,26 @@
         username: "{{ esxi_username }}"
         password: "{{ esxi_password }}"
         validate_certs: false
-        datacenter: "{{ datacenter }}"
         name: "{{ item.name.split('.')[0] }}"
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
       register: final_vm_info
 
+    ###########################################################################
+    # SHOW FINAL VM INFORMATION
+    ###########################################################################
+
     - name: Show final VM information
       ansible.builtin.debug:
         msg:
-          - "============================================================"
-          - "FINAL VM INFORMATION"
           - "============================================================"
           - "VM Name       : {{ item.instance.hw_name | default(item.item.name.split('.')[0]) }}"
           - "Power         : {{ item.instance.hw_power_status | default('N/A') }}"
           - "MAC           : {{ item.instance.hw_eth0.macaddress | default('N/A') }}"
           - "CPU           : {{ item.instance.hw_processor_count | default('N/A') }}"
           - "Memory MB     : {{ item.instance.hw_memtotal_mb | default('N/A') }}"
+          - "Disk Count    : {{ item.instance.hw_files | default([]) | select('search', '\\.vmdk$') | list | length }}"
           - "Disk Layout   : {{ disk_layout }}"
           - "Expected Disks: {{ disk_count }}"
           - "============================================================"
