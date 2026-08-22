@@ -14,6 +14,25 @@
   vars:
 
     ###########################################################################
+    # DEFAULT ESXI CONFIGURATION
+    #
+    # These values are used when the NetBox Config Context does not contain
+    # VMware information.
+    ###########################################################################
+
+    default_esxi_hostname: "192.168.253.128"
+    default_esxi_username: "root"
+    default_esxi_password: "Root@123"
+
+    # IMPORTANT:
+    # Your ESXi standalone host uses ha-datacenter.
+    default_datacenter: "ha-datacenter"
+
+    default_datastore: "datastore1"
+    default_vm_network: "VM Network"
+    default_folder: "/"
+
+    ###########################################################################
     # NETBOX
     ###########################################################################
 
@@ -25,23 +44,6 @@
     ###########################################################################
 
     cluster_name: "rocky-9-servers"
-
-    ###########################################################################
-    # DEFAULT VMWARE VALUES
-    #
-    # Used when Config Context does not contain a valid value.
-    ###########################################################################
-
-    default_esxi_hostname: "192.168.253.128"
-    default_esxi_username: "root"
-    default_esxi_password: "Root@123"
-
-    # Standalone ESXi internal datacenter
-    default_datacenter: "ha-datacenter"
-
-    default_datastore: "datastore1"
-    default_vm_network: "VM Network"
-    default_folder: "/"
 
     ###########################################################################
     # AWX SURVEY - TARGET HOSTS
@@ -92,7 +94,7 @@
     ###########################################################################
 
     - name: Validate hostgroup selection
-      fail:
+      ansible.builtin.fail:
         msg: >-
           Invalid hostgroup '{{ hostgroup }}'.
           Valid values:
@@ -105,19 +107,48 @@
     ###########################################################################
 
     - name: Set disk count
-      set_fact:
+      ansible.builtin.set_fact:
         disk_count: "{{ 1 if hostgroup | string == '1' else 2 }}"
 
     - name: Set disk layout
-      set_fact:
+      ansible.builtin.set_fact:
         disk_layout: "{{ 'SingleDisk' if hostgroup | string == '1' else 'RAID' }}"
 
+    - name: Build VM disk configuration
+      ansible.builtin.set_fact:
+        vm_disks: >-
+          {{
+            [
+              {
+                'size_gb': vm_disk_size_gb | int,
+                'datastore': default_datastore,
+                'type': 'thin',
+                'controller_number': 0,
+                'unit_number': 0
+              }
+            ]
+            +
+            (
+              [
+                {
+                  'size_gb': vm_disk_size_gb | int,
+                  'datastore': default_datastore,
+                  'type': 'thin',
+                  'controller_number': 0,
+                  'unit_number': 1
+                }
+              ]
+              if hostgroup | string == '2'
+              else []
+            )
+          }}
+
     ###########################################################################
-    # SHOW BASIC CONFIGURATION
+    # SHOW CONFIGURATION
     ###########################################################################
 
     - name: Show selected VM configuration
-      debug:
+      ansible.builtin.debug:
         msg:
           - "============================================================"
           - "ENSURE ROCKY LINUX 9 VMS EXIST ON ESXI"
@@ -140,7 +171,7 @@
     ###########################################################################
 
     - name: Get NetBox cluster
-      uri:
+      ansible.builtin.uri:
         url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ cluster_name | urlencode }}&limit=100"
         method: GET
         headers:
@@ -153,7 +184,7 @@
       register: netbox_cluster_result
 
     - name: Resolve NetBox cluster ID
-      set_fact:
+      ansible.builtin.set_fact:
         cluster_id: >-
           {{
             netbox_cluster_result.json.results
@@ -164,12 +195,12 @@
           }}
 
     - name: Fail if NetBox cluster does not exist
-      fail:
+      ansible.builtin.fail:
         msg: "NetBox cluster not found: '{{ cluster_name }}'"
       when: cluster_id | string | length == 0
 
     - name: Show resolved NetBox cluster
-      debug:
+      ansible.builtin.debug:
         msg:
           - "============================================================"
           - "NETBOX CLUSTER"
@@ -183,7 +214,7 @@
     ###########################################################################
 
     - name: Get devices from exact NetBox cluster
-      uri:
+      ansible.builtin.uri:
         url: "{{ netbox_url }}/api/dcim/devices/?cluster_id={{ cluster_id }}&limit=1000"
         method: GET
         headers:
@@ -196,7 +227,7 @@
       register: netbox_devices
 
     - name: Show devices returned by NetBox
-      debug:
+      ansible.builtin.debug:
         msg:
           - "============================================================"
           - "DEVICES IN CLUSTER: {{ cluster_name }}"
@@ -205,7 +236,7 @@
           - "============================================================"
 
     - name: Fail if cluster contains no devices
-      fail:
+      ansible.builtin.fail:
         msg: "No devices found in NetBox cluster '{{ cluster_name }}'."
       when: netbox_devices.json.results | length == 0
 
@@ -214,7 +245,7 @@
     ###########################################################################
 
     - name: Build requested target host list
-      set_fact:
+      ansible.builtin.set_fact:
         target_hosts_list: >-
           {{
             target_hosts.split(',')
@@ -223,25 +254,17 @@
             | list
           }}
 
-    - name: Show requested hosts
-      debug:
-        var: target_hosts_list
-
-    ###########################################################################
-    # FILTER SELECTED DEVICES
-    ###########################################################################
-
     - name: Initialize filtered devices
-      set_fact:
+      ansible.builtin.set_fact:
         filtered_devices: []
 
     - name: Select all devices when target hosts is empty
-      set_fact:
+      ansible.builtin.set_fact:
         filtered_devices: "{{ netbox_devices.json.results }}"
       when: target_hosts_list | length == 0
 
     - name: Add exact or wildcard matching devices
-      set_fact:
+      ansible.builtin.set_fact:
         filtered_devices: "{{ filtered_devices + [item.0] }}"
       loop: "{{ netbox_devices.json.results | product(target_hosts_list) | list }}"
       loop_control:
@@ -254,18 +277,18 @@
             '^' ~
             (
               item.1
-              | regex_replace('\\*', '.*')
               | regex_replace('\\.', '\\.')
+              | regex_replace('\\*', '.*')
             )
             ~ '$'
           )
 
     - name: Remove duplicate filtered devices
-      set_fact:
+      ansible.builtin.set_fact:
         filtered_devices: "{{ filtered_devices | unique(attribute='name') | list }}"
 
     - name: Show host filtering result
-      debug:
+      ansible.builtin.debug:
         msg:
           - "============================================================"
           - "ROCKY LINUX 9 HOST SELECTION"
@@ -278,24 +301,25 @@
           - "============================================================"
 
     - name: Fail if no matching hosts found
-      fail:
+      ansible.builtin.fail:
         msg: >-
           No matching hosts found.
           Cluster: {{ cluster_name }}
           Requested: {{ target_hosts_list }}
-          Available: {{ netbox_devices.json.results | map(attribute='name') | list }}
       when: filtered_devices | length == 0
 
     ###########################################################################
-    # BUILD VM INFORMATION FROM NETBOX
+    # BUILD NORMALIZED VM HOST INFORMATION
+    #
+    # Safe handling for missing config_context.
     ###########################################################################
 
     - name: Initialize VM host information
-      set_fact:
+      ansible.builtin.set_fact:
         vm_hosts: []
 
     - name: Build normalized VM host information
-      set_fact:
+      ansible.builtin.set_fact:
         vm_hosts: >-
           {{
             vm_hosts +
@@ -305,32 +329,31 @@
                 'vm_name': item.name.split('.')[0],
 
                 'esxi_hostname':
-                  item.config_context.esxi_hostname
+                  (item.config_context | default({})).esxi_hostname
                   | default(default_esxi_hostname, true),
 
                 'esxi_username':
-                  item.config_context.esxi_username
+                  (item.config_context | default({})).esxi_username
                   | default(default_esxi_username, true),
 
                 'esxi_password':
-                  item.config_context.esxi_password
+                  (item.config_context | default({})).esxi_password
                   | default(default_esxi_password, true),
 
-                # IMPORTANT:
-                # Always use standalone ESXi datacenter.
-                # Do not use "Datacenter" from incorrect NetBox context.
-                'datacenter': default_datacenter,
+                'datacenter':
+                  (item.config_context | default({})).datacenter_name
+                  | default(default_datacenter, true),
 
                 'datastore':
-                  item.config_context.datastore
+                  (item.config_context | default({})).datastore
                   | default(default_datastore, true),
 
                 'vm_network':
-                  item.config_context.vm_network
+                  (item.config_context | default({})).vm_network
                   | default(default_vm_network, true),
 
                 'folder':
-                  item.config_context.folder
+                  (item.config_context | default({})).folder
                   | default(default_folder, true)
               }
             ]
@@ -338,14 +361,9 @@
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
-      no_log: true
 
-    ###########################################################################
-    # SHOW NORMALIZED CONFIGURATION
-    ###########################################################################
-
-    - name: Show normalized VMware configuration
-      debug:
+    - name: Show normalized VM host information
+      ansible.builtin.debug:
         msg:
           - "============================================================"
           - "VM CONFIGURATION"
@@ -383,21 +401,17 @@
       no_log: true
 
     - name: Show VM existence status
-      debug:
+      ansible.builtin.debug:
         msg:
-          - "============================================================"
-          - "VM LOOKUP"
-          - "============================================================"
           - "VM     : {{ item.item.vm_name }}"
-          - "FQDN   : {{ item.item.fqdn }}"
           - "Exists : {{ item.instance is defined }}"
-          - "============================================================"
+          - "Status : {{ 'EXISTS' if item.instance is defined else 'MISSING' }}"
       loop: "{{ vm_lookup.results }}"
       loop_control:
         label: "{{ item.item.vm_name }}"
 
     ###########################################################################
-    # CREATE MISSING SINGLE DISK VMS
+    # CREATE MISSING VMS - SINGLE DISK
     ###########################################################################
 
     - name: Create missing SingleDisk Rocky Linux 9 VMs
@@ -437,13 +451,13 @@
       loop_control:
         label: "{{ item.item.vm_name }}"
       when:
-        - disk_count | int == 1
+        - hostgroup | string == '1'
         - item.instance is not defined
-      register: vm_create_singledisk
+      register: vm_create_single
       no_log: true
 
     ###########################################################################
-    # CREATE MISSING RAID VMS
+    # CREATE MISSING VMS - RAID
     ###########################################################################
 
     - name: Create missing RAID Rocky Linux 9 VMs
@@ -489,64 +503,43 @@
       loop_control:
         label: "{{ item.item.vm_name }}"
       when:
-        - disk_count | int == 2
+        - hostgroup | string == '2'
         - item.instance is not defined
       register: vm_create_raid
       no_log: true
 
     ###########################################################################
-    # BUILD NEW VM LIST
+    # BUILD NEWLY CREATED VM LIST
     ###########################################################################
 
     - name: Initialize created VM list
-      set_fact:
+      ansible.builtin.set_fact:
         created_vm_names: []
 
     - name: Add newly created SingleDisk VMs
-      set_fact:
-        created_vm_names: >-
-          {{
-            created_vm_names +
-            [item.item.item.vm_name]
-          }}
-      loop: "{{ vm_create_singledisk.results | default([]) }}"
-      loop_control:
-        label: "{{ item.item.item.vm_name | default('UNKNOWN') }}"
+      ansible.builtin.set_fact:
+        created_vm_names: "{{ created_vm_names + [item.item.item.vm_name] }}"
+      loop: "{{ vm_create_single.results | default([]) }}"
       when:
         - item.changed | default(false)
         - item.item is defined
         - item.item.item is defined
 
     - name: Add newly created RAID VMs
-      set_fact:
-        created_vm_names: >-
-          {{
-            created_vm_names +
-            [item.item.item.vm_name]
-          }}
+      ansible.builtin.set_fact:
+        created_vm_names: "{{ created_vm_names + [item.item.item.vm_name] }}"
       loop: "{{ vm_create_raid.results | default([]) }}"
-      loop_control:
-        label: "{{ item.item.item.vm_name | default('UNKNOWN') }}"
       when:
         - item.changed | default(false)
         - item.item is defined
         - item.item.item is defined
 
-    - name: Remove duplicate created VM names
-      set_fact:
-        created_vm_names: "{{ created_vm_names | unique | list }}"
-
     - name: Show newly created VMs
-      debug:
-        msg:
-          - "============================================================"
-          - "NEWLY CREATED VMS"
-          - "============================================================"
-          - "{{ created_vm_names }}"
-          - "============================================================"
+      ansible.builtin.debug:
+        var: created_vm_names
 
     ###########################################################################
-    # POWER ON NEWLY CREATED VMS
+    # POWER ON NEW VMS
     ###########################################################################
 
     - name: Power on newly created VMs
@@ -564,29 +557,10 @@
       when: item.vm_name in created_vm_names
       no_log: true
 
-    - name: Wait for MAC address initialization
-      pause:
+    - name: Wait for ESXi to initialize virtual NIC MAC addresses
+      ansible.builtin.pause:
         seconds: 10
       when: created_vm_names | length > 0
-
-    ###########################################################################
-    # POWER OFF NEWLY CREATED VMS
-    ###########################################################################
-
-    - name: Power off newly created VMs
-      community.vmware.vmware_guest_powerstate:
-        hostname: "{{ item.esxi_hostname }}"
-        username: "{{ item.esxi_username }}"
-        password: "{{ item.esxi_password }}"
-        validate_certs: false
-        datacenter: "{{ item.datacenter }}"
-        name: "{{ item.vm_name }}"
-        state: powered-off
-      loop: "{{ vm_hosts }}"
-      loop_control:
-        label: "{{ item.vm_name }}"
-      when: item.vm_name in created_vm_names
-      no_log: true
 
     ###########################################################################
     # GET FINAL VM INFORMATION
@@ -607,11 +581,30 @@
       no_log: true
 
     ###########################################################################
-    # SHOW FINAL VM INFORMATION
+    # POWER OFF NEW VMS
+    ###########################################################################
+
+    - name: Power off newly created VMs
+      community.vmware.vmware_guest_powerstate:
+        hostname: "{{ item.esxi_hostname }}"
+        username: "{{ item.esxi_username }}"
+        password: "{{ item.esxi_password }}"
+        validate_certs: false
+        datacenter: "{{ item.datacenter }}"
+        name: "{{ item.vm_name }}"
+        state: powered-off
+      loop: "{{ vm_hosts }}"
+      loop_control:
+        label: "{{ item.vm_name }}"
+      when: item.vm_name in created_vm_names
+      no_log: true
+
+    ###########################################################################
+    # SHOW FINAL INFORMATION
     ###########################################################################
 
     - name: Show final VM information
-      debug:
+      ansible.builtin.debug:
         msg:
           - "============================================================"
           - "ROCKY LINUX 9 VM INFORMATION"
@@ -621,7 +614,6 @@
           - "MAC           : {{ item.instance.hw_eth0.macaddress | default('N/A') }}"
           - "CPU           : {{ item.instance.hw_processor_count | default('N/A') }}"
           - "Memory MB     : {{ item.instance.hw_memtotal_mb | default('N/A') }}"
-          - "Disk Count    : {{ item.instance.hw_files | default([]) | select('search', '\\.vmdk$') | list | length }}"
           - "Disk Layout   : {{ disk_layout }}"
           - "Expected Disks: {{ disk_count }}"
           - "============================================================"
@@ -634,7 +626,7 @@
     ###########################################################################
 
     - name: Show final result
-      debug:
+      ansible.builtin.debug:
         msg:
           - "============================================================"
           - "ROCKY LINUX 9 VM ENSURE COMPLETED SUCCESSFULLY"
@@ -649,5 +641,4 @@
           - "CPUs                 : {{ vm_num_cpus }}"
           - "Guest ID             : {{ vm_guest_id }}"
           - "Firmware             : {{ vm_boot_firmware }}"
-          - "Datacenter           : {{ default_datacenter }}"
           - "============================================================"
