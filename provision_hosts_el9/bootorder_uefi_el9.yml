@@ -9,19 +9,25 @@
   gather_facts: false
 
   vars:
+
+    ###########################################################################
+    # NETBOX
+    ###########################################################################
+
     netbox_url: "https://192.168.253.143"
     netbox_token: "83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
 
-    # ========================================================
+    ###########################################################################
     # FIXED CLUSTER
-    # ========================================================
+    ###########################################################################
+
     cluster_name: "rocky-9-servers"
 
   tasks:
 
-    # ========================================================
+    ###########################################################################
     # SHOW RUNTIME VARIABLES
-    # ========================================================
+    ###########################################################################
 
     - name: Show runtime variables
       debug:
@@ -33,18 +39,18 @@
           - "Target Hosts : {{ target_hosts | default('NOT SET', true) }}"
           - "============================================================"
 
-    # ========================================================
+    ###########################################################################
     # VALIDATE TARGET HOSTS
-    # ========================================================
+    ###########################################################################
 
     - name: Fail if target_hosts is not provided
       fail:
         msg: "Please provide target_hosts in the AWX Survey."
       when: target_hosts is not defined or target_hosts | trim == ""
 
-    # ========================================================
+    ###########################################################################
     # GET EXACT CLUSTER
-    # ========================================================
+    ###########################################################################
 
     - name: Get cluster from NetBox
       uri:
@@ -85,9 +91,9 @@
           - "Cluster ID   : {{ cluster_id }}"
           - "============================================================"
 
-    # ========================================================
+    ###########################################################################
     # GET DEVICES FROM CLUSTER
-    # ========================================================
+    ###########################################################################
 
     - name: Get devices from NetBox cluster
       uri:
@@ -109,9 +115,9 @@
           - "Cluster ID Used   : {{ cluster_id }}"
           - "Devices Returned  : {{ netbox_devices.json.results | length }}"
 
-    # ========================================================
+    ###########################################################################
     # SAFETY FILTER - EXACT CLUSTER ONLY
-    # ========================================================
+    ###########################################################################
 
     - name: Initialize exact cluster devices
       set_fact:
@@ -145,13 +151,9 @@
           Cluster ID used: {{ cluster_id }}
       when: cluster_devices | length == 0
 
-    # ========================================================
+    ###########################################################################
     # CONVERT AWX SURVEY INPUT
-    #
-    # Examples:
-    # rocky-09-01
-    # rocky-09-01,rocky-09-02
-    # ========================================================
+    ###########################################################################
 
     - name: Convert target_hosts string to list
       set_fact:
@@ -167,9 +169,9 @@
       debug:
         var: target_hosts_list
 
-    # ========================================================
+    ###########################################################################
     # FILTER SELECTED DEVICES
-    # ========================================================
+    ###########################################################################
 
     - name: Initialize filtered devices
       set_fact:
@@ -217,9 +219,51 @@
 
   tasks:
 
-    # ========================================================
+    ###########################################################################
+    # VALIDATE ESXI CONFIGURATION
+    ###########################################################################
+
+    - name: Validate ESXi configuration in NetBox
+      assert:
+        that:
+          - item.config_context is defined
+          - item.config_context.esxi_hostname is defined
+          - item.config_context.esxi_hostname | length > 0
+          - item.config_context.esxi_username is defined
+          - item.config_context.esxi_username | length > 0
+          - item.config_context.esxi_password is defined
+          - item.config_context.esxi_password | length > 0
+        fail_msg: >-
+          Missing ESXi configuration in NetBox config context
+          for {{ item.name }}.
+          Required fields:
+          esxi_hostname, esxi_username, esxi_password
+      loop: "{{ filtered_devices }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: false
+
+    ###########################################################################
+    # SHOW ESXI CONFIGURATION
+    ###########################################################################
+
+    - name: Show ESXi configuration
+      debug:
+        msg:
+          - "============================================================"
+          - "VMWARE CONFIGURATION"
+          - "============================================================"
+          - "VM       : {{ item.name.split('.')[0] }}"
+          - "ESXi     : {{ item.config_context.esxi_hostname }}"
+          - "Username : {{ item.config_context.esxi_username }}"
+          - "============================================================"
+      loop: "{{ filtered_devices }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    ###########################################################################
     # POWER OFF
-    # ========================================================
+    ###########################################################################
 
     - name: Power OFF selected VM
       community.vmware.vmware_guest_powerstate:
@@ -229,7 +273,6 @@
         validate_certs: false
         name: "{{ item.name.split('.')[0] }}"
         state: powered-off
-      delegate_to: localhost
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
@@ -237,7 +280,9 @@
 
     - name: Show power OFF result
       debug:
-        msg: "VM {{ item.item.name }} power operation completed"
+        msg:
+          - "VM     : {{ item.item.name.split('.')[0] }}"
+          - "Result : Power operation completed"
       loop: "{{ poweroff_result.results }}"
       loop_control:
         label: "{{ item.item.name }}"
@@ -245,7 +290,6 @@
     - name: Wait after VM power OFF
       pause:
         seconds: 5
-      delegate_to: localhost
 
     ###########################################################################
     # SET EFI FIRMWARE
@@ -253,17 +297,30 @@
 
     - name: Set EFI firmware
       community.vmware.vmware_guest:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: "{{ validate_certs }}"
+        hostname: "{{ item.config_context.esxi_hostname }}"
+        username: "{{ item.config_context.esxi_username }}"
+        password: "{{ item.config_context.esxi_password }}"
+        validate_certs: false
+
         name: "{{ item.name.split('.')[0] }}"
         state: present
+
         hardware:
           boot_firmware: efi
+
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
+      register: efi_result
+
+    - name: Show EFI firmware result
+      debug:
+        msg:
+          - "VM       : {{ item.item.name.split('.')[0] }}"
+          - "Firmware : EFI configured"
+      loop: "{{ efi_result.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
 
     ###########################################################################
     # SET PXE / NETWORK BOOT FIRST
@@ -271,17 +328,30 @@
 
     - name: Set PXE first boot
       community.vmware.vmware_guest_boot_manager:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: "{{ validate_certs }}"
+        hostname: "{{ item.config_context.esxi_hostname }}"
+        username: "{{ item.config_context.esxi_username }}"
+        password: "{{ item.config_context.esxi_password }}"
+        validate_certs: false
+
         name: "{{ item.name.split('.')[0] }}"
+
         boot_order:
           - ethernet
           - disk
+
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
+      register: pxe_boot_result
+
+    - name: Show PXE boot configuration
+      debug:
+        msg:
+          - "VM         : {{ item.item.name.split('.')[0] }}"
+          - "Boot Order : Ethernet -> Disk"
+      loop: "{{ pxe_boot_result.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
 
     ###########################################################################
     # WAIT FOR CONFIGURATION
@@ -294,64 +364,81 @@
     ###########################################################################
     # POWER ON SELECTED VM
     ###########################################################################
-    
-    - name: Power ON selected Rocky Linux 8 VM
+
+    - name: Power ON selected Rocky Linux 9 VM
       community.vmware.vmware_guest_powerstate:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: "{{ validate_certs }}"
+        hostname: "{{ item.config_context.esxi_hostname }}"
+        username: "{{ item.config_context.esxi_username }}"
+        password: "{{ item.config_context.esxi_password }}"
+        validate_certs: false
+
         name: "{{ item.name.split('.')[0] }}"
         state: powered-on
+
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
-    
+      register: poweron_result
+
+    - name: Show power ON result
+      debug:
+        msg:
+          - "VM     : {{ item.item.name.split('.')[0] }}"
+          - "Result : Powered ON"
+      loop: "{{ poweron_result.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
     ###########################################################################
-    # WAIT 10 SECONDS
-    #
-    # Give EFI/PXE boot enough time to start
+    # WAIT FOR EFI/PXE BOOT TO START
     ###########################################################################
-    
+
     - name: Wait 10 seconds after power ON
       pause:
         seconds: 10
-    
+
     ###########################################################################
     # CHANGE BOOT ORDER TO DISK FIRST
     #
-    # This affects the NEXT reboot.
-    # The current PXE boot continues normally.
+    # This is intended to affect the NEXT boot.
     ###########################################################################
-    
+
     - name: Change boot order to disk first after PXE starts
       community.vmware.vmware_guest_boot_manager:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
-        validate_certs: "{{ validate_certs }}"
+        hostname: "{{ item.config_context.esxi_hostname }}"
+        username: "{{ item.config_context.esxi_username }}"
+        password: "{{ item.config_context.esxi_password }}"
+        validate_certs: false
+
         name: "{{ item.name.split('.')[0] }}"
+
         boot_order:
           - disk
           - ethernet
+
       loop: "{{ filtered_devices }}"
       loop_control:
         label: "{{ item.name }}"
-    
+      register: disk_boot_result
+
     ###########################################################################
-    # SHOW RESULT
+    # SHOW BOOT RESULT
     ###########################################################################
-    
+
     - name: Show boot order update message
       debug:
         msg:
           - "============================================================"
-          - "PXE BOOT STARTED"
-          - "Waited 10 seconds"
-          - "Next boot order changed to:"
-          - "1. Disk"
-          - "2. Ethernet"
+          - "ROCKY LINUX 9 PXE BOOT CONFIGURATION COMPLETE"
           - "============================================================"
+          - "VM        : {{ item.item.name.split('.')[0] }}"
+          - "PXE Boot  : Ethernet was configured first"
+          - "Next Boot : Disk -> Ethernet"
+          - "============================================================"
+      loop: "{{ disk_boot_result.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
 
 # ============================================================
 # PLAY 3: Get NetBox IPs and Wait for SSH
@@ -363,14 +450,15 @@
   gather_facts: false
 
   vars:
+
     default_ssh_user: "root"
     default_ssh_password: "Root@123"
 
   tasks:
 
-    # ========================================================
+    ###########################################################################
     # BUILD CONNECTION INFORMATION
-    # ========================================================
+    ###########################################################################
 
     - name: Initialize selected VM connection information
       set_fact:
@@ -424,9 +512,9 @@
       loop_control:
         label: "{{ item.name }}"
 
-    # ========================================================
+    ###########################################################################
     # WAIT FOR SSH
-    # ========================================================
+    ###########################################################################
 
     - name: Wait for SSH port 22
       wait_for:
@@ -439,9 +527,9 @@
       loop_control:
         label: "{{ item.name }}"
 
-    # ========================================================
+    ###########################################################################
     # ADD TO DYNAMIC INVENTORY
-    # ========================================================
+    ###########################################################################
 
     - name: Add selected Rocky 9 VMs to dynamic inventory
       add_host:
