@@ -2382,100 +2382,1007 @@ systemctl status sssd
 
 ---
 
-# 71. Final Status
+# 71. vCenter Active Directory Integration, SSO and VMware-Admins Access
 
-The following infrastructure components have now been successfully implemented:
+## 71.1 Overview
 
-~~~text
-Active Directory Domain
-        |
-        v
+This document describes the configuration and validation of Active Directory authentication with VMware vCenter Server.
+
+Environment:
+
+| Component | Value |
+|---|---|
+| vCenter Server | `vcenter-01.vgs.com` |
+| Active Directory Domain | `vgs.com` |
+| Domain Controller | `dc01.vgs.com` |
+| Domain Controller IP | `192.168.253.161` |
+| vCenter Internal SSO Domain | `vsphere.local` |
+| AD Administrator | `Administrator@vgs.com` |
+| AD Users OU | `OU=Users-VGS,DC=vgs,DC=com` |
+| AD Groups OU | `OU=Groups-VGS,DC=vgs,DC=com` |
+| VMware Admin Group | `VMware-Admins` |
+| AD User | `vignesh` |
+
+---
+
+# 71.2 Active Directory Structure
+
+The Active Directory environment contains the following structure:
+
+```text
+DC=vgs,DC=com
+│
+├── OU=Users-VGS
+│   │
+│   └── CN=Vignesh S
+│       └── sAMAccountName: vignesh
+│
+└── OU=Groups-VGS
+    │
+    ├── CN=Linux-Admins
+    │
+    ├── CN=VMware-Admins
+    │
+    ├── CN=Infrastructure-Admins
+    │
+    └── CN=AD-Admins
+```
+
+---
+
+# 71.3 Verify VMware-Admins Group in Active Directory
+
+Run the following command from the Domain Controller:
+
+```powershell
+Get-ADGroup "VMware-Admins" -Properties GroupCategory,GroupScope,DistinguishedName |
+Select-Object Name,GroupCategory,GroupScope,DistinguishedName
+```
+
+Expected result:
+
+```text
+Name          GroupCategory GroupScope DistinguishedName
+----          ------------- ---------- -----------------
+VMware-Admins Security      Global     CN=VMware-Admins,OU=Groups-VGS,DC=vgs,DC=com
+```
+
+The group configuration should be:
+
+```text
+Group Name: VMware-Admins
+Group Category: Security
+Group Scope: Global
+```
+
+---
+
+# 71.4 Verify Group Membership
+
+Run:
+
+```powershell
+Get-ADGroupMember "VMware-Admins"
+```
+
+Expected result:
+
+```text
+distinguishedName : CN=Vignesh S,OU=Users-VGS,DC=vgs,DC=com
+name              : Vignesh S
+objectClass       : user
+SamAccountName    : vignesh
+```
+
+This confirms that the user `vignesh` is a member of:
+
+```text
+VMware-Admins
+```
+
+---
+
+# 71.5 Verify Group Using LDAP Filter
+
+Run:
+
+```powershell
+Get-ADGroup -LDAPFilter "(cn=VMware-Admins)" |
+Select-Object Name,DistinguishedName,GroupCategory,GroupScope
+```
+
+Expected result:
+
+```text
+Name          DistinguishedName                            GroupCategory GroupScope
+----          -----------------                            ------------- ----------
+VMware-Admins CN=VMware-Admins,OU=Groups-VGS,DC=vgs,DC=com Security      Global
+```
+
+---
+
+# 71.6 Verify DNS Connectivity from vCenter
+
+SSH to the vCenter Server:
+
+```bash
+ssh root@vcenter-01.vgs.com
+```
+
+Verify DNS resolution:
+
+```bash
+nslookup dc01.vgs.com
+```
+
+Expected result:
+
+```text
+Name:    dc01.vgs.com
+Address: 192.168.253.161
+```
+
+Verify network connectivity:
+
+```bash
+ping -c 3 dc01.vgs.com
+```
+
+Expected result:
+
+```text
+64 bytes from 192.168.253.161
+0% packet loss
+```
+
+This confirms that vCenter can communicate with the Active Directory Domain Controller.
+
+---
+
+# 71.7 Verify LDAP Client Availability
+
+Verify that `ldapsearch` is installed:
+
+```bash
+which ldapsearch
+```
+
+Expected result:
+
+```text
+/usr/bin/ldapsearch
+```
+
+Check the OpenLDAP version:
+
+```bash
+ldapsearch -VV
+```
+
+Example:
+
+```text
+ldapsearch: OpenLDAP 2.4.57
+```
+
+---
+
+# 71.8 Verify VMware-Admins Group Using LDAP
+
+From the vCenter Server run:
+
+```bash
+ldapsearch -x \
+-H ldap://dc01.vgs.com:389 \
+-D "Administrator@vgs.com" \
+-W \
+-b "DC=vgs,DC=com" \
+"(cn=VMware-Admins)"
+```
+
+Enter the Active Directory Administrator password when prompted.
+
+Expected result:
+
+```text
+dn: CN=VMware-Admins,OU=Groups-VGS,DC=vgs,DC=com
+objectClass: group
+cn: VMware-Admins
+member: CN=Vignesh S,OU=Users-VGS,DC=vgs,DC=com
+distinguishedName: CN=VMware-Admins,OU=Groups-VGS,DC=vgs,DC=com
+sAMAccountName: VMware-Admins
+```
+
+A successful result confirms:
+
+- DNS resolution is working.
+- Network connectivity is working.
+- LDAP port `389` is reachable.
+- Active Directory authentication is working.
+- The bind account is valid.
+- The VMware-Admins group exists.
+- vCenter can retrieve the group from Active Directory.
+
+---
+
+# 71.9 Verify Group Using the Groups OU
+
+Run:
+
+```bash
+ldapsearch -x \
+-H ldap://dc01.vgs.com:389 \
+-D "Administrator@vgs.com" \
+-W \
+-b "OU=Groups-VGS,DC=vgs,DC=com" \
+"(&(objectClass=group)(cn=VMware-Admins))"
+```
+
+Expected result:
+
+```text
+dn: CN=VMware-Admins,OU=Groups-VGS,DC=vgs,DC=com
+objectClass: group
+cn: VMware-Admins
+member: CN=Vignesh S,OU=Users-VGS,DC=vgs,DC=com
+sAMAccountName: VMware-Admins
+```
+
+This confirms that the configured Groups Base DN is correct.
+
+---
+
+# 71.10 List All Active Directory Groups
+
+Run:
+
+```bash
+ldapsearch -x \
+-H ldap://dc01.vgs.com:389 \
+-D "Administrator@vgs.com" \
+-W \
+-b "OU=Groups-VGS,DC=vgs,DC=com" \
+"(objectClass=group)" \
+cn sAMAccountName member
+```
+
+Example result:
+
+```text
+CN=Linux-Admins
+CN=VMware-Admins
+CN=Infrastructure-Admins
+CN=AD-Admins
+```
+
+Expected membership example:
+
+```text
+Linux-Admins
+    └── Vignesh S
+
+VMware-Admins
+    └── Vignesh S
+
+Infrastructure-Admins
+    └── Vignesh S
+```
+
+---
+
+# 71.11 Verify User Group Membership
+
+Verify that the AD user belongs to VMware-Admins.
+
+Run:
+
+```bash
+ldapsearch -x \
+-H ldap://dc01.vgs.com:389 \
+-D "Administrator@vgs.com" \
+-W \
+-b "OU=Users-VGS,DC=vgs,DC=com" \
+"(sAMAccountName=vignesh)" \
+memberOf
+```
+
+Expected result:
+
+```text
+dn: CN=Vignesh S,OU=Users-VGS,DC=vgs,DC=com
+
+memberOf: CN=Infrastructure-Admins,OU=Groups-VGS,DC=vgs,DC=com
+memberOf: CN=VMware-Admins,OU=Groups-VGS,DC=vgs,DC=com
+memberOf: CN=Linux-Admins,OU=Groups-VGS,DC=vgs,DC=com
+```
+
+This confirms that the user is a member of:
+
+```text
+VMware-Admins
+```
+
+---
+
+# 71.12 Configure Active Directory Identity Source in vCenter
+
+Log in to vCenter using:
+
+```text
+administrator@vsphere.local
+```
+
+Navigate to:
+
+```text
+Menu
+→ Administration
+→ Single Sign On
+→ Configuration
+→ Identity Sources
+```
+
+Edit or create the Active Directory identity source.
+
+Configure the following:
+
+```text
+Identity Source Type:
+Active Directory over LDAP
+```
+
+Identity Source Name:
+
+```text
+VGS Active Directory
+```
+
+Base Distinguished Name for Users:
+
+```text
+OU=Users-VGS,DC=vgs,DC=com
+```
+
+Base Distinguished Name for Groups:
+
+```text
+OU=Groups-VGS,DC=vgs,DC=com
+```
+
+Domain Name:
+
+```text
 vgs.com
-        |
-        v
-Domain Controller
-        |
-        v
-DC01.vgs.com
-192.168.253.161
-        |
-        +--> Active Directory
-        |
-        +--> DNS
-        |
-        +--> Kerberos
-        |
-        +--> LDAP
-        |
-        +--> Global Catalog
-        |
-        +--> NTP Server
-                 |
-                 v
-            NetBox Server
-            netbox.vgs.com
-                 |
-                 v
-              SSSD
-                 |
-                 v
-       Active Directory Users
-                 |
-                 v
-          vignesh@vgs.com
-                 |
-        +--------+--------+
-        |                 |
-        v                 v
- Linux-Admins   Infrastructure-Admins
-~~~
+```
 
-The NetBox server is successfully joined to:
+Domain Alias:
 
-~~~text
+```text
+VGS
+```
+
+Username:
+
+```text
+Administrator@vgs.com
+```
+
+Connect To:
+
+```text
+Specific domain controllers
+```
+
+Primary Server URL:
+
+```text
+ldap://dc01.vgs.com:389
+```
+
+Save the configuration.
+
+---
+
+# 71.13 Important Identity Source Notes
+
+The following configuration is recommended:
+
+```text
+Identity Source:
+VGS Active Directory
+
+Users Base DN:
+OU=Users-VGS,DC=vgs,DC=com
+
+Groups Base DN:
+OU=Groups-VGS,DC=vgs,DC=com
+
+Domain:
 vgs.com
-~~~
 
-Active Directory user lookup is successfully working:
+Domain Alias:
+VGS
 
-~~~bash
-id vignesh@vgs.com
-~~~
+Primary LDAP Server:
+ldap://dc01.vgs.com:389
+```
 
-The next implementation phase is:
+The Base Distinguished Name for Groups must point to the OU containing the AD groups.
 
-~~~text
-Active Directory Integration
-        |
-        v
-Configure SSSD Login
-        |
-        v
-Test AD User SSH Login
-        |
-        v
-Configure Automatic Home Directory
-        |
-        v
-Configure sudo Access
-        |
-        v
-Linux-Admins -> sudo
-        |
-        v
-Integrate Additional Linux Servers
-        |
-        +--> Foreman
-        |
-        +--> AWX
-        |
-        +--> Other Linux Servers
-        |
-        v
-vCenter Active Directory Integration
-        |
-        v
-ESXi Active Directory Integration
-~~~
+Correct:
 
-# End of Document
+```text
+OU=Groups-VGS,DC=vgs,DC=com
+```
+
+The following can also be used for broader searching:
+
+```text
+DC=vgs,DC=com
+```
+
+However, the recommended configuration for this environment is:
+
+```text
+OU=Groups-VGS,DC=vgs,DC=com
+```
+
+---
+
+# 71.14 Verify the Active Directory Identity Source
+
+Navigate to:
+
+```text
+Administration
+→ Single Sign On
+→ Users and Groups
+→ Groups
+```
+
+Select the domain:
+
+```text
+VGS.COM
+```
+
+Search for:
+
+```text
+VMware-Admins
+```
+
+The group should appear:
+
+```text
+VGS.COM\VMware-Admins
+```
+
+If the group does not appear immediately:
+
+1. Verify the Identity Source configuration.
+2. Verify the LDAP server URL.
+3. Verify DNS resolution.
+4. Verify LDAP authentication.
+5. Verify the Groups Base DN.
+6. Refresh the vSphere Client.
+7. Log out and log back in if necessary.
+
+---
+
+# 71.15 Add VMware-Admins to vCenter Global Permissions
+
+After the group appears in vCenter, configure permissions.
+
+Navigate to:
+
+```text
+Administration
+→ Access Control
+→ Global Permissions
+```
+
+Click:
+
+```text
+ADD
+```
+
+Select:
+
+```text
+Domain:
+VGS.COM
+```
+
+Select:
+
+```text
+VMware-Admins
+```
+
+Assign the role:
+
+```text
+Administrator
+```
+
+Enable propagation if required:
+
+```text
+Propagate to children
+```
+
+Final configuration:
+
+```text
+User/Group:
+VGS.COM\VMware-Admins
+
+Role:
+Administrator
+
+Defined In:
+Global Permission
+```
+
+---
+
+# 71.16 Final Global Permission Configuration
+
+The final permission structure should look similar to:
+
+```text
+Global Permissions
+│
+├── VGS.COM\VMware-Admins
+│   └── Role: Administrator
+│
+├── VSPHERE.LOCAL\Administrator
+│   └── Role: Administrator
+│
+└── Other default vCenter groups
+```
+
+The Active Directory group:
+
+```text
+VGS.COM\VMware-Admins
+```
+
+should have:
+
+```text
+Administrator Role
+```
+
+at:
+
+```text
+Global Permission Root
+```
+
+---
+
+# 71.17 Test Active Directory Login
+
+Open the vSphere Client:
+
+```text
+https://vcenter-01.vgs.com/ui
+```
+
+At the login screen select the Active Directory domain:
+
+```text
+VGS.COM
+```
+
+Log in using:
+
+```text
+vignesh@vgs.com
+```
+
+or:
+
+```text
+VGS\vignesh
+```
+
+depending on the login format displayed by the vSphere Client.
+
+The authentication flow is:
+
+```text
+User
+  │
+  ▼
+Active Directory
+  │
+  ▼
+Vignesh
+  │
+  ▼
+VMware-Admins Group
+  │
+  ▼
+vCenter Global Permission
+  │
+  ▼
+Administrator Role
+  │
+  ▼
+vCenter Login Successful
+```
+
+---
+
+# 71.18 Troubleshooting Login Error
+
+A possible error is:
+
+```text
+Unable to login because you do not have permission on any vCenter Server
+systems connected to this client.
+```
+
+This usually means:
+
+```text
+Authentication = Successful
+Authorization = Missing
+```
+
+The user may successfully authenticate against Active Directory but does not have a vCenter permission assigned.
+
+Verify:
+
+```text
+Administration
+→ Access Control
+→ Global Permissions
+```
+
+Ensure:
+
+```text
+VGS.COM\VMware-Admins
+```
+
+has:
+
+```text
+Administrator
+```
+
+role.
+
+---
+
+# 71.19 vCenter Service Verification
+
+Verify Security Token Service:
+
+```bash
+service-control --status vmware-stsd
+```
+
+Expected:
+
+```text
+Running:
+ vmware-stsd
+```
+
+Verify vCenter Server service:
+
+```bash
+service-control --status vmware-vpxd
+```
+
+Expected:
+
+```text
+Running:
+ vmware-vpxd
+```
+
+Some services may not be directly available using older service names such as:
+
+```text
+vmware-vmdir
+vmware-sso
+```
+
+This does not automatically indicate an issue.
+
+Check the available registered services using:
+
+```bash
+/usr/lib/vmware-vmafd/bin/dir-cli service list
+```
+
+Example:
+
+```text
+machine-xxxxxxxx
+vsphere-webclient-xxxxxxxx
+vpxd-xxxxxxxx
+vpxd-extension-xxxxxxxx
+hvc-xxxxxxxx
+wcp-xxxxxxxx
+```
+
+---
+
+# 71.20 Verify vCenter SSO Domain
+
+Run:
+
+```bash
+/usr/lib/vmware-vmafd/bin/vmafd-cli get-domain-name --server-name localhost
+```
+
+Expected result:
+
+```text
+vsphere.local
+```
+
+This confirms that the internal vCenter SSO domain is:
+
+```text
+vsphere.local
+```
+
+---
+
+# 71.21 Important SSO Notes
+
+The vCenter SSO architecture remains unchanged after integrating Active Directory.
+
+```text
+vsphere.local
+```
+
+remains the internal vCenter SSO domain.
+
+Do not remove:
+
+```text
+administrator@vsphere.local
+```
+
+This account should remain available as an emergency recovery account.
+
+Active Directory:
+
+```text
+vgs.com
+```
+
+is configured as an external identity source.
+
+The authentication process is:
+
+```text
+vCenter Server
+│
+├── Internal SSO Domain
+│   └── vsphere.local
+│       └── administrator@vsphere.local
+│
+└── External Identity Source
+    └── vgs.com
+        │
+        ├── Users-VGS
+        │   └── vignesh
+        │
+        └── Groups-VGS
+            └── VMware-Admins
+```
+
+---
+
+# 71.22 Final Authentication Design
+
+```text
++------------------------------------------------------+
+|                   vCenter Server                     |
+|                                                      |
+|              SSO Domain: vsphere.local               |
+|                                                      |
+|       administrator@vsphere.local                    |
+|       Emergency / Recovery Administrator             |
++--------------------------+---------------------------+
+                           |
+                           |
+                           v
++------------------------------------------------------+
+|               External Identity Source               |
+|                                                      |
+|                    VGS Active Directory              |
+|                                                      |
+|                    Domain: vgs.com                   |
++--------------------------+---------------------------+
+                           |
+                           |
+                           v
++------------------------------------------------------+
+|                  Active Directory                    |
+|                                                      |
+|             OU=Users-VGS,DC=vgs,DC=com               |
+|                                                      |
+|                    Vignesh S                         |
+|                    vignesh                           |
++--------------------------+---------------------------+
+                           |
+                           |
+                           v
++------------------------------------------------------+
+|                  Active Directory Group              |
+|                                                      |
+|             OU=Groups-VGS,DC=vgs,DC=com              |
+|                                                      |
+|                  VMware-Admins                       |
++--------------------------+---------------------------+
+                           |
+                           |
+                           v
++------------------------------------------------------+
+|                 vCenter Global Permission            |
+|                                                      |
+|            VGS.COM\VMware-Admins                     |
+|                                                      |
+|                 Role: Administrator                  |
++--------------------------+---------------------------+
+                           |
+                           |
+                           v
++------------------------------------------------------+
+|                   vCenter Access                     |
+|                                                      |
+|               Login Successful                       |
++------------------------------------------------------+
+```
+
+---
+
+# 71.23 Important SSO Design Summary
+
+- `vsphere.local` remains the vCenter internal SSO domain.
+- Do not remove `administrator@vsphere.local`.
+- `vgs.com` is configured as an external Active Directory identity source.
+- Active Directory users authenticate against Active Directory.
+- vCenter SSO accepts the authenticated external identity.
+- vCenter permissions determine what the user can access.
+- `VMware-Admins` receives the vCenter `Administrator` role through Global Permissions.
+- Keep the local SSO administrator account available for recovery if Active Directory becomes unavailable.
+
+---
+
+# 71.24 Final Validation Checklist
+
+Verify DNS:
+
+```bash
+nslookup dc01.vgs.com
+```
+
+Verify network:
+
+```bash
+ping -c 3 dc01.vgs.com
+```
+
+Verify LDAP group:
+
+```bash
+ldapsearch -x \
+-H ldap://dc01.vgs.com:389 \
+-D "Administrator@vgs.com" \
+-W \
+-b "OU=Groups-VGS,DC=vgs,DC=com" \
+"(&(objectClass=group)(cn=VMware-Admins))"
+```
+
+Verify user membership:
+
+```bash
+ldapsearch -x \
+-H ldap://dc01.vgs.com:389 \
+-D "Administrator@vgs.com" \
+-W \
+-b "OU=Users-VGS,DC=vgs,DC=com" \
+"(sAMAccountName=vignesh)" \
+memberOf
+```
+
+Verify SSO domain:
+
+```bash
+/usr/lib/vmware-vmafd/bin/vmafd-cli get-domain-name --server-name localhost
+```
+
+Verify Security Token Service:
+
+```bash
+service-control --status vmware-stsd
+```
+
+Verify vCenter service:
+
+```bash
+service-control --status vmware-vpxd
+```
+
+Verify vCenter Global Permission:
+
+```text
+VGS.COM\VMware-Admins
+Role: Administrator
+```
+
+Verify AD login:
+
+```text
+vignesh@vgs.com
+```
+
+Expected final result:
+
+```text
+Active Directory Authentication: SUCCESS
+VMware-Admins Group Detection: SUCCESS
+Global Permission Assignment: SUCCESS
+Administrator Role: SUCCESS
+vCenter Login: SUCCESS
+```
+
+---
+
+# 71.25 Final Result
+
+The final configuration is:
+
+```text
+vCenter Internal SSO:
+vsphere.local
+
+Emergency Administrator:
+administrator@vsphere.local
+
+External Identity Source:
+VGS Active Directory
+
+Active Directory Domain:
+vgs.com
+
+Domain Controller:
+dc01.vgs.com
+
+LDAP:
+ldap://dc01.vgs.com:389
+
+Active Directory User:
+vignesh
+
+Active Directory Group:
+VMware-Admins
+
+vCenter Permission:
+Global Permission
+
+Assigned Role:
+Administrator
+
+Authentication Status:
+SUCCESS
+
+Authorization Status:
+SUCCESS
+
+vCenter Login:
+SUCCESS
+```
