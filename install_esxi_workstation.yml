@@ -39,7 +39,7 @@
 
     vmrun_cygwin: "/cygdrive/d/VM workstation/vmrun.exe"
     vmware_cygwin: "/cygdrive/d/VM workstation/vmware.exe"
-    vdiskmanager_cygwin: "/cygdrive/d/VM workstation/vmware-vdiskmanager.exe"
+    vdiskmanager_cygwin: "/cygdrive/c/Program Files/VMware/VMware Workstation/vmware-vdiskmanager.exe"
 
     vmware_windows: 'D:\VM workstation\vmware.exe'
 
