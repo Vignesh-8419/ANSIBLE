@@ -27,10 +27,26 @@ ansible-playbook deploy_golden_templates.yml \
   -e 'deploy_templates=["ROCKYOS_09"]'
 ```
 
-# ============================================================
-#                    ANSIBLE LAB SHORTCUTS
-# ============================================================
 
+# Ansible Lab Shortcuts
+
+## Playbook Shortcuts
+
+These shell functions run the corresponding Ansible playbooks.
+
+| Keyword | Playbook |
+|---|---|
+| `ESXI-01` | `install_esxi_workstation.yml` |
+| `GOLDEN-DEPLOY` | `deploy_golden_templates.yml` |
+| `LAB-POWER` | `vmware_lab_power.yml` |
+| `ESXI-POWER` | `esxi_vm_power.yml` |
+| `ROCKY08-DEPLOY` | `deploy_rocky08_servers.yml` |
+| `MANAGE-ESXI` | `manage_esxi_vcenter_host.yml` |
+| `CONVERT-TEMPLATE` | `convert_golden_vms_to_templates.yml` |
+
+## Shell Functions
+
+```bash
 ESXI-01() {
     ansible-playbook ~/ANSIBLE/install_esxi_workstation.yml "$@"
 }
@@ -79,3 +95,17 @@ ansible-banner() {
 }
 
 export ANSIBLE_CONFIG=~/ansible.cfg
+```
+
+## Usage
+
+Pass any Ansible CLI arguments after the shortcut name. The `"$@"` forwards those arguments to `ansible-playbook`.
+
+```bash
+ESXI-01
+LAB-POWER --ask-vault-pass
+ROCKY08-DEPLOY -e "target_vm=rocky08-01"
+ansible-banner
+```
+
+> **Note:** These function names contain hyphens. Depending on your shell, hyphenated function names may not be valid function identifiers. If your shell rejects them, use underscore names (for example, `ESXI_01`) or define aliases instead.
