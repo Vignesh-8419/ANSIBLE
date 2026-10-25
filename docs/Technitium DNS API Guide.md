@@ -19,7 +19,7 @@ $env:DNS_SERVER="192.168.253.1:5380"
 ## Set API Token
 
 ```powershell
-$env:TOKEN="14759e1e000567381175d02ef3e137d2847e6dd637e5a74bcdb726e24dabaac7"
+$env:TOKEN="19089ed0460d3e8cf0b15d5c1aad1826b8bc89c67279a153bd423e84a6d49bd7"
 ```
 
 ## Verify Variables
