@@ -1,4 +1,4 @@
-```text
+<img width="845" height="2268" alt="image" src="https://github.com/user-attachments/assets/b3c576ec-a443-4605-a8e6-85d57253657b" />```text
 IFACE=$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1; exit}') && CONN=$(nmcli -t -f NAME,DEVICE connection show | awk -F: -v d="$IFACE" '$2==d{print $1; exit}') && nmcli -t -f NAME,DEVICE connection show | awk -F: -v c="$CONN" '$1!=c && $2==""{print $1}' | xargs -r -n1 nmcli connection delete && systemctl restart NetworkManager && nmcli device connect "$IFACE" && sleep 5 && curl -L -o /root/Server_Setup.sh "https://raw.githubusercontent.com/Vignesh-8419/ANSIBLE/main/Server_Setup.sh?$(date +%s)" && chmod +x /root/Server_Setup.sh && nmcli device disconnect "$IFACE"
 ```
 
@@ -242,4 +242,111 @@ chmod +x \
 03_foreman_hostgroup_bootstrap_single_disk_api.sh \
 04-bootstrap-el7toel8_api.sh \
 05-bootstrap-el8toel9_api.sh
+```
+
+
+==============================================================
+==============================================================
+
+# inventory.ini
+
+```ini
+# ============================================================
+# ANSIBLE SERVER
+# ============================================================
+[ANSIBLE]
+ansible-server-01.vgs.com
+
+# ============================================================
+# NETBOX
+# ============================================================
+[NETBOX]
+netbox.vgs.com
+
+# ============================================================
+# FOREMAN
+# ============================================================
+[FOREMAN]
+cent-07-01.vgs.com
+
+# ============================================================
+# FOREMAN PROXY
+# ============================================================
+[FOREMAN_PROXY]
+cent-07-02.vgs.com
+
+# ============================================================
+# ALL LINUX SERVERS
+# ============================================================
+[LINUX:children]
+ANSIBLE
+NETBOX
+FOREMAN
+FOREMAN_PROXY
+
+# ============================================================
+# COMMON LINUX VARIABLES
+# ============================================================
+[LINUX:vars]
+#ansible_user=admin
+#ansible_become=true
+#ansible_become_method=sudo
+#ansible_python_interpreter=/usr/bin/python3
+```
+
+# .bashrc (Custom Ansible Shortcuts Section)
+
+```bash
+# ============================================================
+#                    ANSIBLE LAB SHORTCUTS
+# ============================================================
+
+ESXI-01() {
+    ansible-playbook ~/ANSIBLE/install_esxi_workstation.yml "$@"
+}
+
+GOLDEN-DEPLOY() {
+    ansible-playbook ~/ANSIBLE/deploy_golden_templates.yml "$@"
+}
+
+LAB-POWER() {
+    ansible-playbook ~/ANSIBLE/vmware_lab_power.yml "$@"
+}
+
+ESXI-POWER() {
+    ansible-playbook ~/ANSIBLE/esxi_vm_power.yml "$@"
+}
+
+ROCKY08-DEPLOY() {
+    ansible-playbook ~/ANSIBLE/deploy_rocky08_servers.yml "$@"
+}
+
+MANAGE-ESXI() {
+    ansible-playbook ~/ANSIBLE/manage_esxi_vcenter_host.yml "$@"
+}
+
+CONVERT-TEMPLATE() {
+    ansible-playbook ~/ANSIBLE/convert_golden_vms_to_templates.yml "$@"
+}
+
+ansible-banner() {
+    echo
+    echo "=============================================================="
+    echo "                 ANSIBLE LAB PLAYBOOK SHORTCUTS"
+    echo "=============================================================="
+    echo
+    printf "%-22s %s\n" "KEYWORD"          "PLAYBOOK"
+    echo "--------------------------------------------------------------"
+    printf "%-22s %s\n" "ESXI-01"          "install_esxi_workstation.yml"
+    printf "%-22s %s\n" "GOLDEN-DEPLOY"    "deploy_golden_templates.yml"
+    printf "%-22s %s\n" "LAB-POWER"        "vmware_lab_power.yml"
+    printf "%-22s %s\n" "ESXI-POWER"       "esxi_vm_power.yml"
+    printf "%-22s %s\n" "ROCKY08-DEPLOY"   "deploy_rocky08_servers.yml"
+    printf "%-22s %s\n" "MANAGE-ESXI"      "manage_esxi_vcenter_host.yml"
+    printf "%-22s %s\n" "CONVERT-TEMPLATE" "convert_golden_vms_to_templates.yml"
+    echo "=============================================================="
+    echo
+}
+
+export ANSIBLE_CONFIG=~/ansible.cfg
 ```
