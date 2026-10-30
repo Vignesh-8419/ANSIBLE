@@ -21,7 +21,8 @@
 
     java_path: "/usr/lib/jvm/java-1.8.0-openjdk-1.8.0.412.b08-1.el7_9.x86_64/bin"
     module_path: "/etc/puppetlabs/code/environments/production/modules/java_ks"
-
+    module_parent: "/etc/puppetlabs/code/environments/production/modules"
+    java_ks_version: "4.3.1"
     foreman_server_name: "cent-07-01.vgs.com"
     dns_server: "192.168.253.1"
     dhcp_gateway: "192.168.253.2"
