@@ -316,22 +316,69 @@
     # STEP 5: PUPPET MODULE SETUP
     # ===============================================================
 
-    - name: STEP 5 - Check puppetlabs-java_ks module directory
-      ansible.builtin.stat:
-        path: "{{ module_path }}"
-      register: java_ks_module
+
+    # ===============================================================
+    # STEP 5: PUPPET MODULE SETUP
+    # ===============================================================
+
+    - name: STEP 5 - Verify Puppet version
+      ansible.builtin.command:
+        cmd: /opt/puppetlabs/bin/puppet --version
+      register: puppet_version
+      changed_when: false
+
+    - name: STEP 5 - Display Puppet version
+      ansible.builtin.debug:
+        msg: "Installed Puppet version: {{ puppet_version.stdout }}"
+
+    - name: STEP 5 - Ensure production modules directory exists
+      ansible.builtin.file:
+        path: "{{ module_parent }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
 
     - name: STEP 5 - Remove existing java_ks module
       ansible.builtin.file:
         path: "{{ module_path }}"
         state: absent
-      when: java_ks_module.stat.exists
 
-    - name: STEP 5 - Install puppetlabs-java_ks module
+    - name: STEP 5 - Install compatible java_ks module
       ansible.builtin.command:
-        cmd: /opt/puppetlabs/bin/puppet module install puppetlabs-java_ks --force
-      environment:
-        PATH: "{{ java_environment_path }}"
+        argv:
+          - /opt/puppetlabs/bin/puppet
+          - module
+          - install
+          - puppetlabs-java_ks
+          - --version
+          - "{{ java_ks_version }}"
+          - --target-dir
+          - "{{ module_parent }}"
+          - --force
+      register: java_ks_install
+
+    - name: STEP 5 - Verify java_ks metadata
+      ansible.builtin.command:
+        cmd: >
+          /opt/puppetlabs/bin/puppet module list
+          --modulepath {{ module_parent }}
+      register: java_ks_verify
+      changed_when: false
+
+    - name: STEP 5 - Display installed java_ks module
+      ansible.builtin.debug:
+        var: java_ks_verify.stdout_lines
+
+    - name: STEP 5 - Verify java_ks module directory
+      ansible.builtin.stat:
+        path: "{{ module_path }}/metadata.json"
+      register: java_ks_metadata
+
+    - name: STEP 5 - Fail if java_ks installation failed
+      ansible.builtin.fail:
+        msg: "java_ks module metadata.json is missing."
+      when: not java_ks_metadata.stat.exists
 
     - name: STEP 5 - Create Foreman installer modules directory
       ansible.builtin.file:
@@ -452,7 +499,7 @@
         cmd: foreman-installer --scenario katello
       environment:
         PATH: "{{ java_environment_path }}"
-      when: foreman_status.rc != 0
+      register: foreman_installer_result
 
     - name: STEP 6 - Open HTTP firewall
       ansible.posix.firewalld:
