@@ -1,3 +1,6 @@
+Sorry da, puriyudhu. You want everything in ONE single code block, including all commands, configurations, LDIF files and notes — not separate code blocks inside the Markdown.
+
+```
 # Oracle Unified Directory (OUD) – Complete LDAP Configuration
 
 ## 1. Java Environment Setup
@@ -613,3 +616,4 @@ tail -f access.log
 The examples contain sample passwords and password hashes. Replace them with secure credentials before production use.
 
 Avoid passing passwords directly in command-line arguments because they may be exposed in shell history and process listings.
+```
