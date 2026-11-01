@@ -1,106 +1,199 @@
-```
+Sure macha! Ippo original OUD document full-ah arrange pannirukken. Every individual command has its own separate code block, so each one gets its own Copy button. LDIF entries and configuration contents-um include pannirukken.
+
 # Oracle Unified Directory (OUD) – Complete LDAP Configuration
 
 ## 1. Java Environment Setup
 
-export JAVA_HOME=/usr/jdk/jdk1.8.0_311
-export PATH=$JAVA_HOME/bin:$PATH
-java -version
+Set JAVA_HOME
 
+```
+export JAVA_HOME=/usr/jdk/jdk1.8.0_311
+```
+
+Update PATH
+
+```
+export PATH=$JAVA_HOME/bin:$PATH
+```
+
+Check Java version
+
+```
+java -version
+```
+
+Add OUD path
+
+```
 export PATH=$PATH:/export/home/ldapadm/Oracle/Middleware/Oracle_Home/oud/
+```
+
+Add ASINST path
+
+```
 export PATH=$PATH:/export/home/ldapadm/Oracle/Middleware/Oracle_Home/asinst_1/
+```
 
 ## 2. OUD Installation
 
+Extract installation package
+
+```
 unzip V983402-01.zip
+```
 
+Run OUD installer
+
+```
 java -jar fmw_12.2.1.3.0_oud.jar
-java -jar fmw_12.2.1.4.0_oud.jar
-java -jar fmw_12.2.1.4.0_oud.jar -ignoreSysPrereqs
+```
 
+```
+java -jar fmw_12.2.1.4.0_oud.jar
+```
+
+```
+java -jar fmw_12.2.1.4.0_oud.jar -ignoreSysPrereqs
+```
+
+Navigate to OUD directory
+
+```
 cd /export/home/ldapadm/Oracle/Middleware/Oracle_Home/oud/
+```
+
+Run OUD setup
+
+```
 ./oud-setup
+```
+
+Configure LDAP server
+
+```
 /usr/sbin/ldapservercfg oud
+```
 
 ## 3. LDAP Server Details
 
-LDAP Server: 192.168.253.160
-LDAP Port: 1389
-Base DN: dc=vs,dc=com
+- LDAP Server: `192.168.253.160`
+- LDAP Port: `1389`
+- Base DN: `dc=vs,dc=com`
 
 ## 4. LDAP Search Commands
 
+DNS lookup
+
+```
 nslookup oudldap
+```
 
+Search all LDAP entries
+
+```
 ldapsearch -x -h 192.168.253.160 -p 1389 -D "cn=Directory Manager" -w ldap@123 -b "dc=vs,dc=com" "(objectclass=*)"
+```
 
+Search production domain
+
+```
 ldapsearch -x -h 192.168.253.160 -p 1389 -D "cn=Directory Manager" -w ldap@123 -b "dc=prod,dc=vs,dc=com" "(objectclass=*)"
+```
 
+Search production users
+
+```
 ldapsearch -x -h 192.168.253.160 -p 1389 -D "cn=Directory Manager" -w ldap@123 -b "ou=people,dc=prod,dc=vs,dc=com" "(uid=*)"
+```
 
+Search proxy agent
+
+```
 ldapsearch -x -h 192.168.253.160 -p 1389 -D "cn=Directory Manager" -w ldap@123 -b "cn=proxyagent,ou=profile,dc=prod,dc=vs,dc=com" "(uid=*)"
+```
 
 ## 5. LDAP Directory Structure
 
 ### Production Domain
 
+```
 dn: dc=prod,dc=vs,dc=com
 objectClass: top
 objectClass: domain
 dc: prod
+```
 
+```
 dn: ou=people,dc=prod,dc=vs,dc=com
 objectClass: top
 objectClass: organizationalUnit
 ou: people
+```
 
+```
 dn: ou=group,dc=prod,dc=vs,dc=com
 objectClass: top
 objectClass: organizationalUnit
 ou: group
+```
 
 ### Development Domain
 
+```
 dn: dc=dev,dc=vs,dc=com
 objectClass: top
 objectClass: domain
 dc: dev
+```
 
+```
 dn: ou=people,dc=dev,dc=vs,dc=com
 objectClass: top
 objectClass: organizationalUnit
 ou: people
+```
 
+```
 dn: ou=group,dc=dev,dc=vs,dc=com
 objectClass: top
 objectClass: organizationalUnit
 ou: group
+```
 
 ### Test Domain
 
+```
 dn: dc=test,dc=vs,dc=com
 objectClass: top
 objectClass: domain
 dc: test
+```
 
+```
 dn: ou=people,dc=test,dc=vs,dc=com
 objectClass: top
 objectClass: organizationalUnit
 ou: people
+```
 
+```
 dn: ou=group,dc=test,dc=vs,dc=com
 objectClass: top
 objectClass: organizationalUnit
 ou: group
+```
 
 ### Create Directory Structure
 
+```
 ldapadd -h 192.168.253.161 -p 1389 -D "cn=Directory Manager" -w Simple@123 -f create_test_domain.ldif
+```
 
 ## 6. LDAP User Creation
 
-### Production User
+### Production User – `orad2`
 
+```
 dn: uid=orad2,ou=people,dc=prod,dc=vs,dc=com
 objectClass: top
 objectClass: person
@@ -114,9 +207,11 @@ userPassword: orad2@123
 uidNumber: 1002
 gidNumber: 1002
 homeDirectory: /export/home/orad2
+```
 
-### Development User
+### Development User – `orafe`
 
+```
 dn: uid=orafe,ou=people,dc=dev,dc=vs,dc=com
 objectClass: top
 objectClass: person
@@ -131,52 +226,80 @@ gidNumber: 1004
 homeDirectory: /export/home/orafe
 loginShell: /bin/bash
 userPassword: newpassword
+```
 
 ### Add LDAP Users
 
-ldapadd -h 192.168.253.160 -p 1389 -D "cn=Directory Manager" -w ldap@123 -f orad2.ldif
+Add production user
 
+```
+ldapadd -h 192.168.253.160 -p 1389 -D "cn=Directory Manager" -w ldap@123 -f orad2.ldif
+```
+
+Add development user
+
+```
 ldapadd -h 192.168.253.160 -p 1389 -D "cn=Directory Manager" -w ldap@123 -f orafe.ldif
+```
 
 ## 7. LDAP Group Creation
 
+### Production Group – `orad2`
+
+```
 dn: cn=orad2,ou=group,dc=prod,dc=vs,dc=com
 objectClass: top
 objectClass: posixGroup
 cn: orad2
 gidNumber: 1002
 memberUid: orad2
+```
 
 ### Add Group
 
+```
 ldapadd -h 192.168.253.160 -p 1389 -D "cn=Directory Manager" -w ldap@123 -f prodgroup.ldif
+```
 
 ## 8. Proxy Agent Creation
 
+### Proxy Agent LDIF
+
+```
 dn: cn=proxyagent,ou=profile,dc=prod,dc=vs,dc=com
 objectClass: top
 objectClass: person
 cn: proxyagent
 sn: proxyagent
 userPassword: {SSHA}examplePasswordHash
+```
 
 ### Add Proxy Agent
 
+```
 ldapadd -h 192.168.253.160 -p 1389 -D "cn=Directory Manager" -w ldap@123 -f testproxy.ldif
+```
 
 ### Modify Proxy Agent Password
 
+```
 dn: cn=proxyagent,ou=profile,dc=prod,dc=vs,dc=com
 changetype: modify
 replace: userPassword
 userPassword: newpassword
+```
 
+Apply proxy agent modification
+
+```
 ldapmodify -h 192.168.253.160 -p 1389 -D "cn=Directory Manager" -w ldap@123 -f solaris11_profile.ldif
+```
 
 ## 9. Solaris 11 LDAP Client Configuration
 
-### Manual Configuration
+### Manual Configuration – No Authentication
 
+```
 ldapclient manual \
 -a authenticationMethod=none \
 -a defaultSearchBase=dc=dev,dc=vs,dc=com \
@@ -185,9 +308,11 @@ ldapclient manual \
 -a proxyDN=cn=proxyagent,ou=people,dc=dev,dc=vs,dc=com \
 -a proxyPassword=newpassword \
 -a serviceSearchDescriptor=passwd:ou=people,dc=dev,dc=vs,dc=com
+```
 
 ### Simple Authentication
 
+```
 ldapclient manual \
 -a authenticationMethod=simple \
 -a defaultSearchBase=dc=dev,dc=vs,dc=com \
@@ -196,9 +321,11 @@ ldapclient manual \
 -a proxyDN=cn=proxyagent,ou=people,dc=dev,dc=vs,dc=com \
 -a proxyPassword=newpassword \
 -a serviceSearchDescriptor=passwd:ou=people,dc=dev,dc=vs,dc=com
+```
 
 ### TLS Authentication
 
+```
 ldapclient manual \
 -a authenticationMethod=tls:simple \
 -a defaultSearchBase=dc=dev,dc=vs,dc=com \
@@ -207,22 +334,28 @@ ldapclient manual \
 -a proxyDN=cn=proxyagent,ou=people,dc=dev,dc=vs,dc=com \
 -a proxyPassword=newpassword \
 -a serviceSearchDescriptor=passwd:ou=people,dc=dev,dc=vs,dc=com
+```
 
 ### Initialize LDAP Client Using Profile
 
+```
 ldapclient init \
 -a proxyDN="cn=proxyagent,ou=profile,dc=prod,dc=vs,dc=com" \
 -a domainname=vs.com \
 -a profilename=solaris_11 \
 -a proxypassword=Proxy@123 \
 192.168.253.161:1389
+```
 
 ### Check LDAP Client Configuration
 
+```
 ldapclient list
+```
 
-Example output:
+### Example Output
 
+```
 NS_LDAP_FILE_VERSION= 2.0
 NS_LDAP_BINDDN= cn=proxyagent,ou=people,dc=dev,dc=vs,dc=com
 NS_LDAP_BINDPASSWD= {NS1}6837c9c206c5c5c2e3a45e
@@ -231,11 +364,13 @@ NS_LDAP_AUTH= simple
 NS_LDAP_SERVER_PREF= 192.168.253.160:1389
 NS_LDAP_CACHETTL= 0
 NS_LDAP_SERVICE_SEARCH_DESC= passwd:ou=people,dc=dev,dc=vs,dc=com
+```
 
 ## 10. Solaris LDAP Profile Configuration
 
-### solaris11_profile.ldif
+### `solaris11_profile.ldif`
 
+```
 dn: cn=solaris_11,ou=profile,dc=vs,dc=com
 objectClass: top
 objectClass: DUAConfigProfile
@@ -248,26 +383,36 @@ defaultSearchScope: one
 bindTimeLimit: 10
 searchTimeLimit: 30
 profileTTL: 43200
+```
 
 ### Add Profile
 
+```
 ldapadd -h 192.168.253.161 -p 1389 -D "cn=Directory Manager" -w Simple@123 -f solaris11_profile.ldif
+```
 
 ## 11. LDAP Password Modification
 
+### Password Modification LDIF
+
+```
 dn: uid=orafe,ou=people,dc=dev,dc=vs,dc=com
 changetype: modify
 replace: userPassword
 userPassword: {SSHA}MVMWWchRgrRZOdvm18QjdvrUStJ4CT1p
+```
 
 ### Apply Password Changes
 
+```
 ldapmodify -h 192.168.253.160 -p 1389 -D "cn=Directory Manager" -w ldap@123 -f passtest.ldif
+```
 
 ## 12. Adding shadowAccount Attributes
 
-### modify_shadow.ldif
+### `modify_shadow.ldif`
 
+```
 dn: uid=orad2,ou=people,dc=prod,dc=vs,dc=com
 changetype: modify
 add: objectClass
@@ -284,28 +429,36 @@ shadowMax: 99999
 -
 add: shadowWarning
 shadowWarning: 7
+```
 
 ### Apply Changes
 
+```
 ldapmodify -h 192.168.253.161 -p 1389 -D "cn=Directory Manager" -w Simple@123 -f modify_shadow.ldif
+```
 
 ## 13. LDAP Access Control Instructions (ACI)
 
-### modify_aci.ldif
+### `modify_aci.ldif`
 
+```
 dn: ou=people,dc=prod,dc=vs,dc=com
 changetype: modify
 add: aci
 aci: (targetattr="*")(version 3.0; acl "Allow Read"; allow (read, search, compare) userdn="ldap:///anyone";)
+```
 
 ### Apply ACI
 
+```
 ldapmodify -h 192.168.253.161 -p 1389 -D "cn=Directory Manager" -w Simple@123 -f modify_aci.ldif
+```
 
 ## 14. RHEL 7 SSSD Configuration
 
-### /etc/sssd/sssd.conf
+### `/etc/sssd/sssd.conf`
 
+```
 [sssd]
 config_file_version = 2
 domains = vs.com
@@ -322,9 +475,11 @@ ldap_default_bind_dn = cn=Directory Manager,dc=vs,dc=com
 ldap_tls_reqcert = never
 ldap_default_authtok_type = password
 ldap_default_authtok = Simple@123
+```
 
-### /etc/pam.d/system-auth
+### `/etc/pam.d/system-auth`
 
+```
 #%PAM-1.0
 
 auth required pam_env.so
@@ -350,9 +505,11 @@ session required pam_limits.so
 session [success=1 default=ignore] pam_succeed_if.so service in crond quiet use_uid
 session required pam_unix.so
 session optional pam_sss.so
+```
 
-### /etc/pam.d/password-auth
+### `/etc/pam.d/password-auth`
 
+```
 #%PAM-1.0
 
 auth required pam_env.so
@@ -378,11 +535,13 @@ session required pam_limits.so
 session [success=1 default=ignore] pam_succeed_if.so service in crond quiet use_uid
 session required pam_unix.so
 session optional pam_sss.so
+```
 
 ## 15. SSH PAM Configuration
 
-### /etc/pam.d/sshd
+### `/etc/pam.d/sshd`
 
+```
 auth required pam_env.so
 auth sufficient pam_unix.so try_first_pass
 auth sufficient pam_sss.so use_first_pass
@@ -400,11 +559,13 @@ session required pam_limits.so
 session required pam_unix.so
 session optional pam_sss.so
 session required pam_mkhomedir.so skel=/etc/skel/ umask=0022
+```
 
 ## 16. Solaris PAM Configuration
 
-### /etc/pam.d/sshd
+### `/etc/pam.d/sshd`
 
+```
 auth required pam_env.so
 auth required pam_shells.so
 auth requisite pam_nologin.so
@@ -423,17 +584,21 @@ session required pam_limits.so
 session required pam_unix.so
 session optional pam_ldap.so
 session required pam_mkhomedir.so skel=/etc/skel/ umask=0022
+```
 
-### /etc/pam.conf
+### `/etc/pam.conf`
 
+```
 # The libpam library searches for PAM entries in the following order:
 # /etc/pam.conf for service entries
 # /etc/pam.d/<service>
 # /etc/pam.conf for "other" entries
 # /etc/pam.d/other
+```
 
-### /etc/pam.d/other
+### `/etc/pam.d/other`
 
+```
 auth definitive pam_user_policy.so.1
 auth requisite pam_authtok_get.so.1
 auth required pam_unix_auth.so.1
@@ -451,54 +616,104 @@ session optional pam_fm_notify.so.1
 password definitive pam_user_policy.so.1
 password include pam_authtok_common
 password required pam_authtok_store.so.1
+```
 
-### /etc/pam.d/sshd-password
+### `/etc/pam.d/sshd-password`
 
+```
 auth definitive pam_user_policy.so.1
 auth required pam_unix_auth.so.1
 auth required pam_unix_cred.so.1 noannotation
+```
 
 ## 17. Solaris Audit Syslog Configuration
 
+Configure audit syslog plugin
+
+```
 auditconfig -setplugin audit_syslog active p_flags=lo,+as,-ss
+```
 
+Edit syslog configuration
+
+```
 vi /etc/syslog.conf
+```
 
-Add:
+Add this entry to `/etc/syslog.conf`
 
+```
 audit.notice /var/adm/auditlog
+```
 
+Create audit log file
+
+```
 touch /var/adm/auditlog
-chmod 640 /var/adm/auditlog
+```
 
+Set permissions
+
+```
+chmod 640 /var/adm/auditlog
+```
+
+Check system log service
+
+```
 svcs system-log
+```
+
+Refresh system log service
+
+```
 svcadm refresh system/system-log:default
+```
+
+Restart audit
+
+```
 audit -s
+```
 
 ## 18. OUD Trust Manager and StartTLS Configuration
 
 ### Create Trust Manager Provider
 
+```
 ./dsconfig create-trust-manager-provider \
 --provider-name "TrustManager" \
 --type file-based \
 --set trust-store-file:/export/home/ldapadm/Oracle/Middleware/Oracle_Home/asinst_1/OUD/config/truststore
+```
 
 ### Configure LDAP Connection Handler
 
+```
 ./dsconfig set-connection-handler-prop \
 --handler-name "LDAP Connection Handler" \
 --set key-manager-provider:JKS \
 --set trust-manager-provider:TrustManager \
 --set allow-start-tls:true
+```
 
 ### Restart OUD
 
+Stop OUD
+
+```
 ./stop-ds
+```
+
+Start OUD
+
+```
 ./start-ds
+```
 
 ### Solaris TLS Client Configuration
 
+```
 ldapclient manual \
 -a authenticationMethod=tls:simple \
 -a defaultSearchBase=dc=dev,dc=vs,dc=com \
@@ -507,9 +722,15 @@ ldapclient manual \
 -a proxyDN=cn=proxyagent,ou=people,dc=dev,dc=vs,dc=com \
 -a proxyPassword=newpassword \
 -a serviceSearchDescriptor=passwd:ou=people,dc=dev,dc=vs,dc=com
+```
 
 ## 19. OUD Replication Configuration
 
+### Enable Replication
+
+The original notes use placeholders for source host, target host and admin password. Replace them with the actual configured values before running.
+
+```
 dsreplication enable \
 --host1 <source-host> \
 --port1 4444 \
@@ -527,91 +748,146 @@ dsreplication enable \
 --secureReplication \
 --trustAll \
 --no-prompt
+```
 
 ## 20. OUD Password Storage Scheme
 
 ### Check Default Password Policy
 
+```
 dsconfig get-password-policy-prop \
 --policy-name "Default Password Policy" \
 --advanced
+```
 
 ### Change Password Storage Scheme
 
+The original notes show a scheme placeholder:
+
+```
 dsconfig set-password-policy-prop \
 --policy-name "Default Password Policy" \
 --set default-password-storage-scheme:<scheme>
+```
 
-### Example: CRYPT
+### Example – CRYPT
 
+```
 dsconfig set-password-policy-prop \
 --policy-name "Default Password Policy" \
 --set default-password-storage-scheme:CRYPT
+```
 
 ## 21. LDAP User Verification
 
+### Search LDAP User
+
+```
 ldapsearch -x -h 192.168.253.161 -p 1389 -D "cn=Directory Manager" -w Simple@123 -b "dc=vs,dc=com" "(uid=orad2)"
+```
 
+### Check System Users
+
+```
 getent passwd
+```
 
+### Test SSH Login
+
+```
 ssh orad2@testunix01.vs.com
+```
 
 ## 22. OUD Logs
 
+### Navigate to OUD Logs Directory
+
+```
 cd Oracle/Middleware/Oracle_Home/asinst_1/OUD/logs/
+```
+
+### List Log Files
+
+```
 ls -lrth
+```
+
+### Monitor Access Log
+
+```
 tail -f access.log
+```
 
 ## 23. Useful LDAP Commands
 
 ### Search All LDAP Entries
 
+```
 ldapsearch -x -h 192.168.253.160 -p 1389 -D "cn=Directory Manager" -w ldap@123 -b "dc=vs,dc=com" "(objectclass=*)"
+```
 
 ### Search Production Users
 
+```
 ldapsearch -x -h 192.168.253.160 -p 1389 -D "cn=Directory Manager" -w ldap@123 -b "ou=people,dc=prod,dc=vs,dc=com" "(uid=*)"
+```
 
 ### Add LDAP Entry
 
+```
 ldapadd -h 192.168.253.160 -p 1389 -D "cn=Directory Manager" -w ldap@123 -f filename.ldif
+```
 
 ### Modify LDAP Entry
 
+```
 ldapmodify -h 192.168.253.160 -p 1389 -D "cn=Directory Manager" -w ldap@123 -f filename.ldif
+```
 
 ### Check LDAP Client Configuration
 
+```
 ldapclient list
+```
 
 ### Modify LDAP Client Authentication
 
+```
 ldapclient mod -a authenticationMethod=simple
+```
 
 ### Check System Users
 
+```
 getent passwd
+```
 
 ### Monitor OUD Logs
 
+```
 tail -f access.log
+```
 
 ## 24. Important Configuration Notes
 
-- LDAP server addresses used in the notes: 192.168.253.160 and 192.168.253.161.
-- LDAP ports used: 1389, 1636 and 20002.
-- Directory suffixes: dc=vs,dc=com; dc=prod,dc=vs,dc=com; dc=dev,dc=vs,dc=com; dc=test,dc=vs,dc=com.
+- LDAP server addresses used: `192.168.253.160` and `192.168.253.161`.
+- LDAP ports used: `1389`, `1636` and `20002`.
+- Directory suffixes:
+  - `dc=vs,dc=com`
+  - `dc=prod,dc=vs,dc=com`
+  - `dc=dev,dc=vs,dc=com`
+  - `dc=test,dc=vs,dc=com`
 - Proxy agent DNs vary between examples. Confirm the configured DN before using client commands.
-- Solaris profile DN: cn=solaris_11,ou=profile,dc=vs,dc=com.
-- Authentication methods shown: none, simple and tls:simple.
+- Solaris profile DN: `cn=solaris_11,ou=profile,dc=vs,dc=com`.
+- Authentication methods shown: `none`, `simple` and `tls:simple`.
 - RHEL SSSD examples use LDAP identity and authentication providers.
 - PAM examples are specific to the operating systems shown.
 - Replication uses placeholders for source and target hosts.
-- Password storage scheme example uses CRYPT.
+- Password storage scheme example uses `CRYPT`.
 
 ## 25. Security Reminder
 
-The examples contain sample passwords and password hashes. Replace them with secure credentials before production use.
+- The examples contain sample passwords and password hashes. Replace them with secure credentials before production use.
+- Avoid passing passwords directly in command-line arguments because they may be exposed in shell history and process listings.
 
-Avoid passing passwords directly in command-line arguments because they may be exposed in shell history and process listings.
-```
+Note: Idhu original notes-la irundha commands and configurations based panninadhu. Replication placeholders, sample passwords, proxy DN differences ellam source-la irundha maathiriye preserve pannirukken; actual environment values verify pannitu execute pannu.
