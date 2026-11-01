@@ -19,25 +19,27 @@
     # OS DETECTION
     # ============================================================
 
-    - name: Detect CentOS 7
+    - name: Detect operating system
+      ansible.builtin.raw: |
+        if [ -f /etc/redhat-release ]; then
+          cat /etc/redhat-release
+        else
+          uname -s
+        fi
+      register: os_detection
+      changed_when: false
+
+    - name: Set OS variables
       set_fact:
-        is_centos7: >-
-          {{
-            ansible_distribution == 'CentOS'
-            and ansible_distribution_major_version == '7'
-          }}
+        is_solaris: "{{ 'SunOS' in os_detection.stdout }}"
+        is_centos7: "{{ 'CentOS Linux release 7' in os_detection.stdout }}"
 
     - name: Display OS information
       debug:
         msg:
-          - "===================================================="
-          - "OS DETECTION"
-          - "===================================================="
-          - "Distribution        : {{ ansible_distribution }}"
-          - "Version             : {{ ansible_distribution_version }}"
-          - "Major Version       : {{ ansible_distribution_major_version }}"
-          - "CentOS 7            : {{ is_centos7 }}"
-          - "===================================================="
+          - "Detected OS: {{ os_detection.stdout | trim }}"
+          - "Solaris: {{ is_solaris }}"
+          - "CentOS 7: {{ is_centos7 }}"
 
     # ============================================================
     # CENTOS 7 ONLY - BACKUP OLD YUM REPOSITORIES
