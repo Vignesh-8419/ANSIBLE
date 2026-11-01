@@ -172,6 +172,7 @@
         cmd: "{{ ansible_python_interpreter }} --version"
       register: ansible_python_version
       changed_when: false
+      when: not is_solaris
 
     - name: Display active Ansible Python
       debug:
