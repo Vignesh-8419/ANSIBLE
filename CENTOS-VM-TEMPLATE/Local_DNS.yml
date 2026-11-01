@@ -9,7 +9,7 @@
     # DNS server IP (used for nslookup only)
     dns_server_ip: "192.168.253.1"
     # API Token
-    dns_token: "9a3e274c36aee5b2d8075c6411af68756f0434a5be500d54af5d3d95ddbd7fe4"
+    dns_token: "19089ed0460d3e8cf0b15d5c1aad1826b8bc89c67279a153bd423e84a6d49bd7"
   tasks:
     ###########################################################################
     # Determine Target IP
