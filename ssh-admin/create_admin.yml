@@ -197,6 +197,7 @@
           - "Python 3            : INSTALLED"
           - "Ansible interpreter : /usr/bin/python3"
           - "===================================================="
+      when: not is_solaris
 
     # ============================================================
     # ADMIN USER
