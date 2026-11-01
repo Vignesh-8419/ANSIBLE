@@ -1,5 +1,3 @@
-Sorry da, puriyudhu. You want everything in ONE single code block, including all commands, configurations, LDIF files and notes — not separate code blocks inside the Markdown.
-
 ```
 # Oracle Unified Directory (OUD) – Complete LDAP Configuration
 
