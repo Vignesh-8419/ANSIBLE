@@ -134,12 +134,14 @@
       package:
         name: python3
         state: present
+      when: not is_solaris
 
     - name: Verify Python 3 executable
       command:
         cmd: /usr/bin/python3 --version
       register: python3_version
       changed_when: false
+      when: not is_solaris
 
     # ============================================================
     # SWITCH ANSIBLE TO PYTHON 3
@@ -148,6 +150,7 @@
     - name: Set Ansible Python interpreter to Python 3
       set_fact:
         ansible_python_interpreter: /usr/bin/python3
+      when: not is_solaris
 
     - name: Display Python configuration
       debug:
@@ -158,6 +161,7 @@
           - "Python 3 version      : {{ python3_version.stdout }}"
           - "Ansible interpreter   : {{ ansible_python_interpreter }}"
           - "===================================================="
+      when: not is_solaris
 
     # ============================================================
     # VERIFY ANSIBLE PYTHON 3
