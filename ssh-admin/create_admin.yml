@@ -179,6 +179,7 @@
         msg:
           - "Ansible Python executable : {{ ansible_python_interpreter }}"
           - "Ansible Python version    : {{ ansible_python_version.stdout }}"
+      when: not is_solaris
 
     # ============================================================
     # NON-CENTOS 7 MESSAGE
