@@ -2,12 +2,12 @@
 set -e
 
 # ---------------- CONFIG ----------------
-NETBOX_URL="https://192.168.253.143/api"
-NETBOX_TOKEN="83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
+NETBOX_URL="${NETBOX_URL:-https://192.168.253.143/api}"
+: "${NETBOX_TOKEN:?Export NETBOX_TOKEN before running this script}"
 HDR="Content-Type: application/json"
 
-SSH_USER="admin"
-SSH_PASS="Vigneshv12$"
+SSH_USER="${SSH_USER:-admin}"
+SSH_PASS="${SSH_PASS:-}"
 
 SITE_ID=1
 DEVICETYPE_ID=1
@@ -115,6 +115,14 @@ echo ""
 
 # ---------------- HELPERS ----------------
 
+ssh_remote() {
+    sshpass -p "$SSH_PASS" ssh \
+        -o ConnectTimeout=5 \
+        -o StrictHostKeyChecking=no \
+        -o BatchMode=no \
+        "${SSH_USER}@${REMOTE_HOST}" "$1"
+}
+
 slugify() {
     echo "$1" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | sed 's/[^a-z0-9-]//g'
 }
@@ -177,6 +185,12 @@ echo "1) Fetch automatically via SSH"
 echo "2) Type manually"
 
 read -p "Choice [1-2]: " SOURCE_CHOICE
+
+if [ "$SOURCE_CHOICE" = "1" ] && [ -z "$SSH_PASS" ]; then
+    echo "ERROR: Export SSH_PASS before using automatic SSH discovery."
+    exit 1
+fi
+
 
 # ---------------- DEVICE STATUS ----------------
 
@@ -395,10 +409,13 @@ if [ "$SOURCE_CHOICE" = "1" ]; then
 
     log "${GREEN}✓ Host reachable${NC}"
 
-    HOSTNAME=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
-        ${SSH_USER}@${REMOTE_HOST} hostname | xargs)
+    # --------------------------------------------------
+    # OS DETECTION
+    # --------------------------------------------------
 
+    OS_TYPE=$(ssh_remote "uname -s" 2>/dev/null | tr -d '\r')
+
+    HOSTNAME=$(ssh_remote "hostname" 2>/dev/null | xargs)
     HOSTNAME=$(echo "$HOSTNAME" | tr -d '\r')
 
     if [ -z "$HOSTNAME" ]; then
@@ -408,49 +425,94 @@ if [ "$SOURCE_CHOICE" = "1" ]; then
         continue
     fi
 
-    UPTIME=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
-        ${SSH_USER}@${REMOTE_HOST} "uptime -p" 2>/dev/null)
+    KERNEL=$(ssh_remote "uname -r" 2>/dev/null | tr -d '\r')
 
-    KERNEL=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
-        ${SSH_USER}@${REMOTE_HOST} "uname -r" 2>/dev/null)
+    if [ "$OS_TYPE" = "Linux" ]; then
 
-    IFACE_DATA=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
-        ${SSH_USER}@${REMOTE_HOST} \
-        "ip -o -4 addr show scope global | head -1")
+        # Linux discovery
+        UPTIME=$(ssh_remote "uptime -p" 2>/dev/null)
 
-    IFACE=$(echo "$IFACE_DATA" | awk '{print $2}')
-    IPADDR=$(echo "$IFACE_DATA" | awk '{print $4}')
+        IFACE_DATA=$(ssh_remote \
+            "ip -o -4 addr show scope global | head -1")
 
-    MAC=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
-        ${SSH_USER}@${REMOTE_HOST} \
-        "cat /sys/class/net/$IFACE/address" \
-        | tr '[:lower:]' '[:upper:]')
+        IFACE=$(echo "$IFACE_DATA" | awk '{print $2}')
+        IPADDR=$(echo "$IFACE_DATA" | awk '{print $4}' | cut -d/ -f1)
 
-    CPU_COUNT=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
-        ${SSH_USER}@${REMOTE_HOST} "nproc")
+        if [ -n "$IFACE" ]; then
+            MAC=$(ssh_remote \
+                "cat /sys/class/net/$IFACE/address" 2>/dev/null \
+                | tr '[:lower:]' '[:upper:]')
+        else
+            MAC=""
+        fi
 
-        RAM_GB=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
-        ${SSH_USER}@${REMOTE_HOST} \
-    "   awk '/MemTotal/ {printf \"%d\", (\$2/1024/1024)+0.5}' /proc/meminfo")
+        CPU_COUNT=$(ssh_remote "nproc" 2>/dev/null)
 
-    DISK_SIZE=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
-        ${SSH_USER}@${REMOTE_HOST} \
-        "lsblk -bdno SIZE | awk '{s+=\$1} END {printf \"%.0f GB\",s/1024/1024/1024}'")
+        RAM_GB=$(ssh_remote \
+            "awk '/MemTotal/ {printf \"%d\", (\$2/1024/1024)+0.5}' /proc/meminfo" 2>/dev/null)
 
-    VMTYPE=$(sshpass -p "$SSH_PASS" ssh \
-        -o StrictHostKeyChecking=no \
-        ${SSH_USER}@${REMOTE_HOST} \
-        "systemd-detect-virt" 2>/dev/null)
+        DISK_SIZE=$(ssh_remote \
+            "lsblk -bdno SIZE | awk '{s+=\$1} END {if(s>0) printf \"%.0f GB\",s/1024/1024/1024; else print \"N/A\"}'" 2>/dev/null)
 
-    [ -z "$VMTYPE" ] && VMTYPE="Physical"
+        VMTYPE=$(ssh_remote "systemd-detect-virt" 2>/dev/null)
+        [ -z "$VMTYPE" ] && VMTYPE="Physical"
 
+    elif [ "$OS_TYPE" = "SunOS" ]; then
+
+        # Oracle Solaris 11.x discovery
+        UPTIME=$(ssh_remote "uptime" 2>/dev/null)
+
+        # ADDROBJ format is typically net0/v4; map it to datalink net0.
+        IFACE_DATA=$(ssh_remote \
+            "ipadm show-addr -p -o ADDROBJ,ADDR 2>/dev/null | nawk -F: '\$2 ~ /^[0-9]+\\./ && \$2 !~ /^127\\./ {split(\$1,a,\"/\"); split(\$2,b,\"/\"); print a[1],b[1]; exit}'")
+
+        IFACE=$(echo "$IFACE_DATA" | awk '{print $1}')
+        IPADDR=$(echo "$IFACE_DATA" | awk '{print $2}' | cut -d/ -f1)
+
+        if [ -n "$IFACE" ]; then
+            MAC=$(ssh_remote \
+                "dladm show-phys -m -o LINK,ADDRESS 2>/dev/null | nawk -v iface='$IFACE' '\$1==iface {print \$2; exit}'; dladm show-vnic -p -o LINK,MACADDRESS 2>/dev/null | nawk -F: -v iface='$IFACE' '\$1==iface {print \$2; exit}'" \
+                | awk 'NF {print; exit}' \
+                | tr '[:lower:]' '[:upper:]')
+        else
+            MAC=""
+        fi
+
+        CPU_COUNT=$(ssh_remote "psrinfo 2>/dev/null | wc -l | nawk '{print \$1}'")
+
+        RAM_GB=$(ssh_remote \
+            "prtconf 2>/dev/null | nawk '/Memory size:/ {printf \"%d\", (\$3/1024)+0.5; exit}'")
+
+        # ZFS pool size in bytes; this is not raw physical disk capacity.
+        DISK_SIZE=$(ssh_remote \
+            "zpool list -Hp -o size 2>/dev/null | nawk '{s+=\$1} END {if(s>0) printf \"%.0f GB\",s/1073741824; else print \"N/A\"}'")
+
+        VMTYPE=$(ssh_remote \
+            "if command -v virtinfo >/dev/null 2>&1; then virtinfo -a 2>/dev/null | nawk 'NF {print; exit}'; fi")
+        [ -z "$VMTYPE" ] && VMTYPE="Solaris (Physical/Unknown)"
+
+    else
+
+        log "${RED}Unsupported operating system: ${OS_TYPE}${NC}"
+        FAILED_LIST+="$REMOTE_HOST"$'\n'
+        ((COUNT++))
+        continue
+
+    fi
+
+    [ -z "$UPTIME" ] && UPTIME="N/A"
+    [ -z "$CPU_COUNT" ] && CPU_COUNT="N/A"
+    [ -z "$RAM_GB" ] && RAM_GB="N/A"
+    [ -z "$DISK_SIZE" ] && DISK_SIZE="N/A"
+
+    if [ -z "$IFACE" ] || [ -z "$IPADDR" ]; then
+        log "${RED}Unable to determine IPv4 interface/address on ${HOSTNAME}${NC}"
+        FAILED_LIST+="$HOSTNAME"$'\n'
+        ((COUNT++))
+        continue
+    fi
+
+    [ -z "$MAC" ] && MAC=""
 fi
 
 log "${WHITE}Hostname : ${HOSTNAME}${NC}"
