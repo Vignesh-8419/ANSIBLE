@@ -452,7 +452,7 @@ if [ "$SOURCE_CHOICE" = "1" ]; then
                 ;;
         esac
     ' 2>/dev/null | xargs)
-    HOSTNAME=$(echo "$HOSTNAME" | tr -d '\r')
+    HOSTNAME=$(printf '%s' "$HOSTNAME" | tr -d '\r' | sed 's/[-.]*$//')
 
     # Solaris hostname may return only the nodename. Ensure its DNS suffix
     # is present (default vgs.com); retain any already-qualified hostname.
@@ -538,9 +538,47 @@ if [ "$SOURCE_CHOICE" = "1" ]; then
         RAM_GB=$(ssh_remote \
             "prtconf 2>/dev/null | nawk '/Memory size:/ {printf \"%d\", (\$3/1024)+0.5; exit}'")
 
-        # ZFS pool size in bytes; this is not raw physical disk capacity.
-        DISK_SIZE=$(ssh_remote \
-            "zpool list -Hp -o size 2>/dev/null | nawk '{s+=\$1} END {if(s>0) printf \"%.0f GB\",s/1073741824; else print \"N/A\"}'")
+        # Read disk capacities from Solaris format output.
+        # Example: <VMware-Virtual disk-2.0-100.00GB>
+        # Fall back to ZFS pool capacity if format does not report a size.
+        DISK_SIZE=$(ssh_remote '
+            format </dev/null 2>/dev/null |
+            sed -n "s/.*-\\([0-9][0-9.]*\\)\\([TtGgMmKk][Bb]\\)>.*/\\1 \\2/p" |
+            nawk "
+                {
+                    value=\$1+0
+                    unit=toupper(\$2)
+                    if (unit == \"TB\") value=value*1024
+                    else if (unit == \"MB\") value=value/1024
+                    else if (unit == \"KB\") value=value/(1024*1024)
+                    total+=value
+                }
+                END {
+                    if (total>0) printf \"%.0f GB\\n\", total
+                }"
+        ' 2>/dev/null | tail -1 | tr -d '\\r')
+
+        if [ -z "$DISK_SIZE" ]; then
+            DISK_SIZE=$(ssh_remote '
+                zpool list -H -o size 2>/dev/null |
+                nawk "
+                    {
+                        raw=toupper(\$1)
+                        value=raw
+                        sub(/[TGMK]$/, \"\", value)
+                        unit=substr(raw,length(raw),1)
+                        factor=1
+                        if (unit == \"T\") factor=1024
+                        else if (unit == \"M\") factor=1/1024
+                        else if (unit == \"K\") factor=1/(1024*1024)
+                        total += value * factor
+                    }
+                    END {
+                        if (total>0) printf \"%.0f GB\\n\", total
+                        else print \"N/A\"
+                    }"
+            ' 2>/dev/null | tail -1 | tr -d '\\r')
+        fi
 
         VMTYPE=$(ssh_remote \
             "if command -v virtinfo >/dev/null 2>&1; then virtinfo -a 2>/dev/null | nawk 'NF {print; exit}'; fi")
