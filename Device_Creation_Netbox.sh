@@ -9,7 +9,6 @@ HDR="Content-Type: application/json"
 SSH_USER="admin"
 SSH_PASS="Vigneshv12$"
 
-
 SITE_ID=1
 DEVICETYPE_ID=1
 DEVICEROLE_ID=1
@@ -416,7 +415,42 @@ if [ "$SOURCE_CHOICE" = "1" ]; then
 
     OS_TYPE=$(ssh_remote "uname -s" 2>/dev/null | tr -d '\r')
 
-    HOSTNAME=$(ssh_remote "hostname" 2>/dev/null | xargs)
+    # Resolve the FQDN on the remote host. Prefer hostname -f, then
+    # canonical getent/hosts data, then DNS search/domain from resolv.conf.
+    HOSTNAME=$(ssh_remote '
+        short=$(hostname 2>/dev/null | tr -d "\\r")
+        fqdn=$(hostname -f 2>/dev/null | tr -d "\\r")
+        case "$fqdn" in
+            *.*) printf "%s\n" "$fqdn"; exit 0 ;;
+        esac
+
+        if command -v getent >/dev/null 2>&1; then
+            fqdn=$(getent hosts "$short" 2>/dev/null | nawk "
+                NR==1 {
+                    for (i=2; i<=NF; i++)
+                        if (\$i ~ /\\./) { print \$i; exit }
+                }")
+        fi
+        case "$fqdn" in
+            *.*) printf "%s\n" "$fqdn"; exit 0 ;;
+        esac
+
+        domain=$(nawk "
+            \\$1 == \"search\" { print \\$2; exit }
+            \\$1 == \"domain\" { print \\$2; exit }
+        " /etc/resolv.conf 2>/dev/null)
+
+        case "$short" in
+            *.*) printf "%s\n" "$short" ;;
+            *)
+                if [ -n "$domain" ]; then
+                    printf "%s.%s\n" "$short" "$domain"
+                else
+                    printf "%s\n" "$short"
+                fi
+                ;;
+        esac
+    ' 2>/dev/null | xargs)
     HOSTNAME=$(echo "$HOSTNAME" | tr -d '\r')
 
     if [ -z "$HOSTNAME" ]; then
@@ -437,7 +471,12 @@ if [ "$SOURCE_CHOICE" = "1" ]; then
             "ip -o -4 addr show scope global | head -1")
 
         IFACE=$(echo "$IFACE_DATA" | awk '{print $2}')
-        IPADDR=$(echo "$IFACE_DATA" | awk '{print $4}' | cut -d/ -f1)
+        IP_WITH_CIDR=$(echo "$IFACE_DATA" | awk '{print $4}')
+        IPADDR=${IP_WITH_CIDR%%/*}
+        IP_CIDR=""
+        if [[ "$IP_WITH_CIDR" == */* ]]; then
+            IP_CIDR="/${IP_WITH_CIDR##*/}"
+        fi
 
         if [ -n "$IFACE" ]; then
             MAC=$(ssh_remote \
@@ -468,7 +507,12 @@ if [ "$SOURCE_CHOICE" = "1" ]; then
             "ipadm show-addr -p -o ADDROBJ,ADDR 2>/dev/null | nawk -F: '\$2 ~ /^[0-9]+\\./ && \$2 !~ /^127\\./ {split(\$1,a,\"/\"); split(\$2,b,\"/\"); print a[1],b[1]; exit}'")
 
         IFACE=$(echo "$IFACE_DATA" | awk '{print $1}')
-        IPADDR=$(echo "$IFACE_DATA" | awk '{print $2}' | cut -d/ -f1)
+        IP_WITH_CIDR=$(echo "$IFACE_DATA" | awk '{print $2}')
+        IPADDR=${IP_WITH_CIDR%%/*}
+        IP_CIDR=""
+        if [[ "$IP_WITH_CIDR" == */* ]]; then
+            IP_CIDR="/${IP_WITH_CIDR##*/}"
+        fi
 
         if [ -n "$IFACE" ]; then
             MAC=$(ssh_remote \
@@ -505,6 +549,17 @@ if [ "$SOURCE_CHOICE" = "1" ]; then
     [ -z "$CPU_COUNT" ] && CPU_COUNT="N/A"
     [ -z "$RAM_GB" ] && RAM_GB="N/A"
     [ -z "$DISK_SIZE" ] && DISK_SIZE="N/A"
+
+    # Keep the real subnet prefix for NetBox. Auto-discovery obtains it from
+    # Linux ip / Solaris ipadm; manual input may include /prefix explicitly.
+    IPADDR=$(printf '%s' "$IPADDR" | sed 's,/.*,,; s/[[:space:]]//g')
+    if [ -z "${IP_CIDR:-}" ]; then
+        case "${IPADDRS:-}" in
+            */*) IP_CIDR="/${IPADDRS##*/}" ;;
+            *)   IP_CIDR="/32" ;;
+        esac
+    fi
+    IP_ADDRESS="${IPADDR}${IP_CIDR}"
 
     if [ -z "$IFACE" ] || [ -z "$IPADDR" ]; then
         log "${RED}Unable to determine IPv4 interface/address on ${HOSTNAME}${NC}"
@@ -647,27 +702,35 @@ if [ -n "$MAC" ]; then
 fi
 
 # 4. IP Sync
-IP_ID=$(curl -sk -H "Authorization: Token $NETBOX_TOKEN" \
-    "$NETBOX_URL/ipam/ip-addresses/?address=$(urlencode "$IPADDR")" \
-    | jq -r '.results[0].id // empty')
+# Find an existing NetBox IP by host address regardless of its old prefix,
+# so an existing /32 can be corrected to the discovered /24.
+IP_LIST_JSON=$(curl -sk \
+    -H "Authorization: Token $NETBOX_TOKEN" \
+    "$NETBOX_URL/ipam/ip-addresses/?limit=1000")
 
-if [ -z "$IP_ID" ] || [ "$IP_ID" == "null" ]; then
+IP_ID=$(echo "$IP_LIST_JSON" | jq -r --arg ip "$IPADDR" \
+    '.results[]? | select((.address | split("/")[0]) == $ip) | .id' | head -1)
+
+if [ -z "$IP_ID" ] || [ "$IP_ID" = "null" ]; then
 
     IP_ID=$(curl -sk -X POST "$NETBOX_URL/ipam/ip-addresses/" \
         -H "$HDR" \
         -H "Authorization: Token $NETBOX_TOKEN" \
-        -d "{\"address\":\"$IPADDR\",\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID,\"status\":\"active\"}" \
-        | jq -r '.id')
+        -d "{\"address\":\"$IP_ADDRESS\",\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID,\"status\":\"active\"}" \
+        | jq -r '.id // empty')
 
 else
 
     curl -sk -X PATCH "$NETBOX_URL/ipam/ip-addresses/$IP_ID/" \
         -H "$HDR" \
         -H "Authorization: Token $NETBOX_TOKEN" \
-        -d "{\"assigned_object_id\":$INTERFACE_ID}" > /dev/null
+        -d "{\"address\":\"$IP_ADDRESS\",\"assigned_object_type\":\"dcim.interface\",\"assigned_object_id\":$INTERFACE_ID,\"status\":\"active\"}" \
+        >/dev/null
+
 fi
 
 echo "Assigning Primary IP..."
+echo "IP_ADDRESS=$IP_ADDRESS"
 echo "IP_ID=$IP_ID"
 
 curl -sk -X PATCH "$NETBOX_URL/dcim/devices/$DEVICE_ID/" \
