@@ -1,0 +1,253 @@
+
+---
+- name: Create Admin User on Oracle Solaris 11.4
+  hosts: "{{ target_hosts | default('OUD_LDAP') }}"
+  gather_facts: false
+  become: true
+
+  vars:
+    admin_user: admin
+    admin_group: admin
+    admin_home: /export/home/admin
+    admin_shell: /usr/bin/bash
+
+    master_public_key: "{{ playbook_dir }}/files/authorized_key.pub"
+
+    admin_public_key: "{{ lookup('ansible.builtin.file', master_public_key) | trim }}"
+
+  tasks:
+
+    # ============================================================
+    # OS VALIDATION
+    # ============================================================
+
+    - name: Detect operating system
+      ansible.builtin.raw: uname -s
+      register: os_detection
+      changed_when: false
+      failed_when: os_detection.stdout | trim != 'SunOS'
+
+    - name: Display OS information
+      ansible.builtin.debug:
+        msg: "Detected operating system: Solaris"
+
+    # ============================================================
+    # VALIDATE PUBLIC KEY
+    # ============================================================
+
+    - name: Validate public SSH key
+      ansible.builtin.assert:
+        that:
+          - admin_public_key | length > 0
+        fail_msg: "Public SSH key is missing from files/authorized_key.pub"
+
+    # ============================================================
+    # CREATE ADMIN GROUP
+    # ============================================================
+
+    - name: Create admin group if not present
+      ansible.builtin.raw: |
+        if getent group {{ admin_group }} >/dev/null 2>&1; then
+          echo EXISTS
+        else
+          /usr/sbin/groupadd {{ admin_group }} &&
+          echo CHANGED
+        fi
+      register: group_result
+      changed_when: "'CHANGED' in group_result.stdout"
+
+    # ============================================================
+    # CREATE ADMIN USER
+    # ============================================================
+
+    - name: Create admin user if not present
+      ansible.builtin.raw: |
+        if getent passwd {{ admin_user }} >/dev/null 2>&1; then
+          echo EXISTS
+        else
+          /usr/sbin/useradd \
+            -g {{ admin_group }} \
+            -d {{ admin_home }} \
+            -m \
+            -s {{ admin_shell }} \
+            -c "Shared Lab Administrator" \
+            {{ admin_user }} &&
+          echo CHANGED
+        fi
+      register: user_result
+      changed_when: "'CHANGED' in user_result.stdout"
+
+    # ============================================================
+    # CREATE SSH DIRECTORY
+    # ============================================================
+
+    - name: Configure admin home and SSH directory
+      ansible.builtin.raw: |
+        mkdir -p {{ admin_home }}/.ssh
+
+        chown {{ admin_user }}:{{ admin_group }} {{ admin_home }}
+        chown -R {{ admin_user }}:{{ admin_group }} {{ admin_home }}/.ssh
+
+        chmod 0750 {{ admin_home }}
+        chmod 0700 {{ admin_home }}/.ssh
+
+        echo "SSH_DIRECTORY_CONFIGURED"
+      register: ssh_directory
+      changed_when: false
+
+    # ============================================================
+    # INSTALL PUBLIC SSH KEY
+    # ============================================================
+
+    - name: Install admin authorized public key
+      ansible.builtin.raw: |
+        AUTH="{{ admin_home }}/.ssh/authorized_keys"
+        TMP="/var/tmp/admin_authorized_key.$$"
+
+        umask 077
+
+        cat > "$TMP" <<'__ADMIN_PUBLIC_KEY__'
+        {{ admin_public_key }}
+        __ADMIN_PUBLIC_KEY__
+
+        if [ ! -f "$AUTH" ] || ! /usr/bin/grep -Fqx -f "$TMP" "$AUTH"; then
+          /usr/bin/cat "$TMP" >> "$AUTH"
+          echo CHANGED
+        else
+          echo EXISTS
+        fi
+
+        rm -f "$TMP"
+
+        chown {{ admin_user }}:{{ admin_group }} "$AUTH"
+        chmod 0600 "$AUTH"
+      register: authorized_key_result
+      changed_when: "'CHANGED' in authorized_key_result.stdout"
+
+    # ============================================================
+    # ENABLE SUDOERS INCLUDE DIRECTORY
+    # ============================================================
+
+    - name: Enable sudoers.d safely
+      ansible.builtin.raw: |
+        SUDOERS="/etc/sudoers"
+        TMP="/etc/sudoers.ansible.$$"
+
+        if grep -Eq '^[[:space:]]*#includedir[[:space:]]+/etc/sudoers\.d([[:space:]]|$)' "$SUDOERS"; then
+          echo EXISTS
+        else
+          cp -p "$SUDOERS" "$TMP" || exit 1
+
+          printf '\n#includedir /etc/sudoers.d\n' >> "$TMP"
+
+          if /usr/sbin/visudo -cf "$TMP"; then
+            mv "$TMP" "$SUDOERS" || exit 1
+            echo CHANGED
+          else
+            rm -f "$TMP"
+            echo "SUDOERS_VALIDATION_FAILED"
+            exit 1
+          fi
+        fi
+
+        /usr/sbin/visudo -c
+      register: sudoers_include
+      changed_when: "'CHANGED' in sudoers_include.stdout"
+
+    # ============================================================
+    # PASSWORDLESS SUDO
+    # ============================================================
+
+    - name: Configure passwordless sudo
+      ansible.builtin.raw: |
+        SUDOERS="/etc/sudoers.d/admin"
+        TMP="/etc/sudoers.d/admin.ansible.$$"
+        RULE="{{ admin_user }} ALL=(ALL) NOPASSWD: ALL"
+
+        if [ -f "$SUDOERS" ]; then
+          cp -p "$SUDOERS" "$TMP" || exit 1
+        else
+          umask 077
+          : > "$TMP"
+        fi
+
+        if ! grep -Fqx "$RULE" "$TMP"; then
+          printf '%s\n' "$RULE" >> "$TMP"
+        fi
+
+        chown root:root "$TMP"
+        chmod 0440 "$TMP"
+
+        if /usr/sbin/visudo -cf "$TMP"; then
+          if ! cmp -s "$TMP" "$SUDOERS"; then
+            mv "$TMP" "$SUDOERS" || exit 1
+            echo CHANGED
+          else
+            rm -f "$TMP"
+            echo EXISTS
+          fi
+        else
+          rm -f "$TMP"
+          echo "SUDO_RULE_VALIDATION_FAILED"
+          exit 1
+        fi
+
+        /usr/sbin/visudo -c
+      register: sudo_result
+      changed_when: "'CHANGED' in sudo_result.stdout"
+
+    # ============================================================
+    # VERIFY ADMIN USER
+    # ============================================================
+
+    - name: Verify admin user
+      ansible.builtin.raw: |
+        id {{ admin_user }}
+        getent passwd {{ admin_user }}
+        getent group {{ admin_group }}
+      register: admin_verification
+      changed_when: false
+
+    # ============================================================
+    # VERIFY SSH CONFIGURATION
+    # ============================================================
+
+    - name: Verify SSH public key and permissions
+      ansible.builtin.raw: |
+        ls -ld {{ admin_home }}
+        ls -ld {{ admin_home }}/.ssh
+        ls -l {{ admin_home }}/.ssh/authorized_keys
+      register: ssh_verification
+      changed_when: false
+
+    # ============================================================
+    # VERIFY SUDO
+    # ============================================================
+
+    - name: Verify passwordless sudo
+      ansible.builtin.raw: |
+        su - {{ admin_user }} -c '/usr/bin/sudo -n /usr/bin/id -u'
+      register: sudo_verification
+      changed_when: false
+      failed_when: sudo_verification.stdout | trim != '0'
+
+    # ============================================================
+    # FINAL SUMMARY
+    # ============================================================
+
+    - name: Display final summary
+      ansible.builtin.debug:
+        msg:
+          - "=============================================="
+          - "SOLARIS ADMIN CONFIGURATION COMPLETED"
+          - "=============================================="
+          - "Host          : {{ inventory_hostname }}"
+          - "OS            : Solaris 11.4"
+          - "Admin User    : {{ admin_user }}"
+          - "Admin Group   : {{ admin_group }}"
+          - "Home          : {{ admin_home }}"
+          - "Shell         : {{ admin_shell }}"
+          - "SSH Key       : Installed"
+          - "Sudo          : {{ sudo_verification.stdout | trim }}"
+          - "Sudoers       : Validated"
+          - "=============================================="
