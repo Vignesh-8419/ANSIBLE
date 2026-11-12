@@ -2,7 +2,7 @@
 set -e
 
 # ---------------- CONFIG ----------------
-FQDN_DOMAIN="${FQDN_DOMAIN:-vgs.com}"-
+FQDN_DOMAIN="${FQDN_DOMAIN:-vgs.com}"
 NETBOX_URL="https://192.168.253.143/api"
 NETBOX_TOKEN="83fb0cec1adff8ff4f36c9185df6b9e2f07c7fcd"
 HDR="Content-Type: application/json"
