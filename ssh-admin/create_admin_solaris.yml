@@ -229,7 +229,9 @@
         su - {{ admin_user }} -c '/usr/bin/sudo -n /usr/bin/id -u'
       register: sudo_verification
       changed_when: false
-      failed_when: sudo_verification.stdout | trim != '0'
+      failed_when: >
+        sudo_verification.rc != 0 or
+        (sudo_verification.stdout_lines | last | trim) != '0'
 
     # ============================================================
     # FINAL SUMMARY
