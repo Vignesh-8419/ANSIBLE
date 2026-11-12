@@ -628,12 +628,12 @@ echo
 echo "Enable_Passwordless_SSH template completed successfully."
 
 # --------------------------------------------------------------
-# create_admin_ssh
+# CREATE ADMIN SSH - LINUX
 # --------------------------------------------------------------
 
 echo
 echo -e "${YELLOW}----------------------------------------------------------${NC}"
-echo -e "${WHITE} Creating create_admin_ssh ${NC}"
+echo -e "${WHITE} Creating CREATE-ADMIN-SSH-LINUX ${NC}"
 echo -e "${YELLOW}----------------------------------------------------------${NC}"
 
 awx-manage shell <<'EOF'
@@ -642,33 +642,33 @@ from awx.main.models import Project, JobTemplate, Credential
 project = Project.objects.get(name="Inventory-Git-Repo")
 credential = Credential.objects.get(name="Linux Admin Credential")
 
-jt, created = JobTemplate.objects.get_or_create(
-    name="CREATE-ADMIN-SSH",
-    defaults={
-        "project": project,
-        "playbook": "ssh-admin/create_admin.yml",
-        "ask_inventory_on_launch": True,
-        "ask_limit_on_launch": False,
-        "survey_enabled": True,
-    }
-)
+old = JobTemplate.objects.filter(name="CREATE-ADMIN-SSH").first()
+linux = JobTemplate.objects.filter(name="CREATE-ADMIN-SSH-LINUX").first()
+
+if linux is None and old is not None:
+    old.name = "CREATE-ADMIN-SSH-LINUX"
+    old.save()
+    jt = old
+    created = False
+else:
+    jt, created = JobTemplate.objects.get_or_create(
+        name="CREATE-ADMIN-SSH-LINUX",
+        defaults={
+            "project": project,
+            "playbook": "ssh-admin/create_admin.yml",
+        }
+    )
 
 jt.project = project
-jt.inventory = None                    # No fixed inventory
+jt.inventory = None
 jt.playbook = "ssh-admin/create_admin.yml"
-
-# Prompt for Inventory
 jt.ask_inventory_on_launch = True
-
-# Disable Limit
 jt.ask_limit_on_launch = False
-
-# Enable Survey
 jt.survey_enabled = True
 
 jt.survey_spec = {
-    "name": "Target Host Selection",
-    "description": "Select Inventory and enter target hosts",
+    "name": "Linux Target Host Selection",
+    "description": "Select Linux inventory and target hosts",
     "spec": [
         {
             "type": "text",
@@ -684,20 +684,87 @@ jt.survey_spec = {
 }
 
 jt.save()
+jt.credentials.clear()
+jt.credentials.add(credential)
+
+print("CREATE-ADMIN-SSH-LINUX configured successfully")
+print("Playbook: ssh-admin/create_admin.yml")
+print("Credential:", credential.name)
+EOF
+
+echo
+echo "CREATE-ADMIN-SSH-LINUX completed."
+
+
+# --------------------------------------------------------------
+# CREATE ADMIN SSH - SOLARIS
+# --------------------------------------------------------------
+
+echo
+echo -e "${YELLOW}----------------------------------------------------------${NC}"
+echo -e "${WHITE} Creating CREATE-ADMIN-SSH-SOLARIS ${NC}"
+echo -e "${YELLOW}----------------------------------------------------------${NC}"
+
+awx-manage shell <<'EOF'
+from awx.main.models import Project, JobTemplate, Credential
+
+project = Project.objects.get(name="Inventory-Git-Repo")
+credential = Credential.objects.get(name="Linux Admin Credential")
+
+jt, created = JobTemplate.objects.get_or_create(
+    name="CREATE-ADMIN-SSH-SOLARIS",
+    defaults={
+        "project": project,
+        "playbook": "ssh-admin/create_admin_solaris.yml",
+    }
+)
+
+jt.project = project
+jt.inventory = None
+jt.playbook = "ssh-admin/create_admin_solaris.yml"
+
+# Inventory prompt
+jt.ask_inventory_on_launch = True
+
+# Disable limit
+jt.ask_limit_on_launch = False
+
+# Enable survey
+jt.survey_enabled = True
+
+jt.survey_spec = {
+    "name": "Solaris Target Host Selection",
+    "description": "Select Solaris inventory and target hosts",
+    "spec": [
+        {
+            "type": "text",
+            "question_name": "Target Hosts",
+            "question_description": "Examples: OUD_LDAP, oudldap01.vgs.com or *",
+            "variable": "target_hosts",
+            "required": True,
+            "default": "OUD_LDAP",
+            "min": 1,
+            "max": 1024
+        }
+    ]
+}
+
+jt.save()
 
 jt.credentials.clear()
 jt.credentials.add(credential)
 
 print(
-    f"create_admin_ssh "
+    f"CREATE-ADMIN-SSH-SOLARIS "
     f"{'created' if created else 'updated'} successfully."
 )
+print("Playbook: ssh-admin/create_admin_solaris.yml")
 print("Inventory: Prompt on Launch")
-print(f"Credential assigned: {credential.name}")
+print("Credential assigned:", credential.name)
 EOF
 
 echo
-echo "create_admin_ssh template completed successfully."
+echo "CREATE-ADMIN-SSH-SOLARIS completed."
 
 echo
 echo -e "${YELLOW}----------------------------------------------------------${NC}"
