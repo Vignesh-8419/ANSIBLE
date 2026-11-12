@@ -628,12 +628,12 @@ echo
 echo "Enable_Passwordless_SSH template completed successfully."
 
 # --------------------------------------------------------------
-# CREATE ADMIN SSH - LINUX
+# create_admin_ssh
 # --------------------------------------------------------------
 
 echo
 echo -e "${YELLOW}----------------------------------------------------------${NC}"
-echo -e "${WHITE} Creating CREATE-ADMIN-SSH-LINUX ${NC}"
+echo -e "${WHITE} Creating create_admin_ssh ${NC}"
 echo -e "${YELLOW}----------------------------------------------------------${NC}"
 
 awx-manage shell <<'EOF'
@@ -642,33 +642,33 @@ from awx.main.models import Project, JobTemplate, Credential
 project = Project.objects.get(name="Inventory-Git-Repo")
 credential = Credential.objects.get(name="Linux Admin Credential")
 
-old = JobTemplate.objects.filter(name="CREATE-ADMIN-SSH").first()
-linux = JobTemplate.objects.filter(name="CREATE-ADMIN-SSH-LINUX").first()
-
-if linux is None and old is not None:
-    old.name = "CREATE-ADMIN-SSH-LINUX"
-    old.save()
-    jt = old
-    created = False
-else:
-    jt, created = JobTemplate.objects.get_or_create(
-        name="CREATE-ADMIN-SSH-LINUX",
-        defaults={
-            "project": project,
-            "playbook": "ssh-admin/create_admin.yml",
-        }
-    )
+jt, created = JobTemplate.objects.get_or_create(
+    name="CREATE-ADMIN-SSH",
+    defaults={
+        "project": project,
+        "playbook": "ssh-admin/create_admin.yml",
+        "ask_inventory_on_launch": True,
+        "ask_limit_on_launch": False,
+        "survey_enabled": True,
+    }
+)
 
 jt.project = project
-jt.inventory = None
+jt.inventory = None                    # No fixed inventory
 jt.playbook = "ssh-admin/create_admin.yml"
+
+# Prompt for Inventory
 jt.ask_inventory_on_launch = True
+
+# Disable Limit
 jt.ask_limit_on_launch = False
+
+# Enable Survey
 jt.survey_enabled = True
 
 jt.survey_spec = {
-    "name": "Linux Target Host Selection",
-    "description": "Select Linux inventory and target hosts",
+    "name": "Target Host Selection",
+    "description": "Select Inventory and enter target hosts",
     "spec": [
         {
             "type": "text",
@@ -684,87 +684,20 @@ jt.survey_spec = {
 }
 
 jt.save()
-jt.credentials.clear()
-jt.credentials.add(credential)
-
-print("CREATE-ADMIN-SSH-LINUX configured successfully")
-print("Playbook: ssh-admin/create_admin.yml")
-print("Credential:", credential.name)
-EOF
-
-echo
-echo "CREATE-ADMIN-SSH-LINUX completed."
-
-
-# --------------------------------------------------------------
-# CREATE ADMIN SSH - SOLARIS
-# --------------------------------------------------------------
-
-echo
-echo -e "${YELLOW}----------------------------------------------------------${NC}"
-echo -e "${WHITE} Creating CREATE-ADMIN-SSH-SOLARIS ${NC}"
-echo -e "${YELLOW}----------------------------------------------------------${NC}"
-
-awx-manage shell <<'EOF'
-from awx.main.models import Project, JobTemplate, Credential
-
-project = Project.objects.get(name="Inventory-Git-Repo")
-credential = Credential.objects.get(name="Linux Admin Credential")
-
-jt, created = JobTemplate.objects.get_or_create(
-    name="CREATE-ADMIN-SSH-SOLARIS",
-    defaults={
-        "project": project,
-        "playbook": "ssh-admin/create_admin_solaris.yml",
-    }
-)
-
-jt.project = project
-jt.inventory = None
-jt.playbook = "ssh-admin/create_admin_solaris.yml"
-
-# Inventory prompt
-jt.ask_inventory_on_launch = True
-
-# Disable limit
-jt.ask_limit_on_launch = False
-
-# Enable survey
-jt.survey_enabled = True
-
-jt.survey_spec = {
-    "name": "Solaris Target Host Selection",
-    "description": "Select Solaris inventory and target hosts",
-    "spec": [
-        {
-            "type": "text",
-            "question_name": "Target Hosts",
-            "question_description": "Examples: OUD_LDAP, oudldap01.vgs.com or *",
-            "variable": "target_hosts",
-            "required": True,
-            "default": "OUD_LDAP",
-            "min": 1,
-            "max": 1024
-        }
-    ]
-}
-
-jt.save()
 
 jt.credentials.clear()
 jt.credentials.add(credential)
 
 print(
-    f"CREATE-ADMIN-SSH-SOLARIS "
+    f"create_admin_ssh "
     f"{'created' if created else 'updated'} successfully."
 )
-print("Playbook: ssh-admin/create_admin_solaris.yml")
 print("Inventory: Prompt on Launch")
-print("Credential assigned:", credential.name)
+print(f"Credential assigned: {credential.name}")
 EOF
 
 echo
-echo "CREATE-ADMIN-SSH-SOLARIS completed."
+echo "create_admin_ssh template completed successfully."
 
 echo
 echo -e "${YELLOW}----------------------------------------------------------${NC}"
@@ -1883,7 +1816,7 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "CENTOS-VM-TEMPLATE-WF"
 
 JT1_NAME = "CENTOS-VM-TEMPLATE"
-JT2_NAME = "CREATE-ADMIN-SSH"
+JT2_NAME = "CREATE-ADMIN-SSH-LINUX"
 JT3_NAME = "RHEL_Hardening"
 JT4_NAME = "Offline_Patching_el7"
 
@@ -2023,7 +1956,7 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "ROCKYOS-VM-TEMPLATE (WITH PATCHING)"
 
 JT1_NAME = "ROCKYOS-VM-TEMPLATE"
-JT2_NAME = "CREATE-ADMIN-SSH"
+JT2_NAME = "CREATE-ADMIN-SSH-LINUX"
 JT3_NAME = "RHEL_Hardening"
 JT4_NAME = "Offline_Patching_el8"
 
@@ -2168,7 +2101,7 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "ROCKYOS-VM-TEMPLATE (WITHOUT PATCHING)"
 
 JT1_NAME = "ROCKYOS-VM-TEMPLATE"
-JT2_NAME = "CREATE-ADMIN-SSH"
+JT2_NAME = "CREATE-ADMIN-SSH-LINUX"
 JT3_NAME = "RHEL_Hardening"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
@@ -2302,7 +2235,7 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "ROCKY9-VM-TEMPLATE-WF"
 
 JT1_NAME = "ROCKY9-VM-TEMPLATE"
-JT2_NAME = "CREATE-ADMIN-SSH"
+JT2_NAME = "CREATE-ADMIN-SSH-LINUX"
 JT3_NAME = "RHEL_Hardening"
 JT4_NAME = "Offline_Patching_el9"
 
@@ -2448,7 +2381,7 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "ROCKY9-VM-TEMPLATE-WF-Without-Patching"
 
 JT1_NAME = "ROCKY9-VM-TEMPLATE"
-JT2_NAME = "CREATE-ADMIN-SSH"
+JT2_NAME = "CREATE-ADMIN-SSH-LINUX"
 JT3_NAME = "RHEL_Hardening"
 
 CREDENTIAL_NAME = "Linux Admin Credential"
@@ -4285,7 +4218,7 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "Provision_Hosts_el7_Subscription_Patching_EL7"
 
 JT1_NAME = "Provision_Hosts_el7"
-JT2_NAME = "CREATE-ADMIN-SSH"
+JT2_NAME = "CREATE-ADMIN-SSH-LINUX"
 JT3_NAME = "RHEL_Hardening"
 JT4_NAME = "Subscription_Patching_EL7"
 
@@ -4470,7 +4403,7 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "Provision_Hosts_el8_Subscription_Patching_EL8"
 
 JT1_NAME = "Provision_Hosts_el8"
-JT2_NAME = "CREATE-ADMIN-SSH"
+JT2_NAME = "CREATE-ADMIN-SSH-LINUX"
 JT3_NAME = "RHEL_Hardening"
 JT4_NAME = "Subscription_Patching_EL8"
 
@@ -4655,7 +4588,7 @@ ORG_NAME = "Default"
 WORKFLOW_NAME = "Provision_Hosts_el9_Subscription_Patching_EL9"
 
 JT1_NAME = "Provision_Hosts_el9"
-JT2_NAME = "CREATE-ADMIN-SSH"
+JT2_NAME = "CREATE-ADMIN-SSH-LINUX"
 JT3_NAME = "RHEL_Hardening"
 JT4_NAME = "Subscription_Patching_EL9"
 
