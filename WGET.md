@@ -354,3 +354,14 @@ export ANSIBLE_CONFIG=~/ansible.cfg
 ```
 ansible-playbook -i centos-07-servers_inventory.yml CENTOS-VM-TEMPLATE/CENTOS-VM-TEMPLATE.yml -e "target_hosts=cent-07-02"
 ```
+
+
+```
+yt-dlp --flat-playlist --print "%(playlist_index)s - %(title)s" "https://www.youtube.com/playlist?list=PL3oW2tjiIxvTaC6caIGR55W3ssqGvb_LR"
+```
+
+```
+for f in *.mp3; do
+    mv -- "$f" "${f#* - }"
+done
+```
